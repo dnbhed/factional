@@ -14,3 +14,5 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 # Warnings are errors in CI and in the local gates (`cargo clippy ... -- -D warnings`).
 all = { level = "warn", priority = -1 }
+# Hundredths are written so they read as decimals: 120_00 is 120.00.
+inconsistent_digit_grouping = "allow"

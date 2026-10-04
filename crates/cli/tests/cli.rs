@@ -62,6 +62,17 @@ fn run_prints_the_transcript_of_a_passing_script() {
 }
 
 #[test]
+fn run_resolves_paths_in_the_script_from_the_current_directory() {
+    let output = Command::new(env!("CARGO_BIN_EXE_factional"))
+        .args(["run", "scenarios/characters.scenario"])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .output()
+        .expect("the factional binary runs");
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    assert!(text(&output.stdout).contains("loaded 6 characters from content/sample\n"));
+}
+
+#[test]
 fn run_stops_at_an_unknown_command_and_exits_non_zero() {
     let output = factional(&["run", &fixture("unknown_command.scenario")]);
     assert!(!output.status.success());

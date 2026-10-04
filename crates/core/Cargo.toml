@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 serde = "1.0.229"
+strsim = "0.11.1"
 
 [dev-dependencies]
 proptest = "1.11.0"

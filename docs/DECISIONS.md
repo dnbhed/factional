@@ -149,6 +149,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Division** is `checked_div` only, with no `/` operator, because dividing by zero has to be handled where it can happen.
   - **Parsing is strict.** It accepts digits, an optional sign and at most two decimal places. `.5`, `5.`, exponents and spaces are not numbers.
   - *Why:* a number that silently wrapped around would be a wrong answer that looks right. Content validation keeps rule values far inside the range, so the panic marks a bug, never a designer's input.
+- **P-31 · Content-loading conventions** (made in A1, 2026-10-04).
+  - **Missing files are allowed.** A missing `balance.toml` means every default; a missing `characters.toml` means no characters. `load` says how many characters it read, so an empty or wrong directory is obvious.
+  - **Ids** are a lowercase letter, then lowercase letters, digits or `_` (`captain_hale`), because they're typed in the CLI.
+  - **Every field is explicit.** A character needs a `name`, and an alignment needs both axes. Defaults live only in `balance.toml`'s knobs.
+  - **All problems at once.** Loading reports every problem in every file, in file order and then key order, each as `file: key.path: message`. Unknown keys suggest the closest known key.
+  - **A failed `load` changes nothing.** The CLI keeps the world it already had.
+  - **CLI paths** are relative to the current directory. The scenario harness runs from the repository root, so scenarios write `load content/sample`.
+  - *Why:* designers fix content in one pass, and nothing half-loaded ever runs.
 
 ## Open
 
