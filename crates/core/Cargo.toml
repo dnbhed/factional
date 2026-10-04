@@ -6,5 +6,13 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[dependencies]
+serde = "1.0.229"
+
+[dev-dependencies]
+proptest = "1.11.0"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.6"
+
 [lints]
 workspace = true

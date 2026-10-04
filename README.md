@@ -11,7 +11,7 @@ The first module is **reputation & factions**. It covers:
 
 The engine knows nothing about maps, graphics or combat. Those modules come later, and plug in through commands, events and queries.
 
-**Status:** the workspace, CI and the CLI shell are in place (F0). The next increment is **F1** in [docs/PLAN.md](docs/PLAN.md).
+**Status:** early. [docs/PLAN.md](docs/PLAN.md) lists what's done and what's next.
 
 | Document | What's in it |
 | --- | --- |

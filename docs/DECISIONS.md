@@ -139,9 +139,16 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **P-29 · How scenario scripts behave** (made in F0, 2026-10-04).
   - **Script mistakes stop the run** with `line N: …`: an unknown command, an `assert` without ` == `, or a false assertion.
   - **A command that runs and fails** renders as `error: …`. Inside an `assert`, that text is checked like any other result; outside one, it stops the run.
+  - **A command's own bad arguments count as the command failing**, not as a script mistake. For example, `calc 1 / 0` gives `error: cannot divide by 0.00`, so scenarios can assert on argument errors. Added in F1.
   - **Transcripts** list each command and its output, but not comments or blank lines.
   - **Snapshots** live in `crates/cli/tests/snapshots/`, not beside the scenarios, because `cargo insta review` only finds snapshots inside a package.
   - *Why:* scripts can test failure paths as easily as successes, while a typo in a script can never pass silently.
+
+- **P-30 · `Fixed`'s range and strictness** (made in F1, 2026-10-04).
+  - **Range.** A `Fixed` holds about ±92 trillion. The `+ - *` operators panic beyond that range in every build, debug and release alike. The `checked_*` methods return `None` instead, and that's what the CLI's `calc` uses.
+  - **Division** is `checked_div` only, with no `/` operator, because dividing by zero has to be handled where it can happen.
+  - **Parsing is strict.** It accepts digits, an optional sign and at most two decimal places. `.5`, `5.`, exponents and spaces are not numbers.
+  - *Why:* a number that silently wrapped around would be a wrong answer that looks right. Content validation keeps rule values far inside the range, so the panic marks a bug, never a designer's input.
 
 ## Open
 
