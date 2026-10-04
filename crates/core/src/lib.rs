@@ -4,3 +4,7 @@
 //! No I/O lives here: no filesystem, network, stdout/stderr, environment variables, clock or
 //! randomness. Rule arithmetic uses fixed-point numbers, never floats (DECISIONS.md P-1).
 #![deny(clippy::float_arithmetic)]
+
+mod fixed;
+
+pub use fixed::{Fixed, ParseFixedError, div_round};

@@ -1,9 +1,15 @@
 use std::fmt;
 
+use factional_core::{Fixed, ParseFixedError};
+
 /// Every command as `(usage, description)`, in the order `help` lists them.
 const COMMANDS: &[(&str, &str)] = &[
     ("help", "list these commands"),
     ("quit", "leave the REPL, or end a script early"),
+    (
+        "calc <a> <op> <b>",
+        "the engine's fixed-point arithmetic; <op> is + - * or /",
+    ),
     ("echo <text>", "print <text>"),
     ("fail <message>", "fail with <message>; for testing scripts"),
     (
@@ -69,6 +75,7 @@ impl Session {
         match name {
             "help" => Ok(Outcome::Output(help_text())),
             "quit" => Ok(Outcome::Quit),
+            "calc" => Ok(calc(rest)),
             "echo" => Ok(Outcome::Output(rest.to_owned())),
             "fail" => Ok(Outcome::Error(rest.to_owned())),
             "assert" => self.assert(rest),
@@ -91,6 +98,37 @@ impl Session {
             })
         }
     }
+}
+
+/// `calc <a> <op> <b>`: the engine's fixed-point arithmetic, so a designer can check how a
+/// number rounds (DESIGN.md §4.1).
+fn calc(args: &str) -> Outcome {
+    match calculate(args) {
+        Ok(value) => Outcome::Output(value.to_string()),
+        Err(message) => Outcome::Error(message),
+    }
+}
+
+fn calculate(args: &str) -> Result<Fixed, String> {
+    const USAGE: &str = "calc needs the form: calc <a> <op> <b>, where <op> is + - * or /";
+    let [a, op, b] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+        return Err(USAGE.to_owned());
+    };
+    let a: Fixed = a
+        .parse()
+        .map_err(|error: ParseFixedError| error.to_string())?;
+    let b: Fixed = b
+        .parse()
+        .map_err(|error: ParseFixedError| error.to_string())?;
+    let result = match op {
+        "+" => a.checked_add(b),
+        "-" => a.checked_sub(b),
+        "*" => a.checked_mul(b),
+        "/" if b == Fixed::ZERO => return Err(format!("cannot divide by {b}")),
+        "/" => a.checked_div(b),
+        _ => return Err(USAGE.to_owned()),
+    };
+    result.ok_or_else(|| "the result is out of range".to_owned())
 }
 
 /// Whether a (trimmed) line has nothing to run: it's blank, or a `#` comment.
@@ -167,12 +205,62 @@ mod tests {
         assert_eq!(run("help"), Ok(Outcome::Output(help_text())));
     }
 
+    fn output(text: &str) -> Result<Outcome, ScriptError> {
+        Ok(Outcome::Output(text.into()))
+    }
+
+    fn command_error(message: &str) -> Result<Outcome, ScriptError> {
+        Ok(Outcome::Error(message.into()))
+    }
+
+    #[test]
+    fn calc_does_the_engines_fixed_point_arithmetic() {
+        assert_eq!(run("calc 4.00 * 0.41"), output("1.64"));
+        assert_eq!(run("calc 0.05 * 0.50"), output("0.03"));
+        assert_eq!(run("calc 2 / 3"), output("0.67"));
+        assert_eq!(run("calc 12.5 + -0.05"), output("12.45"));
+        assert_eq!(run("calc 1 - 3.25"), output("-2.25"));
+    }
+
+    #[test]
+    fn calc_reports_bad_numbers_and_impossible_results_as_command_errors() {
+        assert_eq!(run("calc 1 / 0"), command_error("cannot divide by 0.00"));
+        assert_eq!(
+            run("calc 12.345 + 1"),
+            command_error("12.345 has more than 2 decimal places")
+        );
+        assert_eq!(run("calc 1 + abc"), command_error("'abc' is not a number"));
+        assert_eq!(
+            run("calc 92233720368547758.07 + 1"),
+            command_error("the result is out of range")
+        );
+        assert_eq!(
+            run("calc -92233720368547758.08 - 1"),
+            command_error("the result is out of range")
+        );
+        assert_eq!(
+            run("calc 92233720368547758.07 * 2"),
+            command_error("the result is out of range")
+        );
+    }
+
+    #[test]
+    fn calc_needs_two_numbers_and_an_operator() {
+        let usage =
+            command_error("calc needs the form: calc <a> <op> <b>, where <op> is + - * or /");
+        assert_eq!(run("calc"), usage);
+        assert_eq!(run("calc 1 +"), usage);
+        assert_eq!(run("calc 1 + 2 + 3"), usage);
+        assert_eq!(run("calc 1 % 2"), usage);
+    }
+
     #[test]
     fn help_lists_every_command_with_its_usage() {
         let help = help_text();
         for usage in [
             "help",
             "quit",
+            "calc <a> <op> <b>",
             "echo <text>",
             "fail <message>",
             "assert <command> == <expected>",

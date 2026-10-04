@@ -1,0 +1,16 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/fixed_point.scenario
+---
+> calc 4.00 * 0.41
+1.64
+> assert calc 0.05 * 0.50 == 0.03
+> assert calc -0.05 * 0.50 == -0.03
+> assert calc 1.00 / 3.00 == 0.33
+> assert calc 2.00 / 3.00 == 0.67
+> assert calc -2.00 / 3.00 == -0.67
+> assert calc 12.5 + 0 == 12.50
+> assert calc 95 + 10 == 105.00
+> assert calc 1 / 0 == error: cannot divide by 0.00
+> assert calc 12.345 + 1 == error: 12.345 has more than 2 decimal places

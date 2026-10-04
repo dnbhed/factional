@@ -34,53 +34,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 ## Done
 
 - F0 — workspace of four crates with lints and a pinned toolchain, CI with mutation testing on PRs, the `factional` CLI (`repl`, `run`), and the scenario harness; done 2026-10-04 (#1)
+- F1 — `Fixed`, the two-decimal number every rule uses: exact parsing and display, arithmetic rounded half away from zero, checked overflow, TOML input; plus the `calc` CLI command; done 2026-10-04 (#2)
 
 ---
 
 ## Phase 0 — Foundations
 
-### F1 · Fixed-point numbers — P0 · Next
-
-**Why:** every rule computes in `Fixed` (DESIGN.md §4.1, P-1).
-
-**Scope**
-
-- **Type.** `Fixed` in core, stored as hundredths in an `i64`, with wider intermediates.
-- **Parsing and display.** Parse from a decimal string; display with exactly two decimals.
-- **Arithmetic.** Add and subtract exactly. Multiply and divide with rounding half away from zero. Clamp.
-- **TOML.** Serde deserialises a TOML integer or float through its decimal string, with no float arithmetic.
-
-**Acceptance**
-
-1. Parsing and display:
-   - `"12.5"` → `12.50`
-   - `"7"` → `7.00`
-   - `"-0.05"` → `-0.05`
-   - `"-0.00"` displays as `0.00`
-2. Bad input:
-   - `"12.345"` → error `12.345 has more than 2 decimal places`
-   - `""`, `"1.2.3"` and `"abc"` each give an error that names the input
-3. Multiplication:
-   - 0.05 × 0.50 = 0.03
-   - −0.05 × 0.50 = −0.03
-   - 4.00 × 0.41 = 1.64
-4. Division:
-   - 1.00 ÷ 3.00 = 0.33
-   - 2.00 ÷ 3.00 = 0.67
-   - −2.00 ÷ 3.00 = −0.67
-   - Dividing by 0.00 is an error.
-5. (95.00 + 10.00) clamped to −100.00…100.00 is 100.00.
-6. TOML:
-   - `x = 0.3` deserialises to 0.30.
-   - `x = 30` deserialises to 30.00.
-   - `x = 0.333` is an error.
-7. Properties:
-   - `parse(display(x)) = x`
-   - a × b = b × a
-   - The result of × and ÷ is within 0.005 of the exact rational result.
-   - Clamping always lands within bounds.
-
-### F2 · Curves — P0
+### F2 · Curves — P0 · Next
 
 **Why:** curves are the shared shape for tuning knobs (DESIGN.md §4.2, P-4).
 

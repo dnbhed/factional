@@ -549,6 +549,7 @@ content/<world>/
 ### 12.2 Designer workflow
 
 - `factional repl content/sample` to poke at a world.
+- `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
 - `factional run scenarios/<name>.scenario` to replay a scripted playthrough.
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working.
 - `factional compare <scenario> --content A --against B` to see what new numbers change (T2).
