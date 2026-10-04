@@ -42,6 +42,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-17 · Promotion happens only when another module asks** (was O-2). Meeting a rank's requirements makes promotion possible, never automatic. There's no per-faction automatic option.
 - **D-18 · An action's alignment effect can depend on its target** (was O-3). Designers configure it per action, so killing a cultist can count as less evil than killing a priest. P-28 is the mechanism.
 - **D-19 · Secret membership and double agents are wanted, as an option** (was O-4). They're designed in K0 alongside the knowledge model, because secrecy only means something once factions can be unaware of things.
+- **D-20 · A world loads only if it is complete — a fundamental principle for every module.** (Agreed 2026-10-04, at the user's direction.)
+  - A world is built only from content that is complete in principle: every reference resolves, every rule can decide, and nothing a game could reach is left undefined.
+  - For this module, that's the load-time checks (P-32, DESIGN.md §12.2).
+  - For the quest module, each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage. A world whose quests contradict each other at some reachable stage doesn't load.
+  - It binds this module now: effects and rules stay declarative data, so their reach can be computed without running the game (DESIGN.md §16.2).
+  - Any design that would break this needs the user's explicit agreement first.
 
 ## Proposed — 2026-10-04
 
@@ -157,7 +163,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A failed `load` changes nothing.** The CLI keeps the world it already had.
   - **CLI paths** are relative to the current directory. The scenario harness runs from the repository root, so scenarios write `load content/sample`.
   - *Why:* designers fix content in one pass, and nothing half-loaded ever runs.
-- **P-32 · Content is checked completely before a world exists** (2026-10-04, at the user's request).
+- **P-32 · Content is checked completely before a world exists** (2026-10-04, at the user's request). This is how this module meets D-20.
   - **Load time is content's compile time.** Every reference (a membership's faction, a rank, an inertia profile, a standing's faction or character) must resolve, and every value must be in range, or the world isn't built. The checks are listed in DESIGN.md §12.2.
   - **The rules live in `factional-reputation`.** `World::new` refuses invalid content, so content built in code gets the same checks as content from TOML. `factional-content` only maps problems to file and key paths. This arrives with M1, the first cross-file reference.
   - **Each increment adds the checks for the content it introduces**, in the same PR, with tests. They aren't saved up for T1, which keeps only the whole-world warnings and the `validate` command.
@@ -173,3 +179,4 @@ None right now. A new question gets the next free number, starting at O-5.
 - **X-1 · Perceived alignment.** Whether observers judge a character by what they know of them rather than by their true alignment, and how. Settled in K0.
 - **X-2 · Host engine and integration route.** A Bevy plugin, or a C ABI for Godot, Unity or Unreal. Settled in E0.
 - **X-3 · Save format and versioning.** Settled in T4.
+- **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Which factions a quest affects, directly and through spillover, war and membership; what counts as a conflict with another faction's questline at a stage; and how to check this without exploring every combination of stages. Settled in Q0, the quest module's design pass (DESIGN.md §16.1).

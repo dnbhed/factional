@@ -16,12 +16,13 @@ The module does not decide what anyone does (AI), run quests (they report their 
 
 ## 2. Principles
 
-1. **World-agnostic.** No coordinates, no rendering, no wall clock. Time is an abstract tick count that the host advances (P-20).
-2. **Functional core.** State changes only by executing a command. A command either fails and changes nothing, or succeeds and emits events. Applying those events is the only thing that mutates state (P-14).
-3. **Deterministic.** The same content and the same commands give byte-identical events on every machine. That means integer fixed-point maths, ordered collections and no randomness (P-1, P-19).
-4. **Designer-first.** Every number that affects balance is content, not code (§12). Content errors name the file and key, and say what's wrong.
-5. **Explainable.** Every evaluation returns its working: a disposition, a refused join, an alignment shift. The numbers in the working are exactly the numbers used (P-24). The CLI only renders them.
-6. **The player is just a character** (P-17). Every rule applies to NPCs the same way, so NPC-to-NPC relationships come free.
+1. **A world loads only if it is complete.** This is fundamental, and every module, now and future, must keep to it (D-20). A world is built only from content that is complete in principle: every reference resolves, every rule can decide, and nothing a game could reach is left undefined. For this module, that means the load-time checks in §12.2. For the quest module, it means each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage (§16).
+2. **World-agnostic.** No coordinates, no rendering, no wall clock. Time is an abstract tick count that the host advances (P-20).
+3. **Functional core.** State changes only by executing a command. A command either fails and changes nothing, or succeeds and emits events. Applying those events is the only thing that mutates state (P-14).
+4. **Deterministic.** The same content and the same commands give byte-identical events on every machine. That means integer fixed-point maths, ordered collections and no randomness (P-1, P-19).
+5. **Designer-first.** Every number that affects balance is content, not code (§12). Content errors name the file and key, and say what's wrong.
+6. **Explainable.** Every evaluation returns its working: a disposition, a refused join, an alignment shift. The numbers in the working are exactly the numbers used (P-24). The CLI only renders them.
+7. **The player is just a character** (P-17). Every rule applies to NPCs the same way, so NPC-to-NPC relationships come free.
 
 ## 3. Glossary
 
@@ -691,3 +692,28 @@ scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/sna
 - **Dependencies point one way:** core ← reputation ← content ← cli.
 - **Future modules** (quests, combat and the rest) become sibling crates. They depend on core and talk to reputation only through §11.
 - **A host-engine adapter** waits until a host is chosen (E0, X-2). That would be a Bevy plugin, or a C ABI for Godot, Unity or Unreal.
+
+## 16. Completeness across modules (D-20)
+
+A world loads only if it is complete in principle. This module's part is the load-time checks in §12.2. The principle reaches further than this module, and it shapes this module now.
+
+### 16.1 What it asks of the quest module
+
+Each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage. A world whose quests contradict each other at some reachable stage doesn't load.
+
+What "reconcile" means exactly, and how to check it without exploring every combination of stages, is for the quest module's design pass (Q0, X-4). The questions to settle there:
+
+- **Which factions a quest affects.** Directly, through the effects of its outcomes. Indirectly, through spillover to factions related to those, and through war and membership changes.
+- **What it means for a quest to conflict with another faction's questline at a stage.** For example, an outcome that harms faction B while B's questline at that stage needs the player's standing with B to have risen; or two questlines whose stages require memberships that the faction rules make impossible to hold together.
+- **How to check it.** Every reachable combination of stages across all questlines explodes quickly. Stages probably need declared preconditions and effects that can be checked faction by faction, or pair by pair.
+
+### 16.2 What it asks of this module now
+
+A quest checker can only reconcile what it can see without running the game. So everything quests may depend on here must stay declarative:
+
+- **Effects are data.** Actions and outcomes are bundles of declared effects (P-26), never code or scripts. Which factions an effect can touch is computable from content alone, spillover included, because spillover follows the declared relations and curve.
+- **Rules are data.** Drift policies, defector and deserter tables, and conflict resolution are closed vocabularies in content, so their possible results can be enumerated.
+- **Every rule decides.** A rule table always ends with a rule that decides (P-32), so no state is left without an answer.
+- **Runtime changes come only through commands** (§11), so another module can know every way this module's state can change.
+
+A feature that would make an effect's reach impossible to compute from content, such as computed effects or script hooks, conflicts with D-20. It needs the user's agreement before it's built.

@@ -29,7 +29,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1 → Q0`
 
 ## Done
 
@@ -401,6 +401,12 @@ An opt-in option to belong to a faction without its enemies knowing. Designed in
 Settles X-2.
 
 ### E1 · Host adapter — P3
+
+## Beyond this module
+
+### Q0 · Quest module design pass: reconciling questlines across factions — P3
+
+The quest module comes after this one. Its first step is a design pass that settles X-4: what it means for a faction's quests and questlines to reconcile with every other faction they affect, and those factions' questlines, at every stage, and how the loader checks it (D-20, DESIGN.md §16). No quest content loads until that check exists.
 
 ---
 
