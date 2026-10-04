@@ -157,6 +157,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A failed `load` changes nothing.** The CLI keeps the world it already had.
   - **CLI paths** are relative to the current directory. The scenario harness runs from the repository root, so scenarios write `load content/sample`.
   - *Why:* designers fix content in one pass, and nothing half-loaded ever runs.
+- **P-32 · Content is checked completely before a world exists** (2026-10-04, at the user's request).
+  - **Load time is content's compile time.** Every reference (a membership's faction, a rank, an inertia profile, a standing's faction or character) must resolve, and every value must be in range, or the world isn't built. The checks are listed in DESIGN.md §12.2.
+  - **The rules live in `factional-reputation`.** `World::new` refuses invalid content, so content built in code gets the same checks as content from TOML. `factional-content` only maps problems to file and key paths. This arrives with M1, the first cross-file reference.
+  - **Each increment adds the checks for the content it introduces**, in the same PR, with tests. They aren't saved up for T1, which keeps only the whole-world warnings and the `validate` command.
+  - **Errors stop loading; warnings are printed but don't.** A rule table must end with a rule that always decides. Spillover multipliers stay within −1…1.
+  - *Why:* a world that starts can't hit a dangling reference mid-game, and designers learn about every mistake when they load, not when a player finds it.
 
 ## Open
 

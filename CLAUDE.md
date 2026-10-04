@@ -76,6 +76,7 @@ Keep increments small: one concept, reviewable in one sitting. If an increment g
   - a value in `content/sample`;
   - a row in DESIGN.md §12;
   - its effect visible in the relevant `--explain` output.
+- **Every reference is checked at load time.** If an increment adds a field that names something else, such as a faction, rank, profile or character, it adds the check that the thing exists, plus range checks for its numbers, in the same PR, with tests and a row in DESIGN.md §12.2. A world is never built from content that fails a check (P-32).
 - **Content errors speak a designer's language.** They name the file and the key path, say what's wrong in plain words, and offer a "did you mean" for misspelt ids. Unknown keys are errors.
 
 ## Fix broken windows

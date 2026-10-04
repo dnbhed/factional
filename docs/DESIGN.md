@@ -547,7 +547,43 @@ content/<world>/
 - **Warnings don't stop loading.** For example: a starting member outside member tolerance, a rank whose requirements can never be met, or a faction no starting character could ever join.
 - **Editor support.** `factional schema` writes a JSON Schema, so an editor (VS Code with Even Better TOML) autocompletes and underlines mistakes as the designer types (T1).
 
-### 12.2 Designer workflow
+### 12.2 Validation (P-32)
+
+Content is data, so its equivalent of a compile step is loading. **A world is only ever built from content that passed every check.** A running world never holds a reference to a faction, rank, profile or character that doesn't exist.
+
+- **Errors stop loading.** Nothing is half-loaded, and the CLI keeps the world it already had.
+- **Warnings don't stop loading.** `load` prints them after its summary, and `factional validate` (T1) lists them too.
+- **The rules live in `factional-reputation`.** `World::new` runs the checks and refuses invalid content, so a host that builds content in code, not from TOML, gets the same protection. `factional-content` turns each problem's location into `file: key.path`.
+- **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. Once every setting is implemented, `docs/examples/riverhold` is loaded too.
+- **Each check arrives with the increment that adds the content it checks**, never later.
+
+| Check | Kind | Added in |
+| --- | --- | --- |
+| Ids are lowercase letters, digits and `_`, starting with a letter | error | A1 (done) |
+| Alignment axes within −100…100; `label_threshold` 0.01–100 | error | A1 (done) |
+| Unknown keys, missing fields, wrong types, bad numbers | error | A1 (done), then every increment for its own fields |
+| Action alignment names only `law` and `good` | error | A3 |
+| `inertia` and `inertia.default_profile` name a profile that exists; multipliers ≥ 0 | error | A4 |
+| `by_target` multipliers ≥ 0 | error | A5 |
+| Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 |
+| Bands: unique names, increasing `up_to`, only the last open-ended | error | D2 (disposition), M2 (relations) |
+| `hysteresis` ≥ 0 | error | D3 |
+| A membership names a faction that exists, at most once per character | error | M1 |
+| 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 |
+| A starting member outside their member tolerance | warning | M1 |
+| A relation names two different factions that exist; each direction is set at most once | error | M2 |
+| No character starts in two factions that are in conflict (invariant 6) | error | M2 |
+| Standing names factions and characters that exist; values within ±100 | error | M3 |
+| A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung | error | M5 |
+| A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 |
+| Spillover multipliers within −1…1 | error | M6 |
+| Rule tables use known conditions; rank ids only in a faction's own tables and only its ranks; every table ends with a rule that always decides | error | M7 |
+| Drift policies are known; probation has `grace_ticks` > 0 and a `then` | error | M8 |
+| `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` ≥ 0 | error | M9 |
+| `knowledge.model` is a known model | error | K1 |
+| A faction no starting character could join; a rank no one can reach | warning | T1 |
+
+### 12.3 Designer workflow
 
 - `factional repl content/sample` to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
