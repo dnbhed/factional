@@ -1,0 +1,10 @@
+# Time, events and the journal (DESIGN.md §2, §11). Every accepted command becomes numbered,
+# time-stamped events; every command, refused ones included, goes in the journal.
+load content/sample
+advance 5
+advance 3
+assert time == tick 8
+assert advance 0 == error: ticks must be at least 1
+events
+assert events --since 1 == #2 at tick 5: time advanced from 5 to 8
+journal

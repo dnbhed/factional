@@ -1,0 +1,21 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/time.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> advance 5
+#1 at tick 0: time advanced from 0 to 5
+> advance 3
+#2 at tick 5: time advanced from 5 to 8
+> assert time == tick 8
+> assert advance 0 == error: ticks must be at least 1
+> events
+#1 at tick 0: time advanced from 0 to 5
+#2 at tick 5: time advanced from 5 to 8
+> assert events --since 1 == #2 at tick 5: time advanced from 5 to 8
+> journal
+1. advance 5 — accepted
+2. advance 3 — accepted
+3. advance 0 — refused: ticks must be at least 1

@@ -169,6 +169,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Each increment adds the checks for the content it introduces**, in the same PR, with tests. They aren't saved up for T1, which keeps only the whole-world warnings and the `validate` command.
   - **Errors stop loading; warnings are printed but don't.** A rule table must end with a rule that always decides. Spillover multipliers stay within −1…1.
   - *Why:* a world that starts can't hit a dangling reference mid-game, and designers learn about every mistake when they load, not when a player finds it.
+- **P-33 · How events are numbered and stamped** (made in A2, 2026-10-04).
+  - **Numbering.** Event numbers start at 1 and have no gaps, so event *n* is the *n*th in the log, and `events_since(n)` is just the rest of it.
+  - **Stamping.** An event's tick is the time when it happened, before its own change applies. `TimeAdvanced 0 → 5` is stamped at tick 0, and anything that time passing causes, such as a probation running out in M8, is stamped at tick 5.
+  - **What goes in the journal.** Every command issued to the world, refused ones included. Read-only queries (`time`, `events`, `show`) aren't commands and aren't journalled.
+  - **`load` starts a new world.** Time, events and journal all start afresh.
+  - *Why:* gapless numbers make "what's new since n" trivial for listeners. Stamping before the change means an event's tick never depends on its own effect.
 
 ## Open
 

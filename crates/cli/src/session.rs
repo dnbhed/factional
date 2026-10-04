@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use factional_core::{Fixed, ParseFixedError, suggest};
-use factional_reputation::{Character, World};
+use factional_reputation::{Change, Character, Command, Event, World};
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
 const COMMANDS: &[(&str, &str)] = &[
@@ -10,12 +10,22 @@ const COMMANDS: &[(&str, &str)] = &[
     ("quit", "leave the REPL, or end a script early"),
     (
         "load <dir>",
-        "load the content files in <dir>, such as content/sample",
+        "load the content files in <dir>, such as content/sample, as a new world",
     ),
     ("characters", "list the loaded characters"),
     (
         "show character <id>",
         "a character's alignment and its label",
+    ),
+    ("advance <ticks>", "move time forward"),
+    ("time", "the current tick"),
+    (
+        "events [--since <seq>]",
+        "what has happened, oldest first; --since shows only later events",
+    ),
+    (
+        "journal",
+        "every command issued, and whether it was accepted",
     ),
     (
         "calc <a> <op> <b>",
@@ -111,6 +121,10 @@ impl Session {
             "load" => Ok(self.load(rest)),
             "characters" => Ok(self.characters()),
             "show" => Ok(self.show(rest)),
+            "advance" => Ok(self.advance(rest)),
+            "time" => Ok(self.time()),
+            "events" => Ok(self.events(rest)),
+            "journal" => Ok(self.journal()),
             "calc" => Ok(calc(rest)),
             "curve" => Ok(curve(rest)),
             "echo" => Ok(Outcome::Output(rest.to_owned())),
@@ -193,6 +207,98 @@ impl Session {
             }
         }
     }
+}
+
+impl Session {
+    /// `advance <ticks>`: moves time forward and shows the events it caused.
+    fn advance(&mut self, args: &str) -> Outcome {
+        let [ticks] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error("advance needs the form: advance <ticks>".to_owned());
+        };
+        let Ok(ticks) = ticks.parse::<u64>() else {
+            return Outcome::Error(format!("'{ticks}' is not a whole number of ticks"));
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(Command::AdvanceTime { ticks }) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
+    /// `time`: the current tick.
+    fn time(&self) -> Outcome {
+        match &self.world {
+            Some(world) => Outcome::Output(format!("tick {}", world.now())),
+            None => no_world(),
+        }
+    }
+
+    /// `events [--since <seq>]`: what has happened, oldest first.
+    fn events(&self, args: &str) -> Outcome {
+        let since = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [] => None,
+            ["--since", seq] => match seq.parse::<u64>() {
+                Ok(seq) => Some(seq),
+                Err(_) => return Outcome::Error(format!("'{seq}' is not an event number")),
+            },
+            _ => {
+                return Outcome::Error("events needs the form: events [--since <seq>]".to_owned());
+            }
+        };
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let events = world.events_since(since.unwrap_or(0));
+        Outcome::Output(match (events.is_empty(), since) {
+            (false, _) => lines(events.iter().map(describe_event)),
+            (true, Some(seq)) => format!("no events after #{seq}"),
+            (true, None) => "no events yet".to_owned(),
+        })
+    }
+
+    /// `journal`: every command issued, and whether it was accepted.
+    fn journal(&self) -> Outcome {
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        if world.journal().is_empty() {
+            return Outcome::Output("no commands yet".to_owned());
+        }
+        Outcome::Output(lines(world.journal().iter().enumerate().map(
+            |(index, entry)| {
+                let result = match &entry.result {
+                    Ok(()) => "accepted".to_owned(),
+                    Err(refusal) => format!("refused: {refusal}"),
+                };
+                format!(
+                    "{}. {} — {result}",
+                    index + 1,
+                    describe_command(&entry.command)
+                )
+            },
+        )))
+    }
+}
+
+/// `#1 at tick 0: time advanced from 0 to 5`.
+fn describe_event(event: &Event) -> String {
+    let what = match &event.payload {
+        Change::TimeAdvanced { from, to } => format!("time advanced from {from} to {to}"),
+    };
+    format!("#{} at tick {}: {what}", event.seq, event.tick)
+}
+
+/// A command written the way it's typed in the CLI.
+fn describe_command(command: &Command) -> String {
+    match command {
+        Command::AdvanceTime { ticks } => format!("advance {ticks}"),
+    }
+}
+
+fn lines(items: impl Iterator<Item = String>) -> String {
+    items.collect::<Vec<_>>().join("\n")
 }
 
 fn no_world() -> Outcome {
@@ -502,6 +608,105 @@ mod tests {
     }
 
     #[test]
+    fn advance_moves_time_and_shows_the_events() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("advance 5"),
+            output("#1 at tick 0: time advanced from 0 to 5")
+        );
+        assert_eq!(session.execute("time"), output("tick 5"));
+        assert_eq!(
+            session.execute("advance 3"),
+            output("#2 at tick 5: time advanced from 5 to 8")
+        );
+    }
+
+    #[test]
+    fn advance_reports_a_refusal_and_bad_input() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("advance 0"),
+            command_error("ticks must be at least 1")
+        );
+        for bad in ["x", "-1", "1.5"] {
+            assert_eq!(
+                session.execute(&format!("advance {bad}")),
+                command_error(&format!("'{bad}' is not a whole number of ticks"))
+            );
+        }
+        let usage = command_error("advance needs the form: advance <ticks>");
+        assert_eq!(session.execute("advance"), usage);
+        assert_eq!(session.execute("advance 1 2"), usage);
+        assert_eq!(session.execute("time"), output("tick 0"));
+    }
+
+    #[test]
+    fn events_lists_what_happened_with_an_optional_starting_point() {
+        let mut session = riverhold();
+        assert_eq!(session.execute("events"), output("no events yet"));
+        for ticks in [1, 2, 3] {
+            session.execute(&format!("advance {ticks}")).expect("valid");
+        }
+        assert_eq!(
+            session.execute("events"),
+            output(
+                "#1 at tick 0: time advanced from 0 to 1\n\
+                 #2 at tick 1: time advanced from 1 to 3\n\
+                 #3 at tick 3: time advanced from 3 to 6"
+            )
+        );
+        assert_eq!(
+            session.execute("events --since 2"),
+            output("#3 at tick 3: time advanced from 3 to 6")
+        );
+        assert_eq!(
+            session.execute("events --since 3"),
+            output("no events after #3")
+        );
+        assert_eq!(
+            session.execute("events --since x"),
+            command_error("'x' is not an event number")
+        );
+        let usage = command_error("events needs the form: events [--since <seq>]");
+        assert_eq!(session.execute("events 3"), usage);
+        assert_eq!(session.execute("events --since"), usage);
+    }
+
+    #[test]
+    fn journal_lists_every_command_and_whether_it_was_accepted() {
+        let mut session = riverhold();
+        assert_eq!(session.execute("journal"), output("no commands yet"));
+        for line in ["advance 5", "advance 0", "advance 2"] {
+            session.execute(line).expect("valid");
+        }
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. advance 5 — accepted\n\
+                 2. advance 0 — refused: ticks must be at least 1\n\
+                 3. advance 2 — accepted"
+            )
+        );
+    }
+
+    #[test]
+    fn loading_starts_a_new_world() {
+        let mut session = riverhold();
+        session.execute("advance 5").expect("valid");
+        session.execute("load content/sample").expect("valid");
+        assert_eq!(session.execute("time"), output("tick 0"));
+        assert_eq!(session.execute("journal"), output("no commands yet"));
+    }
+
+    #[test]
+    fn time_commands_need_a_loaded_world() {
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        for line in ["advance 1", "time", "events", "journal"] {
+            assert_eq!(run(line), none, "{line}");
+        }
+    }
+
+    #[test]
     fn curve_gives_a_curves_value_at_a_point() {
         assert_eq!(
             run("curve [[0, 1.00], [50, 0.70], [100, 0.30]] at 25"),
@@ -555,6 +760,10 @@ mod tests {
             "load <dir>",
             "characters",
             "show character <id>",
+            "advance <ticks>",
+            "time",
+            "events [--since <seq>]",
+            "journal",
             "calc <a> <op> <b>",
             "curve <curve> at <x>",
             "echo <text>",

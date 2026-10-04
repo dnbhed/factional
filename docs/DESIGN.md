@@ -468,7 +468,11 @@ The module exposes commands, events and queries, and nothing else. Other modules
 - `membership`: rank, status and when they joined
 - `assess_join`: the outcome plus the rules that fired
 - `relation`
-- `events_since`
+- `now`: the current tick
+- `events_since`: the events after a sequence number (P-33)
+- `journal`: every command issued, and whether it was accepted
+
+`World::replay(content, events)` rebuilds a world from its event log without running any rules: what saves are built on.
 
 ### 11.4 How the future modules plug in
 

@@ -37,34 +37,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 - F1 — `Fixed`, the two-decimal number every rule uses: exact parsing and display, arithmetic rounded half away from zero, checked overflow, TOML input; plus the `calc` CLI command; done 2026-10-04 (#2)
 - F2 — `Curve`, the piecewise-linear shape of most tuning knobs: validation, evaluation rounded once, a bounds check, TOML input; plus the `curve <curve> at <x>` CLI command; done 2026-10-04 (#3)
 - A1 — characters with a two-axis alignment and its nine-box label; loading `balance.toml` and `characters.toml` with every problem reported at once, by file and key path, with "did you mean" hints; Riverhold's sample characters; `load`, `characters`, `show character`; done 2026-10-04 (#4)
+- A2 — the command-and-event core: `World::execute` (refused commands change nothing), numbered and time-stamped events, `World::replay`, the journal, `AdvanceTime`; `advance`, `time`, `events`, `journal`; done 2026-10-04 (#7)
 
 ---
 
 ## Phase 1 — Characters and alignment
 
-### A2 · World shell: commands, events, time, journal — P0 · Next
-
-**Why:** this is the functional core that every later command plugs into (DESIGN.md §2, §11.5; P-14, P-15, P-16, P-20).
-
-**Scope**
-
-- **Types.** `Command`; `Event`, an envelope with a sequence number, the tick and a payload; `CommandError`.
-- **World.** `World::execute` and `World::apply`.
-- **Time.** `AdvanceTime { ticks }` emits `TimeAdvanced { from, to }`.
-- **Journal.** Records every issued command and whether it was accepted.
-- **CLI.** `advance <n>`, `time`, `events [--since <seq>]`, `journal`.
-
-**Acceptance**
-
-1. A new world is at tick 0 with no events.
-2. `advance 5` emits one event: seq 1, `TimeAdvanced 0 → 5`. `time` then prints 5.
-3. `advance 0` gives the error `ticks must be at least 1`. No event is emitted, the state is unchanged, and the journal records the command as rejected.
-4. Properties, over random sequences of `AdvanceTime`:
-   - Replaying the events from the initial state reproduces the state.
-   - Re-executing the journal on a fresh world reproduces the events exactly.
-   - A rejected command leaves the state exactly as it was.
-
-### A3 · Actions move alignment — P0
+### A3 · Actions move alignment — P0 · Next
 
 **Why:** this is the brief's core mechanic: what you do determines who you are (DESIGN.md §5.2).
 

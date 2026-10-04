@@ -8,8 +8,10 @@
 
 mod alignment;
 mod character;
+mod command;
 mod world;
 
 pub use alignment::{AXIS_LIMIT, Alignment, Axis, AxisOutOfRange};
 pub use character::{Character, CharacterId, InvalidId};
+pub use command::{Change, Command, CommandError, Event, JournalEntry};
 pub use world::{Balance, Content, World};
