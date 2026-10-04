@@ -1,0 +1,40 @@
+# actions.toml: things characters do, and what each does to alignment and standing
+# (DESIGN.md §5.2, §7.1). (A3; standing from M3)
+#
+# alignment: how far the act moves the actor on each axis. A host can scale one instance,
+#   such as stealing a crown rather than a loaf, and the actor's inertia applies.
+# standing: how others' view of the actor changes:
+#   target           the character the act was done to
+#   target_factions  every faction the target belongs to
+#   factions         named factions, by id
+
+[help_stranger]
+alignment = { good = 4.0 }
+standing = { target = 10.0 }
+
+[steal]
+alignment = { law = -5.0, good = -3.0 }
+standing = { target = -20.0, target_factions = -10.0 }
+
+[report_crime]
+alignment = { law = 4.0, good = 1.0 }
+standing = { factions = { city_watch = 5.0 } }
+
+[donate_to_temple]
+alignment = { good = 3.0 }
+standing = { factions = { temple = 10.0 } }
+
+[extort]
+alignment = { law = -2.0, good = -6.0 }
+standing = { target = -30.0, target_factions = -15.0 }
+
+[murder]
+alignment = { law = -10.0, good = -15.0 }
+standing = { target = -100.0, target_factions = -40.0 }
+# Who the victim is changes how evil the act is (DESIGN.md §5.4). Multipliers are never
+# below 0, so a target can soften or sharpen an act but never make it good. (A5)
+#   by_target.good:      scales the good effect by the victim's own goodness
+#   by_target.relation:  scales both effects by the most hostile relation between the
+#                        killer's factions and the victim's
+by_target.good = [[-100.0, 0.2], [0.0, 1.0], [100.0, 1.5]]
+by_target.relation = [[-100.0, 0.5], [-50.0, 0.8], [0.0, 1.0]]

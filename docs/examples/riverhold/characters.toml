@@ -1,0 +1,46 @@
+# characters.toml: everyone in the world, the player included (DESIGN.md §13).
+#
+# Each [table] is one character, and its name is the id typed in the CLI: a lowercase
+# letter, then lowercase letters, digits or _. The comment after each field says which
+# increment makes the engine read it.
+
+[player]
+name = "The Player"                          # A1
+# law: chaotic (-100) to lawful (+100); good: evil (-100) to good (+100). (A1)
+alignment = { law = 0.0, good = 0.0 }
+
+[captain_hale]
+name = "Captain Hale"
+alignment = { law = 75.0, good = 30.0 }
+# How much Hale cares about each axis when judging others, 0 to 1. Without it, the
+# balance.toml default applies. (D1)
+weights = { law = 1.0, good = 0.25 }
+# A profile from balance.toml's [inertia.profiles]; without it, the default profile. (A4)
+inertia = "hardening"
+# Factions this character starts in, and at what rank. (M1, M5)
+memberships = [{ faction = "city_watch", rank = "captain" }]
+# How others regard this character at the start: factions, or characters by id. (M3)
+standing = { factions = { city_watch = 75.0 } }
+
+[sister_mira]
+name = "Sister Mira"
+alignment = { law = 35.0, good = 85.0 }
+inertia = "hardening"
+memberships = [{ faction = "temple", rank = "ordained" }]
+standing = { factions = { temple = 40.0 } }
+
+[vex]
+name = "Vex"
+alignment = { law = -55.0, good = -20.0 }
+memberships = [{ faction = "lantern_guild", rank = "fence" }]
+standing = { factions = { lantern_guild = 30.0 } }
+
+[merchant_ava]
+name = "Merchant Ava"
+alignment = { law = 20.0, good = 10.0 }
+
+[brother_ash]
+name = "Brother Ash"
+alignment = { law = 25.0, good = -70.0 }
+memberships = [{ faction = "ashen_circle", rank = "initiate" }]
+standing = { factions = { ashen_circle = 10.0 } }

@@ -560,7 +560,7 @@ content/<world>/
 
 ## 13. The sample world: Riverhold
 
-Every example in this document and in PLAN.md uses this world. It lives in `content/sample/` and is built up increment by increment. Changing a number here means updating the examples that use it.
+Every example in this document and in PLAN.md uses this world. It lives in `content/sample/` and is built up increment by increment. [docs/examples/riverhold](examples/riverhold/README.md) shows all of it as content files, every setting included. Changing a number here means updating the examples that use it, and those files.
 
 **Factions**
 

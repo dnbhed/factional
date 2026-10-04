@@ -75,6 +75,7 @@ Keep increments small: one concept, reviewable in one sitting. If an increment g
   - its schema entry;
   - a value in `content/sample`;
   - a row in DESIGN.md §12;
+  - its line in `docs/examples/riverhold`, matching what the engine now reads;
   - its effect visible in the relevant `--explain` output.
 - **Content errors speak a designer's language.** They name the file and the key path, say what's wrong in plain words, and offer a "did you mean" for misspelt ids. Unknown keys are errors.
 

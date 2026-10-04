@@ -1,0 +1,13 @@
+# outcomes.toml: named bundles of effects, applied to a character all at once. This is how a
+# quest's result arrives, both before and after a quest module exists (DESIGN.md §7.1, §11).
+# (M3)
+#
+# alignment: moves the character, with their inertia, like an action
+# standing:  changes how factions (by id) or characters (by id) regard the character
+
+[fined_by_watch]
+standing = { factions = { city_watch = -20.0 }, characters = { captain_hale = -10.0 } }
+
+[rescued_merchant]
+alignment = { good = 6.0 }
+standing = { factions = { city_watch = 10.0 }, characters = { merchant_ava = 30.0 } }
