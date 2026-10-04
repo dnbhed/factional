@@ -1,0 +1,36 @@
+# relations.toml: how factions regard each other, -100 to 100 (DESIGN.md §9.4). (M2)
+#
+# `between` sets both directions at once; `from` and `to` set one direction, for grudges
+# that aren't returned. Pairs left out are 0 (neutral). Bands are named in balance.toml:
+# enemy ≤ -50 < rival ≤ -15 < neutral ≤ 15 < friendly ≤ 50 < allied.
+
+[[relation]]
+between = ["city_watch", "lantern_guild"]
+value = -80.0       # enemies: in conflict, so membership of one bars the other
+
+[[relation]]
+between = ["temple", "ashen_circle"]
+value = -90.0       # enemies
+
+[[relation]]
+between = ["city_watch", "temple"]
+value = 60.0        # allied
+
+[[relation]]
+between = ["city_watch", "ashen_circle"]
+value = -40.0       # rivals, but not in conflict
+
+[[relation]]
+between = ["lantern_guild", "free_company"]
+value = 20.0        # friendly
+
+# The Watch distrusts mercenaries more than they distrust it.
+[[relation]]
+from = "city_watch"
+to = "free_company"
+value = -30.0
+
+[[relation]]
+from = "free_company"
+to = "city_watch"
+value = -10.0

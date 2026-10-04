@@ -1,0 +1,116 @@
+# factions.toml: the factions, their ranks, and their own rules (DESIGN.md §9, §13).
+#
+# Each [table] is one faction, keyed by id. Faction alignment is where it starts; quests and
+# world events can move it during play. The engine reads factions from D1 (alignment and
+# weights) and M1 (tolerances); each other field notes its increment.
+
+[city_watch]
+name = "The City Watch"
+alignment = { law = 70.0, good = 20.0 }
+# Cares about order far more than kindness. (D1)
+weights = { law = 1.0, good = 0.25 }
+# How close to the Watch's alignment you must be to join... (M1)
+tolerance = 40.0
+# ...and how far a member may drift before the drift policy applies. (M1)
+member_tolerance = 50.0
+# Drift policy: probation for 100 ticks, then expulsion if still too far. (M8)
+drift = { policy = "probation", grace_ticks = 100, then = "expel" }
+# Standing change on expulsion, and on leaving voluntarily. (M8, M1)
+expel_standing_change = -20.0
+leave_standing_change = 0.0
+
+# The rank ladder, lowest first; members join on the bottom rung and are promoted only when
+# a quest, dialogue or the CLI asks. (M5)
+[[city_watch.ranks]]
+id = "recruit"
+
+[[city_watch.ranks]]
+id = "sergeant"
+requires = { standing = 30.0 }
+
+[[city_watch.ranks]]
+id = "captain"
+requires = { standing = 70.0 }
+# Captains are held to a stricter standard than the faction's member tolerance.
+tolerance = 25.0
+
+
+[temple]
+name = "Temple of the Dawn"
+alignment = { law = 30.0, good = 80.0 }
+weights = { law = 0.5, good = 1.0 }
+tolerance = 35.0
+member_tolerance = 45.0
+drift = { policy = "demote" }
+
+[[temple.ranks]]
+id = "acolyte"
+
+[[temple.ranks]]
+id = "ordained"
+requires = { standing = 30.0 }
+
+[[temple.ranks]]
+id = "high_priest"
+requires = { standing = 80.0 }
+tolerance = 20.0
+
+
+[lantern_guild]
+name = "The Lantern Guild"
+alignment = { law = -60.0, good = -10.0 }
+weights = { law = 1.0, good = 0.5 }
+tolerance = 45.0
+member_tolerance = 60.0
+drift = { policy = "flag" }
+
+[[lantern_guild.ranks]]
+id = "cutpurse"
+
+[[lantern_guild.ranks]]
+id = "fence"
+requires = { standing = 25.0 }
+
+[[lantern_guild.ranks]]
+id = "shadow"
+requires = { standing = 60.0 }
+
+
+[free_company]
+name = "The Free Company"
+alignment = { law = -10.0, good = 0.0 }
+# Mercenaries barely care about either axis, so almost anyone can sign on.
+weights = { law = 0.25, good = 0.25 }
+tolerance = 60.0
+member_tolerance = 80.0
+drift = { policy = "ignore" }
+
+[[free_company.ranks]]
+id = "sellsword"
+
+[[free_company.ranks]]
+id = "sergeant"
+requires = { standing = 30.0 }
+
+
+[ashen_circle]
+name = "The Ashen Circle"
+alignment = { law = 20.0, good = -80.0 }
+weights = { law = 0.25, good = 1.0 }
+tolerance = 30.0
+member_tolerance = 40.0
+drift = { policy = "expel" }
+
+# A faction can replace balance.toml's defectors or deserters rules with its own, and may
+# name its ranks in them. The Circle lets no one go to its enemies. (M7)
+[ashen_circle.deserters]
+rules = [
+  { then = "refuse", reason = "No one leaves the Circle." },
+]
+
+[[ashen_circle.ranks]]
+id = "initiate"
+
+[[ashen_circle.ranks]]
+id = "adept"
+requires = { standing = 40.0 }

@@ -1,0 +1,111 @@
+# balance.toml: world-wide rules and defaults (DESIGN.md §12).
+#
+# Every setting here is optional; anything left out keeps the default shown. The comment
+# after each section says which increment makes the engine read it.
+#
+# Curves are a single number, or [x, y] points with x increasing: between points the value
+# runs in a straight line, and beyond the ends it holds the end value (DESIGN.md §4.2).
+
+[alignment]
+# An axis at or beyond ±label_threshold reads as Lawful/Chaotic or Good/Evil.
+# Labels are for display only; no rule uses them. (A1)
+label_threshold = 33.0
+
+# How alignment distance is measured: "euclidean" (tolerance regions are ellipses),
+# "manhattan" (diamonds) or "chebyshev" (rectangles). (D1)
+metric = "euclidean"
+
+# How much characters without their own `weights` care about each axis, 0 to 1. (D1)
+default_weights = { law = 1.0, good = 1.0 }
+
+
+[inertia]
+# How hard alignment is to move. A profile gives a multiplier curve per axis and direction,
+# read at the character's position before the act; anything left out is 1.0. (A4)
+default_profile = "steady"
+
+[inertia.profiles.steady]
+# Every act counts in full.
+
+[inertia.profiles.hardening]
+# Convictions harden toward the extremes: the more good someone is, the less a good deed
+# moves them, and evil acts also move them less than they would a neutral character.
+good.toward_good = [[-100.0, 0.5], [0.0, 1.0], [100.0, 0.3]]
+good.toward_evil = [[-100.0, 0.3], [0.0, 1.0], [100.0, 0.5]]
+
+
+[disposition]
+# How alignment distance turns into liking: 50 when identical, 0 at 60 apart, -50 at 200. (D2)
+affinity = [[0.0, 50.0], [60.0, 0.0], [200.0, -50.0]]
+
+# How much each part counts towards the final score (DESIGN.md §8.1). (M4)
+weights = { affinity = 1.0, standing = 1.0, kinship = 0.5, faction_opinion = 0.5, modifiers = 1.0 }
+
+# What sharing a faction counts for, in kinship. (M4)
+same_faction = 50.0
+
+# A score must cross a band's edge by this much to leave the band, so it doesn't flicker. (D3)
+hysteresis = 0.0
+
+# Bands, lowest first: a score goes in the first band whose `up_to` it doesn't exceed. (D2)
+bands = [
+  { name = "unfriendly", up_to = -25.0 },
+  { name = "neutral", up_to = 25.0 },
+  { name = "friendly" },
+]
+
+
+[relations]
+# Two factions are in conflict when either regards the other at or below this. (M2)
+conflict_threshold = -50.0
+
+# Names for relation scores, lowest first. (M2)
+bands = [
+  { name = "enemy", up_to = -50.0 },
+  { name = "rival", up_to = -15.0 },
+  { name = "neutral", up_to = 15.0 },
+  { name = "friendly", up_to = 50.0 },
+  { name = "allied" },
+]
+
+
+[standing]
+# When standing with one faction changes, each other faction's standing changes by
+# change × spillover(how it regards that faction). Allies share up to half; bitter
+# enemies feel a little of the opposite. One hop, never a cascade. (M6)
+spillover = [[-100.0, -0.3], [-50.0, 0.0], [50.0, 0.0], [100.0, 0.5]]
+
+
+[membership]
+# What happens to a member who drifts outside their faction's tolerance, unless the
+# faction sets its own: "ignore", "flag", "probation", "demote" or "expel". (M8)
+default_drift = { policy = "flag" }
+
+# When two of a character's factions go to war: "ask" waits for the game or a quest to
+# choose; "auto" keeps the higher rank, then standing, then service. Add
+# `auto_after_ticks = 50` to "ask" to fall back to "auto" after a while. (M9)
+conflict = { resolve = "ask" }
+
+[membership.defectors]
+# Joining a faction while in one of its enemies: does the target take you? Rules are
+# checked top to bottom and the first whose conditions all hold decides. Built in, with no
+# table here, every defector is refused. (M7)
+rules = [
+  { when = { standing_with_target_at_least = 50.0 }, then = "accept" },
+  { when = { closer_to_target = true }, then = "accept", standing_change = -10.0 },
+  { then = "refuse", reason = "You serve our enemies." },
+]
+
+[membership.deserters]
+# ...and does the faction you're leaving let you go? Built in, everyone is released. (M7)
+rules = [
+  { when = { rank_at_least = 3 }, then = "refuse", reason = "Officers don't walk away." },
+  { when = { outside_member_tolerance = true }, then = "release" },
+  { then = "release", standing_change = -40.0 },
+]
+
+
+[knowledge]
+# Who learns of an act: "omniscient" (everyone, at once). "witnessed" and "ripple" are
+# designed in K0. (K1)
+model = "omniscient"
