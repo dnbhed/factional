@@ -40,6 +40,7 @@ Keep increments small: one concept, reviewable in one sitting. If an increment g
 
 ## Architecture rules
 
+- **Fundamental: a world loads only if it is complete (D-20).** Every reference must resolve, every rule must be able to decide, and nothing a game could reach may be left undefined. Never add content, a rule or a feature whose completeness can't be checked at load time. Keep effects and rules declarative, so their reach can be computed without running the game (DESIGN.md §16). If you can't see how a change could be checked, stop and ask. In the future quest module, each faction's quests and questlines must reconcile with every other faction they affect, and with those factions' questlines, at every stage.
 - **Dependency direction.** Dependencies point one way: `core ← reputation ← content ← cli`. Nothing depends on `cli`.
 - **No I/O in the core.** `factional-core` and `factional-reputation` do no filesystem access, networking, stdout/stderr, environment variables, clock reads or randomness. Content arrives as values; time arrives as `AdvanceTime`.
 - **One way in.** `World::execute(Command) -> Result<Vec<Event>, CommandError>` is the only way to change state.
@@ -77,6 +78,7 @@ Keep increments small: one concept, reviewable in one sitting. If an increment g
   - a row in DESIGN.md §12;
   - its line in `docs/examples/riverhold`, matching what the engine now reads;
   - its effect visible in the relevant `--explain` output.
+- **Every reference is checked at load time.** If an increment adds a field that names something else, such as a faction, rank, profile or character, it adds the check that the thing exists, plus range checks for its numbers, in the same PR, with tests and a row in DESIGN.md §12.2. A world is never built from content that fails a check (P-32).
 - **Content errors speak a designer's language.** They name the file and the key path, say what's wrong in plain words, and offer a "did you mean" for misspelt ids. Unknown keys are errors.
 
 ## Fix broken windows

@@ -16,12 +16,13 @@ The module does not decide what anyone does (AI), run quests (they report their 
 
 ## 2. Principles
 
-1. **World-agnostic.** No coordinates, no rendering, no wall clock. Time is an abstract tick count that the host advances (P-20).
-2. **Functional core.** State changes only by executing a command. A command either fails and changes nothing, or succeeds and emits events. Applying those events is the only thing that mutates state (P-14).
-3. **Deterministic.** The same content and the same commands give byte-identical events on every machine. That means integer fixed-point maths, ordered collections and no randomness (P-1, P-19).
-4. **Designer-first.** Every number that affects balance is content, not code (§12). Content errors name the file and key, and say what's wrong.
-5. **Explainable.** Every evaluation returns its working: a disposition, a refused join, an alignment shift. The numbers in the working are exactly the numbers used (P-24). The CLI only renders them.
-6. **The player is just a character** (P-17). Every rule applies to NPCs the same way, so NPC-to-NPC relationships come free.
+1. **A world loads only if it is complete.** This is fundamental, and every module, now and future, must keep to it (D-20). A world is built only from content that is complete in principle: every reference resolves, every rule can decide, and nothing a game could reach is left undefined. For this module, that means the load-time checks in §12.2. For the quest module, it means each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage (§16).
+2. **World-agnostic.** No coordinates, no rendering, no wall clock. Time is an abstract tick count that the host advances (P-20).
+3. **Functional core.** State changes only by executing a command. A command either fails and changes nothing, or succeeds and emits events. Applying those events is the only thing that mutates state (P-14).
+4. **Deterministic.** The same content and the same commands give byte-identical events on every machine. That means integer fixed-point maths, ordered collections and no randomness (P-1, P-19).
+5. **Designer-first.** Every number that affects balance is content, not code (§12). Content errors name the file and key, and say what's wrong.
+6. **Explainable.** Every evaluation returns its working: a disposition, a refused join, an alignment shift. The numbers in the working are exactly the numbers used (P-24). The CLI only renders them.
+7. **The player is just a character** (P-17). Every rule applies to NPCs the same way, so NPC-to-NPC relationships come free.
 
 ## 3. Glossary
 
@@ -547,7 +548,43 @@ content/<world>/
 - **Warnings don't stop loading.** For example: a starting member outside member tolerance, a rank whose requirements can never be met, or a faction no starting character could ever join.
 - **Editor support.** `factional schema` writes a JSON Schema, so an editor (VS Code with Even Better TOML) autocompletes and underlines mistakes as the designer types (T1).
 
-### 12.2 Designer workflow
+### 12.2 Validation (P-32)
+
+Content is data, so its equivalent of a compile step is loading. **A world is only ever built from content that passed every check.** A running world never holds a reference to a faction, rank, profile or character that doesn't exist.
+
+- **Errors stop loading.** Nothing is half-loaded, and the CLI keeps the world it already had.
+- **Warnings don't stop loading.** `load` prints them after its summary, and `factional validate` (T1) lists them too.
+- **The rules live in `factional-reputation`.** `World::new` runs the checks and refuses invalid content, so a host that builds content in code, not from TOML, gets the same protection. `factional-content` turns each problem's location into `file: key.path`.
+- **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. Once every setting is implemented, `docs/examples/riverhold` is loaded too.
+- **Each check arrives with the increment that adds the content it checks**, never later.
+
+| Check | Kind | Added in |
+| --- | --- | --- |
+| Ids are lowercase letters, digits and `_`, starting with a letter | error | A1 (done) |
+| Alignment axes within −100…100; `label_threshold` 0.01–100 | error | A1 (done) |
+| Unknown keys, missing fields, wrong types, bad numbers | error | A1 (done), then every increment for its own fields |
+| Action alignment names only `law` and `good` | error | A3 |
+| `inertia` and `inertia.default_profile` name a profile that exists; multipliers ≥ 0 | error | A4 |
+| `by_target` multipliers ≥ 0 | error | A5 |
+| Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 |
+| Bands: unique names, increasing `up_to`, only the last open-ended | error | D2 (disposition), M2 (relations) |
+| `hysteresis` ≥ 0 | error | D3 |
+| A membership names a faction that exists, at most once per character | error | M1 |
+| 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 |
+| A starting member outside their member tolerance | warning | M1 |
+| A relation names two different factions that exist; each direction is set at most once | error | M2 |
+| No character starts in two factions that are in conflict (invariant 6) | error | M2 |
+| Standing names factions and characters that exist; values within ±100 | error | M3 |
+| A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung | error | M5 |
+| A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 |
+| Spillover multipliers within −1…1 | error | M6 |
+| Rule tables use known conditions; rank ids only in a faction's own tables and only its ranks; every table ends with a rule that always decides | error | M7 |
+| Drift policies are known; probation has `grace_ticks` > 0 and a `then` | error | M8 |
+| `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` ≥ 0 | error | M9 |
+| `knowledge.model` is a known model | error | K1 |
+| A faction no starting character could join; a rank no one can reach | warning | T1 |
+
+### 12.3 Designer workflow
 
 - `factional repl content/sample` to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
@@ -655,3 +692,28 @@ scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/sna
 - **Dependencies point one way:** core ← reputation ← content ← cli.
 - **Future modules** (quests, combat and the rest) become sibling crates. They depend on core and talk to reputation only through §11.
 - **A host-engine adapter** waits until a host is chosen (E0, X-2). That would be a Bevy plugin, or a C ABI for Godot, Unity or Unreal.
+
+## 16. Completeness across modules (D-20)
+
+A world loads only if it is complete in principle. This module's part is the load-time checks in §12.2. The principle reaches further than this module, and it shapes this module now.
+
+### 16.1 What it asks of the quest module
+
+Each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage. A world whose quests contradict each other at some reachable stage doesn't load.
+
+What "reconcile" means exactly, and how to check it without exploring every combination of stages, is for the quest module's design pass (Q0, X-4). The questions to settle there:
+
+- **Which factions a quest affects.** Directly, through the effects of its outcomes. Indirectly, through spillover to factions related to those, and through war and membership changes.
+- **What it means for a quest to conflict with another faction's questline at a stage.** For example, an outcome that harms faction B while B's questline at that stage needs the player's standing with B to have risen; or two questlines whose stages require memberships that the faction rules make impossible to hold together.
+- **How to check it.** Every reachable combination of stages across all questlines explodes quickly. Stages probably need declared preconditions and effects that can be checked faction by faction, or pair by pair.
+
+### 16.2 What it asks of this module now
+
+A quest checker can only reconcile what it can see without running the game. So everything quests may depend on here must stay declarative:
+
+- **Effects are data.** Actions and outcomes are bundles of declared effects (P-26), never code or scripts. Which factions an effect can touch is computable from content alone, spillover included, because spillover follows the declared relations and curve.
+- **Rules are data.** Drift policies, defector and deserter tables, and conflict resolution are closed vocabularies in content, so their possible results can be enumerated.
+- **Every rule decides.** A rule table always ends with a rule that decides (P-32), so no state is left without an answer.
+- **Runtime changes come only through commands** (§11), so another module can know every way this module's state can change.
+
+A feature that would make an effect's reach impossible to compute from content, such as computed effects or script hooks, conflicts with D-20. It needs the user's agreement before it's built.

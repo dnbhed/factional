@@ -29,7 +29,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1 → Q0`
 
 ## Done
 
@@ -89,6 +89,8 @@ The order below is the source of truth. Sections further down are grouped by pha
    - `--target player` → `an action's target must be another character`
    - An unknown actor or target gives an error that names it.
 
+**Validates** (DESIGN.md §12.2): action ids; each action's alignment names only `law` and `good`.
+
 ## Phase 2 — Perception
 
 ### D1 · Weights and distance — P0 · Outline
@@ -109,6 +111,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - `lantern_guild` → vex at 35 / 10: 95.52
 - `temple` → `sister_mira`: 5.59
 
+**Validates** (DESIGN.md §12.2): faction ids; weights are 0–1 with at least one above 0, for factions and characters; `metric` is one of the three.
+
 ### D2 · Disposition from affinity — P0 · Outline
 
 **Covers:** DESIGN.md §8.1, the affinity component only.
@@ -122,6 +126,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - `temple` → `brother_ash`: −32.15, unfriendly
 - `city_watch` → vex: −23.36, neutral
 
+**Validates** (DESIGN.md §12.2): disposition bands have unique names, increasing `up_to`, and only the last band open-ended.
+
 ### D3 · Watched subjects and band-change events — P1 · Outline
 
 **Covers:** DESIGN.md §8.3.
@@ -133,6 +139,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - a band crossing, and the event it emits;
 - no event when the score moves within a band;
 - hysteresis holding a band near its edge.
+
+**Validates** (DESIGN.md §12.2): `hysteresis` is ≥ 0.
 
 ## Phase 3 — Factions, standing and rank
 
@@ -153,6 +161,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - After two thefts, refused: 50.04.
 - After four thefts, the player joins.
 
+**Validates** (DESIGN.md §12.2): **a membership names a faction that exists** (`characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`), and at most once per character; 0 ≤ `tolerance` ≤ `member_tolerance`. Warning: a starting member outside their member tolerance. This is the first cross-file reference, so it also brings in the shared reference check described in DESIGN.md §12.2 (P-32).
+
 ### M2 · Relations and enemy exclusion — P0 · Outline
 
 **Covers:** DESIGN.md §9.4.
@@ -171,6 +181,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - `city_watch` → `free_company` is −30 (rival) and `free_company` → `city_watch` is −10 (neutral), so they're not in conflict.
 - The player, in the guild at −20 / −12, applies to the Watch. The refusal gives both reasons: distance (90.35 > 40.00) and enemy membership.
 
+**Validates** (DESIGN.md §12.2): a relation names two different factions that exist, and sets each direction at most once; relation bands follow the D2 band rules; `conflict_threshold` is within ±100; no character starts in two factions that are in conflict (invariant 6).
+
 ### M3 · Standing, action effects and outcomes — P0 · Outline
 
 **Covers:** DESIGN.md §7.1, without spillover.
@@ -188,6 +200,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Stealing from vex: vex −20.00 and `lantern_guild` −10.00.
 - `outcome fined_by_watch player`: `city_watch` −20.00 and `captain_hale` −10.00.
 - Standing clamps at −100.00.
+
+**Validates** (DESIGN.md §12.2): standing in characters, actions and outcomes names factions and characters that exist, with values within ±100; outcome ids.
 
 ### M4 · Disposition from standing, kinship and faction opinion — P0 · Outline
 
@@ -215,6 +229,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - `captain_hale` is already at the highest rank.
 - `sister_mira` → high_priest is refused on standing (40.00 < 80.00), even though `sister_mira` is within the rank's tolerance (5.59 ≤ 20.00).
 
+**Validates** (DESIGN.md §12.2): a membership's rank exists on that faction's ladder; rank ids are unique within a faction; every ladder has at least one rung. Warnings: a starting member below their rank's standing requirement; a rank tolerance looser than the faction's member tolerance.
+
 ### M6 · Standing spillover between factions — P1 · Outline
 
 **Covers:** the spillover part of DESIGN.md §7.1: one hop, using the `standing.spillover` curve.
@@ -224,6 +240,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Robbing vex (guild −10.00) → `city_watch` +1.80.
 - `donate_to_temple` (temple +10.00) → `city_watch` +1.00 and `ashen_circle` −2.40.
 - `lantern_guild` ↔ `free_company` (+20) spills nothing under the default curve.
+
+**Validates** (DESIGN.md §12.2): spillover multipliers are within −1…1.
 
 ### M7 · Joining an enemy: defectors and deserters — P0 · Outline
 
@@ -242,6 +260,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - With the sample tables, vex at 35 / 10 defects from the guild to the Watch: released on drift, then accepted on `closer_to_target` with −10.00 standing toward the Watch.
 - A rank-3 shadow is refused by the `deserters` table.
 
+**Validates** (DESIGN.md §12.2): rule tables use only known conditions and outcomes; rank ids appear only in a faction's own tables, and only that faction's ranks; `rank_at_least` is ≥ 1; every table ends with a rule that always decides.
+
 ### M8 · Drift policies and runtime faction alignment — P1 · Outline
 
 **Covers:** DESIGN.md §9.3.
@@ -256,6 +276,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - every policy;
 - probation that clears, and probation that expires;
 - a faction alignment change that pushes a member out.
+
+**Validates** (DESIGN.md §12.2): drift policies are known; probation has `grace_ticks` > 0 and a `then`.
 
 ### M9 · When two of your factions go to war — P1 · Outline
 
@@ -275,6 +297,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - resolving it by hand;
 - each tie-break of the automatic rule;
 - `auto_after_ticks` running out, versus a resolution that arrives first.
+
+**Validates** (DESIGN.md §12.2): `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is ≥ 0.
 
 ### M10 · Disposition modifiers from other modules — P1 · Outline
 
@@ -302,6 +326,8 @@ The order below is the source of truth. Sections further down are grouped by pha
 - `sister_mira` at 85.00 helps a stranger: ×0.41 → +1.64, ending at 86.64.
 - A steady character gets the full shift.
 
+**Validates** (DESIGN.md §12.2): a character's `inertia`, and `inertia.default_profile`, name a profile that exists; profiles use only `law`/`good` × `toward_*` curves; multipliers are ≥ 0.
+
 ### A5 · Target-aware action effects — P1 · Outline
 
 **Covers:** DESIGN.md §5.4; D-18, P-28.
@@ -319,13 +345,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 - captain_hale murders vex: good −6.64 (target 0.84, relation 0.62, inertia 0.85); law −6.20 (relation 0.62).
 - An action without `by_target` curves, or performed without a target, shifts exactly as before.
 
+**Validates** (DESIGN.md §12.2): `by_target` multipliers are ≥ 0, and `by_target` names only an axis or `relation`.
+
 ## Phase 4 — Designer tooling and persistence
 
 ### T1 · Validation sweep and JSON Schema — P1 · Outline
 
-- `factional validate <dir>` reports every error and warning at once:
-  - cross-file references;
-  - warnings for ranks no one can reach and factions no one can join.
+- `factional validate <dir>` reports every error and warning at once, without loading a world. Each increment adds its own checks as it lands (DESIGN.md §12.2); T1 adds the warnings that need the whole world: a faction no starting character could join, and a rank no one can reach.
 - `factional schema` produces the JSON Schema for editor autocomplete.
 - A content README for designers.
 
@@ -356,6 +382,8 @@ A design section and its decisions, agreed before K1 starts. It settles X-1, and
 
 ### K1 · Witnessed acts — P2 · Outline
 
+**Validates** (DESIGN.md §12.2): `knowledge.model` is a known model.
+
 ### K2 · Ripple through the social graph — P2 · Outline
 
 ### K3 · Perceived alignment — P2 · Outline
@@ -373,6 +401,12 @@ An opt-in option to belong to a faction without its enemies knowing. Designed in
 Settles X-2.
 
 ### E1 · Host adapter — P3
+
+## Beyond this module
+
+### Q0 · Quest module design pass: reconciling questlines across factions — P3
+
+The quest module comes after this one. Its first step is a design pass that settles X-4: what it means for a faction's quests and questlines to reconcile with every other faction they affect, and those factions' questlines, at every stage, and how the loader checks it (D-20, DESIGN.md §16). No quest content loads until that check exists.
 
 ---
 
