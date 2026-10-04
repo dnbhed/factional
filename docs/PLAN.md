@@ -36,43 +36,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 - F0 — workspace of four crates with lints and a pinned toolchain, CI with mutation testing on PRs, the `factional` CLI (`repl`, `run`), and the scenario harness; done 2026-10-04 (#1)
 - F1 — `Fixed`, the two-decimal number every rule uses: exact parsing and display, arithmetic rounded half away from zero, checked overflow, TOML input; plus the `calc` CLI command; done 2026-10-04 (#2)
 - F2 — `Curve`, the piecewise-linear shape of most tuning knobs: validation, evaluation rounded once, a bounds check, TOML input; plus the `curve <curve> at <x>` CLI command; done 2026-10-04 (#3)
+- A1 — characters with a two-axis alignment and its nine-box label; loading `balance.toml` and `characters.toml` with every problem reported at once, by file and key path, with "did you mean" hints; Riverhold's sample characters; `load`, `characters`, `show character`; done 2026-10-04 (#4)
 
 ---
 
 ## Phase 1 — Characters and alignment
 
-### A1 · Characters, alignment and content loading — P0 · Next
-
-**Why:** this is the first domain type and the first designer-facing content (DESIGN.md §5.1, §12, §13).
-
-**Scope**
-
-- **Alignment.** `Alignment { law, good }`.
-  - Out-of-range values are content errors, not clamped.
-  - It has a nine-box label, using `alignment.label_threshold` (default 33.00).
-- **Content loading.** `factional-content` loads `balance.toml` and `characters.toml` from a directory.
-  - Every diagnostic carries the file and the key path.
-  - Unknown keys are errors, with a "did you mean".
-- **World.** `World::new(content)`, with the queries `alignment(id)` and `characters()`.
-- **Sample content.** `content/sample/` with Riverhold's characters, alignment only for now.
-- **CLI.** `load <dir>`, `characters`, `show character <id>`.
-
-**Acceptance**
-
-1. Labels:
-   - `player` (0 / 0): True Neutral
-   - `captain_hale` (75 / 30): Lawful Neutral
-   - `sister_mira` (35 / 85): Lawful Good
-   - `vex` (−55 / −20): Chaotic Neutral
-   - `brother_ash` (25 / −70): Neutral Evil
-2. The threshold is inclusive:
-   - 33.00 / −33.00 → Lawful Evil
-   - 32.99 / 0.00 → True Neutral
-3. `law = 120` in characters.toml → `characters.toml: vex.alignment.law: 120.00 is outside -100.00..100.00`.
-4. A misspelt `alignmnet = {…}` → `characters.toml: vex: unknown key 'alignmnet' (did you mean 'alignment'?)`.
-5. `show character vex` shows the id, name, law, good and label.
-
-### A2 · World shell: commands, events, time, journal — P0
+### A2 · World shell: commands, events, time, journal — P0 · Next
 
 **Why:** this is the functional core that every later command plugs into (DESIGN.md §2, §11.5; P-14, P-15, P-16, P-20).
 

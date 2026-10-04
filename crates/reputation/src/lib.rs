@@ -5,3 +5,11 @@
 //! No I/O lives here: no filesystem, network, stdout/stderr, environment variables, clock or
 //! randomness. Rule arithmetic uses fixed-point numbers, never floats (DECISIONS.md P-1).
 #![deny(clippy::float_arithmetic)]
+
+mod alignment;
+mod character;
+mod world;
+
+pub use alignment::{AXIS_LIMIT, Alignment, Axis, AxisOutOfRange};
+pub use character::{Character, CharacterId, InvalidId};
+pub use world::{Balance, Content, World};

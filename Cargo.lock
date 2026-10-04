@@ -217,6 +217,7 @@ dependencies = [
  "clap",
  "factional-content",
  "factional-core",
+ "factional-reputation",
  "insta",
  "rustyline",
 ]
@@ -237,6 +238,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "serde",
+ "strsim",
  "toml",
 ]
 
@@ -245,6 +247,7 @@ name = "factional-reputation"
 version = "0.1.0"
 dependencies = [
  "factional-core",
+ "proptest",
 ]
 
 [[package]]

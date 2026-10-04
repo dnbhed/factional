@@ -7,8 +7,9 @@ use factional_cli::run_script;
 fn scenario_transcripts() {
     insta::glob!("../../../scenarios", "*.scenario", |path| {
         let source = std::fs::read_to_string(path).expect("the scenario is readable");
-        let transcript =
-            run_script(&source).unwrap_or_else(|failure| panic!("{}: {failure}", path.display()));
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        let transcript = run_script(&source, root)
+            .unwrap_or_else(|failure| panic!("{}: {failure}", path.display()));
         let name = path
             .file_stem()
             .and_then(|stem| stem.to_str())

@@ -1,0 +1,6 @@
+# World-wide rules and defaults (DESIGN.md §12). Anything left out uses its default.
+
+[alignment]
+# An axis at or beyond ±label_threshold reads as Lawful/Chaotic or Good/Evil, so 33 splits
+# each axis into thirds. Labels are for display only: no rule ever uses them.
+label_threshold = 33.0

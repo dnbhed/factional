@@ -41,6 +41,8 @@ The engine knows nothing about maps, graphics or combat. Those modules come late
    cargo run -p factional-cli -- repl
    ```
 
+   Then type `load content/sample` to load Riverhold, the sample world, and `characters` to see who's in it.
+
 4. Or replay a scenario script:
 
    ```bash

@@ -46,7 +46,7 @@ fn run(path: &Path) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match run_script(&source) {
+    match run_script(&source, Path::new(".")) {
         Ok(transcript) => {
             print!("{transcript}");
             ExitCode::SUCCESS

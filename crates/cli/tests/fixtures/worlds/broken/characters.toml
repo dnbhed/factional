@@ -1,0 +1,9 @@
+# Three mistakes, all reported at once.
+
+[vex]
+name = "Vex"
+alignment = { law = 120.0, good = -20.0 }
+
+[hale]
+name = "Captain Hale"
+alignmnet = { law = 75.0, good = 30.0 }

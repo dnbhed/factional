@@ -12,6 +12,7 @@ Each `*.scenario` file is a scripted session with the `factional` CLI. Scenarios
   - A command that fails has the result `error: <message>`, so failures can be asserted too.
   - The line splits at the first ` == `. A line ending in ` ==` expects an empty result.
 - `quit` ends the script early.
+- Paths, as in `load content/sample`, are relative to the current directory. `cargo test` runs scenarios from the repository root.
 - `help` lists every command.
 
 The run stops at the first line that goes wrong, and reports it as `line N: …`:

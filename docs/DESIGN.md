@@ -503,7 +503,7 @@ This table lists every knob: where it lives, its default, and the increment that
 
 | Knob | Where | Default | Added in |
 | --- | --- | --- | --- |
-| `alignment.label_threshold` | balance.toml | 33.00 | A1 |
+| `alignment.label_threshold` | balance.toml | 33.00 (0.01–100.00) | A1 |
 | starting alignment | characters.toml | — | A1 |
 | action alignment deltas | actions.toml | — | A3 |
 | `inertia.default_profile`, `inertia.profiles.*` | balance.toml | `steady` (all 1.0) | A4 |
@@ -542,6 +542,7 @@ content/<world>/
   outcomes.toml     named effect bundles (quest results and the like)
 ```
 
+- **Missing files are fine.** A missing file means the defaults, or none of that kind (P-31).
 - **Errors stop loading.** Unknown keys are errors, with a "did you mean". References are checked across files, and values are range-checked. Each error names the file and the key path, for example: `characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`.
 - **Warnings don't stop loading.** For example: a starting member outside member tolerance, a rank whose requirements can never be met, or a faction no starting character could ever join.
 - **Editor support.** `factional schema` writes a JSON Schema, so an editor (VS Code with Even Better TOML) autocompletes and underlines mistakes as the designer types (T1).

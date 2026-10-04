@@ -1,0 +1,3 @@
+# No characters.toml here: a missing file means none of that kind.
+[alignment]
+label_threshold = 50.0

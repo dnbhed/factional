@@ -7,6 +7,8 @@
 
 mod curve;
 mod fixed;
+mod text;
 
 pub use curve::{Curve, CurveError};
 pub use fixed::{Fixed, ParseFixedError, div_round};
+pub use text::{is_valid_id, suggest};

@@ -1,0 +1,20 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/characters.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> characters
+brother_ash — Brother Ash — law 25.00, good -70.00 — Neutral Evil
+captain_hale — Captain Hale — law 75.00, good 30.00 — Lawful Neutral
+merchant_ava — Merchant Ava — law 20.00, good 10.00 — True Neutral
+player — The Player — law 0.00, good 0.00 — True Neutral
+sister_mira — Sister Mira — law 35.00, good 85.00 — Lawful Good
+vex — Vex — law -55.00, good -20.00 — Chaotic Neutral
+> assert show character player == player — The Player — law 0.00, good 0.00 — True Neutral
+> assert show character captain_hale == captain_hale — Captain Hale — law 75.00, good 30.00 — Lawful Neutral
+> assert show character sister_mira == sister_mira — Sister Mira — law 35.00, good 85.00 — Lawful Good
+> assert show character vex == vex — Vex — law -55.00, good -20.00 — Chaotic Neutral
+> assert show character brother_ash == brother_ash — Brother Ash — law 25.00, good -70.00 — Neutral Evil
+> assert show character vx == error: unknown character 'vx' (did you mean 'vex'?)

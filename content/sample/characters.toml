@@ -1,0 +1,31 @@
+# Riverhold's characters (DESIGN.md §13).
+#
+# Each [table] is one character; its name is the id you type in the CLI.
+# Alignment has two axes, each from -100 to 100:
+#   law:  chaotic (-100) to lawful (+100)
+#   good: evil (-100) to good (+100)
+# The player is an ordinary character.
+
+[player]
+name = "The Player"
+alignment = { law = 0.0, good = 0.0 }
+
+[captain_hale]
+name = "Captain Hale"
+alignment = { law = 75.0, good = 30.0 }
+
+[sister_mira]
+name = "Sister Mira"
+alignment = { law = 35.0, good = 85.0 }
+
+[vex]
+name = "Vex"
+alignment = { law = -55.0, good = -20.0 }
+
+[merchant_ava]
+name = "Merchant Ava"
+alignment = { law = 20.0, good = 10.0 }
+
+[brother_ash]
+name = "Brother Ash"
+alignment = { law = 25.0, good = -70.0 }
