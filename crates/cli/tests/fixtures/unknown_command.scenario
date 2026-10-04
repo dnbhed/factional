@@ -1,0 +1,4 @@
+# Line 3 isn't a command, so the run stops there.
+echo before
+frobnicate
+echo never runs

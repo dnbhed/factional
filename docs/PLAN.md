@@ -33,49 +33,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Done
 
-_Nothing yet._
+- F0 — workspace of four crates with lints and a pinned toolchain, CI with mutation testing on PRs, the `factional` CLI (`repl`, `run`), and the scenario harness; done 2026-10-04 (#1)
 
 ---
 
 ## Phase 0 — Foundations
 
-### F0 · Workspace, CI and CLI shell — P0 · Next
-
-**Why:** every later increment needs the crates, the gates, and a place to run scenarios.
-
-**Scope**
-
-- **Workspace.** A Cargo workspace on edition 2024 with resolver 3. `rust-toolchain.toml` pins the current stable release, with rustfmt and clippy.
-- **Crates.** Four, per DESIGN.md §15: `factional-core`, `factional-reputation`, `factional-content`, and `factional-cli` with a binary named `factional`. Dependencies point one way.
-- **Lints.**
-  - `unsafe_code = "forbid"` across the workspace.
-  - Clippy warnings are errors.
-  - A root `clippy.toml` disallows `HashMap` and `HashSet`, each with a reason (P-19).
-  - `#![deny(clippy::float_arithmetic)]` in core and reputation.
-- **CI.** GitHub Actions, Linux only. On every push and PR it runs fmt, clippy and test, with dependency caching. A PR-only job runs `cargo mutants --in-diff`. This needs the GitHub remote.
-- **CLI.**
-  - `factional --version`.
-  - `factional repl`: a line editor with `help` and `quit`; on an error it prints it and carries on.
-  - `factional run <file>`: runs a scenario script and stops at the first failing line.
-- **Scenario script format.**
-  - One command per line; blank lines and `#` comments are ignored.
-  - `assert <command> == <expected>` passes only if the command's rendered result is exactly `<expected>`. The result counts whether the command succeeded or failed, so `error: …` and `refused: …` can be asserted too.
-  - A command that errors outside an `assert` stops the run.
-  - `echo <text>` and `fail <message>` exist to test the harness itself.
-- **Scenario harness.** A test in the cli crate runs every `scenarios/*.scenario` file and snapshots its transcript with `insta`.
-- **Housekeeping.** `.gitignore`, a README quickstart, and install notes for the dev tools (`cargo install cargo-insta cargo-mutants`).
-
-**Acceptance**
-
-1. On a clean checkout, the gate commands in CLAUDE.md pass, and CI runs them on a PR.
-2. `factional --version` prints `factional 0.1.0`.
-3. `scenarios/smoke.scenario` contains `echo hello` and `assert echo hi == hi`. It passes, and its snapshot shows each command with its output.
-4. A script whose line 3 is `frobnicate` stops there with `line 3: unknown command 'frobnicate'`. The exit code is non-zero, and the lines after it don't run.
-5. A script whose line 2 is `assert echo hi == bye` fails with `line 2: expected 'bye', got 'hi'`.
-6. `assert fail boom == error: boom` passes. A bare `fail boom` on line N stops the run with `line N: error: boom`.
-7. Adding a `HashMap` to `factional-core` fails clippy. Check this once by hand and note it in the PR; don't commit it.
-
-### F1 · Fixed-point numbers — P0
+### F1 · Fixed-point numbers — P0 · Next
 
 **Why:** every rule computes in `Fixed` (DESIGN.md §4.1, P-1).
 

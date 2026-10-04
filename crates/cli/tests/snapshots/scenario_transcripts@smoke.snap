@@ -1,0 +1,8 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/smoke.scenario
+---
+> echo hello
+hello
+> assert echo hi == hi

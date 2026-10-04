@@ -136,6 +136,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **By faction hostility:** optionally, one curve over the most hostile relation between the actor's factions and the target's factions gives a multiplier for both axes. An act against a faction you're at war with weighs less.
   - **Never a reversal:** multipliers are ≥ 0, so a target can soften or sharpen an act but never turn it good. An act that should be good against some targets, such as slaying a demon, is a separate action that the host chooses.
   - *Why:* same-axis curves read naturally, and they're the curve shape designers already use. Non-negative multipliers keep a shift's direction fixed by the action, so inertia and invariant 8 stay simple.
+- **P-29 · How scenario scripts behave** (made in F0, 2026-10-04).
+  - **Script mistakes stop the run** with `line N: …`: an unknown command, an `assert` without ` == `, or a false assertion.
+  - **A command that runs and fails** renders as `error: …`. Inside an `assert`, that text is checked like any other result; outside one, it stops the run.
+  - **Transcripts** list each command and its output, but not comments or blank lines.
+  - **Snapshots** live in `crates/cli/tests/snapshots/`, not beside the scenarios, because `cargo insta review` only finds snapshots inside a package.
+  - *Why:* scripts can test failure paths as easily as successes, while a typo in a script can never pass silently.
 
 ## Open
 

@@ -1,0 +1,3 @@
+# The scenario harness itself: a command with output, then an assertion.
+echo hello
+assert echo hi == hi

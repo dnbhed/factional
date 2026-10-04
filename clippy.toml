@@ -1,0 +1,6 @@
+# Determinism (DECISIONS.md P-19): hash collections iterate in a different random order in
+# every process, which would make the order of events and output nondeterministic.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "iteration order is random per process; use BTreeMap (DECISIONS.md P-19)" },
+    { path = "std::collections::HashSet", reason = "iteration order is random per process; use BTreeSet (DECISIONS.md P-19)" },
+]
