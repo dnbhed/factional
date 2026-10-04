@@ -6,9 +6,13 @@ input_file: scenarios/help.scenario
 > help
 help                            list these commands
 quit                            leave the REPL, or end a script early
-load <dir>                      load the content files in <dir>, such as content/sample
+load <dir>                      load the content files in <dir>, such as content/sample, as a new world
 characters                      list the loaded characters
 show character <id>             a character's alignment and its label
+advance <ticks>                 move time forward
+time                            the current tick
+events [--since <seq>]          what has happened, oldest first; --since shows only later events
+journal                         every command issued, and whether it was accepted
 calc <a> <op> <b>               the engine's fixed-point arithmetic; <op> is + - * or /
 curve <curve> at <x>            a curve's value at <x>; <curve> is a number or [[x, y], ...]
 echo <text>                     print <text>
