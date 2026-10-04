@@ -1,0 +1,8 @@
+# Two characters at the chaotic end of the law axis, for testing that shifts clamp.
+[cutpurse]
+name = "Cutpurse"
+alignment = { law = -98.0, good = 0.0 }
+
+[warlord]
+name = "Warlord"
+alignment = { law = -100.0, good = -100.0 }

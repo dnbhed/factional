@@ -6,12 +6,16 @@
 //! randomness. Rule arithmetic uses fixed-point numbers, never floats (DECISIONS.md P-1).
 #![deny(clippy::float_arithmetic)]
 
+mod action;
 mod alignment;
 mod character;
 mod command;
+mod id;
 mod world;
 
-pub use alignment::{AXIS_LIMIT, Alignment, Axis, AxisOutOfRange};
-pub use character::{Character, CharacterId, InvalidId};
-pub use command::{Change, Command, CommandError, Event, JournalEntry};
+pub use action::{Action, Witnesses};
+pub use alignment::{AXIS_LIMIT, Alignment, AlignmentDelta, Axis, AxisOutOfRange};
+pub use character::Character;
+pub use command::{Change, Command, CommandError, Event, JournalEntry, Role};
+pub use id::{ActionId, CharacterId, InvalidId};
 pub use world::{Balance, Content, World};

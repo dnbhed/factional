@@ -109,6 +109,8 @@ new(axis)   = clamp( position(axis) + shift(axis), −100, +100 )
 - `inertia` is read from the character's inertia profile at their position **before** the act (P-5).
 - Every multiplier is ≥ 0, so each can damp or amplify a shift but never reverse it. A shift's direction is always the action's own.
 
+`PerformAction` emits `ActionPerformed`, then `AlignmentChanged { from, to }` if the actor's alignment moved. An actor already at the end of an axis the act pushes toward gets no `AlignmentChanged`. A scale too large to compute with still lands at the end of the axis; it never overflows. In `actions.toml`, an axis an action leaves out isn't moved (P-34).
+
 ### 5.3 Inertia profiles (D-6, P-5)
 
 A profile gives up to four curves: one per axis per direction. Each maps the character's current position to a multiplier. Any curve a profile leaves out is 1.0.
@@ -567,9 +569,10 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Ids are lowercase letters, digits and `_`, starting with a letter | error | A1 (done) |
 | Alignment axes within −100…100; `label_threshold` 0.01–100 | error | A1 (done) |
 | Unknown keys, missing fields, wrong types, bad numbers | error | A1 (done), then every increment for its own fields |
-| Action alignment names only `law` and `good` | error | A3 |
+| Action alignment names only `law` and `good` | error | A3 (done) |
 | `inertia` and `inertia.default_profile` name a profile that exists; multipliers ≥ 0 | error | A4 |
 | `by_target` multipliers ≥ 0 | error | A5 |
+| Faction ids are unique across factions and characters | error | D1 |
 | Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 |
 | Bands: unique names, increasing `up_to`, only the last open-ended | error | D2 (disposition), M2 (relations) |
 | `hysteresis` ≥ 0 | error | D3 |

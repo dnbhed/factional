@@ -1,0 +1,25 @@
+# Actions move alignment (DESIGN.md §5.2): what you do determines who you are. Each act
+# emits ActionPerformed, then AlignmentChanged if the actor's alignment moved.
+load content/sample
+actions
+act player steal --target merchant_ava
+assert show character player == player — The Player — law -5.00, good -3.00 — True Neutral
+# --scale says how big this instance was: stealing a crown rather than a loaf.
+act player steal --target merchant_ava --scale 2
+assert show character player == player — The Player — law -15.00, good -9.00 — True Neutral
+# Refused acts change nothing, but the journal records them.
+assert act player stael == error: unknown action 'stael' (did you mean 'steal'?)
+assert act player steal --scale 0 == error: scale must be greater than 0.00
+assert act player steal --target player == error: an action's target must be another character
+assert act plyer steal == error: unknown actor 'plyer' (did you mean 'player'?)
+assert act player steal --target merchnt_ava == error: unknown target 'merchnt_ava' (did you mean 'merchant_ava'?)
+assert show character player == player — The Player — law -15.00, good -9.00 — True Neutral
+events
+journal
+
+# Shifts stop at the ends of each axis.
+load crates/cli/tests/fixtures/worlds/outlaws
+act cutpurse steal
+assert show character cutpurse == cutpurse — Cutpurse — law -100.00, good -3.00 — Chaotic Neutral
+# An act that can't move alignment any further emits no AlignmentChanged.
+assert act warlord steal == #3 at tick 0: warlord did steal
