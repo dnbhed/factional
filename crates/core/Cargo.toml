@@ -1,0 +1,10 @@
+[package]
+name = "factional-core"
+description = "Shared primitives for Factional modules: fixed-point numbers, curves, ids, time and the event envelope."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

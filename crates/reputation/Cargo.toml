@@ -1,0 +1,13 @@
+[package]
+name = "factional-reputation"
+description = "Factional's reputation & factions module: alignment, standing, rank, factions and disposition."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+factional-core = { path = "../core" }
+
+[lints]
+workspace = true

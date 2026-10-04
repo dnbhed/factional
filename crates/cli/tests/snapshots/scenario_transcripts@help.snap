@@ -1,0 +1,11 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/help.scenario
+---
+> help
+help                            list these commands
+quit                            leave the REPL, or end a script early
+echo <text>                     print <text>
+fail <message>                  fail with <message>; for testing scripts
+assert <command> == <expected>  check that <command>'s result is exactly <expected>

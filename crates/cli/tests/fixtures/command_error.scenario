@@ -1,0 +1,3 @@
+assert fail boom == error: boom
+fail boom
+echo never runs

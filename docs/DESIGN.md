@@ -646,7 +646,7 @@ crates/
   content/       factional-content      reads TOML from disk, validates, diagnostics, JSON Schema.
   cli/           factional-cli          the `factional` binary: repl, run, validate, schema, compare.
 content/sample/  Riverhold
-scenarios/       *.scenario scripts and their snapshots
+scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/snapshots/
 ```
 
 - **Dependencies point one way:** core ← reputation ← content ← cli.
