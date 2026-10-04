@@ -75,7 +75,7 @@ How a curve is evaluated:
 y = ( y0·(x1 − x0) + (y1 − y0)·(x − x0) ) / (x1 − x0)
 ```
 
-Curves are the one shape designers have to learn. The CLI can print any curve as a table (T3).
+Curves are the one shape designers have to learn. In the CLI, `curve <curve> at <x>` gives any curve's value at a point, such as `curve [[0, 50], [60, 0], [200, -50]] at 70.18` → `-3.64`. T3 adds printing a knob's curve as a table.
 
 ## 5. Alignment
 
@@ -550,6 +550,7 @@ content/<world>/
 
 - `factional repl content/sample` to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
+- `curve [[0, 1.0], [100, 0.5]] at 25` in the REPL to try a curve's shape before using it.
 - `factional run scenarios/<name>.scenario` to replay a scripted playthrough.
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working.
 - `factional compare <scenario> --content A --against B` to see what new numbers change (T2).

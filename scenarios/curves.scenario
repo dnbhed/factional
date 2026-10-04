@@ -1,0 +1,21 @@
+# Curves hold their end values, interpolate linearly between points, and round once
+# (DESIGN.md §4.2).
+curve [[0, 1.00], [50, 0.70], [100, 0.30]] at 25
+assert curve [[0, 1.00], [50, 0.70], [100, 0.30]] at 75 == 0.50
+assert curve [[0, 1.00], [50, 0.70], [100, 0.30]] at 33 == 0.80
+assert curve [[0, 1.00], [50, 0.70], [100, 0.30]] at 50 == 0.70
+assert curve [[0, 1.00], [50, 0.70], [100, 0.30]] at -10 == 1.00
+assert curve [[0, 1.00], [50, 0.70], [100, 0.30]] at 120 == 0.30
+
+# The disposition affinity curve, at the distances worked out in DESIGN.md §6 and §8.
+assert curve [[0, 50], [60, 0], [200, -50]] at 70.18 == -3.64
+assert curve [[0, 50], [60, 0], [200, -50]] at 85.48 == -9.10
+assert curve [[0, 50], [60, 0], [200, -50]] at 5.59 == 45.34
+
+# A single number is a flat curve.
+assert curve 1.0 at 999 == 1.00
+
+# Mistakes are reported in a designer's words.
+assert curve [[50, 1.0], [40, 0.0]] at 45 == error: curve points must have increasing x: 50.00 then 40.00
+assert curve [[0, 1.0]] at 3 == error: a curve is a single number or at least 2 points
+assert curve [[0, 1.0], [5, 2, 7]] at 3 == error: each curve point must be exactly [x, y], but one is [5.00, 2.00, 7.00]

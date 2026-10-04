@@ -5,6 +5,8 @@
 //! randomness. Rule arithmetic uses fixed-point numbers, never floats (DECISIONS.md P-1).
 #![deny(clippy::float_arithmetic)]
 
+mod curve;
 mod fixed;
 
+pub use curve::{Curve, CurveError};
 pub use fixed::{Fixed, ParseFixedError, div_round};

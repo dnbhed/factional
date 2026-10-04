@@ -10,6 +10,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "calc <a> <op> <b>",
         "the engine's fixed-point arithmetic; <op> is + - * or /",
     ),
+    (
+        "curve <curve> at <x>",
+        "a curve's value at <x>; <curve> is a number or [[x, y], ...]",
+    ),
     ("echo <text>", "print <text>"),
     ("fail <message>", "fail with <message>; for testing scripts"),
     (
@@ -76,6 +80,7 @@ impl Session {
             "help" => Ok(Outcome::Output(help_text())),
             "quit" => Ok(Outcome::Quit),
             "calc" => Ok(calc(rest)),
+            "curve" => Ok(curve(rest)),
             "echo" => Ok(Outcome::Output(rest.to_owned())),
             "fail" => Ok(Outcome::Error(rest.to_owned())),
             "assert" => self.assert(rest),
@@ -129,6 +134,26 @@ fn calculate(args: &str) -> Result<Fixed, String> {
         _ => return Err(USAGE.to_owned()),
     };
     result.ok_or_else(|| "the result is out of range".to_owned())
+}
+
+/// `curve <curve> at <x>`: a curve's value at `x`, with the curve written as it would be in a
+/// content file, so a designer can try a shape before using it (DESIGN.md §4.2).
+fn curve(args: &str) -> Outcome {
+    match evaluate_curve(args) {
+        Ok(value) => Outcome::Output(value.to_string()),
+        Err(message) => Outcome::Error(message),
+    }
+}
+
+fn evaluate_curve(args: &str) -> Result<Fixed, String> {
+    const USAGE: &str = "curve needs the form: curve <curve> at <x>, for example: curve [[0, 1.0], [100, 0.5]] at 25";
+    let (spec, x) = args.rsplit_once(" at ").ok_or(USAGE)?;
+    let x: Fixed = x
+        .trim()
+        .parse()
+        .map_err(|error: ParseFixedError| error.to_string())?;
+    let curve = factional_content::parse_curve(spec.trim())?;
+    Ok(curve.at(x))
 }
 
 /// Whether a (trimmed) line has nothing to run: it's blank, or a `#` comment.
@@ -245,6 +270,41 @@ mod tests {
     }
 
     #[test]
+    fn curve_gives_a_curves_value_at_a_point() {
+        assert_eq!(
+            run("curve [[0, 1.00], [50, 0.70], [100, 0.30]] at 25"),
+            output("0.85")
+        );
+        assert_eq!(
+            run("curve [[0, 50], [60, 0], [200, -50]] at -7"),
+            output("50.00")
+        );
+        assert_eq!(run("curve 1.0 at 999"), output("1.00"));
+    }
+
+    #[test]
+    fn curve_reports_invalid_curves_and_bad_numbers_as_command_errors() {
+        assert_eq!(
+            run("curve [[50, 1.0], [40, 0.0]] at 45"),
+            command_error("curve points must have increasing x: 50.00 then 40.00")
+        );
+        assert_eq!(
+            run("curve [[0, 1.0], [10, 2.0]] at 1.234"),
+            command_error("1.234 has more than 2 decimal places")
+        );
+    }
+
+    #[test]
+    fn curve_needs_a_curve_and_a_point() {
+        let usage = command_error(
+            "curve needs the form: curve <curve> at <x>, for example: curve [[0, 1.0], [100, 0.5]] at 25",
+        );
+        assert_eq!(run("curve"), usage);
+        assert_eq!(run("curve [[0, 1.0], [100, 0.5]]"), usage);
+        assert_eq!(run("curve at 5"), usage);
+    }
+
+    #[test]
     fn calc_needs_two_numbers_and_an_operator() {
         let usage =
             command_error("calc needs the form: calc <a> <op> <b>, where <op> is + - * or /");
@@ -261,6 +321,7 @@ mod tests {
             "help",
             "quit",
             "calc <a> <op> <b>",
+            "curve <curve> at <x>",
             "echo <text>",
             "fail <message>",
             "assert <command> == <expected>",
