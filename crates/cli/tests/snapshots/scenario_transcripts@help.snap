@@ -7,6 +7,7 @@ input_file: scenarios/help.scenario
 help                            list these commands
 quit                            leave the REPL, or end a script early
 calc <a> <op> <b>               the engine's fixed-point arithmetic; <op> is + - * or /
+curve <curve> at <x>            a curve's value at <x>; <curve> is a number or [[x, y], ...]
 echo <text>                     print <text>
 fail <message>                  fail with <message>; for testing scripts
 assert <command> == <expected>  check that <command>'s result is exactly <expected>

@@ -35,46 +35,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 - F0 — workspace of four crates with lints and a pinned toolchain, CI with mutation testing on PRs, the `factional` CLI (`repl`, `run`), and the scenario harness; done 2026-10-04 (#1)
 - F1 — `Fixed`, the two-decimal number every rule uses: exact parsing and display, arithmetic rounded half away from zero, checked overflow, TOML input; plus the `calc` CLI command; done 2026-10-04 (#2)
+- F2 — `Curve`, the piecewise-linear shape of most tuning knobs: validation, evaluation rounded once, a bounds check, TOML input; plus the `curve <curve> at <x>` CLI command; done 2026-10-04 (#3)
 
 ---
 
-## Phase 0 — Foundations
-
-### F2 · Curves — P0 · Next
-
-**Why:** curves are the shared shape for tuning knobs (DESIGN.md §4.2, P-4).
-
-**Scope**
-
-- **Type.** `Curve` in core: either a constant, or two or more `[x, y]` points with strictly increasing x.
-- **Evaluation.** Per §4.2: end values hold, linear between points, rounded once.
-- **Validation and serde.** From TOML, a curve is either a number or an array of pairs.
-- **Bounds helper.** Checks that every y is within given bounds. Later increments use it, for example to require inertia multipliers ≥ 0.
-
-**Acceptance**
-
-1. Curve `[[0, 1.00], [50, 0.70], [100, 0.30]]`:
-   - f(25) = 0.85
-   - f(75) = 0.50
-   - f(33) = 0.80
-   - f(50) = 0.70
-   - f(−10) = 1.00
-   - f(120) = 0.30
-2. Curve `[[0, 50], [60, 0], [200, -50]]`:
-   - f(70.18) = −3.64
-   - f(85.48) = −9.10
-   - f(5.59) = 45.34
-3. `1.0` is a constant curve: f(anything) = 1.00.
-4. Invalid curves:
-   - `[[50, 1.0], [40, 0.0]]` → error `curve points must have increasing x: 50.00 then 40.00`
-   - `[[0, 1.0]]` → error `a curve is a single number or at least 2 points`
-5. Properties:
-   - f(x) always lies between the curve's smallest and largest y.
-   - If the points' y values never decrease, f never decreases.
-
 ## Phase 1 — Characters and alignment
 
-### A1 · Characters, alignment and content loading — P0
+### A1 · Characters, alignment and content loading — P0 · Next
 
 **Why:** this is the first domain type and the first designer-facing content (DESIGN.md §5.1, §12, §13).
 
@@ -403,7 +370,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 - `map <faction>` draws the alignment plane as ASCII, showing the faction's tolerance region and the characters.
 - `matrix [--csv]` shows every observer's disposition toward the chosen subjects.
-- `curve <knob>` prints a curve as a table.
+- `curve <knob>` prints a named knob's curve as a table, extending F2's `curve <curve> at <x>`; `curve <knob> at <x>` evaluates it.
 
 ### T4 · Saves — P2 · Outline
 
