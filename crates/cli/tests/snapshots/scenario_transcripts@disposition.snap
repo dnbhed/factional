@@ -7,27 +7,64 @@ input_file: scenarios/disposition.scenario
 loaded 6 characters from content/sample
 > disposition city_watch player --explain
 city_watch → player: -3.64 (neutral)
-affinity: -3.64 at distance 70.18 (euclidean)
-law: 70.00 vs 0.00, gap 70.00, weight 1.00
-good: 20.00 vs 0.00, gap 20.00, weight 0.25
-weights: city_watch's own
+affinity: -3.64 × 1.00 = -3.64, at distance 70.18 (euclidean)
+  law: 70.00 vs 0.00, gap 70.00, weight 1.00
+  good: 20.00 vs 0.00, gap 20.00, weight 0.25
+  weights: city_watch's own
+standing: 0.00 × 1.00 = 0.00
+kinship: 0.00 × 0.50 = 0.00 (player belongs to no factions)
+faction opinion: 0.00 × 0.50 = 0.00 (only characters have one)
+modifiers: 0.00 × 1.00 = 0.00
 bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly
-> assert disposition temple sister_mira == 45.34 (friendly)
-> assert disposition temple brother_ash == -32.15 (unfriendly)
-> assert disposition city_watch vex == -23.36 (neutral)
+> assert disposition temple sister_mira == 100.00 (friendly)
+> assert disposition temple brother_ash == -77.15 (unfriendly)
+> disposition city_watch vex --explain
+city_watch → vex: -63.36 (unfriendly)
+affinity: -23.36 × 1.00 = -23.36, at distance 125.40 (euclidean)
+  law: 70.00 vs -55.00, gap 125.00, weight 1.00
+  good: 20.00 vs -20.00, gap 40.00, weight 0.25
+  weights: city_watch's own
+standing: 0.00 × 1.00 = 0.00
+kinship: -80.00 × 0.50 = -40.00 (city_watch → lantern_guild -80.00)
+faction opinion: 0.00 × 0.50 = 0.00 (only characters have one)
+modifiers: 0.00 × 1.00 = 0.00
+bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly
+> assert disposition captain_hale sister_mira == 44.75 (friendly)
 > assert disposition vex player == 1.23 (neutral)
-> assert disposition lantern_guild player == -0.08 (neutral)
-> act player steal --scale 4
-#1 at tick 0: player did steal, at scale 4.00
-#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -20.00, good -12.00
-> assert disposition lantern_guild player == 16.66 (neutral)
+> act player steal --target merchant_ava
+#1 at tick 0: player did steal, targeting merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00
+> act player steal --target merchant_ava
+#4 at tick 0: player did steal, targeting merchant_ava
+#5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
+#6 at tick 0: player's standing with merchant_ava moved from -20.00 to -40.00
+> outcome fined_by_watch player
+#7 at tick 0: outcome fined_by_watch applied to player
+#8 at tick 0: player's standing with city_watch moved from 0.00 to -20.00
+#9 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
+> disposition captain_hale player --explain
+captain_hale → player: -29.10 (unfriendly)
+affinity: -9.10 × 1.00 = -9.10, at distance 85.48 (euclidean)
+  law: 75.00 vs -10.00, gap 85.00, weight 1.00
+  good: 30.00 vs -6.00, gap 36.00, weight 0.25
+  weights: captain_hale's own
+standing: -10.00 × 1.00 = -10.00
+kinship: 0.00 × 0.50 = 0.00 (player belongs to no factions)
+faction opinion: -20.00 × 0.50 = -10.00 (city_watch -20.00)
+modifiers: 0.00 × 1.00 = 0.00
+bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly
 > assert disposition player temple == error: a disposition's subject must be a character
 > load crates/cli/tests/fixtures/worlds/hostile
 loaded 1 character from crates/cli/tests/fixtures/worlds/hostile
 > disposition temple brother_ash --explain
 temple → brother_ash: -32.15 (hostile)
-affinity: -32.15 at distance 150.02 (euclidean)
-law: 30.00 vs 25.00, gap 5.00, weight 0.50
-good: 80.00 vs -70.00, gap 150.00, weight 1.00
-weights: temple's own
+affinity: -32.15 × 1.00 = -32.15, at distance 150.02 (euclidean)
+  law: 30.00 vs 25.00, gap 5.00, weight 0.50
+  good: 80.00 vs -70.00, gap 150.00, weight 1.00
+  weights: temple's own
+standing: 0.00 × 1.00 = 0.00
+kinship: 0.00 × 0.50 = 0.00 (brother_ash belongs to no factions)
+faction opinion: 0.00 × 0.50 = 0.00 (only characters have one)
+modifiers: 0.00 × 1.00 = 0.00
 bands: hostile ≤ -30.00 < unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly

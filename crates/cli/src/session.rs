@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use factional_core::{Fixed, ParseFixedError, suggest};
 use factional_reputation::{
-    ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command, Distance,
-    Event, Faction, FactionId, LeaveReason, Observer, OutcomeId, Party, StandingEffects,
-    WeightsFrom, Witnesses, World,
+    ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
+    ComponentKind, Distance, Event, Faction, FactionId, LeaveReason, Observer, OutcomeId, Party,
+    StandingEffects, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -584,16 +584,74 @@ impl Session {
             return Outcome::Output(summary);
         }
         let distance = &regard.distance;
-        let mut explained = vec![
-            format!("{} → {}: {summary}", query.observer_id, query.subject),
-            format!(
-                "affinity: {} at distance {} ({})",
-                regard.affinity,
-                distance.value,
-                distance.metric.key()
-            ),
-        ];
-        explained.extend(working(distance, query.observer_id));
+        let mut explained = vec![format!(
+            "{} → {}: {summary}",
+            query.observer_id, query.subject
+        )];
+        // Whose lack of factions explains an empty kinship or faction opinion.
+        let observer_unaffiliated = match &query.observer {
+            Observer::Character(id) => world
+                .memberships(id)
+                .expect("the observer was found")
+                .next()
+                .is_none(),
+            Observer::Faction(_) => false,
+        };
+        let unaffiliated = if observer_unaffiliated {
+            query.observer_id.to_owned()
+        } else {
+            query.subject.to_string()
+        };
+        for component in &regard.components {
+            let mut line = format!(
+                "{}: {} × {} = {}",
+                component.kind.key().replace('_', " "),
+                component.value,
+                component.weight,
+                component.weighted
+            );
+            match component.kind {
+                ComponentKind::Affinity => {
+                    line += &format!(
+                        ", at distance {} ({})",
+                        distance.value,
+                        distance.metric.key()
+                    );
+                    explained.push(line);
+                    explained.extend(
+                        working(distance, query.observer_id)
+                            .into_iter()
+                            .map(|working| format!("  {working}")),
+                    );
+                    continue;
+                }
+                ComponentKind::Kinship | ComponentKind::FactionOpinion => {
+                    let parts: Vec<String> = component
+                        .parts
+                        .iter()
+                        .map(|part| match &part.to {
+                            Some(to) if *to == part.from => {
+                                format!("both in {} {}", part.from, part.value)
+                            }
+                            Some(to) => format!("{} → {to} {}", part.from, part.value),
+                            None => format!("{} {}", part.from, part.value),
+                        })
+                        .collect();
+                    let note = if !parts.is_empty() {
+                        parts.join(", ")
+                    } else if component.kind == ComponentKind::FactionOpinion
+                        && matches!(query.observer, Observer::Faction(_))
+                    {
+                        "only characters have one".to_owned()
+                    } else {
+                        format!("{unaffiliated} belongs to no factions")
+                    };
+                    line += &format!(" ({note})");
+                }
+                ComponentKind::Standing | ComponentKind::Modifiers => {}
+            }
+            explained.push(line);
+        }
         explained.push(format!("bands: {}", describe_bands(world)));
         Outcome::Output(explained.join("\n"))
     }
@@ -2329,9 +2387,10 @@ mod tests {
         let mut session = riverhold();
         for (line, expected) in [
             ("disposition city_watch player", "-3.64 (neutral)"),
-            ("disposition temple sister_mira", "45.34 (friendly)"),
-            ("disposition temple brother_ash", "-32.15 (unfriendly)"),
-            ("disposition city_watch vex", "-23.36 (neutral)"),
+            ("disposition temple sister_mira", "100.00 (friendly)"),
+            ("disposition temple brother_ash", "-77.15 (unfriendly)"),
+            ("disposition city_watch vex", "-63.36 (unfriendly)"),
+            ("disposition captain_hale sister_mira", "44.75 (friendly)"),
         ] {
             assert_eq!(session.execute(line), output(expected), "{line}");
         }
@@ -2343,12 +2402,86 @@ mod tests {
             riverhold().execute("disposition city_watch player --explain"),
             output(
                 "city_watch → player: -3.64 (neutral)\n\
-                 affinity: -3.64 at distance 70.18 (euclidean)\n\
-                 law: 70.00 vs 0.00, gap 70.00, weight 1.00\n\
-                 good: 20.00 vs 0.00, gap 20.00, weight 0.25\n\
-                 weights: city_watch's own\n\
+                 affinity: -3.64 × 1.00 = -3.64, at distance 70.18 (euclidean)\n\
+                 \x20 law: 70.00 vs 0.00, gap 70.00, weight 1.00\n\
+                 \x20 good: 20.00 vs 0.00, gap 20.00, weight 0.25\n\
+                 \x20 weights: city_watch's own\n\
+                 standing: 0.00 × 1.00 = 0.00\n\
+                 kinship: 0.00 × 0.50 = 0.00 (player belongs to no factions)\n\
+                 faction opinion: 0.00 × 0.50 = 0.00 (only characters have one)\n\
+                 modifiers: 0.00 × 1.00 = 0.00\n\
                  bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly"
             )
+        );
+    }
+
+    #[test]
+    fn disposition_explains_the_worked_example() {
+        // DESIGN.md §8.2.
+        let mut session = riverhold();
+        for line in [
+            "act player steal --target merchant_ava",
+            "act player steal --target merchant_ava",
+            "outcome fined_by_watch player",
+        ] {
+            session.execute(line).expect("valid");
+        }
+        assert_eq!(
+            session.execute("disposition captain_hale player --explain"),
+            output(
+                "captain_hale → player: -29.10 (unfriendly)\n\
+                 affinity: -9.10 × 1.00 = -9.10, at distance 85.48 (euclidean)\n\
+                 \x20 law: 75.00 vs -10.00, gap 85.00, weight 1.00\n\
+                 \x20 good: 30.00 vs -6.00, gap 36.00, weight 0.25\n\
+                 \x20 weights: captain_hale's own\n\
+                 standing: -10.00 × 1.00 = -10.00\n\
+                 kinship: 0.00 × 0.50 = 0.00 (player belongs to no factions)\n\
+                 faction opinion: -20.00 × 0.50 = -10.00 (city_watch -20.00)\n\
+                 modifiers: 0.00 × 1.00 = 0.00\n\
+                 bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly"
+            )
+        );
+    }
+
+    #[test]
+    fn disposition_explains_where_kinship_comes_from() {
+        let mut session = riverhold();
+        let Ok(Outcome::Output(watch)) = session.execute("disposition city_watch vex --explain")
+        else {
+            panic!("expected the explanation");
+        };
+        assert!(
+            watch.contains(
+                "\nkinship: -80.00 × 0.50 = -40.00 (city_watch → lantern_guild -80.00)\n"
+            ),
+            "{watch}"
+        );
+        let Ok(Outcome::Output(temple)) =
+            session.execute("disposition temple sister_mira --explain")
+        else {
+            panic!("expected the explanation");
+        };
+        assert!(
+            temple.contains("\nkinship: 50.00 × 0.50 = 25.00 (both in temple 50.00)\n"),
+            "{temple}"
+        );
+        assert!(
+            temple.contains("\nstanding: 40.00 × 1.00 = 40.00\n"),
+            "{temple}"
+        );
+        let Ok(Outcome::Output(ava)) = session.execute("disposition merchant_ava player --explain")
+        else {
+            panic!("expected the explanation");
+        };
+        assert!(
+            ava.contains("\nkinship: 0.00 × 0.50 = 0.00 (merchant_ava belongs to no factions)\n"),
+            "{ava}"
+        );
+        assert!(
+            ava.contains(
+                "\nfaction opinion: 0.00 × 0.50 = 0.00 (merchant_ava belongs to no factions)\n"
+            ),
+            "{ava}"
         );
     }
 

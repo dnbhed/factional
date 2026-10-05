@@ -23,6 +23,17 @@ affinity = [[0.0, 50.0], [60.0, 0.0], [200.0, -50.0]]
 # The bands a score falls into, lowest first: a score lands in the first band whose up_to
 # it doesn't exceed, and the last band, with no up_to, takes everything above. Add or
 # rename bands freely; names are ids, like hostile or allied.
+# A disposition adds up five parts, each from -100 to 100, times its weight (DESIGN.md §8.1):
+#   affinity         how close the two alignments are (the curve above)
+#   standing         how the observer regards them from what has passed between them
+#   kinship          how the two sides' factions regard each other
+#   faction_opinion  a character adopting their factions' view of them
+#   modifiers        from other modules (always 0 for now)
+weights = { affinity = 1.0, standing = 1.0, kinship = 0.5, faction_opinion = 0.5, modifiers = 1.0 }
+
+# What sharing a faction counts for, in kinship.
+same_faction = 50.0
+
 bands = [
   { name = "unfriendly", up_to = -25.0 },
   { name = "neutral", up_to = 25.0 },

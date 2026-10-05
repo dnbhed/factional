@@ -23,7 +23,9 @@ pub use action::{Action, Witnesses};
 pub use alignment::{AXIS_LIMIT, Alignment, AlignmentDelta, Axis, AxisOutOfRange};
 pub use character::Character;
 pub use command::{Change, Command, CommandError, Event, JournalEntry, Role};
-pub use disposition::{Band, BandProblem, Bands, Disposition};
+pub use disposition::{
+    Band, BandProblem, Bands, Component, ComponentKind, Disposition, DispositionWeights, Part,
+};
 pub use distance::{Metric, WeightProblem, Weights, measure};
 pub use faction::Faction;
 pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId};

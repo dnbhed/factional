@@ -10,10 +10,10 @@ use std::{fmt, fs, io};
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands,
-    Character, CharacterId, Content, ContentProblem, ContentWarning, Effects, Faction, FactionId,
-    InvalidId, Metric, Outcome, OutcomeId, Party, Relation, RelationEnds, RelationSide,
-    StandingEffects, StandingKey, StandingOwner, ToleranceProblem, Tolerances, WeightProblem,
-    Weights,
+    Character, CharacterId, ComponentKind, Content, ContentProblem, ContentWarning,
+    DispositionWeights, Effects, Faction, FactionId, InvalidId, Metric, Outcome, OutcomeId, Party,
+    Relation, RelationEnds, RelationSide, StandingEffects, StandingKey, StandingOwner,
+    ToleranceProblem, Tolerances, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -215,6 +215,13 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             ContentProblem::LeaveStandingOutOfRange { faction, .. } => {
                 (FACTIONS_FILE, format!("{faction}.leave_standing_change"))
             }
+            ContentProblem::NegativeDispositionWeight { component, .. } => (
+                BALANCE_FILE,
+                format!("disposition.weights.{}", component.key()),
+            ),
+            ContentProblem::SameFactionOutOfRange(_) => {
+                (BALANCE_FILE, "disposition.same_faction".to_owned())
+            }
         };
         Diagnostic {
             file: file.to_owned(),
@@ -306,6 +313,26 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         }
         if let Some(bands) = read_bands(&mut disposition, report) {
             balance.bands = bands;
+        }
+        let example = "{ affinity = 1.0, standing = 1.0, kinship = 0.5 }";
+        if let Some(mut weights) = disposition.optional_table("weights", example, report) {
+            let current = balance.disposition_weights;
+            let mut weight = |kind: ComponentKind| {
+                weights
+                    .optional_fixed(kind.key(), report)
+                    .unwrap_or(current.get(kind))
+            };
+            balance.disposition_weights = DispositionWeights {
+                affinity: weight(ComponentKind::Affinity),
+                standing: weight(ComponentKind::Standing),
+                kinship: weight(ComponentKind::Kinship),
+                faction_opinion: weight(ComponentKind::FactionOpinion),
+                modifiers: weight(ComponentKind::Modifiers),
+            };
+            weights.finish(report);
+        }
+        if let Some(same_faction) = disposition.optional_fixed("same_faction", report) {
+            balance.same_faction = same_faction;
         }
         disposition.finish(report);
     }
@@ -867,6 +894,32 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_component_weights_and_same_faction() {
+        let content = balance(
+            "[disposition]\nweights = { kinship = 0.25, modifiers = 0.0 }\nsame_faction = 30.0",
+        )
+        .expect("valid content");
+        let weights = content.balance.disposition_weights;
+        assert_eq!((weights.kinship, weights.modifiers), (h(25), h(0)));
+        assert_eq!(
+            (weights.affinity, weights.standing, weights.faction_opinion),
+            (h(1_00), h(1_00), h(50)),
+            "weights left out keep their defaults"
+        );
+        assert_eq!(content.balance.same_faction, h(30_00));
+        assert_eq!(
+            problems(balance(
+                "[disposition]\nweights = { kinship = -0.5, kinsip = 1 }\nsame_faction = 120.0"
+            )),
+            [
+                "balance.toml: disposition.weights: unknown key 'kinsip' (did you mean 'kinship'?)",
+                "balance.toml: disposition.weights.kinship: -0.50 must be at least 0.00",
+                "balance.toml: disposition.same_faction: 120.00 is outside -100.00..100.00",
+            ]
+        );
+    }
+
+    #[test]
     fn reads_the_affinity_curve_and_bands() {
         let content = balance(
             r#"
@@ -979,8 +1032,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            problems(balance("[disposition]\naffinity = 20.0\nweights = 1")),
-            ["balance.toml: disposition: unknown key 'weights'"]
+            problems(balance("[disposition]\naffinity = 20.0\nhysteria = 1")),
+            ["balance.toml: disposition: unknown key 'hysteria'"]
         );
     }
 
