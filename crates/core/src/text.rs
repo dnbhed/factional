@@ -20,9 +20,27 @@ pub fn suggest<'a>(word: &str, candidates: impl IntoIterator<Item = &'a str>) ->
         .map(|(_, candidate)| candidate)
 }
 
+/// "a" or "an", for an id in a sentence: "a captain", "an initiate". Ids are lowercase, so
+/// a leading vowel is all that matters.
+pub fn article(word: &str) -> &'static str {
+    if word.starts_with(['a', 'e', 'i', 'o', 'u']) {
+        "an"
+    } else {
+        "a"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn articles_suit_the_word() {
+        assert_eq!(
+            (article("captain"), article("initiate"), article("acolyte")),
+            ("a", "an", "an")
+        );
+    }
 
     #[test]
     fn ids_are_lowercase_letters_digits_and_underscores_starting_with_a_letter() {

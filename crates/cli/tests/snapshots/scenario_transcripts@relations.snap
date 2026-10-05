@@ -23,7 +23,7 @@ lantern_guild → free_company: 20.00 (friendly)
 #1 at tick 0: player did steal, at scale 4.00
 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -20.00, good -12.00
 > join player lantern_guild
-#3 at tick 0: player joined lantern_guild
+#3 at tick 0: player joined lantern_guild as a cutpurse
 > can-join player city_watch --explain
 player → city_watch: no
 distance 90.35 (euclidean), tolerance 40.00
@@ -44,7 +44,7 @@ free_company → city_watch: -10.00 (neutral) — in conflict
 free_company → lantern_guild: 20.00 (friendly)
 lantern_guild → free_company: 20.00 (friendly)
 > join player free_company
-#7 at tick 0: player joined free_company
+#7 at tick 0: player joined free_company as a sellsword
 > assert relate lantern_guild free_company -60 == error: that would put two of player's factions in conflict: free_company and lantern_guild
 > journal
 1. act player steal --scale 4.00 — accepted

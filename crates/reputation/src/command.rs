@@ -1,10 +1,10 @@
 use std::fmt;
 
-use factional_core::{Envelope, Fixed, Tick};
+use factional_core::{Envelope, Fixed, Tick, article};
 
 use crate::{
     AXIS_LIMIT, ActionId, Alignment, CharacterId, Effects, FactionId, JoinAssessment, LeaveReason,
-    OutcomeId, Party, Witnesses,
+    OutcomeId, Party, PromotionAssessment, RankId, Witnesses,
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
@@ -24,6 +24,17 @@ pub enum Command {
     },
     /// `character` asks to join `faction`; refused unless they may (DESIGN.md §9.1).
     JoinFaction {
+        character: CharacterId,
+        faction: FactionId,
+    },
+    /// Moves `character` up one rung in `faction`, if the next rank's requirements hold. Only
+    /// ever on request: meeting them never promotes anyone by itself (D-17).
+    Promote {
+        character: CharacterId,
+        faction: FactionId,
+    },
+    /// Moves `character` down one rung in `faction`.
+    Demote {
         character: CharacterId,
         faction: FactionId,
     },
@@ -83,6 +94,14 @@ pub enum Change {
     JoinedFaction {
         character: CharacterId,
         faction: FactionId,
+        /// The rung they start on: the faction's lowest.
+        rank: RankId,
+    },
+    RankChanged {
+        character: CharacterId,
+        faction: FactionId,
+        from: RankId,
+        to: RankId,
     },
     LeftFaction {
         character: CharacterId,
@@ -162,6 +181,20 @@ pub enum CommandError {
         character: CharacterId,
         faction: FactionId,
     },
+    /// `Promote` for a member already on the top rung.
+    AtTopRank {
+        character: CharacterId,
+        faction: FactionId,
+        rank: RankId,
+    },
+    /// `Demote` for a member already on the bottom rung.
+    AtBottomRank {
+        character: CharacterId,
+        faction: FactionId,
+        rank: RankId,
+    },
+    /// `Promote` when the next rank's requirements don't hold: the assessment says which.
+    PromotionRefused(Box<PromotionAssessment>),
     /// A relation between a faction and itself.
     SelfRelation,
     /// `ApplyOutcome` named an outcome that isn't in content.
@@ -255,6 +288,31 @@ impl fmt::Display for CommandError {
                 f,
                 "unknown outcome '{outcome}'{}",
                 hint(suggestion.as_ref().map(OutcomeId::as_str))
+            ),
+            CommandError::AtTopRank {
+                character,
+                faction,
+                rank,
+            } => write!(
+                f,
+                "{character} is already {} {rank}, the highest rank of {faction}",
+                article(rank.as_str())
+            ),
+            CommandError::AtBottomRank {
+                character,
+                faction,
+                rank,
+            } => write!(
+                f,
+                "{character} is already {} {rank}, the lowest rank of {faction}",
+                article(rank.as_str())
+            ),
+            CommandError::PromotionRefused(assessment) => write!(
+                f,
+                "{} can't be promoted in {}: {}",
+                assessment.character,
+                assessment.faction,
+                assessment.reasons().join("; ")
             ),
             CommandError::SelfRelation => {
                 f.write_str("a faction can't have a relation with itself")

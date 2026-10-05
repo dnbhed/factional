@@ -13,6 +13,11 @@
 #            tolerance, which it defaults to. Easier to stay than to get in.
 # leave_standing_change (optional): the change in someone's standing with the faction when
 #            they leave of their own accord, -100 to 100; 0 if left out.
+#
+# Each faction has a rank ladder, lowest first, as [[<faction>.ranks]] entries; new members
+# start on the first rung. A rung may require a minimum standing with the faction, and may
+# set a stricter tolerance than the faction's own. Promotion only happens when a quest,
+# dialogue or the CLI asks for it: `promote <character> <faction>`.
 
 [city_watch]
 name = "The City Watch"
@@ -22,6 +27,19 @@ weights = { law = 1.0, good = 0.25 }
 tolerance = 40.0
 member_tolerance = 50.0
 
+[[city_watch.ranks]]
+id = "recruit"
+
+[[city_watch.ranks]]
+id = "sergeant"
+requires = { standing = 30.0 }
+
+[[city_watch.ranks]]
+id = "captain"
+requires = { standing = 70.0 }
+# Captains are held to a stricter standard than the faction's member tolerance.
+tolerance = 25.0
+
 [temple]
 name = "Temple of the Dawn"
 alignment = { law = 30.0, good = 80.0 }
@@ -29,12 +47,35 @@ weights = { law = 0.5, good = 1.0 }
 tolerance = 35.0
 member_tolerance = 45.0
 
+[[temple.ranks]]
+id = "acolyte"
+
+[[temple.ranks]]
+id = "ordained"
+requires = { standing = 30.0 }
+
+[[temple.ranks]]
+id = "high_priest"
+requires = { standing = 80.0 }
+tolerance = 20.0
+
 [lantern_guild]
 name = "The Lantern Guild"
 alignment = { law = -60.0, good = -10.0 }
 weights = { law = 1.0, good = 0.5 }
 tolerance = 45.0
 member_tolerance = 60.0
+
+[[lantern_guild.ranks]]
+id = "cutpurse"
+
+[[lantern_guild.ranks]]
+id = "fence"
+requires = { standing = 25.0 }
+
+[[lantern_guild.ranks]]
+id = "shadow"
+requires = { standing = 60.0 }
 
 [free_company]
 name = "The Free Company"
@@ -46,9 +87,23 @@ member_tolerance = 80.0
 # Mercenaries don't take kindly to deserters.
 leave_standing_change = -10.0
 
+[[free_company.ranks]]
+id = "sellsword"
+
+[[free_company.ranks]]
+id = "sergeant"
+requires = { standing = 30.0 }
+
 [ashen_circle]
 name = "The Ashen Circle"
 alignment = { law = 20.0, good = -80.0 }
 weights = { law = 0.25, good = 1.0 }
 tolerance = 30.0
 member_tolerance = 40.0
+
+[[ashen_circle.ranks]]
+id = "initiate"
+
+[[ashen_circle.ranks]]
+id = "adept"
+requires = { standing = 40.0 }

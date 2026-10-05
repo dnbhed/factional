@@ -12,5 +12,5 @@ mod time;
 
 pub use curve::{Curve, CurveError};
 pub use fixed::{Fixed, ParseFixedError, div_round};
-pub use text::{is_valid_id, suggest};
+pub use text::{article, is_valid_id, suggest};
 pub use time::{Envelope, Tick};

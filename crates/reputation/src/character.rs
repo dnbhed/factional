@@ -1,4 +1,13 @@
-use crate::{Alignment, CharacterId, FactionId, StandingEffects, Weights};
+use crate::{Alignment, CharacterId, FactionId, StandingEffects, StartingMembership, Weights};
+
+impl Character {
+    /// The factions they start in, as listed.
+    pub fn factions(&self) -> impl Iterator<Item = &FactionId> {
+        self.memberships
+            .iter()
+            .map(|membership| &membership.faction)
+    }
+}
 
 /// Someone in the world, as content describes them. The player is an ordinary character
 /// (P-17).
@@ -13,7 +22,7 @@ pub struct Character {
     pub weights: Option<Weights>,
     /// The factions they start in, as content lists them. Their memberships now are
     /// [`World::memberships`](crate::World::memberships).
-    pub memberships: Vec<FactionId>,
+    pub memberships: Vec<StartingMembership>,
     /// How others regard them at the start; anyone not named starts at 0.
     pub standing: StandingEffects,
 }

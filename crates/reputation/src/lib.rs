@@ -27,15 +27,17 @@ pub use disposition::{
     Band, BandProblem, Bands, Component, ComponentKind, Disposition, DispositionWeights, Part,
 };
 pub use distance::{Metric, WeightProblem, Weights, measure};
-pub use faction::Faction;
-pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId};
+pub use faction::{Faction, Rank};
+pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId, RankId};
 pub use membership::{
-    JoinAssessment, JoinBlock, LeaveReason, Membership, ToleranceProblem, Tolerances,
+    JoinAssessment, JoinBlock, LeaveReason, Membership, PromotionAssessment, RankCheck,
+    StartingMembership, ToleranceProblem, Tolerances,
 };
 pub use relation::{Regard, Relation, RelationEnds, RelationSide};
 pub use standing::{
     ActionStanding, Effects, Outcome, Party, StandingEffects, StandingKey, StandingOwner,
 };
 pub use world::{
-    Balance, Content, ContentProblem, ContentWarning, Distance, Observer, WeightsFrom, World,
+    Balance, Content, ContentProblem, ContentWarning, Distance, Observer, RankKey, WeightsFrom,
+    World,
 };

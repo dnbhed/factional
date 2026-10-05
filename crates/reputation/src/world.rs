@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use factional_core::{Curve, CurveError, Fixed, Tick, suggest};
+use factional_core::{Curve, CurveError, Fixed, Tick, article, suggest};
 
 use crate::distance::gap;
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
     CommandError, Component, ComponentKind, Disposition, DispositionWeights, Effects, Event,
     Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric,
-    Outcome, OutcomeId, Part, Party, Regard, Relation, RelationSide, Role, StandingEffects,
-    StandingKey, StandingOwner, Weights, Witnesses, measure,
+    Outcome, OutcomeId, Part, Party, PromotionAssessment, RankCheck, RankId, Regard, Relation,
+    RelationSide, Role, StandingEffects, StandingKey, StandingOwner, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -162,6 +162,37 @@ pub enum ContentProblem {
     },
     /// `disposition.same_faction` outside −100…100.
     SameFactionOutOfRange(Fixed),
+    /// A faction with no ranks: every faction needs a rung for new members.
+    NoRanks(FactionId),
+    /// Two ranks in one faction share an id; `index` is the second.
+    DuplicateRank {
+        faction: FactionId,
+        index: usize,
+        rank: RankId,
+    },
+    /// A rank's requirement out of range: standing within ±100, tolerance at least 0.
+    RankValueOutOfRange {
+        faction: FactionId,
+        index: usize,
+        key: RankKey,
+        value: Fixed,
+    },
+    /// A starting membership names a rank that isn't on its faction's ladder.
+    UnknownRank {
+        character: CharacterId,
+        index: usize,
+        faction: FactionId,
+        rank: RankId,
+        suggestion: Option<RankId>,
+    },
+}
+
+/// Which value of a rank a content problem is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RankKey {
+    /// `requires.standing`.
+    Standing,
+    Tolerance,
 }
 
 /// Something in content that's allowed but probably not meant: it's reported, and the world
@@ -174,6 +205,23 @@ pub enum ContentWarning {
         index: usize,
         faction_name: String,
         distance: Fixed,
+        member_tolerance: Fixed,
+    },
+    /// A starting member whose standing is below what their rank requires.
+    BelowRankStanding {
+        character: CharacterId,
+        index: usize,
+        rank: RankId,
+        required: Fixed,
+        standing: Fixed,
+    },
+    /// A rank whose tolerance is looser than its faction's member tolerance, so it adds
+    /// nothing: members are held to the faction's tolerance anyway.
+    RankToleranceLooser {
+        faction: FactionId,
+        index: usize,
+        rank: RankId,
+        tolerance: Fixed,
         member_tolerance: Fixed,
     },
 }
@@ -242,12 +290,12 @@ impl Content {
             });
         let values = &self.relation_values();
         let starts_in_conflict = self.characters.values().flat_map(|character| {
-            let listed = &character.memberships;
+            let listed: Vec<&FactionId> = character.factions().collect();
             listed
                 .iter()
                 .enumerate()
-                .filter_map(move |(index, faction)| {
-                    listed[..index].iter().find_map(|other| {
+                .filter_map(|(index, &faction)| {
+                    listed[..index].iter().find_map(|&other| {
                         let relation = hostility(values, other, faction);
                         (relation <= self.balance.conflict_threshold && other != faction).then(
                             || ContentProblem::StartsInConflict {
@@ -260,29 +308,40 @@ impl Content {
                         )
                     })
                 })
+                .collect::<Vec<_>>()
         });
         let memberships = self.characters.values().flat_map(|character| {
             character
                 .memberships
                 .iter()
                 .enumerate()
-                .filter_map(|(index, faction)| {
-                    if !self.factions.contains_key(faction) {
-                        Some(ContentProblem::UnknownMembershipFaction {
+                .filter_map(|(index, membership)| {
+                    let faction = &membership.faction;
+                    let Some(found) = self.factions.get(faction) else {
+                        return Some(ContentProblem::UnknownMembershipFaction {
                             character: character.id.clone(),
                             index,
                             faction: faction.clone(),
                             suggestion: closest(faction.as_str(), self.factions.keys()),
-                        })
-                    } else if character.memberships[..index].contains(faction) {
-                        Some(ContentProblem::DuplicateMembership {
+                        });
+                    };
+                    let earlier = &character.memberships[..index];
+                    if earlier.iter().any(|other| &other.faction == faction) {
+                        return Some(ContentProblem::DuplicateMembership {
                             character: character.id.clone(),
                             index,
                             faction: faction.clone(),
-                        })
-                    } else {
-                        None
+                        });
                     }
+                    let rank = membership.rank.as_ref()?;
+                    let ladder = found.ranks.iter().map(|rung| &rung.id);
+                    (found.rank_position(rank).is_none()).then(|| ContentProblem::UnknownRank {
+                        character: character.id.clone(),
+                        index,
+                        faction: faction.clone(),
+                        rank: rank.clone(),
+                        suggestion: closest(rank.as_str(), ladder),
+                    })
                 })
         });
         affinity
@@ -290,11 +349,48 @@ impl Content {
             .chain(threshold)
             .chain(shared_ids)
             .chain(memberships)
+            .chain(self.rank_problems())
             .chain(relations)
             .chain(starts_in_conflict)
             .chain(self.standing_problems())
             .chain(self.disposition_problems())
             .collect()
+    }
+
+    /// Every ladder needs a rung, unique rank ids, standing requirements within ±100 and
+    /// tolerances of at least 0.
+    fn rank_problems(&self) -> Vec<ContentProblem> {
+        let mut problems = Vec::new();
+        for faction in self.factions.values() {
+            if faction.ranks.is_empty() {
+                problems.push(ContentProblem::NoRanks(faction.id.clone()));
+            }
+            for (index, rank) in faction.ranks.iter().enumerate() {
+                let out_of_range = |key, value: Fixed| ContentProblem::RankValueOutOfRange {
+                    faction: faction.id.clone(),
+                    index,
+                    key,
+                    value,
+                };
+                if let Some(standing) = rank.requires_standing.filter(|v| !within_range(*v)) {
+                    problems.push(out_of_range(RankKey::Standing, standing));
+                }
+                if let Some(tolerance) = rank.tolerance.filter(|v| *v < Fixed::ZERO) {
+                    problems.push(out_of_range(RankKey::Tolerance, tolerance));
+                }
+                if faction.ranks[..index]
+                    .iter()
+                    .any(|earlier| earlier.id == rank.id)
+                {
+                    problems.push(ContentProblem::DuplicateRank {
+                        faction: faction.id.clone(),
+                        index,
+                        rank: rank.id.clone(),
+                    });
+                }
+            }
+        }
+        problems
     }
 
     /// `disposition.weights` must each be at least 0, and `same_faction` within ±100.
@@ -398,38 +494,72 @@ impl Content {
         values
     }
 
-    /// Everything probably not meant, for content with no problems.
+    /// Everything probably not meant, for content with no problems: each character's
+    /// memberships, then each faction's ranks.
     pub fn warnings(&self) -> Vec<ContentWarning> {
         let balance = &self.balance;
-        self.characters
-            .values()
-            .flat_map(|character| {
-                character
-                    .memberships
-                    .iter()
-                    .enumerate()
-                    .filter_map(move |(index, id)| {
-                        let faction = self.factions.get(id)?;
-                        let weights = faction.weights.unwrap_or(balance.default_weights);
-                        let distance = measure(
-                            faction.alignment,
-                            character.alignment,
-                            weights,
-                            balance.metric,
-                        );
-                        let member_tolerance = faction.tolerances.member();
-                        (distance > member_tolerance).then(|| {
-                            ContentWarning::OutsideMemberTolerance {
-                                character: character.id.clone(),
-                                index,
-                                faction_name: faction.name.clone(),
-                                distance,
-                                member_tolerance,
-                            }
-                        })
-                    })
-            })
-            .collect()
+        let mut warnings = Vec::new();
+        for character in self.characters.values() {
+            for (index, membership) in character.memberships.iter().enumerate() {
+                let Some(faction) = self.factions.get(&membership.faction) else {
+                    continue;
+                };
+                let weights = faction.weights.unwrap_or(balance.default_weights);
+                let distance = measure(
+                    faction.alignment,
+                    character.alignment,
+                    weights,
+                    balance.metric,
+                );
+                let member_tolerance = faction.tolerances.member();
+                if distance > member_tolerance {
+                    warnings.push(ContentWarning::OutsideMemberTolerance {
+                        character: character.id.clone(),
+                        index,
+                        faction_name: faction.name.clone(),
+                        distance,
+                        member_tolerance,
+                    });
+                }
+                let rank = membership
+                    .rank
+                    .as_ref()
+                    .and_then(|rank| faction.ranks.iter().find(|rung| &rung.id == rank));
+                let standing = character
+                    .standing
+                    .factions
+                    .get(&faction.id)
+                    .copied()
+                    .unwrap_or_default();
+                if let Some((rank, required)) = rank
+                    .and_then(|rank| rank.requires_standing.map(|required| (rank, required)))
+                    .filter(|(_, required)| standing < *required)
+                {
+                    warnings.push(ContentWarning::BelowRankStanding {
+                        character: character.id.clone(),
+                        index,
+                        rank: rank.id.clone(),
+                        required,
+                        standing,
+                    });
+                }
+            }
+        }
+        for faction in self.factions.values() {
+            let member_tolerance = faction.tolerances.member();
+            for (index, rank) in faction.ranks.iter().enumerate() {
+                if let Some(tolerance) = rank.tolerance.filter(|t| *t > member_tolerance) {
+                    warnings.push(ContentWarning::RankToleranceLooser {
+                        faction: faction.id.clone(),
+                        index,
+                        rank: rank.id.clone(),
+                        tolerance,
+                        member_tolerance,
+                    });
+                }
+            }
+        }
+        warnings
     }
 }
 
@@ -499,6 +629,32 @@ impl fmt::Display for ContentProblem {
                     None => Ok(()),
                 }
             }
+            ContentProblem::NoRanks(_) => f.write_str("a faction needs at least one rank"),
+            ContentProblem::DuplicateRank { rank, .. } => {
+                write!(f, "another rank is already called '{rank}'")
+            }
+            ContentProblem::RankValueOutOfRange {
+                key: RankKey::Standing,
+                value,
+                ..
+            } => write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT),
+            ContentProblem::RankValueOutOfRange {
+                key: RankKey::Tolerance,
+                value,
+                ..
+            } => write!(f, "{value} must be at least {}", Fixed::ZERO),
+            ContentProblem::UnknownRank {
+                faction,
+                rank,
+                suggestion,
+                ..
+            } => {
+                write!(f, "unknown rank '{rank}' for {faction}")?;
+                match suggestion {
+                    Some(close) => write!(f, " (did you mean '{close}'?)"),
+                    None => Ok(()),
+                }
+            }
             ContentProblem::NegativeDispositionWeight { value, .. } => {
                 write!(f, "{value} must be at least {}", Fixed::ZERO)
             }
@@ -523,6 +679,26 @@ impl fmt::Display for ContentWarning {
             } => write!(
                 f,
                 "{character} starts {distance} from {faction_name}, outside its member tolerance of {member_tolerance}"
+            ),
+            ContentWarning::BelowRankStanding {
+                character,
+                rank,
+                required,
+                standing,
+                ..
+            } => write!(
+                f,
+                "{character} starts as {} {rank} with standing {standing}, below the {required} it requires",
+                article(rank.as_str())
+            ),
+            ContentWarning::RankToleranceLooser {
+                rank,
+                tolerance,
+                member_tolerance,
+                ..
+            } => write!(
+                f,
+                "{rank}'s tolerance {tolerance} is looser than the faction's member tolerance, {member_tolerance}, so it changes nothing"
             ),
         }
     }
@@ -606,13 +782,19 @@ impl State {
                 .values()
                 .filter(|character| !character.memberships.is_empty())
                 .map(|character| {
-                    let factions = character.memberships.iter().map(|faction| {
-                        (
-                            faction.clone(),
+                    let factions = character.memberships.iter().filter_map(|membership| {
+                        let faction = content.factions.get(&membership.faction)?;
+                        let rank = membership
+                            .rank
+                            .clone()
+                            .or_else(|| faction.lowest_rank().map(|rank| rank.id.clone()))?;
+                        Some((
+                            membership.faction.clone(),
                             Membership {
                                 since: Tick::default(),
+                                rank,
                             },
-                        )
+                        ))
                     });
                     (character.id.clone(), factions.collect())
                 })
@@ -768,9 +950,74 @@ impl World {
                 if !assessment.allowed() {
                     return Err(CommandError::JoinRefused(Box::new(assessment)));
                 }
+                let rank = self.content.factions[faction]
+                    .lowest_rank()
+                    .expect("World::new checks every faction has a rank")
+                    .id
+                    .clone();
                 Ok(vec![Change::JoinedFaction {
                     character: character.clone(),
                     faction: faction.clone(),
+                    rank,
+                }])
+            }
+            Command::Promote { character, faction } => {
+                self.existing(character, Role::Member)?;
+                self.faction(faction)
+                    .ok_or_else(|| self.unknown_faction(faction))?;
+                let assessment = self.assess_promotion(character, faction).ok_or_else(|| {
+                    CommandError::NotAMember {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                    }
+                })?;
+                let Some(next) = assessment.next.clone() else {
+                    return Err(CommandError::AtTopRank {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                        rank: assessment.current,
+                    });
+                };
+                if !assessment.allowed() {
+                    return Err(CommandError::PromotionRefused(Box::new(assessment)));
+                }
+                Ok(vec![Change::RankChanged {
+                    character: character.clone(),
+                    faction: faction.clone(),
+                    from: assessment.current,
+                    to: next,
+                }])
+            }
+            Command::Demote { character, faction } => {
+                self.existing(character, Role::Member)?;
+                let found = self
+                    .faction(faction)
+                    .ok_or_else(|| self.unknown_faction(faction))?;
+                let current = self
+                    .state
+                    .memberships
+                    .get(character)
+                    .and_then(|factions| factions.get(faction))
+                    .map(|membership| membership.rank.clone())
+                    .ok_or_else(|| CommandError::NotAMember {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                    })?;
+                let position = found
+                    .rank_position(&current)
+                    .expect("a member's rank is on their faction's ladder");
+                let Some(lower) = position.checked_sub(1).map(|below| &found.ranks[below]) else {
+                    return Err(CommandError::AtBottomRank {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                        rank: current,
+                    });
+                };
+                Ok(vec![Change::RankChanged {
+                    character: character.clone(),
+                    faction: faction.clone(),
+                    from: current,
+                    to: lower.id.clone(),
                 }])
             }
             Command::LeaveFaction { character, faction } => {
@@ -1028,13 +1275,35 @@ impl World {
             Change::JoinedFaction {
                 ref character,
                 ref faction,
+                ref rank,
             } => {
                 let since = event.tick;
                 self.state
                     .memberships
                     .entry(character.clone())
                     .or_default()
-                    .insert(faction.clone(), Membership { since });
+                    .insert(
+                        faction.clone(),
+                        Membership {
+                            since,
+                            rank: rank.clone(),
+                        },
+                    );
+            }
+            Change::RankChanged {
+                ref character,
+                ref faction,
+                ref to,
+                ..
+            } => {
+                if let Some(membership) = self
+                    .state
+                    .memberships
+                    .get_mut(character)
+                    .and_then(|factions| factions.get_mut(faction))
+                {
+                    membership.rank = to.clone();
+                }
             }
             Change::LeftFaction {
                 ref character,
@@ -1239,6 +1508,50 @@ impl World {
 
     /// Whether `character` may join `faction` now, and every reason they can't (DESIGN.md
     /// §9.1). `None` if either is unknown.
+    /// Whether `character` may be promoted in `faction` now, and every requirement of the
+    /// next rank with whether it holds (DESIGN.md §7.2). `None` if either is unknown or the
+    /// character isn't a member.
+    pub fn assess_promotion(
+        &self,
+        character: &CharacterId,
+        faction: &FactionId,
+    ) -> Option<PromotionAssessment> {
+        let found = self.faction(faction)?;
+        let current = self
+            .state
+            .memberships
+            .get(character)?
+            .get(faction)?
+            .rank
+            .clone();
+        let position = found
+            .rank_position(&current)
+            .expect("a member's rank is on their faction's ladder");
+        let next = found.ranks.get(position + 1);
+        let mut checks = Vec::new();
+        if let Some(next) = next {
+            if let Some(required) = next.requires_standing {
+                let has = self.standing_now(character, &Party::Faction(faction.clone()));
+                checks.push(RankCheck::Standing { required, has });
+            }
+            if let Some(limit) = next.tolerance {
+                let distance = self
+                    .distance(&Observer::Faction(faction.clone()), character)
+                    .expect("both exist")
+                    .value;
+                checks.push(RankCheck::Tolerance { limit, distance });
+            }
+        }
+        Some(PromotionAssessment {
+            character: character.clone(),
+            faction: faction.clone(),
+            faction_name: found.name.clone(),
+            current,
+            next: next.map(|rank| rank.id.clone()),
+            checks,
+        })
+    }
+
     pub fn assess_join(
         &self,
         character: &CharacterId,
@@ -1439,7 +1752,8 @@ mod tests {
     use super::*;
     use crate::{
         AXIS_LIMIT, ActionStanding, AlignmentDelta, Band, Effects, JoinBlock, LeaveReason, Part,
-        RelationEnds, Role, StandingEffects, Tolerances, Witnesses,
+        Rank, RankCheck, RelationEnds, Role, StandingEffects, StartingMembership, Tolerances,
+        Witnesses,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -1483,6 +1797,40 @@ mod tests {
             weights: w.map(|(law, good)| weights(law, good)),
             tolerances: Tolerances::new(h(tolerance), Some(h(member))).expect("valid"),
             leave_standing_change: Fixed::ZERO,
+            ranks: ladder(id),
+        }
+    }
+
+    fn rung(id: &str, standing: Option<i64>, tolerance: Option<i64>) -> Rank {
+        Rank {
+            id: rank_id(id),
+            requires_standing: standing.map(h),
+            tolerance: tolerance.map(h),
+        }
+    }
+
+    /// Riverhold's rank ladders (DESIGN.md §13).
+    fn ladder(faction: &str) -> Vec<Rank> {
+        match faction {
+            "city_watch" => vec![
+                rung("recruit", None, None),
+                rung("sergeant", Some(30_00), None),
+                rung("captain", Some(70_00), Some(25_00)),
+            ],
+            "lantern_guild" => vec![
+                rung("cutpurse", None, None),
+                rung("fence", Some(25_00), None),
+                rung("shadow", Some(60_00), None),
+            ],
+            "temple" => vec![
+                rung("acolyte", None, None),
+                rung("ordained", Some(30_00), None),
+                rung("high_priest", Some(80_00), Some(20_00)),
+            ],
+            _ => vec![
+                rung("sellsword", None, None),
+                rung("sergeant", Some(30_00), None),
+            ],
         }
     }
 
@@ -2327,8 +2675,27 @@ mod tests {
     // Membership (DESIGN.md §9.1)
 
     fn member_of(mut character: Character, factions: &[&str]) -> Character {
-        character.memberships = factions.iter().map(|f| faction_id(f)).collect();
+        character.memberships = factions
+            .iter()
+            .map(|f| StartingMembership {
+                faction: faction_id(f),
+                rank: None,
+            })
+            .collect();
         character
+    }
+
+    /// A character starting in `faction` as `rank`.
+    fn ranked(mut character: Character, faction: &str, rank: &str) -> Character {
+        character.memberships = vec![StartingMembership {
+            faction: faction_id(faction),
+            rank: Some(rank_id(rank)),
+        }];
+        character
+    }
+
+    fn rank_id(text: &str) -> RankId {
+        RankId::new(text).expect("a valid id")
     }
 
     fn join(character: &str, faction: &str) -> Command {
@@ -2456,6 +2823,7 @@ mod tests {
                 payload: Change::JoinedFaction {
                     character: id("player"),
                     faction: faction_id("lantern_guild"),
+                    rank: rank_id("cutpurse"),
                 },
             }]
         );
@@ -3777,6 +4145,381 @@ mod tests {
             "unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)"
         );
         assert_eq!(messages[3], "unknown character 'vx' (did you mean 'vex'?)");
+    }
+
+    // Ranks (DESIGN.md §7.2)
+
+    fn rank_of(world: &World, character: &str, faction: &str) -> String {
+        world
+            .memberships(&id(character))
+            .expect("the character exists")
+            .find(|(member_of, _)| member_of.as_str() == faction)
+            .map(|(_, membership)| membership.rank.to_string())
+            .expect("a member")
+    }
+
+    fn promote(character: &str, faction: &str) -> Command {
+        Command::Promote {
+            character: id(character),
+            faction: faction_id(faction),
+        }
+    }
+
+    fn demote(character: &str, faction: &str) -> Command {
+        Command::Demote {
+            character: id(character),
+            faction: faction_id(faction),
+        }
+    }
+
+    /// Riverhold's ranked people, with their starting standing.
+    fn ranked_world() -> World {
+        let mut vex = ranked(character("Vex", -55_00, -20_00), "lantern_guild", "fence");
+        vex.standing = named(&[("lantern_guild", 30_00)], &[]);
+        let mut hale = ranked(
+            character("Captain_hale", 75_00, 30_00),
+            "city_watch",
+            "captain",
+        );
+        hale.standing = named(&[("city_watch", 75_00)], &[]);
+        let mut mira = ranked(character("Sister_mira", 35_00, 85_00), "temple", "ordained");
+        mira.standing = named(&[("temple", 40_00)], &[]);
+        let mut far = ranked(character("Far", 40_00, 20_00), "city_watch", "sergeant");
+        far.standing = named(&[("city_watch", 80_00)], &[]);
+        world_of([vex, hale, mira, far, character("Player", 0, 0)])
+    }
+
+    fn give(world: &mut World, character: &str, faction: &str, standing: i64) {
+        world
+            .execute(Command::ApplyEffects {
+                source: "test".to_owned(),
+                character: id(character),
+                effects: Effects {
+                    alignment: AlignmentDelta::default(),
+                    standing: named(&[(faction, standing)], &[]),
+                },
+            })
+            .expect("accepted");
+    }
+
+    #[test]
+    fn members_start_on_their_rank_or_the_lowest_rung() {
+        let mut world = ranked_world();
+        assert_eq!(rank_of(&world, "vex", "lantern_guild"), "fence");
+        world
+            .execute(join("player", "free_company"))
+            .expect("accepted");
+        assert_eq!(rank_of(&world, "player", "free_company"), "sellsword");
+        let unranked = world_of([member_of(
+            character("Vex", -55_00, -20_00),
+            &["lantern_guild"],
+        )]);
+        assert_eq!(rank_of(&unranked, "vex", "lantern_guild"), "cutpurse");
+    }
+
+    #[test]
+    fn promotion_needs_the_next_ranks_standing() {
+        let mut world = ranked_world();
+        let refusal = refused(&mut world, promote("vex", "lantern_guild"));
+        assert_eq!(
+            refusal.to_string(),
+            "vex can't be promoted in lantern_guild: shadow needs standing 60.00, vex has 30.00"
+        );
+        give(&mut world, "vex", "lantern_guild", 30_00);
+        assert_eq!(
+            rank_of(&world, "vex", "lantern_guild"),
+            "fence",
+            "meeting the requirements never promotes anyone by itself"
+        );
+        let events = world
+            .execute(promote("vex", "lantern_guild"))
+            .expect("accepted");
+        assert_eq!(
+            events,
+            [Event {
+                seq: 3,
+                tick: Tick(0),
+                payload: Change::RankChanged {
+                    character: id("vex"),
+                    faction: faction_id("lantern_guild"),
+                    from: rank_id("fence"),
+                    to: rank_id("shadow"),
+                },
+            }]
+        );
+        assert_eq!(rank_of(&world, "vex", "lantern_guild"), "shadow");
+    }
+
+    #[test]
+    fn the_highest_rank_cannot_be_promoted() {
+        let mut world = ranked_world();
+        assert_eq!(
+            refused(&mut world, promote("captain_hale", "city_watch")),
+            CommandError::AtTopRank {
+                character: id("captain_hale"),
+                faction: faction_id("city_watch"),
+                rank: rank_id("captain"),
+            }
+        );
+        assert_eq!(
+            refused(&mut world, promote("captain_hale", "city_watch")).to_string(),
+            "captain_hale is already a captain, the highest rank of city_watch"
+        );
+        let assessment = world
+            .assess_promotion(&id("captain_hale"), &faction_id("city_watch"))
+            .expect("a member");
+        assert_eq!((&assessment.next, assessment.checks.len()), (&None, 0));
+        assert!(!assessment.allowed());
+    }
+
+    #[test]
+    fn a_rank_can_hold_members_to_a_stricter_tolerance() {
+        let world = ranked_world();
+        let mira = world
+            .assess_promotion(&id("sister_mira"), &faction_id("temple"))
+            .expect("a member");
+        assert_eq!(mira.next, Some(rank_id("high_priest")));
+        assert_eq!(
+            mira.checks,
+            [
+                RankCheck::Standing {
+                    required: h(80_00),
+                    has: h(40_00)
+                },
+                RankCheck::Tolerance {
+                    limit: h(20_00),
+                    distance: h(5_59)
+                },
+            ]
+        );
+        assert_eq!(
+            mira.reasons(),
+            ["high_priest needs standing 80.00, sister_mira has 40.00"],
+            "within the rank's tolerance, so only standing fails"
+        );
+        // Far is a sergeant with standing 80, but 30.00 from the Watch: too far for a captain.
+        let far = world
+            .assess_promotion(&id("far"), &faction_id("city_watch"))
+            .expect("a member");
+        assert_eq!(
+            far.reasons(),
+            ["captain needs to be within 25.00 of The City Watch, far is 30.00 away"]
+        );
+    }
+
+    #[test]
+    fn demotion_moves_down_a_rung_until_the_bottom() {
+        let mut world = ranked_world();
+        assert_eq!(
+            world.execute(demote("vex", "lantern_guild")),
+            Ok(vec![Event {
+                seq: 1,
+                tick: Tick(0),
+                payload: Change::RankChanged {
+                    character: id("vex"),
+                    faction: faction_id("lantern_guild"),
+                    from: rank_id("fence"),
+                    to: rank_id("cutpurse"),
+                },
+            }])
+        );
+        assert_eq!(
+            refused(&mut world, demote("vex", "lantern_guild")).to_string(),
+            "vex is already a cutpurse, the lowest rank of lantern_guild"
+        );
+    }
+
+    #[test]
+    fn only_members_can_be_promoted_or_demoted() {
+        let mut world = ranked_world();
+        for command in [promote, demote] {
+            assert_eq!(
+                refused(&mut world, command("player", "temple")),
+                CommandError::NotAMember {
+                    character: id("player"),
+                    faction: faction_id("temple"),
+                }
+            );
+            assert!(matches!(
+                refused(&mut world, command("plyer", "temple")),
+                CommandError::UnknownCharacter { .. }
+            ));
+            assert!(matches!(
+                refused(&mut world, command("player", "tempel")),
+                CommandError::UnknownFaction { .. }
+            ));
+        }
+        assert_eq!(
+            world.assess_promotion(&id("player"), &faction_id("temple")),
+            None
+        );
+        assert_eq!(
+            world.assess_promotion(&id("nobody"), &faction_id("temple")),
+            None
+        );
+        assert_eq!(
+            world.assess_promotion(&id("vex"), &faction_id("nowhere")),
+            None
+        );
+    }
+
+    #[test]
+    fn replaying_rebuilds_ranks() {
+        let mut world = ranked_world();
+        give(&mut world, "vex", "lantern_guild", 30_00);
+        world
+            .execute(promote("vex", "lantern_guild"))
+            .expect("accepted");
+        world
+            .execute(demote("captain_hale", "city_watch"))
+            .expect("accepted");
+        let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
+        assert_eq!(replayed.state, world.state);
+    }
+
+    // Ranks in content (P-32)
+
+    #[test]
+    fn ladders_need_a_rung_unique_ids_and_values_in_range() {
+        let mut watch = faction("city_watch", 70_00, 20_00, None);
+        watch.ranks = vec![];
+        let mut guild = faction("lantern_guild", -60_00, -10_00, None);
+        guild.ranks = vec![
+            rung("cutpurse", None, None),
+            rung("fence", Some(120_00), Some(-1)),
+            rung("cutpurse", None, None),
+        ];
+        let content = Content {
+            factions: [(watch.id.clone(), watch), (guild.id.clone(), guild)].into(),
+            ..Content::default()
+        };
+        let problems = content.problems();
+        assert_eq!(
+            problems,
+            [
+                ContentProblem::NoRanks(faction_id("city_watch")),
+                ContentProblem::RankValueOutOfRange {
+                    faction: faction_id("lantern_guild"),
+                    index: 1,
+                    key: RankKey::Standing,
+                    value: h(120_00),
+                },
+                ContentProblem::RankValueOutOfRange {
+                    faction: faction_id("lantern_guild"),
+                    index: 1,
+                    key: RankKey::Tolerance,
+                    value: h(-1),
+                },
+                ContentProblem::DuplicateRank {
+                    faction: faction_id("lantern_guild"),
+                    index: 2,
+                    rank: rank_id("cutpurse"),
+                },
+            ]
+        );
+        let messages: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "a faction needs at least one rank",
+                "120.00 is outside -100.00..100.00",
+                "-0.01 must be at least 0.00",
+                "another rank is already called 'cutpurse'",
+            ]
+        );
+    }
+
+    #[test]
+    fn rank_checks_and_warnings_allow_their_edges() {
+        let mut guild = faction("lantern_guild", -60_00, -10_00, None);
+        guild.ranks[1].tolerance = Some(h(0));
+        guild.ranks[2].tolerance = Some(h(60_00));
+        let mut vex = ranked(character("Vex", -55_00, -20_00), "lantern_guild", "shadow");
+        vex.standing = named(&[("lantern_guild", 60_00)], &[]);
+        let content = Content {
+            characters: [(vex.id.clone(), vex)].into(),
+            factions: [(guild.id.clone(), guild)].into(),
+            ..Content::default()
+        };
+        assert_eq!(
+            content.problems(),
+            [],
+            "a tolerance of exactly 0 is allowed"
+        );
+        assert_eq!(
+            content.warnings(),
+            [],
+            "standing exactly at the requirement, and a rank tolerance equal to the member tolerance"
+        );
+    }
+
+    #[test]
+    fn a_starting_rank_must_be_on_the_factions_ladder() {
+        let content = Content {
+            characters: [ranked(character("Vex", 0, 0), "lantern_guild", "fense")]
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .collect(),
+            factions: factions(),
+            ..Content::default()
+        };
+        let problems = content.problems();
+        assert_eq!(
+            problems,
+            [ContentProblem::UnknownRank {
+                character: id("vex"),
+                index: 0,
+                faction: faction_id("lantern_guild"),
+                rank: rank_id("fense"),
+                suggestion: Some(rank_id("fence")),
+            }]
+        );
+        assert_eq!(
+            problems[0].to_string(),
+            "unknown rank 'fense' for lantern_guild (did you mean 'fence'?)"
+        );
+    }
+
+    #[test]
+    fn rank_warnings_flag_content_that_is_probably_a_mistake() {
+        let mut guild = faction("lantern_guild", -60_00, -10_00, None);
+        guild.ranks[2].tolerance = Some(h(70_00));
+        let mut vex = ranked(character("Vex", -55_00, -20_00), "lantern_guild", "shadow");
+        vex.standing = named(&[("lantern_guild", 30_00)], &[]);
+        let content = Content {
+            characters: [(vex.id.clone(), vex)].into(),
+            factions: [(guild.id.clone(), guild)].into(),
+            ..Content::default()
+        };
+        let warnings = content.warnings();
+        assert_eq!(
+            warnings,
+            [
+                ContentWarning::BelowRankStanding {
+                    character: id("vex"),
+                    index: 0,
+                    rank: rank_id("shadow"),
+                    required: h(60_00),
+                    standing: h(30_00),
+                },
+                ContentWarning::RankToleranceLooser {
+                    faction: faction_id("lantern_guild"),
+                    index: 2,
+                    rank: rank_id("shadow"),
+                    tolerance: h(70_00),
+                    member_tolerance: h(60_00),
+                },
+            ]
+        );
+        let messages: Vec<String> = warnings.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "vex starts as a shadow with standing 30.00, below the 60.00 it requires",
+                "shadow's tolerance 70.00 is looser than the faction's member tolerance, 60.00, so it changes nothing",
+            ]
+        );
+        assert!(World::new(content).is_ok());
     }
 
     #[test]

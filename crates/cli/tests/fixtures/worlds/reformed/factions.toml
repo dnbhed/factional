@@ -4,3 +4,6 @@ alignment = { law = -60.0, good = -10.0 }
 weights = { law = 1.0, good = 0.5 }
 tolerance = 45.0
 member_tolerance = 60.0
+
+[[lantern_guild.ranks]]
+id = "cutpurse"

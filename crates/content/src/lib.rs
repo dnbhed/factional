@@ -12,8 +12,8 @@ use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands,
     Character, CharacterId, ComponentKind, Content, ContentProblem, ContentWarning,
     DispositionWeights, Effects, Faction, FactionId, InvalidId, Metric, Outcome, OutcomeId, Party,
-    Relation, RelationEnds, RelationSide, StandingEffects, StandingKey, StandingOwner,
-    ToleranceProblem, Tolerances, WeightProblem, Weights,
+    Rank, RankId, RankKey, Relation, RelationEnds, RelationSide, StandingEffects, StandingKey,
+    StandingOwner, StartingMembership, ToleranceProblem, Tolerances, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -219,6 +219,28 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
                 BALANCE_FILE,
                 format!("disposition.weights.{}", component.key()),
             ),
+            ContentProblem::NoRanks(faction) => (FACTIONS_FILE, format!("{faction}.ranks")),
+            ContentProblem::DuplicateRank { faction, index, .. } => {
+                (FACTIONS_FILE, format!("{faction}.ranks[{index}].id"))
+            }
+            ContentProblem::RankValueOutOfRange {
+                faction,
+                index,
+                key,
+                ..
+            } => {
+                let key = match key {
+                    RankKey::Standing => "requires.standing",
+                    RankKey::Tolerance => "tolerance",
+                };
+                (FACTIONS_FILE, format!("{faction}.ranks[{index}].{key}"))
+            }
+            ContentProblem::UnknownRank {
+                character, index, ..
+            } => (
+                CHARACTERS_FILE,
+                format!("{character}.memberships[{index}].rank"),
+            ),
             ContentProblem::SameFactionOutOfRange(_) => {
                 (BALANCE_FILE, "disposition.same_faction".to_owned())
             }
@@ -248,6 +270,18 @@ pub fn warnings(content: &Content) -> Vec<Diagnostic> {
             } => Diagnostic {
                 file: CHARACTERS_FILE.to_owned(),
                 key: Some(format!("{character}.memberships[{index}]")),
+                message: warning.to_string(),
+            },
+            ContentWarning::BelowRankStanding {
+                character, index, ..
+            } => Diagnostic {
+                file: CHARACTERS_FILE.to_owned(),
+                key: Some(format!("{character}.memberships[{index}].rank")),
+                message: warning.to_string(),
+            },
+            ContentWarning::RankToleranceLooser { faction, index, .. } => Diagnostic {
+                file: FACTIONS_FILE.to_owned(),
+                key: Some(format!("{faction}.ranks[{index}].tolerance")),
                 message: warning.to_string(),
             },
         })
@@ -509,7 +543,10 @@ fn standing_owner(owner: &StandingOwner) -> (&'static str, String) {
 
 /// A character's optional `memberships = [{ faction = "lantern_guild" }]`, as listed. Whether
 /// each faction exists is the world's check (P-32), reported at its `faction` key.
-fn read_memberships(section: &mut Section<'_>, report: &mut Report) -> Option<Vec<FactionId>> {
+fn read_memberships(
+    section: &mut Section<'_>,
+    report: &mut Report,
+) -> Option<Vec<StartingMembership>> {
     const MEMBERSHIP: &str = "{ faction = \"lantern_guild\" }";
     let Some(items) = section.optional_list("memberships", &format!("[{MEMBERSHIP}]"), report)
     else {
@@ -532,8 +569,22 @@ fn read_memberships(section: &mut Section<'_>, report: &mut Report) -> Option<Ve
                 })
                 .ok()
         });
+        let rank = match membership.optional_text("rank", report) {
+            None => Some(None),
+            Some(text) => match RankId::new(&text) {
+                Ok(rank) => Some(Some(rank)),
+                Err(invalid) => {
+                    report.error(&membership.path_to("rank"), invalid.to_string());
+                    None
+                }
+            },
+        };
         membership.finish(report);
-        factions.push(faction);
+        factions.push(
+            faction
+                .zip(rank)
+                .map(|(faction, rank)| StartingMembership { faction, rank }),
+        );
     }
     factions.into_iter().collect()
 }
@@ -642,6 +693,7 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
     let leave_standing_change = section
         .optional_fixed("leave_standing_change", report)
         .unwrap_or_default();
+    let ranks = read_ranks(&mut section, report);
     let tolerances = tolerance.and_then(|tolerance| match Tolerances::new(tolerance, member) {
         Ok(tolerances) => Some(tolerances),
         Err(problem) => {
@@ -661,7 +713,55 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
         weights,
         tolerances: tolerances?,
         leave_standing_change,
+        ranks: ranks?,
     })
+}
+
+/// A faction's `[[<faction>.ranks]]` ladder, lowest first; empty if it's left out (which the
+/// world reports). `None` if any rung can't be read, so the checks across rungs, which name
+/// rungs by their place, wait until every rung reads cleanly.
+fn read_ranks(section: &mut Section<'_>, report: &mut Report) -> Option<Vec<Rank>> {
+    let path = section.path_to("ranks");
+    let items = match section.optional_value("ranks") {
+        None => return Some(Vec::new()),
+        Some(Value::Array(items)) => items,
+        Some(_) => {
+            report.error(&path, format!("expected a list of [[{path}]] tables"));
+            return None;
+        }
+    };
+    let mut ranks = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let at = format!("{path}[{index}]");
+        let Value::Table(fields) = item else {
+            report.error(&at, format!("expected a table, like [[{path}]]"));
+            ranks.push(None);
+            continue;
+        };
+        let mut rung = Section::new(fields, at);
+        let errors = report.diagnostics.len();
+        let id = rung.text("id", report).and_then(|text| {
+            RankId::new(&text)
+                .map_err(|invalid| report.error(&rung.path_to("id"), invalid.to_string()))
+                .ok()
+        });
+        let requires_standing = rung
+            .optional_table("requires", "{ standing = 30.0 }", report)
+            .and_then(|mut requires| {
+                let standing = requires.optional_fixed("standing", report);
+                requires.finish(report);
+                standing
+            });
+        let tolerance = rung.optional_fixed("tolerance", report);
+        rung.finish(report);
+        let read = report.diagnostics.len() == errors;
+        ranks.push(id.filter(|_| read).map(|id| Rank {
+            id,
+            requires_standing,
+            tolerance,
+        }));
+    }
+    ranks.into_iter().collect()
 }
 
 /// A required `alignment = { law = …, good = … }`, with both axes in range.
@@ -1181,6 +1281,18 @@ mod tests {
         weights = { law = 1.0, good = 0.25 }
         tolerance = 40.0
         member_tolerance = 50.0
+
+        [[city_watch.ranks]]
+        id = "recruit"
+
+        [[city_watch.ranks]]
+        id = "sergeant"
+        requires = { standing = 30.0 }
+
+        [[city_watch.ranks]]
+        id = "captain"
+        requires = { standing = 70.0 }
+        tolerance = 25.0
     "#;
 
     const GUILD: &str = r#"
@@ -1190,12 +1302,23 @@ mod tests {
         weights = { law = 1.0, good = 0.5 }
         tolerance = 45.0
         member_tolerance = 60.0
+
+        [[lantern_guild.ranks]]
+        id = "cutpurse"
+
+        [[lantern_guild.ranks]]
+        id = "fence"
+        requires = { standing = 25.0 }
+
+        [[lantern_guild.ranks]]
+        id = "shadow"
+        requires = { standing = 60.0 }
     "#;
 
     #[test]
     fn reads_factions_with_their_weights() {
         let text = format!(
-            "{WATCH}\n[free_company]\nname = \"The Free Company\"\nalignment = {{ law = -10.0, good = 0.0 }}\ntolerance = 60.0"
+            "{WATCH}\n[free_company]\nname = \"The Free Company\"\nalignment = {{ law = -10.0, good = 0.0 }}\ntolerance = 60.0\n[[free_company.ranks]]\nid = \"sellsword\""
         );
         let content = factions(&text).expect("valid content");
         let watch = &content.factions[&FactionId::new("city_watch").expect("valid id")];
@@ -1306,13 +1429,153 @@ mod tests {
     }
 
     #[test]
+    fn reads_rank_ladders() {
+        let content = factions(WATCH).expect("valid content");
+        let watch = &content.factions[&FactionId::new("city_watch").expect("valid id")];
+        let ladder: Vec<(&str, Option<Fixed>, Option<Fixed>)> = watch
+            .ranks
+            .iter()
+            .map(|rank| (rank.id.as_str(), rank.requires_standing, rank.tolerance))
+            .collect();
+        assert_eq!(
+            ladder,
+            [
+                ("recruit", None, None),
+                ("sergeant", Some(h(30_00)), None),
+                ("captain", Some(h(70_00)), Some(h(25_00))),
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_mistakes_in_a_ladder_at_their_keys() {
+        let text = r#"
+            [temple]
+            name = "Temple of the Dawn"
+            alignment = { law = 30.0, good = 80.0 }
+            tolerance = 35.0
+
+            [[temple.ranks]]
+            id = "acolyte"
+            requires = { standing = 120.0, rank = 2 }
+
+            [[temple.ranks]]
+            id = "High Priest"
+            tolerance = -5.0
+
+            [[temple.ranks]]
+            requires = 3
+
+            [[temple.ranks]]
+            id = "acolyte"
+
+            [ashen_circle]
+            name = "The Ashen Circle"
+            alignment = { law = 20.0, good = -80.0 }
+            tolerance = 30.0
+            ranks = "initiate"
+
+            [free_company]
+            name = "The Free Company"
+            alignment = { law = -10.0, good = 0.0 }
+            tolerance = 60.0
+        "#;
+        assert_eq!(
+            problems(factions(text)),
+            [
+                "factions.toml: ashen_circle.ranks: expected a list of [[ashen_circle.ranks]] tables",
+                "factions.toml: temple.ranks[0].requires: unknown key 'rank'",
+                "factions.toml: temple.ranks[1].id: 'High Priest' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "factions.toml: temple.ranks[2]: missing 'id'",
+                "factions.toml: temple.ranks[2].requires: expected a table, like { standing = 30.0 }",
+                // A faction whose ladder can't be read is left out, so the checks across
+                // rungs wait until it can: only the Free Company gets that far.
+                "factions.toml: free_company.ranks: a faction needs at least one rank",
+            ]
+        );
+        let text = r#"
+            [temple]
+            name = "Temple of the Dawn"
+            alignment = { law = 30.0, good = 80.0 }
+            tolerance = 35.0
+
+            [[temple.ranks]]
+            id = "acolyte"
+            requires = { standing = 120.0 }
+
+            [[temple.ranks]]
+            id = "acolyte"
+            tolerance = -5.0
+        "#;
+        assert_eq!(
+            problems(factions(text)),
+            [
+                "factions.toml: temple.ranks[0].requires.standing: 120.00 is outside -100.00..100.00",
+                "factions.toml: temple.ranks[1].tolerance: -5.00 must be at least 0.00",
+                "factions.toml: temple.ranks[1].id: another rank is already called 'acolyte'",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_starting_rank_must_be_on_the_ladder() {
+        let text =
+            format!("{VEX}memberships = [{{ faction = \"lantern_guild\", rank = \"fense\" }}]");
+        assert_eq!(
+            problems(world(GUILD, &text)),
+            [
+                "characters.toml: vex.memberships[0].rank: unknown rank 'fense' for lantern_guild (did you mean 'fence'?)"
+            ]
+        );
+        let text =
+            format!("{VEX}memberships = [{{ faction = \"lantern_guild\", rank = \"Fence\" }}]");
+        assert_eq!(
+            problems(world(GUILD, &text)),
+            [
+                "characters.toml: vex.memberships[0].rank: 'Fence' isn't a valid id: use lowercase letters, digits and _, starting with a letter"
+            ]
+        );
+        let text =
+            format!("{VEX}memberships = [{{ faction = \"lantern_guild\", rank = \"fence\" }}]");
+        let content = world(GUILD, &text).expect("valid content");
+        let vex = &content.characters[&CharacterId::new("vex").expect("valid id")];
+        assert_eq!(
+            vex.memberships[0].rank.as_ref().map(RankId::as_str),
+            Some("fence")
+        );
+    }
+
+    #[test]
+    fn warns_of_ranks_that_are_probably_mistakes() {
+        let text = format!(
+            "{VEX}memberships = [{{ faction = \"lantern_guild\", rank = \"shadow\" }}]\nstanding = {{ factions = {{ lantern_guild = 30.0 }} }}"
+        );
+        let guild = GUILD.replace(
+            "id = \"shadow\"\n        requires = { standing = 60.0 }",
+            "id = \"shadow\"\n        requires = { standing = 60.0 }\n        tolerance = 70.0",
+        );
+        let content = world(&guild, &text).expect("warnings don't stop loading");
+        let found: Vec<String> = warnings(&content)
+            .iter()
+            .map(Diagnostic::to_string)
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "characters.toml: vex.memberships[0].rank: vex starts as a shadow with standing 30.00, below the 60.00 it requires",
+                "factions.toml: lantern_guild.ranks[2].tolerance: shadow's tolerance 70.00 is looser than the faction's member tolerance, 60.00, so it changes nothing",
+            ]
+        );
+    }
+
+    #[test]
     fn reads_starting_memberships() {
         let text = format!(
             "{VEX}memberships = [{{ faction = \"lantern_guild\" }}, {{ faction = \"city_watch\" }}]"
         );
         let content = world(&format!("{WATCH}{GUILD}"), &text).expect("valid content");
         let vex = &content.characters[&CharacterId::new("vex").expect("valid id")];
-        let factions: Vec<&str> = vex.memberships.iter().map(FactionId::as_str).collect();
+        let factions: Vec<&str> = vex.factions().map(FactionId::as_str).collect();
         assert_eq!(factions, ["lantern_guild", "city_watch"], "as listed");
         let plain = characters(VEX).expect("valid content");
         assert!(
@@ -1339,14 +1602,14 @@ mod tests {
     #[test]
     fn reports_mistakes_in_a_membership() {
         let text = format!(
-            "{VEX}memberships = [{{ faction = \"Lantern Guild\" }}, {{}}, {{ faction = \"lantern_guild\", rank = \"fence\" }}, 3]"
+            "{VEX}memberships = [{{ faction = \"Lantern Guild\" }}, {{}}, {{ faction = \"lantern_guild\", colour = \"red\" }}, 3]"
         );
         assert_eq!(
             problems(world(GUILD, &text)),
             [
                 "characters.toml: vex.memberships[0].faction: 'Lantern Guild' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
                 "characters.toml: vex.memberships[1]: missing 'faction'",
-                "characters.toml: vex.memberships[2]: unknown key 'rank'",
+                "characters.toml: vex.memberships[2]: unknown key 'colour'",
                 "characters.toml: vex.memberships[3]: expected a table, like { faction = \"lantern_guild\" }",
             ]
         );
@@ -1409,7 +1672,7 @@ mod tests {
     #[test]
     fn a_faction_and_a_character_cannot_share_an_id() {
         let found = problems(parse_content(Sources {
-            factions: Some(&WATCH.replace("[city_watch]", "[vex]")),
+            factions: Some(&WATCH.replace("city_watch", "vex")),
             characters: Some(VEX),
             ..Sources::default()
         }));

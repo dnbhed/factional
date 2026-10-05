@@ -228,6 +228,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Weights left out keep their defaults,** so a designer can change just `kinship`.
   - **`--explain` says where every number came from,** naming the relations and standings behind kinship and faction opinion. It says so when a side belongs to no factions.
   - *Why:* every number a designer sees adds up, and can be traced to content they can edit.
+- **P-41 · How ranks work** (made in M5, 2026-10-05).
+  - **Every faction needs at least one rung,** because new members have to start somewhere (D-20). Riverhold's ladders come from DESIGN.md §13.
+  - **One rung at a time.** `Promote` checks only the next rank's requirements: standing at or above its minimum, and distance within its `tolerance` if it sets one. Every unmet one is listed.
+  - **Never automatic (D-17).** Raising standing past a requirement changes nothing until something sends `Promote`.
+  - **Events say the rung.** `JoinedFaction` names the starting rank and `RankChanged` both rungs, so listeners never look ranks up (P-15).
+  - **Warnings, not errors,** for a starting member below their rank's requirement, and for a rank tolerance looser than the faction's member tolerance. The first may be a story choice; the second has no effect.
+  - **A faction whose ladder can't be read is left out,** so the checks across rungs never point at the wrong rung (as with bands).
+  - *Why:* rank stays separate from standing (D-11), designers see exactly what stands between a member and the next rung, and promotion stays a story beat.
 
 ## Open
 

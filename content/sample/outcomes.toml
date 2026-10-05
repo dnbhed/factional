@@ -11,3 +11,7 @@ standing = { factions = { city_watch = -20.0 }, characters = { captain_hale = -1
 [rescued_merchant]
 alignment = { good = 6.0 }
 standing = { factions = { city_watch = 10.0 }, characters = { merchant_ava = 30.0 } }
+
+# A job well done for the Lantern Guild: enough to make a fence a shadow.
+[fenced_the_crown_jewels]
+standing = { factions = { lantern_guild = 30.0 } }

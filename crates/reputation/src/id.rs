@@ -63,6 +63,11 @@ id_type!(
 );
 
 id_type!(
+    /// A rank's id on its faction's ladder, such as `sergeant`.
+    RankId
+);
+
+id_type!(
     /// An outcome's id in `outcomes.toml`, such as `fined_by_watch`.
     OutcomeId
 );

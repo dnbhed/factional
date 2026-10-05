@@ -45,6 +45,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M2 — relations between factions: `relations.toml` (`between` and `from`/`to`), relation bands and `conflict_threshold`; `SetRelation` and `ShiftRelation` with `RelationChanged`; enemy exclusion in `assess_join`; invariant 6 kept by refusing a war between a character's own factions until M9; `relations`, `relate`; done 2026-10-05 (#12)
 - M3 — standing: a store of how factions and characters regard each character; starting standing, action `standing` effects (target, target factions, named), `outcomes.toml`, `ApplyOutcome`, `ApplyEffects` and `StandingChanged`; the `awareness` seam (1.00); `leave_standing_change`; `standing`, `outcomes`, `outcome`; done 2026-10-05 (#13)
 - M4 — the full disposition: affinity, standing, kinship (with `same_faction`), faction opinion and modifiers (0 until M10), each clamped to ±100, weighted by `disposition.weights` and summed; `disposition --explain` shows DESIGN.md §8.2's table, with where kinship and faction opinion came from; done 2026-10-05 (#14)
+- M5 — rank ladders: `[[<faction>.ranks]]` with standing requirements and stricter tolerances, starting ranks, new members on the lowest rung; `Promote` (only on request, refused with every unmet requirement) and `Demote`, with `RankChanged`; `assess_promotion`; rank load checks and warnings; `ranks`, `promote [--explain]`, `demote`; done 2026-10-05 (#16)
 
 ---
 
@@ -68,39 +69,6 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M5 · Rank ladders and promotion — P0 · Next
-
-**Why:** the brief's rank in a faction, tracked separately from standing (D-11), and changed only when something asks (D-17). DESIGN.md §7.2.
-
-**Scope**
-
-- **Content.**
-  - Each faction gains `[[<faction>.ranks]]`, lowest first. Each rung has an `id`, and optionally `requires = { standing = … }` and a stricter `tolerance`.
-  - Starting memberships gain an optional `rank`, which defaults to the lowest rung.
-- **State.** Each membership holds its rank. A new member joins on the lowest rung.
-- **Commands.** Both emit `RankChanged { character, faction, from, to }`.
-  - `Promote { character, faction }` moves a member up one rung if the next rank's requirements hold: standing at or above its minimum, and distance within its `tolerance` if it sets one. A refusal lists every failing requirement with its numbers.
-  - `Demote { character, faction }` moves a member down one rung.
-- **No automatic promotion (D-17).** Meeting the requirements only makes a promotion possible.
-- **Query.** `assess_promotion(character, faction)`: the next rank, and every requirement with whether it holds.
-- **CLI.**
-  - `ranks <faction>`;
-  - `promote <character> <faction> [--explain]` and `demote <character> <faction>`;
-  - memberships in `show character` and `show faction` include the rank.
-
-**Acceptance** (Riverhold; ladders from DESIGN.md §13)
-
-1. `promote vex lantern_guild` is refused: `shadow needs standing 60.00, vex has 30.00`. After +30.00 standing with the Guild, it succeeds: `RankChanged fence → shadow`.
-2. `promote captain_hale city_watch` → `captain_hale is already a captain, the highest rank of city_watch`.
-3. `promote sister_mira temple` is refused on standing alone: `high_priest needs standing 80.00, sister_mira has 40.00`. Her distance is within the rank's tolerance (5.59 ≤ 20.00), and `--explain` shows both checks.
-4. The player joins the Guild after four thefts and starts as a `cutpurse`.
-5. `demote vex lantern_guild` → `RankChanged fence → cutpurse`. Demoting a cutpurse → `vex is already a cutpurse, the lowest rank of lantern_guild`.
-6. Promoting or demoting a non-member is refused: `player isn't a member of temple`.
-7. **Load errors.** A membership naming a rank that isn't on the faction's ladder (with a "did you mean"); duplicate rank ids in a faction; a faction with no rungs.
-8. **Load warnings.** A starting member below their rank's standing requirement; a rank `tolerance` looser than the faction's `member_tolerance`.
-
-**Validates** (DESIGN.md §12.2): a membership's rank exists on that faction's ladder; rank ids are unique within a faction; every ladder has at least one rung; rank standing requirements and tolerances are within range. Warnings: a starting member below their rank's standing requirement; a rank tolerance looser than the faction's member tolerance.
-
 ### M6 · Standing spillover between factions — P1 · Outline
 
 **Covers:** the spillover part of DESIGN.md §7.1: one hop, using the `standing.spillover` curve.
@@ -113,24 +81,47 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 **Validates** (DESIGN.md §12.2): spillover multipliers are within −1…1.
 
-### M7 · Joining an enemy: defectors and deserters — P0 · Outline
+### M7 · Joining an enemy: defectors and deserters — P0 · Next
 
-**Covers:** DESIGN.md §9.2.
+**Why:** D-10, where joining an enemy of your faction depends on rank, standing and drift. M2's plain refusal becomes designer-tunable (DESIGN.md §9.2, P-10).
 
 **Scope**
 
-- The rule tables: world defaults plus per-faction overrides.
-- `assess_join` reports which rule fired.
-- The defection events.
-- `outside_member_tolerance` uses the same member-tolerance rule as §9.3, including rank tolerance.
+- **Content.**
+  - `balance.toml` gains `[membership.defectors]` and `[membership.deserters]`, each with `rules = [...]`.
+  - A faction can override either with its own `[<faction>.defectors]` or `[<faction>.deserters]`.
+  - Conditions: `rank_at_least` and `rank_below` (a rung number, or one of the faction's own rank ids in its own tables); `standing_with_current_at_least` and `_below`; `standing_with_target_at_least` and `_below`; `closer_to_target`; `outside_member_tolerance`.
+  - Outcomes: `accept` or `refuse` for defectors; `release` or `refuse` for deserters. Each has an optional `standing_change`, and a refusal has a `reason`.
+- **Built-in defaults.** `defectors` refuses everyone and `deserters` releases everyone. That's exactly M2's behaviour (D-4).
+- **Assessing.** For each current faction in conflict with the target:
+  - that faction's `deserters` table must release;
+  - then the target's `defectors` table must accept.
+  - `assess_join` reports, per table, every rule tried and the one that fired.
+- **Defecting.** If every table agrees, the join goes ahead:
+  - `LeftFaction { reason: Defected }` for each conflicting faction, each followed by its deserter `standing_change`;
+  - then `JoinedFaction`, followed by the defector `standing_change`.
+- **`outside_member_tolerance`** uses the member's rank tolerance if it's stricter than the faction's `member_tolerance`, the same rule M8's drift will use.
+- **CLI.** `can-join --explain` lists each table's rules and marks the one that fired.
 
-**Anchors**
+**Acceptance** (Riverhold, with the sample tables in DESIGN.md §9.2)
 
-- The built-in defaults reproduce M2's refusal.
-- With the sample tables, vex at 35 / 10 defects from the guild to the Watch: released on drift, then accepted on `closer_to_target` with −10.00 standing toward the Watch.
-- A rank-3 shadow is refused by the `deserters` table.
+1. **Built-in tables, no content:** a Guild member applying to the Watch is refused, `refused by the built-in defectors rule`. That reproduces M2.
+2. **Vex reformed to 35 / 10, a fence (rank 2):**
+   - to the Watch he's 35.09 ≤ 40.00, so eligible;
+   - to the Guild he's 95.52 > 60.00, so drifted.
+   - The Guild's `deserters` table releases him on `outside_member_tolerance` (rule 2). The Watch's `defectors` table accepts on `closer_to_target` (rule 2), with −10.00 standing toward the Watch.
+   - Events: `LeftFaction(defected)` from the Guild, `JoinedFaction` to the Watch as a recruit, then `StandingChanged` with the Watch, 0 → −10.00.
+3. **The same Vex as a shadow (rank 3):** refused by the Guild's `deserters` rule 1, `Officers don't walk away.`
+4. **The Ashen Circle's own `deserters` table** refuses everyone: `No one leaves the Circle.`
+5. **Standing first.** A Guild member with standing 50.00 with the Watch is accepted by `defectors` rule 1, with no cost.
+6. **Load errors at their keys:**
+   - an unknown condition, with a "did you mean";
+   - an unknown outcome for the table;
+   - `rank_at_least = 0`;
+   - a rank id in the world table, or another faction's rank in a faction's table;
+   - a table whose last rule has conditions, so it might not decide.
 
-**Validates** (DESIGN.md §12.2): rule tables use only known conditions and outcomes; rank ids appear only in a faction's own tables, and only that faction's ranks; `rank_at_least` is ≥ 1; every table ends with a rule that always decides.
+**Validates** (DESIGN.md §12.2): rule tables use only known conditions and outcomes; rank ids appear only in a faction's own tables, and only that faction's ranks; rank numbers are ≥ 1; every table ends with a rule that always decides.
 
 ### M8 · Drift policies and runtime faction alignment — P1 · Outline
 
