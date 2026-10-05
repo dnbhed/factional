@@ -61,8 +61,8 @@ fn run_session(
 ) -> io::Result<bool> {
     let mut session = Session::default();
     loop {
-        let line = match read() {
-            Input::Line(line) => line,
+        let input = match read() {
+            Input::Line(input) => input,
             Input::Interrupted => continue,
             Input::End => return Ok(true),
             Input::Unreadable(reason) => {
@@ -70,19 +70,21 @@ fn run_session(
                 return Ok(false);
             }
         };
-        let line = line.trim();
-        if is_blank_or_comment(line) {
-            continue;
-        }
-        match session.execute(line) {
-            Ok(Outcome::Quit) => return Ok(true),
-            Ok(Outcome::Output(text)) => {
-                if !text.is_empty() {
-                    writeln!(out, "{text}")?;
-                }
+        // A multi-line paste arrives as one read: run each of its lines in turn.
+        for line in input.lines().map(str::trim) {
+            if is_blank_or_comment(line) {
+                continue;
             }
-            Ok(failed @ Outcome::Error(_)) => writeln!(err, "{}", failed.render())?,
-            Err(error) => writeln!(err, "{error}")?,
+            match session.execute(line) {
+                Ok(Outcome::Quit) => return Ok(true),
+                Ok(Outcome::Output(text)) => {
+                    if !text.is_empty() {
+                        writeln!(out, "{text}")?;
+                    }
+                }
+                Ok(failed @ Outcome::Error(_)) => writeln!(err, "{}", failed.render())?,
+                Err(error) => writeln!(err, "{error}")?,
+            }
         }
     }
 }
@@ -159,6 +161,23 @@ mod tests {
         assert_eq!(
             session(vec![line("   "), line("# a note"), line("echo")]),
             (true, String::new(), String::new())
+        );
+    }
+
+    #[test]
+    fn a_pasted_block_of_lines_runs_each_line_in_order() {
+        // The line editor hands over a multi-line paste as one read.
+        assert_eq!(
+            session(vec![line("echo one\n\n# a note\r\nfail two\necho three")]),
+            (true, "one\nthree\n".into(), "error: two\n".into())
+        );
+    }
+
+    #[test]
+    fn quit_in_a_pasted_block_stops_before_the_lines_after_it() {
+        assert_eq!(
+            session(vec![line("echo one\nquit\necho two"), line("echo three")]),
+            (true, "one\n".into(), String::new())
         );
     }
 
