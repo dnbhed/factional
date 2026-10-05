@@ -204,7 +204,29 @@ impl<'t> Section<'t> {
         example: &str,
         report: &mut Report,
     ) -> Option<&'t Vec<Value>> {
-        match self.get(key)? {
+        let value = self.get(key)?;
+        self.to_list(key, value, example, report)
+    }
+
+    /// A required list, such as a rule table's `rules = [...]`.
+    pub(crate) fn list(
+        &mut self,
+        key: &'static str,
+        example: &str,
+        report: &mut Report,
+    ) -> Option<&'t Vec<Value>> {
+        let value = self.required(key, report)?;
+        self.to_list(key, value, example, report)
+    }
+
+    fn to_list(
+        &self,
+        key: &str,
+        value: &'t Value,
+        example: &str,
+        report: &mut Report,
+    ) -> Option<&'t Vec<Value>> {
+        match value {
             Value::Array(items) => Some(items),
             _ => {
                 report.error(

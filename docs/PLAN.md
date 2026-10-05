@@ -46,6 +46,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M3 — standing: a store of how factions and characters regard each character; starting standing, action `standing` effects (target, target factions, named), `outcomes.toml`, `ApplyOutcome`, `ApplyEffects` and `StandingChanged`; the `awareness` seam (1.00); `leave_standing_change`; `standing`, `outcomes`, `outcome`; done 2026-10-05 (#13)
 - M4 — the full disposition: affinity, standing, kinship (with `same_faction`), faction opinion and modifiers (0 until M10), each clamped to ±100, weighted by `disposition.weights` and summed; `disposition --explain` shows DESIGN.md §8.2's table, with where kinship and faction opinion came from; done 2026-10-05 (#14)
 - M5 — rank ladders: `[[<faction>.ranks]]` with standing requirements and stricter tolerances, starting ranks, new members on the lowest rung; `Promote` (only on request, refused with every unmet requirement) and `Demote`, with `RankChanged`; `assess_promotion`; rank load checks and warnings; `ranks`, `promote [--explain]`, `demote`; done 2026-10-05 (#16)
+- M7 — joining an enemy: `membership.defectors` and `membership.deserters` rule tables, and a faction's own, which may name its ranks; built in, defectors refuse everyone and deserters release everyone (D-4); load checks for conditions, outcomes, rungs, rank ids and a last rule that always decides; `assess_join` reports every rule tried in each table; defecting emits `LeftFaction(defected)` with the deserter cost, then `JoinedFaction` with the defector cost; `can-join --explain` shows each table; done 2026-10-05 (#18)
 
 ---
 
@@ -80,48 +81,6 @@ The order below is the source of truth. Sections further down are grouped by pha
 - `lantern_guild` ↔ `free_company` (+20) spills nothing under the default curve.
 
 **Validates** (DESIGN.md §12.2): spillover multipliers are within −1…1.
-
-### M7 · Joining an enemy: defectors and deserters — P0 · Next
-
-**Why:** D-10, where joining an enemy of your faction depends on rank, standing and drift. M2's plain refusal becomes designer-tunable (DESIGN.md §9.2, P-10).
-
-**Scope**
-
-- **Content.**
-  - `balance.toml` gains `[membership.defectors]` and `[membership.deserters]`, each with `rules = [...]`.
-  - A faction can override either with its own `[<faction>.defectors]` or `[<faction>.deserters]`.
-  - Conditions: `rank_at_least` and `rank_below` (a rung number, or one of the faction's own rank ids in its own tables); `standing_with_current_at_least` and `_below`; `standing_with_target_at_least` and `_below`; `closer_to_target`; `outside_member_tolerance`.
-  - Outcomes: `accept` or `refuse` for defectors; `release` or `refuse` for deserters. Each has an optional `standing_change`, and a refusal has a `reason`.
-- **Built-in defaults.** `defectors` refuses everyone and `deserters` releases everyone. That's exactly M2's behaviour (D-4).
-- **Assessing.** For each current faction in conflict with the target:
-  - that faction's `deserters` table must release;
-  - then the target's `defectors` table must accept.
-  - `assess_join` reports, per table, every rule tried and the one that fired.
-- **Defecting.** If every table agrees, the join goes ahead:
-  - `LeftFaction { reason: Defected }` for each conflicting faction, each followed by its deserter `standing_change`;
-  - then `JoinedFaction`, followed by the defector `standing_change`.
-- **`outside_member_tolerance`** uses the member's rank tolerance if it's stricter than the faction's `member_tolerance`, the same rule M8's drift will use.
-- **CLI.** `can-join --explain` lists each table's rules and marks the one that fired.
-
-**Acceptance** (Riverhold, with the sample tables in DESIGN.md §9.2)
-
-1. **Built-in tables, no content:** a Guild member applying to the Watch is refused, `refused by the built-in defectors rule`. That reproduces M2.
-2. **Vex reformed to 35 / 10, a fence (rank 2):**
-   - to the Watch he's 35.09 ≤ 40.00, so eligible;
-   - to the Guild he's 95.52 > 60.00, so drifted.
-   - The Guild's `deserters` table releases him on `outside_member_tolerance` (rule 2). The Watch's `defectors` table accepts on `closer_to_target` (rule 2), with −10.00 standing toward the Watch.
-   - Events: `LeftFaction(defected)` from the Guild, `JoinedFaction` to the Watch as a recruit, then `StandingChanged` with the Watch, 0 → −10.00.
-3. **The same Vex as a shadow (rank 3):** refused by the Guild's `deserters` rule 1, `Officers don't walk away.`
-4. **The Ashen Circle's own `deserters` table** refuses everyone: `No one leaves the Circle.`
-5. **Standing first.** A Guild member with standing 50.00 with the Watch is accepted by `defectors` rule 1, with no cost.
-6. **Load errors at their keys:**
-   - an unknown condition, with a "did you mean";
-   - an unknown outcome for the table;
-   - `rank_at_least = 0`;
-   - a rank id in the world table, or another faction's rank in a faction's table;
-   - a table whose last rule has conditions, so it might not decide.
-
-**Validates** (DESIGN.md §12.2): rule tables use only known conditions and outcomes; rank ids appear only in a faction's own tables, and only that faction's ranks; rank numbers are ≥ 1; every table ends with a rule that always decides.
 
 ### M8 · Drift policies and runtime faction alignment — P1 · Outline
 
@@ -169,23 +128,32 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Modifiers expire on `AdvanceTime`.
 - The modifiers component of disposition.
 
-### A4 · Inertia profiles — P1 · Outline
+### A4 · Inertia profiles — P1 · Next
 
-**Covers:** DESIGN.md §5.3.
+**Why:** D-6, where how easily an act moves someone depends on where they already stand. The same good deed moves a saint less than a neutral character (DESIGN.md §5.3, P-5).
 
 **Scope**
 
-- Inertia profiles, and a per-character `inertia` setting.
-- Validation that every multiplier is ≥ 0.
-- `act --explain`.
+- **Content.**
+  - `balance.toml` gains `[inertia]`: `default_profile`, and `[inertia.profiles.<id>]`, each with up to four curves, `law.toward_lawful`, `law.toward_chaotic`, `good.toward_good` and `good.toward_evil`. Any curve a profile leaves out is 1.0.
+  - A character may set `inertia = "<profile>"`; without it, the default profile applies.
+  - Built in, with no `[inertia]`, the default is `steady`, whose every curve is 1.0: every act counts in full, as now.
+- **The shift formula** (§5.2) multiplies each axis's shift by the curve for that axis and the direction of the shift, read at the character's position before the act. The product is computed exactly and rounded once (P-1): a curve value isn't rounded on its own first.
+- **Outcomes and effects** move alignment with the character's inertia, as actions do.
+- **CLI.** `act --explain` shows, per axis, the base delta, the scale, the inertia multiplier with its profile and curve, and the shift.
 
-**Anchors**
+**Acceptance** (DESIGN.md §5.3, with the `hardening` profile from `docs/examples/riverhold`)
 
-- A hardening character at good 60.00:
-  - `help_stranger` → +2.32, ending at 62.32
-  - `extort` → −4.20, ending at 55.80
-- `sister_mira` at 85.00 helps a stranger: ×0.41 → +1.64, ending at 86.64.
-- A steady character gets the full shift.
+1. **A hardening character at good 60.00:**
+   - helps a stranger (good +4.00): `toward_good` at 60 is 0.58, so +2.32, ending at 62.32;
+   - extorts someone instead (good −6.00): `toward_evil` at 60 is 0.70, so −4.20, ending at 55.80.
+2. **Rounded once.** `sister_mira`, hardening, at good 85.00 helps a stranger: `toward_good` at 85 is 0.405, so 4.00 × 0.405 = 1.62, ending at 86.62. (The outline had ×0.41 → +1.64, which rounds the multiplier first; P-1 rounds the product once.)
+3. **A steady character** gets the full shift: +4.00.
+4. **A curve left out** is 1.0: a hardening character's law moves in full.
+5. **Load errors at their keys:**
+   - a character's `inertia`, or `default_profile`, naming a profile that doesn't exist, with a "did you mean";
+   - a curve name other than the four, such as `good.toward_lawful`;
+   - a multiplier below 0 anywhere on a curve.
 
 **Validates** (DESIGN.md §12.2): a character's `inertia`, and `inertia.default_profile`, name a profile that exists; profiles use only `law`/`good` × `toward_*` curves; multipliers are ≥ 0.
 

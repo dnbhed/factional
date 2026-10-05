@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
+
 use factional_core::Fixed;
 
-use crate::{Alignment, FactionId, RankId, Tolerances, Weights};
+use crate::{Alignment, FactionId, RankId, Rule, TableKind, Tolerances, Weights};
 
 /// A faction, as content describes it (DESIGN.md §9).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +20,8 @@ pub struct Faction {
     pub leave_standing_change: Fixed,
     /// The rank ladder, lowest first (DESIGN.md §7.2). New members join on the first rung.
     pub ranks: Vec<Rank>,
+    /// Its own `defectors` and `deserters` tables, replacing the world's (DESIGN.md §9.2).
+    pub rule_tables: BTreeMap<TableKind, Vec<Rule>>,
 }
 
 /// One rung of a faction's ladder (DESIGN.md §7.2, P-9).

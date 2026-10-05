@@ -30,8 +30,17 @@ distance 90.35 (euclidean), tolerance 40.00
 law: 70.00 vs -20.00, gap 90.00, weight 1.00
 good: 20.00 vs -12.00, gap 32.00, weight 0.25
 weights: city_watch's own
+leaving lantern_guild, in conflict with city_watch (-80.00)
+lantern_guild's deserters (balance.toml): rule 3, release, standing -40.00
+  rule 1: rank_at_least = 3? no, cutpurse is rung 1
+  rule 2: outside_member_tolerance = true? no, 40.01 from lantern_guild, tolerance 60.00
+  rule 3: always
+city_watch's defectors (balance.toml): rule 3, refuse, "You serve our enemies."
+  rule 1: standing_with_target_at_least = 50.00? no, standing 0.00
+  rule 2: closer_to_target = true? no, 90.35 from city_watch, 40.01 from lantern_guild
+  rule 3: always
 refused: 90.35 from The City Watch, tolerance is 40.00
-refused: player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)
+refused: player belongs to The Lantern Guild, in conflict with The City Watch (-80.00): refused by The City Watch's defectors rule 3, "You serve our enemies."
 > relate city_watch lantern_guild --by 40
 #4 at tick 0: city_watch → lantern_guild changed from -80.00 to -40.00
 #5 at tick 0: lantern_guild → city_watch changed from -80.00 to -40.00

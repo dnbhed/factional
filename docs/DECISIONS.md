@@ -236,6 +236,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Warnings, not errors,** for a starting member below their rank's requirement, and for a rank tolerance looser than the faction's member tolerance. The first may be a story choice; the second has no effect.
   - **A faction whose ladder can't be read is left out,** so the checks across rungs never point at the wrong rung (as with bands).
   - *Why:* rank stays separate from standing (D-11), designers see exactly what stands between a member and the next rung, and promotion stays a story beat.
+- **P-42 · How defection tables decide** (made in M7, 2026-10-05).
+  - **A table always decides.** Its last rule must have no conditions, so no applicant falls off the end (D-20). An empty table fails the load for the same reason.
+  - **A rank id stands for its rung on the table's own faction's ladder.** In a deserters table that's the member's own faction. In a faction's own defectors table it compares the applicant's rung where they are now with that rung of the faction's ladder ("as senior as our sergeant"). The world's tables belong to no ladder, so they use rung numbers only.
+  - **"At least" is inclusive, "below" is strict,** for rank and standing alike, so a pair of rules split cleanly at one value. `closer_to_target` is strict: equal distances aren't closer.
+  - **Every table is tried, even after one refuses,** so the refusal lists every reason and `--explain` shows every table (P-24).
+  - **Content refusals need a reason, and a refusal can't change standing:** nothing happens, so there's nothing to charge. The built-in refusal has no reason; it's named "the built-in defectors rule".
+  - **Costs.** Each enemy faction's deserters `standing_change` follows its own `LeftFaction`. The defectors changes, one per enemy faction left, add up into one `StandingChanged` after `JoinedFaction` (as P-39 adds effects on one party). `leave_standing_change` doesn't apply to defection: the deserters table sets that price.
+  - *Why:* tables can always be checked at load to decide, explanations name every rule a designer can edit, and the events say exactly what changed.
 
 ## Open
 

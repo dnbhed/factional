@@ -2,7 +2,7 @@ use std::fmt;
 
 use factional_core::{Fixed, Tick};
 
-use crate::{CharacterId, Distance, FactionId, RankId};
+use crate::{CharacterId, Defection, Distance, FactionId, RankId, Verdict};
 
 /// How close to a faction's alignment someone must be to join it, and to stay in it
 /// (DESIGN.md §9.1). Staying is never harder than joining: easier to stay than to get in.
@@ -76,11 +76,12 @@ pub struct StartingMembership {
     pub rank: Option<RankId>,
 }
 
-/// Why a character left a faction. Defection, expulsion and conflict resolution arrive with
-/// M7, M8 and M9.
+/// Why a character left a faction. Expulsion and conflict resolution arrive with M8 and M9.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeaveReason {
     Voluntary,
+    /// To join an enemy of the faction (DESIGN.md §9.2).
+    Defected,
 }
 
 /// One requirement of the next rank (DESIGN.md §7.2).
@@ -152,13 +153,6 @@ pub enum JoinBlock {
         distance: Fixed,
         tolerance: Fixed,
     },
-    /// A member of a faction in conflict with this one; `relation` is the more hostile of the
-    /// two directions.
-    EnemyMembership {
-        faction: FactionId,
-        faction_name: String,
-        relation: Fixed,
-    },
 }
 
 /// Whether a character may join a faction, with every reason they can't (DESIGN.md §9.1, P-24).
@@ -171,40 +165,55 @@ pub struct JoinAssessment {
     /// How far the character is from the faction, measured with the faction's weights.
     pub distance: Distance,
     pub tolerance: Fixed,
-    /// Every failing check, in a fixed order; empty if they may join.
+    /// Every failing check, in a fixed order.
     pub blocks: Vec<JoinBlock>,
+    /// For each faction they're in that's in conflict with this one, in id order, whether
+    /// it lets them go and this one takes them (DESIGN.md §9.2).
+    pub defections: Vec<Defection>,
 }
 
 impl JoinAssessment {
     pub fn allowed(&self) -> bool {
-        self.blocks.is_empty()
+        self.blocks.is_empty() && self.defections.iter().all(Defection::allowed)
     }
 
-    /// Each failing check in words, such as `60.21 from The Lantern Guild, tolerance is 45.00`.
+    /// Each failing check in words, such as `60.21 from The Lantern Guild, tolerance is 45.00`,
+    /// then each table that refused.
     pub fn reasons(&self) -> Vec<String> {
-        self.blocks
-            .iter()
-            .map(|block| match block {
-                JoinBlock::AlreadyMember => {
-                    format!("{} is already a member of {}", self.character, self.faction)
-                }
-                JoinBlock::OutsideTolerance {
-                    distance,
-                    tolerance,
-                } => format!(
-                    "{distance} from {}, tolerance is {tolerance}",
-                    self.faction_name
-                ),
-                JoinBlock::EnemyMembership {
-                    faction_name,
-                    relation,
-                    ..
-                } => format!(
-                    "{} belongs to {faction_name}, in conflict with {} ({relation})",
-                    self.character, self.faction_name
-                ),
-            })
-            .collect()
+        let blocks = self.blocks.iter().map(|block| match block {
+            JoinBlock::AlreadyMember => {
+                format!("{} is already a member of {}", self.character, self.faction)
+            }
+            JoinBlock::OutsideTolerance {
+                distance,
+                tolerance,
+            } => format!(
+                "{distance} from {}, tolerance is {tolerance}",
+                self.faction_name
+            ),
+        });
+        let refusals = self.defections.iter().flat_map(|defection| {
+            [&defection.deserters, &defection.defectors]
+                .into_iter()
+                .filter_map(move |table| {
+                    let Verdict::Refuse { reason } = &table.verdict else {
+                        return None;
+                    };
+                    let quoted = reason
+                        .as_ref()
+                        .map(|reason| format!(", \"{reason}\""))
+                        .unwrap_or_default();
+                    Some(format!(
+                        "{} belongs to {}, in conflict with {} ({}): refused by {}{quoted}",
+                        self.character,
+                        defection.from_name,
+                        self.faction_name,
+                        defection.relation,
+                        table.rule_name()
+                    ))
+                })
+        });
+        blocks.chain(refusals).collect()
     }
 }
 

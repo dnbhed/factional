@@ -18,6 +18,9 @@
 # start on the first rung. A rung may require a minimum standing with the faction, and may
 # set a stricter tolerance than the faction's own. Promotion only happens when a quest,
 # dialogue or the CLI asks for it: `promote <character> <faction>`.
+#
+# A faction may also set its own [<faction>.defectors] or [<faction>.deserters] table,
+# replacing balance.toml's; see there for how they work.
 
 [city_watch]
 name = "The City Watch"
@@ -100,6 +103,12 @@ alignment = { law = 20.0, good = -80.0 }
 weights = { law = 0.25, good = 1.0 }
 tolerance = 30.0
 member_tolerance = 40.0
+
+# The Circle replaces balance.toml's deserters table with its own: no one leaves.
+[ashen_circle.deserters]
+rules = [
+  { then = "refuse", reason = "No one leaves the Circle." },
+]
 
 [[ashen_circle.ranks]]
 id = "initiate"

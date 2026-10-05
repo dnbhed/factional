@@ -10,10 +10,11 @@ use std::{fmt, fs, io};
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands,
-    Character, CharacterId, ComponentKind, Content, ContentProblem, ContentWarning,
+    Character, CharacterId, ComponentKind, Condition, Content, ContentProblem, ContentWarning,
     DispositionWeights, Effects, Faction, FactionId, InvalidId, Metric, Outcome, OutcomeId, Party,
-    Rank, RankId, RankKey, Relation, RelationEnds, RelationSide, StandingEffects, StandingKey,
-    StandingOwner, StartingMembership, ToleranceProblem, Tolerances, WeightProblem, Weights,
+    Rank, RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects,
+    StandingKey, StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem,
+    ToleranceProblem, Tolerances, Verdict, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -244,6 +245,38 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             ContentProblem::SameFactionOutOfRange(_) => {
                 (BALANCE_FILE, "disposition.same_faction".to_owned())
             }
+            ContentProblem::RuleTable {
+                owner,
+                kind,
+                problem,
+            } => {
+                let (file, table) = match owner {
+                    TableOwner::World => (BALANCE_FILE, format!("membership.{kind}")),
+                    TableOwner::Faction(faction) => (FACTIONS_FILE, format!("{faction}.{kind}")),
+                };
+                let at = match problem {
+                    TableProblem::RungBelowOne {
+                        rule, condition, ..
+                    }
+                    | TableProblem::RankInWorldTable {
+                        rule, condition, ..
+                    }
+                    | TableProblem::UnknownRank {
+                        rule, condition, ..
+                    } => format!("rules[{rule}].when.{condition}"),
+                    TableProblem::ValueOutOfRange { rule, key, .. } if *key == STANDING_CHANGE => {
+                        format!("rules[{rule}].{key}")
+                    }
+                    TableProblem::ValueOutOfRange { rule, key, .. } => {
+                        format!("rules[{rule}].when.{key}")
+                    }
+                    TableProblem::MightNotDecide { rules: 0 } => "rules".to_owned(),
+                    TableProblem::MightNotDecide { rules } => {
+                        format!("rules[{}].when", rules - 1)
+                    }
+                };
+                (file, format!("{table}.{at}"))
+            }
         };
         Diagnostic {
             file: file.to_owned(),
@@ -370,6 +403,10 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         }
         disposition.finish(report);
     }
+    if let Some(mut membership) = file.optional_table("membership", "[membership]", report) {
+        balance.rule_tables = read_rule_tables(&mut membership, report);
+        membership.finish(report);
+    }
     if let Some(mut relations) = file.optional_table("relations", "[relations]", report) {
         if let Some(threshold) = relations.optional_fixed("conflict_threshold", report) {
             balance.conflict_threshold = threshold;
@@ -485,6 +522,9 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
         standing,
     })
 }
+
+/// A rule's `standing_change` key, which a table problem may point at.
+const STANDING_CHANGE: &str = "standing_change";
 
 const STANDING_EXAMPLE: &str = "{ factions = { city_watch = 10.0 }, characters = { vex = -5.0 } }";
 
@@ -694,6 +734,7 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
         .optional_fixed("leave_standing_change", report)
         .unwrap_or_default();
     let ranks = read_ranks(&mut section, report);
+    let rule_tables = read_rule_tables(&mut section, report);
     let tolerances = tolerance.and_then(|tolerance| match Tolerances::new(tolerance, member) {
         Ok(tolerances) => Some(tolerances),
         Err(problem) => {
@@ -714,7 +755,165 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
         tolerances: tolerances?,
         leave_standing_change,
         ranks: ranks?,
+        rule_tables,
     })
+}
+
+/// The `defectors` and `deserters` tables under `section`, each `{ rules = [...] }`
+/// (DESIGN.md §9.2). A table with any rule that can't be read is left out, so the checks
+/// across rules wait until every rule reads cleanly. Whether rank ids name ranks on the
+/// right ladder, and the numbers are in range, are the world's checks (P-32).
+fn read_rule_tables(
+    section: &mut Section<'_>,
+    report: &mut Report,
+) -> BTreeMap<TableKind, Vec<Rule>> {
+    let mut tables = BTreeMap::new();
+    for kind in TableKind::ALL {
+        let example = format!("[{}]", section.path_to(kind.key()));
+        let Some(mut table) = section.optional_table(kind.key(), &example, report) else {
+            continue;
+        };
+        if let Some(rules) = read_rules(&mut table, kind, report) {
+            tables.insert(kind, rules);
+        }
+        table.finish(report);
+    }
+    tables
+}
+
+/// A table's `rules`, top to bottom; `None` if any can't be read.
+fn read_rules(table: &mut Section<'_>, kind: TableKind, report: &mut Report) -> Option<Vec<Rule>> {
+    let example = format!(
+        "{{ when = {{ closer_to_target = true }}, then = \"{}\" }}",
+        kind.allow_key()
+    );
+    let items = table.list("rules", &format!("[{example}]"), report)?;
+    let path = table.path_to("rules");
+    let mut rules = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let at = format!("{path}[{index}]");
+        let Value::Table(fields) = item else {
+            report.error(&at, format!("expected a table, like {example}"));
+            rules.push(None);
+            continue;
+        };
+        rules.push(read_rule(Section::new(fields, at), kind, report));
+    }
+    rules.into_iter().collect()
+}
+
+/// One rule: `when` (left out, it always holds), `then`, and `standing_change` for letting
+/// someone through or `reason` for refusing them.
+fn read_rule(mut rule: Section<'_>, kind: TableKind, report: &mut Report) -> Option<Rule> {
+    const REFUSE: &str = "refuse";
+    let errors = report.diagnostics.len();
+    let when = rule
+        .optional_table("when", "{ closer_to_target = true }", report)
+        .map(|mut when| {
+            let conditions = read_conditions(&mut when, report);
+            when.finish(report);
+            conditions
+        })
+        .unwrap_or_default();
+    let then = rule.text("then", report);
+    let standing_change = rule.optional_fixed(STANDING_CHANGE, report);
+    let reason = rule.optional_text("reason", report);
+    let verdict = match then.as_deref() {
+        None => None,
+        Some(allow) if allow == kind.allow_key() => {
+            if reason.is_some() {
+                report.error(&rule.path_to("reason"), "only a refusal has a reason");
+            }
+            Some(Verdict::Allow {
+                standing_change: standing_change.unwrap_or_default(),
+            })
+        }
+        Some(REFUSE) => {
+            if standing_change.is_some() {
+                report.error(
+                    &rule.path_to(STANDING_CHANGE),
+                    "a refusal changes nothing, so it has no standing_change",
+                );
+            }
+            if reason.is_none() {
+                report.error(rule.path(), "missing 'reason'");
+            }
+            Some(Verdict::Refuse { reason })
+        }
+        Some(unknown) => {
+            let message = match suggest(unknown, [kind.allow_key(), REFUSE]) {
+                Some(close) => {
+                    format!("unknown outcome '{unknown}' for {kind} (did you mean '{close}'?)")
+                }
+                None => format!(
+                    "unknown outcome '{unknown}' for {kind}: use '{}' or '{REFUSE}'",
+                    kind.allow_key()
+                ),
+            };
+            report.error(&rule.path_to("then"), message);
+            None
+        }
+    };
+    rule.finish(report);
+    let read = report.diagnostics.len() == errors;
+    verdict.filter(|_| read).map(|then| Rule { when, then })
+}
+
+/// A rule's conditions, in the order `Condition::KEYS` lists them.
+fn read_conditions(when: &mut Section<'_>, report: &mut Report) -> Vec<Condition> {
+    let mut conditions = Vec::new();
+    for key in Condition::KEYS {
+        let at = when.path_to(key);
+        let condition = match key {
+            "rank_at_least" | "rank_below" => when
+                .optional_value(key)
+                .and_then(|value| read_rank_ref(value, &at, report))
+                .map(|rank| match key {
+                    "rank_at_least" => Condition::RankAtLeast(rank),
+                    _ => Condition::RankBelow(rank),
+                }),
+            "closer_to_target" | "outside_member_tolerance" => when
+                .optional_value(key)
+                .and_then(|value| read_flag(value, &at, report))
+                .map(|flag| match key {
+                    "closer_to_target" => Condition::CloserToTarget(flag),
+                    _ => Condition::OutsideMemberTolerance(flag),
+                }),
+            _ => when.optional_fixed(key, report).map(|value| match key {
+                "standing_with_current_at_least" => Condition::StandingWithCurrentAtLeast(value),
+                "standing_with_current_below" => Condition::StandingWithCurrentBelow(value),
+                "standing_with_target_at_least" => Condition::StandingWithTargetAtLeast(value),
+                _ => Condition::StandingWithTargetBelow(value),
+            }),
+        };
+        conditions.extend(condition);
+    }
+    conditions
+}
+
+/// A rung number, or a rank id in quotes.
+fn read_rank_ref(value: &Value, at: &str, report: &mut Report) -> Option<RankRef> {
+    match value {
+        Value::Integer(rung) => Some(RankRef::Rung(*rung)),
+        Value::String(text) => RankId::new(text)
+            .map(RankRef::Id)
+            .map_err(|invalid| report.error(at, invalid.to_string()))
+            .ok(),
+        _ => {
+            report.error(at, "expected a rung number, like 3, or a rank id in quotes");
+            None
+        }
+    }
+}
+
+fn read_flag(value: &Value, at: &str, report: &mut Report) -> Option<bool> {
+    match value {
+        Value::Boolean(flag) => Some(*flag),
+        _ => {
+            report.error(at, "expected true or false");
+            None
+        }
+    }
 }
 
 /// A faction's `[[<faction>.ranks]]` ladder, lowest first; empty if it's left out (which the
@@ -896,7 +1095,9 @@ pub fn parse_curve(text: &str) -> Result<Curve, String> {
 mod tests {
     use super::*;
     use factional_core::Fixed;
-    use factional_reputation::{CharacterId, FactionId, Metric, Weights};
+    use factional_reputation::{
+        CharacterId, Condition, FactionId, Metric, RankRef, Rule, TableKind, Verdict, Weights,
+    };
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
@@ -1680,6 +1881,256 @@ mod tests {
             found,
             [
                 "factions.toml: vex: 'vex' is also a character's id: factions and characters need different ids"
+            ]
+        );
+    }
+
+    // Defectors and deserters (M7)
+
+    const TABLES: &str = r#"
+        [membership.defectors]
+        rules = [
+          { when = { standing_with_target_at_least = 50.0 }, then = "accept" },
+          { when = { closer_to_target = true }, then = "accept", standing_change = -10.0 },
+          { then = "refuse", reason = "You serve our enemies." },
+        ]
+
+        [membership.deserters]
+        rules = [
+          { when = { rank_at_least = 3 }, then = "refuse", reason = "Officers don't walk away." },
+          { when = { outside_member_tolerance = true }, then = "release" },
+          { then = "release", standing_change = -40.0 },
+        ]
+    "#;
+
+    fn rule(when: Vec<Condition>, then: Verdict) -> Rule {
+        Rule { when, then }
+    }
+
+    fn allow(standing_change: i64) -> Verdict {
+        Verdict::Allow {
+            standing_change: h(standing_change),
+        }
+    }
+
+    fn refuse(reason: &str) -> Verdict {
+        Verdict::Refuse {
+            reason: Some(reason.to_owned()),
+        }
+    }
+
+    #[test]
+    fn reads_the_worlds_defectors_and_deserters_tables() {
+        let content = balance(TABLES).expect("valid content");
+        assert_eq!(
+            content.balance.rule_tables,
+            [
+                (
+                    TableKind::Defectors,
+                    vec![
+                        rule(
+                            vec![Condition::StandingWithTargetAtLeast(h(50_00))],
+                            allow(0)
+                        ),
+                        rule(vec![Condition::CloserToTarget(true)], allow(-10_00)),
+                        rule(Vec::new(), refuse("You serve our enemies.")),
+                    ]
+                ),
+                (
+                    TableKind::Deserters,
+                    vec![
+                        rule(
+                            vec![Condition::RankAtLeast(RankRef::Rung(3))],
+                            refuse("Officers don't walk away.")
+                        ),
+                        rule(vec![Condition::OutsideMemberTolerance(true)], allow(0)),
+                        rule(Vec::new(), allow(-40_00)),
+                    ]
+                ),
+            ]
+            .into()
+        );
+        let plain = balance("").expect("valid content");
+        assert!(plain.balance.rule_tables.is_empty(), "built in");
+    }
+
+    #[test]
+    fn reads_a_factions_own_tables_which_may_name_its_ranks() {
+        let text = format!(
+            r#"{GUILD}
+            [lantern_guild.deserters]
+            rules = [
+              {{ when = {{ rank_below = "fence", standing_with_current_below = 10.0 }}, then = "release" }},
+              {{ when = {{ rank_at_least = "shadow", closer_to_target = false }}, then = "refuse", reason = "Stay." }},
+              {{ when = {{}}, then = "release", standing_change = -20.0 }},
+            ]
+
+            [lantern_guild.defectors]
+            rules = [
+              {{ when = {{ standing_with_current_at_least = 10.0, standing_with_target_below = 0.0 }}, then = "refuse", reason = "Spy." }},
+              {{ when = {{ outside_member_tolerance = false }}, then = "accept" }},
+              {{ then = "refuse", reason = "No." }},
+            ]
+            "#
+        );
+        let content = factions(&text).expect("valid content");
+        let guild = &content.factions[&FactionId::new("lantern_guild").expect("valid id")];
+        let rank = |id: &str| RankRef::Id(RankId::new(id).expect("valid id"));
+        assert_eq!(
+            guild.rule_tables,
+            [
+                (
+                    TableKind::Defectors,
+                    vec![
+                        rule(
+                            vec![
+                                Condition::StandingWithCurrentAtLeast(h(10_00)),
+                                Condition::StandingWithTargetBelow(h(0)),
+                            ],
+                            refuse("Spy.")
+                        ),
+                        rule(vec![Condition::OutsideMemberTolerance(false)], allow(0)),
+                        rule(Vec::new(), refuse("No.")),
+                    ]
+                ),
+                (
+                    TableKind::Deserters,
+                    vec![
+                        rule(
+                            vec![
+                                Condition::RankBelow(rank("fence")),
+                                Condition::StandingWithCurrentBelow(h(10_00)),
+                            ],
+                            allow(0)
+                        ),
+                        rule(
+                            vec![
+                                Condition::RankAtLeast(rank("shadow")),
+                                Condition::CloserToTarget(false),
+                            ],
+                            refuse("Stay.")
+                        ),
+                        rule(Vec::new(), allow(-20_00)),
+                    ]
+                ),
+            ]
+            .into()
+        );
+    }
+
+    #[test]
+    fn reports_mistakes_in_a_rule_table_at_their_keys() {
+        let text = r#"
+            [membership.defectors]
+            rule = []
+            rules = [
+              { when = { closer_to_targt = true }, then = "accept" },
+              { when = { standing_with_target_at_least = "high" }, then = "accept" },
+              { when = { closer_to_target = "yes" }, then = "accept" },
+              { when = { rank_at_least = 2.5 }, then = "accept" },
+              { when = { rank_below = "Shadow" }, then = "accept" },
+              { when = true, then = "accept" },
+              { then = "release" },
+              { then = "refuze", reason = "No." },
+              { then = "refuse" },
+              { then = "refuse", reason = "No.", standing_change = -5.0 },
+              { then = "accept", reason = "Welcome." },
+              "refuse",
+            ]
+
+            [membership.deserter]
+            rules = []
+
+            [membership.deserters]
+        "#;
+        assert_eq!(
+            problems(balance(text)),
+            [
+                "balance.toml: membership.defectors.rules[0].when: unknown key 'closer_to_targt' (did you mean 'closer_to_target'?)",
+                "balance.toml: membership.defectors.rules[1].when.standing_with_target_at_least: expected a number, like 25.0",
+                "balance.toml: membership.defectors.rules[2].when.closer_to_target: expected true or false",
+                "balance.toml: membership.defectors.rules[3].when.rank_at_least: expected a rung number, like 3, or a rank id in quotes",
+                "balance.toml: membership.defectors.rules[4].when.rank_below: 'Shadow' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "balance.toml: membership.defectors.rules[5].when: expected a table, like { closer_to_target = true }",
+                "balance.toml: membership.defectors.rules[6].then: unknown outcome 'release' for defectors: use 'accept' or 'refuse'",
+                "balance.toml: membership.defectors.rules[7].then: unknown outcome 'refuze' for defectors (did you mean 'refuse'?)",
+                "balance.toml: membership.defectors.rules[8]: missing 'reason'",
+                "balance.toml: membership.defectors.rules[9].standing_change: a refusal changes nothing, so it has no standing_change",
+                "balance.toml: membership.defectors.rules[10].reason: only a refusal has a reason",
+                "balance.toml: membership.defectors.rules[11]: expected a table, like { when = { closer_to_target = true }, then = \"accept\" }",
+                "balance.toml: membership.defectors: unknown key 'rule' (did you mean 'rules'?)",
+                "balance.toml: membership.deserters: missing 'rules'",
+                "balance.toml: membership: unknown key 'deserter' (did you mean 'deserters'?)",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_tables_that_name_ranks_wrongly_or_might_not_decide() {
+        let balance_text = r#"
+            [membership.deserters]
+            rules = [
+              { when = { rank_at_least = 0, standing_with_current_below = 120.0 }, then = "refuse", reason = "No." },
+              { when = { rank_below = "shadow" }, then = "release", standing_change = -120.0 },
+              { when = { outside_member_tolerance = true }, then = "release" },
+            ]
+        "#;
+        let factions_text = format!(
+            r#"{GUILD}
+            [lantern_guild.defectors]
+            rules = [
+              {{ when = {{ rank_at_least = "captain" }}, then = "accept" }},
+              {{ when = {{ rank_below = "shadw" }}, then = "accept" }},
+              {{ then = "refuse", reason = "No." }},
+            ]
+
+            [lantern_guild.deserters]
+            rules = []
+            "#
+        );
+        let result = parse_content(Sources {
+            balance: Some(balance_text),
+            factions: Some(&factions_text),
+            ..Sources::default()
+        });
+        assert_eq!(
+            problems(result),
+            [
+                "balance.toml: membership.deserters.rules[0].when.rank_at_least: 0 isn't a rung: rungs count from 1, the lowest",
+                "balance.toml: membership.deserters.rules[0].when.standing_with_current_below: 120.00 is outside -100.00..100.00",
+                "balance.toml: membership.deserters.rules[1].when.rank_below: 'shadow' is a rank id, but the world's tables can't name ranks: use a rung number, 1 for the lowest",
+                "balance.toml: membership.deserters.rules[1].standing_change: -120.00 is outside -100.00..100.00",
+                "balance.toml: membership.deserters.rules[2].when: the last rule must have no conditions, so the table always decides",
+                "factions.toml: lantern_guild.defectors.rules[0].when.rank_at_least: unknown rank 'captain' for lantern_guild",
+                "factions.toml: lantern_guild.defectors.rules[1].when.rank_below: unknown rank 'shadw' for lantern_guild (did you mean 'shadow'?)",
+                "factions.toml: lantern_guild.deserters.rules: a table needs at least one rule, and its last must have no conditions",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_faction_table_with_a_mistake_is_reported_at_the_factions_key() {
+        let text = format!(
+            r#"{GUILD}
+            [lantern_guild.deserters]
+            rules = [{{ then = "accept" }}]
+            "#
+        );
+        assert_eq!(
+            problems(factions(&text)),
+            [
+                "factions.toml: lantern_guild.deserters.rules[0].then: unknown outcome 'accept' for deserters: use 'release' or 'refuse'"
+            ]
+        );
+        let text = GUILD.replacen(
+            "member_tolerance = 60.0",
+            "member_tolerance = 60.0\n        defectors = 3",
+            1,
+        );
+        assert_eq!(
+            problems(factions(&text)),
+            [
+                "factions.toml: lantern_guild.defectors: expected a table, like [lantern_guild.defectors]"
             ]
         );
     }

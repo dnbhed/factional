@@ -1,0 +1,57 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/defectors.scenario
+---
+> load crates/cli/tests/fixtures/worlds/defectors
+loaded 4 characters from crates/cli/tests/fixtures/worlds/defectors
+warning: characters.toml: brother_ash.memberships[0]: brother_ash starts 140.02 from The Ashen Circle, outside its member tolerance of 40.00
+warning: characters.toml: kestrel.memberships[0]: kestrel starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00
+warning: characters.toml: nell.memberships[0]: nell starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00
+warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00
+> can-join vex city_watch --explain
+vex → city_watch: yes
+distance 35.09 (euclidean), tolerance 40.00
+law: 70.00 vs 35.00, gap 35.00, weight 1.00
+good: 20.00 vs 10.00, gap 10.00, weight 0.25
+weights: city_watch's own
+leaving lantern_guild, in conflict with city_watch (-80.00)
+lantern_guild's deserters (balance.toml): rule 2, release
+  rule 1: rank_at_least = 3? no, fence is rung 2
+  rule 2: outside_member_tolerance = true? yes, 95.52 from lantern_guild, tolerance 60.00
+city_watch's defectors (balance.toml): rule 2, accept, standing -10.00
+  rule 1: standing_with_target_at_least = 50.00? no, standing 0.00
+  rule 2: closer_to_target = true? yes, 35.09 from city_watch, 95.52 from lantern_guild
+> join vex city_watch
+#1 at tick 0: vex left lantern_guild (defected)
+#2 at tick 0: vex joined city_watch as a recruit
+#3 at tick 0: vex's standing with city_watch moved from 0.00 to -10.00
+> assert show character vex == vex — Vex — law 35.00, good 10.00 — Lawful Neutral — member of city_watch (recruit) since tick 0
+> assert standing vex city_watch == -10.00
+> assert can-join kestrel city_watch == no: kestrel belongs to The Lantern Guild, in conflict with The City Watch (-80.00): refused by The Lantern Guild's deserters rule 1, "Officers don't walk away."
+> join nell city_watch
+#4 at tick 0: nell left lantern_guild (defected)
+#5 at tick 0: nell joined city_watch as a recruit
+> can-join brother_ash temple --explain
+brother_ash → temple: no
+distance 20.00 (euclidean), tolerance 35.00
+law: 30.00 vs 30.00, gap 0.00, weight 0.50
+good: 80.00 vs 60.00, gap 20.00, weight 1.00
+weights: temple's own
+leaving ashen_circle, in conflict with temple (-90.00)
+ashen_circle's deserters (factions.toml): rule 1, refuse, "No one leaves the Circle."
+  rule 1: always
+temple's defectors (factions.toml): rule 1, accept, standing -5.00
+  rule 1: rank_below = "ordained"? yes, initiate is rung 1, ordained is rung 2
+refused: brother_ash belongs to The Ashen Circle, in conflict with Temple of the Dawn (-90.00): refused by The Ashen Circle's deserters rule 1, "No one leaves the Circle."
+> journal
+1. join vex city_watch — accepted
+2. join nell city_watch — accepted
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --scale 4
+#1 at tick 0: player did steal, at scale 4.00
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -20.00, good -12.00
+> join player lantern_guild
+#3 at tick 0: player joined lantern_guild as a cutpurse
+> assert can-join player city_watch == no: 90.35 from The City Watch, tolerance is 40.00; player belongs to The Lantern Guild, in conflict with The City Watch (-80.00): refused by The City Watch's defectors rule 3, "You serve our enemies."

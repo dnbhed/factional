@@ -41,8 +41,8 @@ bands = [
 ]
 
 [relations]
-# Two factions are in conflict when either regards the other at or below this; a member of
-# one can't join the other.
+# Two factions are in conflict when either regards the other at or below this. A member of
+# one joins the other only if the [membership] tables below allow it.
 conflict_threshold = -50.0
 
 # Names for relation values, lowest first, with the same rules as disposition bands.
@@ -52,4 +52,34 @@ bands = [
   { name = "neutral", up_to = 15.0 },
   { name = "friendly", up_to = 50.0 },
   { name = "allied" },
+]
+
+# Joining a faction while a member of one of its enemies (DESIGN.md §9.2). Two tables
+# decide, each tried top to bottom until a rule whose conditions all hold:
+#   defectors: does the faction you're joining take you? "accept" or "refuse"
+#   deserters: does each enemy faction you're in let you go? "release" or "refuse"
+# If both agree, you leave the enemy factions and join, paying any standing_change (toward
+# the faction joined, or the one left). A refusal gives a reason. Conditions, all of which
+# must hold:
+#   rank_at_least, rank_below: your rung in the faction you're leaving, 1 the lowest. In a
+#       faction's own tables, one of its rank ids stands for that rank's rung.
+#   standing_with_current_at_least, standing_with_current_below: with the faction you're
+#       leaving; standing_with_target_at_least, standing_with_target_below: with the other.
+#   closer_to_target: nearer the faction you're joining than the one you're leaving.
+#   outside_member_tolerance: drifted past your tolerance in the faction you're leaving.
+# The last rule must have no conditions, so a table always decides. Left out, defectors
+# refuses everyone and deserters releases everyone. A faction can replace either table with
+# its own, in factions.toml. Try `can-join <character> <faction> --explain`.
+[membership.defectors]
+rules = [
+  { when = { standing_with_target_at_least = 50.0 }, then = "accept" },
+  { when = { closer_to_target = true }, then = "accept", standing_change = -10.0 },
+  { then = "refuse", reason = "You serve our enemies." },
+]
+
+[membership.deserters]
+rules = [
+  { when = { rank_at_least = 3 }, then = "refuse", reason = "Officers don't walk away." },
+  { when = { outside_member_tolerance = true }, then = "release" },
+  { then = "release", standing_change = -40.0 },
 ]
