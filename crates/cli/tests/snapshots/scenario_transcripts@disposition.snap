@@ -1,0 +1,33 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/disposition.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> disposition city_watch player --explain
+city_watch → player: -3.64 (neutral)
+affinity: -3.64 at distance 70.18 (euclidean)
+law: 70.00 vs 0.00, gap 70.00, weight 1.00
+good: 20.00 vs 0.00, gap 20.00, weight 0.25
+weights: city_watch's own
+bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly
+> assert disposition temple sister_mira == 45.34 (friendly)
+> assert disposition temple brother_ash == -32.15 (unfriendly)
+> assert disposition city_watch vex == -23.36 (neutral)
+> assert disposition vex player == 1.23 (neutral)
+> assert disposition lantern_guild player == -0.08 (neutral)
+> act player steal --scale 4
+#1 at tick 0: player did steal, at scale 4.00
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -20.00, good -12.00
+> assert disposition lantern_guild player == 16.66 (neutral)
+> assert disposition player temple == error: a disposition's subject must be a character
+> load crates/cli/tests/fixtures/worlds/hostile
+loaded 1 character from crates/cli/tests/fixtures/worlds/hostile
+> disposition temple brother_ash --explain
+temple → brother_ash: -32.15 (hostile)
+affinity: -32.15 at distance 150.02 (euclidean)
+law: 30.00 vs 25.00, gap 5.00, weight 0.50
+good: 80.00 vs -70.00, gap 150.00, weight 1.00
+weights: temple's own
+bands: hostile ≤ -30.00 < unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly

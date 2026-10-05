@@ -15,7 +15,7 @@ tolerance = 40.0
 member_tolerance = 50.0
 # Drift policy: probation for 100 ticks, then expulsion if still too far. (M8)
 drift = { policy = "probation", grace_ticks = 100, then = "expel" }
-# Standing change on expulsion, and on leaving voluntarily. (M8, M1)
+# Standing change on expulsion, and on leaving voluntarily. (M8, M3)
 expel_standing_change = -20.0
 leave_standing_change = 0.0
 

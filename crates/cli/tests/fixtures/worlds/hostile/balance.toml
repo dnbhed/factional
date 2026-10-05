@@ -1,0 +1,8 @@
+# Riverhold's affinity, with a hostile band below unfriendly.
+[disposition]
+bands = [
+  { name = "hostile", up_to = -30.0 },
+  { name = "unfriendly", up_to = -25.0 },
+  { name = "neutral", up_to = 25.0 },
+  { name = "friendly" },
+]

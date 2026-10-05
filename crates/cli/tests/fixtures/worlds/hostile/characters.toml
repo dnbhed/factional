@@ -1,0 +1,3 @@
+[brother_ash]
+name = "Brother Ash"
+alignment = { law = 25.0, good = -70.0 }

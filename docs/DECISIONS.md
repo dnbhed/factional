@@ -190,6 +190,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`World::new` can refuse content** (`Result<World, Vec<ContentProblem>>`), which is P-32's mechanism. `Content::problems` is the shared check, and the loader maps each problem to a file and key.
   - **Weights are optional, and all-or-nothing.** Leave `weights` out to use the default; give both axes or neither.
   - *Why:* designers type bare ids, and every distance the CLI prints can be checked by hand from the breakdown.
+- **P-36 · How disposition bands and affinity are written** (made in D2, 2026-10-05).
+  - **Band names are ids**, so the CLI and future `DispositionBandChanged` events can name them plainly.
+  - **The last band has no `up_to`, and every other band has one.** Every score then lands in exactly one band (invariant 9), whatever the score's range becomes when M4 adds more components.
+  - **The affinity range is a world check.** `Content::problems` checks that `disposition.affinity` stays within ±100, so content built in code gets the same check (P-32). The loader reports it at `disposition.affinity`.
+  - **No clamp until M4.** With affinity the only component and kept within ±100, a clamp could never change anything.
+  - **Checks across bands wait for every band to read cleanly.** A band left out or misread would shift the indices, and every later path would point at the wrong band.
+  - **A value of the wrong type for a number says so plainly:** `expected a number, like 25.0`. This replaced serde's `invalid type: string "low", expected …`, fixed in passing.
+  - *Why:* bands are designer vocabulary that later events will carry, and every check that content has to pass is enforced by the engine itself.
 
 ## Open
 

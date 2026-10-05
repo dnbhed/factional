@@ -40,54 +40,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 - A2 — the command-and-event core: `World::execute` (refused commands change nothing), numbered and time-stamped events, `World::replay`, the journal, `AdvanceTime`; `advance`, `time`, `events`, `journal`; done 2026-10-04 (#7)
 - A3 — actions move alignment: `actions.toml` (alignment deltas), `PerformAction` with scale and witnesses, `ActionPerformed` and `AlignmentChanged`, clamping at the ends of each axis, refusals with "did you mean"; `actions`, `act`; done 2026-10-04 (#8)
 - D1 — weights and distance: `factions.toml` (name, alignment, weights), character weights, `alignment.metric` and `alignment.default_weights`; an exact `distance(observer, subject)` query with its working; one id namespace for factions and characters, checked by `World::new` (P-32's mechanism, arriving early); `factions`, `show faction`, `distance [--explain]`; done 2026-10-05 (#9)
+- D2 — disposition from affinity: `disposition.affinity` (a curve, checked within ±100 by `World::new`) and `disposition.bands` (validated: valid unique names, increasing `up_to`, only the last open-ended); a `disposition(observer, subject)` query with score, band and working; `disposition [--explain]`; plain "expected a number" errors; done 2026-10-05 (#10)
 
 ---
 
 ## Phase 1 — Characters and alignment
 
 ## Phase 2 — Perception
-
-### D2 · Disposition from affinity — P0 · Next
-
-**Why:** this is the brief's friendly, neutral or unfriendly view: how an observer regards a character, starting from how close their alignments are (DESIGN.md §8.1).
-
-**Scope**
-
-- **Content.** In `balance.toml`:
-  - `disposition.affinity`, a curve from distance to liking (default `[[0, 50], [60, 0], [200, -50]]`);
-  - `disposition.bands`, the named bands, lowest first (default unfriendly ≤ −25 < neutral ≤ 25 < friendly).
-- **Query.** `disposition(observer, subject)` returns the score, its band and the breakdown.
-  - D2 has the affinity component only, so the score is the affinity, clamped to ±100.
-  - The other components, and their weights, arrive in M4.
-  - The affinity is the curve applied to D1's distance, which is already rounded, so the curve's own rounding is the only other one.
-- **CLI.** `disposition <observer> <subject> [--explain]`.
-  - Without `--explain`, it prints the score and band: `-3.64 (neutral)`.
-  - With `--explain`, it prints the breakdown from DESIGN.md §8.2, cut down to affinity: the distance and its working, then the bands.
-
-**Acceptance** (Riverhold; worked by hand from §6 and §8.1)
-
-1. `disposition city_watch player` → `-3.64 (neutral)`.
-   - The distance is 70.18, on the curve's 60 → 200 segment: −50 × 10.18 / 140 = −3.636…
-2. `disposition temple sister_mira` → `45.34 (friendly)`.
-   - The distance is 5.59: 50 − 50 × 5.59 / 60 = 45.341…
-3. `disposition temple brother_ash` → `-32.15 (unfriendly)`.
-   - The gaps are 5 and 150, weighted 2.5 and 150: the distance is √22506.25 = 150.02.
-   - −50 × 90.02 / 140 = −32.15.
-4. `disposition city_watch vex` → `-23.36 (neutral)`.
-   - The gaps are 125 and 40, weighted 125 and 10: the distance is √15725 = 125.40.
-   - −50 × 65.40 / 140 = −23.357…
-5. **Bands.**
-   - Band edges are inclusive: a score of exactly −25.00 is unfriendly, and exactly 25.00 is neutral.
-   - Designers can add bands. With `hostile` up to −30 placed before `unfriendly`, `disposition temple brother_ash` reads `-32.15 (hostile)`.
-6. **Errors.**
-   - The same unknown-observer and unknown-subject errors as `distance`.
-   - Bad band content is a load error that names the key, such as `balance.toml: disposition.bands[1].up_to: -30.00 must be above the previous band's -25.00`.
-
-**Validates** (DESIGN.md §12.2):
-
-- the affinity curve's points are valid, with its values within ±100;
-- bands have unique names and increasing `up_to`, and only the last is open-ended;
-- there is at least one band.
 
 ### D3 · Watched subjects and band-change events — P1 · Outline
 
@@ -105,24 +64,45 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M1 · Factions: tolerance, joining and leaving — P0 · Outline
+### M1 · Factions: tolerance, joining and leaving — P0 · Next
 
-**Covers:** DESIGN.md §9.1.
+**Why:** the brief's "characters can join factions, but only if their alignments are similar enough" (DESIGN.md §9.1).
 
 **Scope**
 
-- `tolerance`, `member_tolerance`, and starting memberships.
-- `JoinFaction` and `LeaveFaction`; `assess_join` with reasons.
-- A validation warning for starting members outside their member tolerance.
-- CLI: `join`, `leave`, `can-join [--explain]`, `show faction`.
+- **Content.**
+  - Each faction gains `tolerance` (required) and `member_tolerance` (optional, defaulting to `tolerance`).
+  - Characters gain `memberships = [{ faction = "lantern_guild" }]`. Ranks are added in M5.
+  - `leave_standing_change` moves to M3, where standing first exists.
+- **State.** Each character's memberships, with the tick when they joined.
+- **Commands.**
+  - `JoinFaction { character, faction }` emits `JoinedFaction`.
+  - `LeaveFaction { character, faction }` emits `LeftFaction { reason: Voluntary }`.
+- **Query.** `assess_join(character, faction)` returns whether they may join, and every check that fails, with its numbers.
+  - The checks are: already a member, and outside `tolerance`.
+  - Conflicts with enemy factions join the checks in M2.
+- **Warnings.** Load gains warnings, which are printed after its summary but don't stop it (P-32). The first one: a starting member outside their faction's `member_tolerance`.
+- **CLI.**
+  - `join <character> <faction>` and `leave <character> <faction>`.
+  - `can-join <character> <faction> [--explain]`.
+  - `show character` lists memberships; `show faction` gives tolerances and members.
 
-**Anchors** (the player and `lantern_guild`)
+**Acceptance** (Riverhold; distances from D1, tolerances from DESIGN.md §13)
 
-- At 0 / 0, refused: 60.21 > 45.00.
-- After two thefts, refused: 50.04.
-- After four thefts, the player joins.
+1. At 0 / 0, `can-join player lantern_guild` → `no: 60.21 from The Lantern Guild, tolerance is 45.00`, and `join` is refused with the same reason.
+2. After two thefts (−10 / −6): refused, 50.04.
+3. After four thefts (−20 / −12): 40.01 ≤ 45.00, so `join player lantern_guild` emits `JoinedFaction`. `show character player` then lists the Lantern Guild, joined at the current tick.
+4. Joining again → `player is already a member of lantern_guild`.
+5. `leave player lantern_guild` emits `LeftFaction (voluntary)`. Leaving again → `player isn't a member of lantern_guild`.
+6. Vex starts in the Lantern Guild (7.07 away, member tolerance 60.00): `show faction lantern_guild` lists vex as a member.
+7. Unknown character or faction ids get a "did you mean", as in `act`.
+8. Load:
+   - Error: `characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`
+   - Error: a character listing the same faction twice.
+   - Error: `tolerance` < 0, or `member_tolerance` < `tolerance`.
+   - Warning: in a fixture world where vex starts at 35 / 10 in the Guild, `load` succeeds and prints `warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00`.
 
-**Validates** (DESIGN.md §12.2): **a membership names a faction that exists** (`characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`), and at most once per character; 0 ≤ `tolerance` ≤ `member_tolerance`. Warning: a starting member outside their member tolerance. This is the first cross-file reference, so it also brings in the shared reference check described in DESIGN.md §12.2 (P-32).
+**Validates** (DESIGN.md §12.2): a membership names a faction that exists, at most once per character; 0 ≤ `tolerance` ≤ `member_tolerance`. Warning: a starting member outside their member tolerance.
 
 ### M2 · Relations and enemy exclusion — P0 · Outline
 

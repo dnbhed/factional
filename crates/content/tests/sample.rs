@@ -214,3 +214,32 @@ fn the_player_stealing_from_ava_moves_toward_chaotic_evil() {
         ("-5.00".to_owned(), "-3.00".to_owned())
     );
 }
+
+/// A disposition as the CLI shows it: `-3.64 (neutral)`.
+fn disposition(world: &World, observer: &Observer, subject: &str) -> String {
+    let regard = world
+        .disposition(observer, &character(subject))
+        .expect("both exist");
+    format!("{} ({})", regard.score, regard.band)
+}
+
+#[test]
+fn riverholds_factions_regard_people_by_how_close_they_are() {
+    let world = riverhold();
+    assert_eq!(
+        disposition(&world, &faction("city_watch"), "player"),
+        "-3.64 (neutral)"
+    );
+    assert_eq!(
+        disposition(&world, &faction("temple"), "sister_mira"),
+        "45.34 (friendly)"
+    );
+    assert_eq!(
+        disposition(&world, &faction("temple"), "brother_ash"),
+        "-32.15 (unfriendly)"
+    );
+    assert_eq!(
+        disposition(&world, &faction("city_watch"), "vex"),
+        "-23.36 (neutral)"
+    );
+}
