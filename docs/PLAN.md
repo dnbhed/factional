@@ -48,6 +48,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M5 — rank ladders: `[[<faction>.ranks]]` with standing requirements and stricter tolerances, starting ranks, new members on the lowest rung; `Promote` (only on request, refused with every unmet requirement) and `Demote`, with `RankChanged`; `assess_promotion`; rank load checks and warnings; `ranks`, `promote [--explain]`, `demote`; done 2026-10-05 (#16)
 - M7 — joining an enemy: `membership.defectors` and `membership.deserters` rule tables, and a faction's own, which may name its ranks; built in, defectors refuse everyone and deserters release everyone (D-4); load checks for conditions, outcomes, rungs, rank ids and a last rule that always decides; `assess_join` reports every rule tried in each table; defecting emits `LeftFaction(defected)` with the deserter cost, then `JoinedFaction` with the defector cost; `can-join --explain` shows each table; done 2026-10-05 (#18)
 - A4 — inertia: `[inertia]` profiles (up to four curves per profile, a curve left out is 1.0, `steady` always there) and `default_profile`, a character's `inertia`; each shift is base × scale × inertia, computed exactly and rounded once (`Ratio` in core, `Curve::exact_at`), for actions, outcomes and effects; load checks for unknown profiles and negative curves; a property test for invariant 8; a `shift` query; `act --explain`; done 2026-10-05 (#19)
+- A5 — target-aware effects: an action's `by_target.law`, `.good` and `.relation` curves (the most hostile relation from the actor's factions toward the target's), joining inertia in one exactly computed product rounded once; load check for negative curves; an `action_shift` query that `decide` uses; `act --explain` shows each target multiplier and where it came from; a property test for invariant 8 with every multiplier; done 2026-10-05 (#20)
 
 ---
 
@@ -55,17 +56,29 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 2 — Perception
 
-### D3 · Watched subjects and band-change events — P1 · Outline
+### D3 · Watched subjects and band-change events — P1 · Next
 
-**Covers:** DESIGN.md §8.3.
+**Why:** P-23. Other modules care when a guard turns unfriendly, not about every 0.01 of movement (DESIGN.md §8.3).
 
-**Scope:** `Watch` and `Unwatch`, `DispositionBandChanged`, and `disposition.hysteresis`.
+**Scope**
 
-**Anchors:** to be written when D3 comes up next. They must cover:
+- **Commands.** `Watch { subject }` and `Unwatch { subject }`, with events, so the watched set replays like any other state (P-15, P-16). Refused for an unknown character, a subject already watched, or one not watched.
+- **Band changes.** After every accepted command, the engine recomputes each observer's disposition toward each watched subject: factions, then characters, each in id order, leaving out the subject. For each band that changed, it appends `DispositionBandChanged { observer, subject, from, to, score }` to that command's events.
+- **The starting bands.** `Watch` records the bands at that moment, so the next command compares against them. Settle here how they're kept so that replay runs no rules.
+- **`disposition.hysteresis`** (default 0, at least 0): leaving a band means crossing its edge by at least the margin.
+- **CLI.** `watch <character>`, `unwatch <character>` and `watching`.
 
-- a band crossing, and the event it emits;
-- no event when the score moves within a band;
-- hysteresis holding a band near its edge.
+**Acceptance** (Riverhold, as in DESIGN.md §8.2)
+
+1. **Watch the player after two thefts** from merchant_ava, which leave them at −10.00 / −6.00. `outcome fined_by_watch player` then emits, after its own events, exactly two band changes, factions first:
+   - `city_watch` → player: neutral → unfriendly at −27.24 (affinity −7.24 at distance 80.26, plus standing −20.00);
+   - `captain_hale` → player: neutral → unfriendly at −29.10 (§8.2).
+   No one else's score changes: the fine touches only the Watch's and Hale's standing, and Hale is the Watch's only member.
+2. **With `hysteresis = 5.0`, the same fine emits none:** −27.24 and −29.10 are past −25.00, but not by 5. A third theft then takes Hale to −30.90 (affinity −10.90 at distance 90.53, standing −10.00, faction opinion −10.00), which emits his change. The Watch, at −29.04 (affinity −9.04 at 85.31, standing −20.00), stays neutral.
+3. **Only watched subjects.** An unwatched subject emits nothing, and after `Unwatch` the events stop.
+4. **No change, no event.** A command that changes no score, or moves one within its band, emits no band change.
+5. **Replay.** Replaying the events reproduces the watched set and the current bands (invariant 4).
+6. **Load errors:** `hysteresis` below 0, at its key.
 
 **Validates** (DESIGN.md §12.2): `hysteresis` is ≥ 0.
 
@@ -128,31 +141,6 @@ The order below is the source of truth. Sections further down are grouped by pha
 - `AddModifier { id, observer: everyone | faction | character, subject, amount, expires_at? }` and `RemoveModifier`.
 - Modifiers expire on `AdvanceTime`.
 - The modifiers component of disposition.
-
-### A5 · Target-aware action effects — P1 · Next
-
-**Why:** D-18, where who an act is done to changes how much it moves the actor. Killing the wicked, or a sworn enemy, is less evil than killing a saint (DESIGN.md §5.4, P-28).
-
-**Scope**
-
-- **Content.** An action gains optional curves, each giving multipliers ≥ 0:
-  - `by_target.law` and `by_target.good`: over the target's position on that axis, scaling the action's delta on that axis;
-  - `by_target.relation`: over the most hostile relation from any of the actor's factions toward any of the target's factions, scaling both axes. It's read at 0 if either side belongs to no faction.
-- **The shift formula** (§5.2) becomes base × scale × target(axis) × inertia, where target(axis) is `by_target.<axis>` × `by_target.relation`. The product is computed exactly and rounded once (P-1, P-43), extending A4's working. Without a target, or without the curves, target(axis) is 1.
-- **Outcomes and effects have no target,** so they're unaffected.
-- **CLI.** `act --explain` shows each target multiplier and where it came from: the target's position, or the relation and the two factions it's between.
-
-**Acceptance** (`murder` as in DESIGN.md §5.4: law −10.00, good −15.00)
-
-1. **The player murders brother_ash** (good −70): `by_target.good` at −70 is 0.44, and the player is in no faction, so the relation multiplier is 1.00. Good −15.00 × 0.44 = −6.60; law −10.00.
-2. **The player murders sister_mira** (good 85): `by_target.good` at 85 is 1.425, so good −15.00 × 1.425 = −21.375, rounded once to −21.38; law −10.00.
-3. **captain_hale murders vex.** For good: target 0.84 (at −20), relation 0.62 (the Watch regards the Guild at −80), and Hale's hardening `toward_evil` at 30, 0.85. So −15.00 × 0.84 × 0.62 × 0.85 = −6.6402, rounded once to −6.64. For law: −10.00 × 0.62 = −6.20, since hardening has no law curve.
-4. **No change otherwise.** `murder` with no target, and an action without `by_target`, shift exactly as before.
-5. **Load errors at their keys:**
-   - a `by_target` multiplier below 0;
-   - `by_target` naming anything but `law`, `good` or `relation`, with a "did you mean".
-
-**Validates** (DESIGN.md §12.2): `by_target` multipliers are ≥ 0, and `by_target` names only an axis or `relation`.
 
 ## Phase 4 — Designer tooling and persistence
 

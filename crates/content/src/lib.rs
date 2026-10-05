@@ -14,8 +14,8 @@ use factional_reputation::{
     ContentWarning, DispositionWeights, Effects, Faction, FactionId, Inertia, InertiaProfile,
     InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser, Rank, RankId, RankKey,
     RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects, StandingKey,
-    StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem, ToleranceProblem,
-    Tolerances, Toward, Verdict, WeightProblem, Weights,
+    StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem, TargetCurve,
+    ToleranceProblem, Tolerances, Toward, Verdict, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -254,6 +254,9 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
                 user: ProfileUser::Character(character),
                 ..
             } => (CHARACTERS_FILE, format!("{character}.inertia")),
+            ContentProblem::NegativeTargetScaling { action, curve, .. } => {
+                (ACTIONS_FILE, format!("{action}.by_target.{}", curve.key()))
+            }
             ContentProblem::NegativeInertia {
                 profile, toward, ..
             } => (
@@ -1109,11 +1112,22 @@ fn read_action(id: ActionId, fields: &toml::Table, report: &mut Report) -> Actio
         standing.named = named_standing(&mut block, report);
         block.finish(report);
     }
+    let mut by_target = BTreeMap::new();
+    let example = "{ good = [[-100.0, 0.2], [0.0, 1.0], [100.0, 1.5]] }";
+    if let Some(mut curves) = section.optional_table("by_target", example, report) {
+        for curve in TargetCurve::ALL {
+            if let Some(shape) = curves.optional_curve(curve.key(), report) {
+                by_target.insert(curve, shape);
+            }
+        }
+        curves.finish(report);
+    }
     section.finish(report);
     Action {
         id,
         alignment,
         standing,
+        by_target,
     }
 }
 
@@ -1183,8 +1197,8 @@ mod tests {
     use super::*;
     use factional_core::Fixed;
     use factional_reputation::{
-        CharacterId, Condition, FactionId, Inertia, InertiaProfile, Metric, ProfileId, RankRef,
-        Rule, TableKind, Toward, Verdict, Weights,
+        ActionId, CharacterId, Condition, FactionId, Inertia, InertiaProfile, Metric, ProfileId,
+        RankRef, Rule, TableKind, TargetCurve, Toward, Verdict, Weights,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -1969,6 +1983,73 @@ mod tests {
             found,
             [
                 "factions.toml: vex: 'vex' is also a character's id: factions and characters need different ids"
+            ]
+        );
+    }
+
+    // Target-aware effects (A5)
+
+    const MURDER: &str = r#"
+        [murder]
+        alignment = { law = -10.0, good = -15.0 }
+        by_target.good = [[-100.0, 0.2], [0.0, 1.0], [100.0, 1.5]]
+        by_target.relation = [[-100.0, 0.5], [-50.0, 0.8], [0.0, 1.0]]
+    "#;
+
+    #[test]
+    fn reads_an_actions_by_target_curves() {
+        let content = actions(MURDER).expect("valid content");
+        let murder = &content.actions[&ActionId::new("murder").expect("valid id")];
+        let curve = |text: &str| parse_curve(text).expect("valid curve");
+        assert_eq!(
+            murder.by_target,
+            [
+                (
+                    TargetCurve::Good,
+                    curve("[[-100.0, 0.2], [0.0, 1.0], [100.0, 1.5]]")
+                ),
+                (
+                    TargetCurve::Relation,
+                    curve("[[-100.0, 0.5], [-50.0, 0.8], [0.0, 1.0]]")
+                ),
+            ]
+            .into()
+        );
+        let law = actions("[spit]\nalignment = { law = -1.0 }\nby_target.law = 0.5\n")
+            .expect("valid content");
+        assert_eq!(
+            law.actions[&ActionId::new("spit").expect("valid id")].by_target,
+            [(TargetCurve::Law, curve("0.5"))].into()
+        );
+        let plain = actions("[spit]\nalignment = { law = -1.0 }\n").expect("valid content");
+        assert!(
+            plain.actions[&ActionId::new("spit").expect("valid id")]
+                .by_target
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn reports_by_target_mistakes_at_their_keys() {
+        let text = r#"
+            [murder]
+            alignment = { law = -10.0, good = -15.0 }
+            by_target.relaton = 0.5
+            by_target.good = [[0.0, 1.0]]
+
+            [spit]
+            by_target = 3
+
+            [shove]
+            by_target.law = [[-100.0, -0.1], [100.0, 1.0]]
+        "#;
+        assert_eq!(
+            problems(actions(text)),
+            [
+                "actions.toml: murder.by_target.good: a curve is a single number or at least 2 points",
+                "actions.toml: murder.by_target: unknown key 'relaton' (did you mean 'relation'?)",
+                "actions.toml: spit.by_target: expected a table, like { good = [[-100.0, 0.2], [0.0, 1.0], [100.0, 1.5]] }",
+                "actions.toml: shove.by_target.law: -0.10 is below 0.00: a target can soften or sharpen an act, never reverse it",
             ]
         );
     }

@@ -3,7 +3,7 @@ use std::fmt;
 use factional_core::Fixed;
 
 use crate::InertiaProfile;
-use crate::inertia::shifts;
+use crate::shift::shifts;
 
 /// How far each axis runs from its centre: −100.00 to 100.00 (DESIGN.md §5.1, P-2).
 pub const AXIS_LIMIT: Fixed = Fixed::from_hundredths(100_00);
@@ -73,6 +73,17 @@ impl Alignment {
         self.good
     }
 
+    /// This alignment with `axis` at `value`, which must be within −100.00…100.00.
+    pub(crate) fn with(self, axis: Axis, value: Fixed) -> Alignment {
+        match axis {
+            Axis::Law => Alignment { law: value, ..self },
+            Axis::Good => Alignment {
+                good: value,
+                ..self
+            },
+        }
+    }
+
     /// The nine-box name, such as "Lawful Good" or "True Neutral". An axis at or beyond
     /// ±`threshold` leans that way. For display only: no rule branches on a label (P-2).
     pub fn label(self, threshold: Fixed) -> &'static str {
@@ -108,14 +119,9 @@ impl Alignment {
         scale: Fixed,
         inertia: &InertiaProfile,
     ) -> Alignment {
-        let mut moved = self;
-        for axis in shifts(self, delta, scale, inertia) {
-            match axis.axis {
-                Axis::Law => moved.law = axis.to,
-                Axis::Good => moved.good = axis.to,
-            }
-        }
-        moved
+        shifts(self, delta, scale, None, inertia)
+            .iter()
+            .fold(self, |moved, axis| moved.with(axis.axis, axis.to))
     }
 }
 

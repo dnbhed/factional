@@ -146,7 +146,9 @@ The same mechanism expresses other shapes:
 An action can scale its alignment effect by who it's done to. It has two optional curves, and both give multipliers ≥ 0:
 
 - **`by_target.<axis>`:** a curve over the target's position on that axis. It scales the action's delta on that axis.
-- **`by_target.relation`:** a curve over the most hostile relation from any of the actor's factions toward any of the target's factions. That's 0 if either side belongs to no faction. It scales both axes.
+- **`by_target.relation`:** a curve over the most hostile relation from any of the actor's factions toward any of the target's factions, the first pair in id order on a tie. A faction and itself don't count, so with no pair of different factions (either side in none, or only a shared one) it's read at 0. It scales both axes.
+
+Each target multiplier joins base, scale and inertia in one product, computed exactly and rounded once (P-43). Without a target, or without the curves, an act moves exactly as before. `act --explain` shows each multiplier and where it came from: the target's position, or the relation and the two factions.
 
 ```toml
 [murder]
@@ -601,7 +603,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Unknown keys, missing fields, wrong types, bad numbers | error | A1 (done), then every increment for its own fields |
 | Action alignment names only `law` and `good` | error | A3 (done) |
 | `inertia` and `inertia.default_profile` name a profile that exists; profiles use only `law.toward_lawful`, `law.toward_chaotic`, `good.toward_good` and `good.toward_evil`; multipliers ≥ 0 | error | A4 (done) |
-| `by_target` multipliers ≥ 0 | error | A5 |
+| `by_target` names only `law`, `good` or `relation`; multipliers ≥ 0 | error | A5 (done) |
 | Faction ids are unique across factions and characters | error | D1 (done) |
 | Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 (done) |
 | Bands: at least one; unique names that are ids; increasing `up_to`; only the last open-ended | error | D2 (done, disposition), M2 (done, relations) |
