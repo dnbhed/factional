@@ -2,6 +2,9 @@ use std::fmt;
 
 use factional_core::Fixed;
 
+use crate::InertiaProfile;
+use crate::inertia::shifts;
+
 /// How far each axis runs from its centre: −100.00 to 100.00 (DESIGN.md §5.1, P-2).
 pub const AXIS_LIMIT: Fixed = Fixed::from_hundredths(100_00);
 
@@ -96,22 +99,24 @@ pub struct AlignmentDelta {
 }
 
 impl Alignment {
-    /// This alignment moved by `delta` × `scale`: each axis's shift is rounded once, then the
-    /// axis is clamped to −100.00…100.00 (DESIGN.md §5.2).
-    pub fn shifted(self, delta: AlignmentDelta, scale: Fixed) -> Alignment {
-        Alignment {
-            law: moved(self.law, delta.law, scale),
-            good: moved(self.good, delta.good, scale),
+    /// This alignment moved by `delta` × `scale` with `inertia`: each axis's shift is
+    /// computed exactly and rounded once, then the axis is clamped to −100.00…100.00
+    /// (DESIGN.md §5.2).
+    pub fn shifted(
+        self,
+        delta: AlignmentDelta,
+        scale: Fixed,
+        inertia: &InertiaProfile,
+    ) -> Alignment {
+        let mut moved = self;
+        for axis in shifts(self, delta, scale, inertia) {
+            match axis.axis {
+                Axis::Law => moved.law = axis.to,
+                Axis::Good => moved.good = axis.to,
+            }
         }
+        moved
     }
-}
-
-/// One axis's new position after a shift of `base` × `scale`.
-fn moved(position: Fixed, base: Fixed, scale: Fixed) -> Fixed {
-    let shift = base.saturating_mul(scale);
-    // A sum too big to hold means a shift so large it reaches the end of the axis by itself.
-    let unclamped = position.checked_add(shift).unwrap_or(shift);
-    unclamped.clamp(-AXIS_LIMIT, AXIS_LIMIT)
 }
 
 /// Which way one axis leans, for labels.
@@ -144,10 +149,17 @@ impl fmt::Display for AxisOutOfRange {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{InertiaProfile, Toward};
+    use factional_core::Curve;
     use proptest::prelude::*;
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
+    }
+
+    /// No inertia: every act counts in full.
+    fn steady() -> InertiaProfile {
+        InertiaProfile::default()
     }
 
     fn aligned(law: i64, good: i64) -> Alignment {
@@ -263,16 +275,22 @@ mod tests {
 
     #[test]
     fn stealing_moves_toward_chaotic_evil() {
-        assert_eq!(aligned(0, 0).shifted(STEAL, h(1_00)), aligned(-5_00, -3_00));
+        assert_eq!(
+            aligned(0, 0).shifted(STEAL, h(1_00), &steady()),
+            aligned(-5_00, -3_00)
+        );
     }
 
     #[test]
     fn scale_multiplies_the_shift() {
         assert_eq!(
-            aligned(0, 0).shifted(STEAL, h(2_00)),
+            aligned(0, 0).shifted(STEAL, h(2_00), &steady()),
             aligned(-10_00, -6_00)
         );
-        assert_eq!(aligned(0, 0).shifted(STEAL, h(50)), aligned(-2_50, -1_50));
+        assert_eq!(
+            aligned(0, 0).shifted(STEAL, h(50), &steady()),
+            aligned(-2_50, -1_50)
+        );
     }
 
     #[test]
@@ -283,16 +301,16 @@ mod tests {
         };
         // × 0.43: law 0.05 × 0.43 = 0.0215 → 0.02; good 4.00 × 0.43 = 1.72
         assert_eq!(
-            aligned(20_00, 20_00).shifted(help, h(43)),
+            aligned(20_00, 20_00).shifted(help, h(43), &steady()),
             aligned(20_02, 21_72)
         );
         // × 0.50: law 0.05 × 0.50 = 0.025 → 0.03; good 4.00 × 0.50 = 2.00
         assert_eq!(
-            aligned(10_00, 10_00).shifted(help, h(50)),
+            aligned(10_00, 10_00).shifted(help, h(50), &steady()),
             aligned(10_03, 12_00)
         );
         assert_eq!(
-            aligned(0, 0).shifted(STEAL, h(1)),
+            aligned(0, 0).shifted(STEAL, h(1), &steady()),
             aligned(-5, -3),
             "−5.00 × 0.01 = −0.05"
         );
@@ -301,11 +319,11 @@ mod tests {
     #[test]
     fn shifts_clamp_at_the_ends_of_each_axis() {
         assert_eq!(
-            aligned(-98_00, 0).shifted(STEAL, h(1_00)),
+            aligned(-98_00, 0).shifted(STEAL, h(1_00), &steady()),
             aligned(-100_00, -3_00)
         );
         assert_eq!(
-            aligned(-100_00, -100_00).shifted(STEAL, h(1_00)),
+            aligned(-100_00, -100_00).shifted(STEAL, h(1_00), &steady()),
             aligned(-100_00, -100_00)
         );
         let redeem = AlignmentDelta {
@@ -313,7 +331,7 @@ mod tests {
             good: h(3_00),
         };
         assert_eq!(
-            aligned(99_00, 98_00).shifted(redeem, h(1_00)),
+            aligned(99_00, 98_00).shifted(redeem, h(1_00), &steady()),
             aligned(100_00, 100_00)
         );
     }
@@ -325,7 +343,7 @@ mod tests {
             good: h(4_00),
         };
         assert_eq!(
-            aligned(-55_00, -20_00).shifted(help, h(3_00)),
+            aligned(-55_00, -20_00).shifted(help, h(3_00), &steady()),
             aligned(-55_00, -8_00)
         );
     }
@@ -334,7 +352,7 @@ mod tests {
     fn a_scale_too_big_to_compute_still_lands_at_the_end() {
         let huge = h(i64::MAX);
         assert_eq!(
-            aligned(50_00, -50_00).shifted(STEAL, huge),
+            aligned(50_00, -50_00).shifted(STEAL, huge, &steady()),
             aligned(-100_00, -100_00)
         );
         let redeem = AlignmentDelta {
@@ -342,12 +360,36 @@ mod tests {
             good: h(1),
         };
         assert_eq!(
-            aligned(-50_00, 50_00).shifted(redeem, huge),
+            aligned(-50_00, 50_00).shifted(redeem, huge, &steady()),
             aligned(100_00, 100_00)
         );
     }
 
+    /// Random inertia profiles: any of the four curves, through points over the axis with
+    /// multipliers from 0 to 5, or one huge one.
+    fn profiles() -> impl Strategy<Value = InertiaProfile> {
+        let curve = proptest::collection::btree_map(-100_i64..=100, 0_i64..=5_00, 2..5).prop_map(
+            |points| {
+                Curve::from_points(
+                    points
+                        .into_iter()
+                        .map(|(x, y)| (h(x * 100), h(y)))
+                        .collect(),
+                )
+                .expect("increasing x")
+            },
+        );
+        let curve = prop_oneof![curve, Just(Curve::constant(h(i64::MAX)))];
+        proptest::collection::btree_map(
+            proptest::sample::select(Toward::ALL.to_vec()),
+            curve,
+            0..=4,
+        )
+        .prop_map(|curves| InertiaProfile { curves })
+    }
+
     proptest! {
+        /// DESIGN.md §14, invariants 1 and 8: inertia never reverses the direction of a shift.
         #[test]
         fn shifting_never_leaves_the_range_or_reverses_the_act(
             law in -100_00_i64..=100_00,
@@ -355,10 +397,11 @@ mod tests {
             delta_law in -200_00_i64..=200_00,
             delta_good in -200_00_i64..=200_00,
             scale in prop_oneof![1_i64..=1_000, Just(i64::MAX)],
+            inertia in profiles(),
         ) {
             let before = aligned(law, good);
             let delta = AlignmentDelta { law: h(delta_law), good: h(delta_good) };
-            let after = before.shifted(delta, h(scale));
+            let after = before.shifted(delta, h(scale), &inertia);
             for (from, to, base) in [
                 (before.law(), after.law(), delta_law),
                 (before.good(), after.good(), delta_good),

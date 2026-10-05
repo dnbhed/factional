@@ -1,12 +1,12 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use factional_core::{Fixed, ParseFixedError, article, suggest};
+use factional_core::{Fixed, ParseFixedError, Ratio, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Condition, ConditionCheck, Distance, Event, Faction, FactionId, LeaveReason,
-    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, StandingEffects, TableDecision,
-    TableSource, Verdict, WeightsFrom, Witnesses, World,
+    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Shift, StandingEffects,
+    TableDecision, TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -85,7 +85,7 @@ const COMMANDS: &[(&str, &str)] = &[
         "list the action catalogue and how each act moves alignment",
     ),
     (
-        "act <actor> <action> [--target <id>] [--scale <n>]",
+        "act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
         "<actor> does <action>; --scale says how big this instance was (default 1.00)",
     ),
     ("advance <ticks>", "move time forward"),
@@ -893,15 +893,33 @@ impl Session {
     /// `act <actor> <action> [--target <id>] [--scale <n>]`: performs an action and shows the
     /// events it caused.
     fn act(&mut self, args: &str) -> Outcome {
-        let command = match parse_act(args) {
-            Ok(command) => command,
+        let (command, explain) = match parse_act(args) {
+            Ok(parsed) => parsed,
             Err(message) => return Outcome::Error(message),
         };
         let Some(world) = self.world.as_mut() else {
             return no_world();
         };
+        // The working comes from where the actor stands before the act.
+        let working = match &command {
+            Command::PerformAction {
+                actor,
+                action,
+                scale,
+                ..
+            } if explain => world
+                .actions()
+                .find(|known| &known.id == action)
+                .and_then(|known| world.shift(actor, known.alignment, *scale))
+                .map(|shift| describe_shift(&shift, actor)),
+            _ => None,
+        };
         match world.execute(command) {
-            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Ok(events) => {
+                let mut output: Vec<String> = events.iter().map(describe_event).collect();
+                output.extend(working.into_iter().flatten());
+                Outcome::Output(output.join("\n"))
+            }
             Err(refusal) => Outcome::Error(refusal.to_string()),
         }
     }
@@ -976,6 +994,33 @@ impl Session {
             },
         )))
     }
+}
+
+/// How an act moved `actor`, axis by axis, from the engine's working (DESIGN.md §5.2): each
+/// multiplier, and where the inertia came from.
+fn describe_shift(shift: &Shift, actor: &CharacterId) -> Vec<String> {
+    let mut described = vec![format!(
+        "shift = base × scale × inertia, rounded once; {actor}'s inertia profile is {}",
+        shift.profile
+    )];
+    for axis in &shift.axes {
+        let toward = Toward::of(axis.axis, axis.base).expect("only moved axes have working");
+        let curve = format!("{}.{}", axis.axis.key(), toward.key());
+        let inertia = match axis.inertia {
+            Some((_, multiplier)) => format!("{multiplier} ({curve} at {})", axis.from),
+            None => format!("{} ({} has no {curve} curve)", Ratio::ONE, shift.profile),
+        };
+        described.push(format!(
+            "{}: {} × {} × {inertia} = {}, from {} to {}",
+            axis.axis.key(),
+            axis.base,
+            axis.scale,
+            axis.shift,
+            axis.from,
+            axis.to
+        ));
+    }
+    described
 }
 
 /// How a `defectors` or `deserters` table decided: where it came from, the rule that fired
@@ -1194,25 +1239,35 @@ fn describe_command(command: &Command) -> String {
 }
 
 /// `act`'s arguments as a command. Everyone witnesses an act done from the CLI.
-fn parse_act(args: &str) -> Result<Command, String> {
-    const USAGE: &str = "act needs the form: act <actor> <action> [--target <id>] [--scale <n>]";
+/// `act`'s arguments as a command, and whether `--explain` was given.
+fn parse_act(args: &str) -> Result<(Command, bool), String> {
+    const USAGE: &str =
+        "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--explain]";
     let words: Vec<&str> = args.split_whitespace().collect();
     let [actor, action, options @ ..] = &words[..] else {
         return Err(USAGE.to_owned());
     };
-    let (mut target, mut scale) = (None, None);
-    for pair in options.chunks(2) {
-        let (slot, value) = match *pair {
-            ["--target", id] => (&mut target, id),
-            ["--scale", n] => (&mut scale, n),
+    let (mut target, mut scale, mut explain) = (None, None, false);
+    let mut options = options.iter();
+    while let Some(option) = options.next() {
+        let slot = match *option {
+            "--explain" if !explain => {
+                explain = true;
+                continue;
+            }
+            "--target" => &mut target,
+            "--scale" => &mut scale,
             _ => return Err(USAGE.to_owned()),
         };
-        if slot.replace(value).is_some() {
+        let Some(value) = options.next().filter(|value| !is_flag(value)) else {
+            return Err(USAGE.to_owned());
+        };
+        if slot.replace(*value).is_some() {
             return Err(USAGE.to_owned());
         }
     }
     let character = |id: &str| CharacterId::new(id).map_err(|invalid| invalid.to_string());
-    Ok(Command::PerformAction {
+    let command = Command::PerformAction {
         actor: character(actor)?,
         action: ActionId::new(action).map_err(|invalid| invalid.to_string())?,
         target: target.map(character).transpose()?,
@@ -1223,7 +1278,8 @@ fn parse_act(args: &str) -> Result<Command, String> {
             None => Fixed::ONE,
         },
         witnesses: Witnesses::Everyone,
-    })
+    };
+    Ok((command, explain))
 }
 
 /// `law -5.00, good -3.00`.
@@ -1907,8 +1963,9 @@ mod tests {
     #[test]
     fn act_reports_bad_input() {
         let mut session = riverhold();
-        let usage =
-            command_error("act needs the form: act <actor> <action> [--target <id>] [--scale <n>]");
+        let usage = command_error(
+            "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
+        );
         for line in [
             "act",
             "act player",
@@ -2435,6 +2492,73 @@ mod tests {
     }
 
     // Standing and outcomes
+
+    /// The lines of `act … --explain` after the events: the shift's working.
+    fn working_of(session: &mut Session, line: &str) -> Vec<String> {
+        let Ok(Outcome::Output(output)) = session.execute(line) else {
+            panic!("{line} should succeed");
+        };
+        output
+            .lines()
+            .skip_while(|line| line.starts_with('#'))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn act_explains_how_inertia_scaled_each_axis() {
+        let mut session = riverhold();
+        // Mira hardens: toward_good at 85 is 0.405, and 4.00 × 0.405 is 1.62, rounded once.
+        assert_eq!(
+            working_of(
+                &mut session,
+                "act sister_mira help_stranger --target merchant_ava --explain"
+            ),
+            [
+                "shift = base × scale × inertia, rounded once; sister_mira's inertia profile is hardening",
+                "good: 4.00 × 1.00 × 0.405 (good.toward_good at 85.00) = 1.62, from 85.00 to 86.62",
+            ]
+        );
+        // Hale's profile has no law curves; toward_evil at 30 is 0.85.
+        assert_eq!(
+            working_of(&mut session, "act captain_hale steal --explain"),
+            [
+                "shift = base × scale × inertia, rounded once; captain_hale's inertia profile is hardening",
+                "law: -5.00 × 1.00 × 1.00 (hardening has no law.toward_chaotic curve) = -5.00, from 75.00 to 70.00",
+                "good: -3.00 × 1.00 × 0.85 (good.toward_evil at 30.00) = -2.55, from 30.00 to 27.45",
+            ]
+        );
+        assert_eq!(
+            working_of(&mut session, "act player steal --scale 2 --explain"),
+            [
+                "shift = base × scale × inertia, rounded once; player's inertia profile is steady",
+                "law: -5.00 × 2.00 × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00",
+                "good: -3.00 × 2.00 × 1.00 (steady has no good.toward_evil curve) = -6.00, from 0.00 to -6.00",
+            ]
+        );
+    }
+
+    #[test]
+    fn act_explain_is_a_flag_and_a_refused_act_has_no_working() {
+        let mut session = riverhold();
+        let usage = command_error(
+            "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
+        );
+        assert_eq!(
+            session.execute("act player steal --explain --explain"),
+            usage
+        );
+        assert_eq!(session.execute("act player steal --scale --explain"), usage);
+        assert_eq!(
+            session.execute("act player stael --explain"),
+            command_error("unknown action 'stael' (did you mean 'steal'?)")
+        );
+        assert_eq!(
+            session.execute("act player --explain steal"),
+            usage,
+            "options come after the action"
+        );
+    }
 
     #[test]
     fn acts_change_standing_and_standing_shows_it() {
@@ -3062,7 +3186,7 @@ mod tests {
             "relate <from> <to> <value> [--one-way]",
             "relate <from> <to> --by <n> [--one-way]",
             "actions",
-            "act <actor> <action> [--target <id>] [--scale <n>]",
+            "act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
             "advance <ticks>",
             "time",
             "events [--since <seq>]",

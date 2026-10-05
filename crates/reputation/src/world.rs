@@ -5,13 +5,15 @@ use factional_core::{Curve, CurveError, Fixed, Tick, article, suggest};
 
 use crate::defection::{self, Situation};
 use crate::distance::gap;
+use crate::inertia::shifts;
 use crate::{
-    AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
-    CommandError, Component, ComponentKind, Defection, Disposition, DispositionWeights, Effects,
-    Event, Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership,
-    Metric, Outcome, OutcomeId, Part, Party, PromotionAssessment, RankCheck, RankId, Regard,
-    Relation, RelationSide, Role, Rule, StandingEffects, StandingKey, StandingOwner, TableKind,
-    TableOwner, TableProblem, TableSource, Verdict, Weights, Witnesses, measure,
+    AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, Axis, Bands, Change, Character,
+    CharacterId, Command, CommandError, Component, ComponentKind, Defection, Disposition,
+    DispositionWeights, Effects, Event, Faction, FactionId, Inertia, InertiaProfile,
+    JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric, Outcome, OutcomeId,
+    Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide,
+    Role, Rule, Shift, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner,
+    TableProblem, TableSource, Toward, Verdict, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -38,6 +40,8 @@ pub struct Balance {
     /// `membership.defectors` and `membership.deserters`; a table left out is built in
     /// (DESIGN.md §9.2).
     pub rule_tables: BTreeMap<TableKind, Vec<Rule>>,
+    /// The inertia profiles, and the default (DESIGN.md §5.3).
+    pub inertia: Inertia,
 }
 
 impl Balance {
@@ -75,6 +79,7 @@ impl Default for Balance {
             relation_bands: Bands::relations(),
             conflict_threshold: Balance::DEFAULT_CONFLICT_THRESHOLD,
             rule_tables: BTreeMap::new(),
+            inertia: Inertia::default(),
         }
     }
 }
@@ -191,12 +196,34 @@ pub enum ContentProblem {
         rank: RankId,
         suggestion: Option<RankId>,
     },
+    /// `inertia.default_profile`, or a character's `inertia`, names a profile that doesn't
+    /// exist.
+    UnknownProfile {
+        user: ProfileUser,
+        profile: ProfileId,
+        suggestion: Option<ProfileId>,
+    },
+    /// An inertia curve goes below 0, which would reverse a shift (P-5).
+    NegativeInertia {
+        profile: ProfileId,
+        toward: Toward,
+        value: Fixed,
+    },
     /// Something wrong with a `defectors` or `deserters` table.
     RuleTable {
         owner: TableOwner,
         kind: TableKind,
         problem: TableProblem,
     },
+}
+
+/// What names an inertia profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProfileUser {
+    /// `inertia.default_profile` in `balance.toml`.
+    Default,
+    /// A character's `inertia`.
+    Character(CharacterId),
 }
 
 /// Which value of a rank a content problem is about.
@@ -359,6 +386,7 @@ impl Content {
         affinity
             .into_iter()
             .chain(threshold)
+            .chain(self.inertia_problems())
             .chain(shared_ids)
             .chain(memberships)
             .chain(self.rank_problems())
@@ -404,6 +432,39 @@ impl Content {
             }
         }
         problems
+    }
+
+    /// The default profile must exist, every curve stay at or above 0, and every character's
+    /// profile exist: in that order, profiles and characters in id order.
+    fn inertia_problems(&self) -> Vec<ContentProblem> {
+        let inertia = &self.balance.inertia;
+        let unknown = |user: ProfileUser, profile: &ProfileId| {
+            (!inertia.profiles.contains_key(profile)).then(|| ContentProblem::UnknownProfile {
+                user,
+                profile: profile.clone(),
+                suggestion: closest(profile.as_str(), inertia.profiles.keys()),
+            })
+        };
+        let default = unknown(ProfileUser::Default, &inertia.default_profile);
+        let negative = inertia.profiles.iter().flat_map(|(id, profile)| {
+            profile.curves.iter().filter_map(|(toward, curve)| {
+                let lowest = curve.lowest();
+                (lowest < Fixed::ZERO).then(|| ContentProblem::NegativeInertia {
+                    profile: id.clone(),
+                    toward: *toward,
+                    value: lowest,
+                })
+            })
+        });
+        let characters = self.characters.values().filter_map(|character| {
+            let profile = character.inertia.as_ref()?;
+            unknown(ProfileUser::Character(character.id.clone()), profile)
+        });
+        default
+            .into_iter()
+            .chain(negative)
+            .chain(characters)
+            .collect()
     }
 
     /// Problems with the world's rule tables, then each faction's own, in id order.
@@ -699,6 +760,22 @@ impl fmt::Display for ContentProblem {
                     None => Ok(()),
                 }
             }
+            ContentProblem::UnknownProfile {
+                profile,
+                suggestion,
+                ..
+            } => {
+                write!(f, "unknown inertia profile '{profile}'")?;
+                match suggestion {
+                    Some(close) => write!(f, " (did you mean '{close}'?)"),
+                    None => Ok(()),
+                }
+            }
+            ContentProblem::NegativeInertia { value, .. } => write!(
+                f,
+                "{value} is below {}: inertia can damp or amplify a shift, never reverse it",
+                Fixed::ZERO
+            ),
             ContentProblem::RuleTable { owner, problem, .. } => match problem {
                 TableProblem::RungBelowOne { rung, .. } => {
                     write!(f, "{rung} isn't a rung: rungs count from 1, the lowest")
@@ -989,7 +1066,7 @@ impl World {
                     scale: *scale,
                     witnesses: witnesses.clone(),
                 }];
-                let to = from.shifted(catalogued.alignment, *scale);
+                let to = from.shifted(catalogued.alignment, *scale, self.inertia_of(actor).1);
                 if to != from {
                     changes.push(Change::AlignmentChanged {
                         character: actor.clone(),
@@ -1213,7 +1290,7 @@ impl World {
     fn effect_changes(&self, character: &CharacterId, effects: &Effects) -> Vec<Change> {
         let mut changes = Vec::new();
         let from = self.state.alignments[character];
-        let to = from.shifted(effects.alignment, Fixed::ONE);
+        let to = from.shifted(effects.alignment, Fixed::ONE, self.inertia_of(character).1);
         if to != from {
             changes.push(Change::AlignmentChanged {
                 character: character.clone(),
@@ -1257,6 +1334,17 @@ impl World {
     fn awareness(&self, party: &Party) -> Fixed {
         let _ = party;
         Fixed::ONE
+    }
+
+    /// A character's inertia profile, and its id: their own, or the default. Content checks
+    /// both exist (P-32).
+    fn inertia_of(&self, character: &CharacterId) -> (&ProfileId, &InertiaProfile) {
+        let inertia = &self.content.balance.inertia;
+        let id = self.content.characters[character]
+            .inertia
+            .as_ref()
+            .unwrap_or(&inertia.default_profile);
+        (id, &inertia.profiles[id])
     }
 
     /// A character's factions now, in id order.
@@ -1541,6 +1629,22 @@ impl World {
                 .map(|((_, party), value)| (party.clone(), *value))
                 .collect(),
         )
+    }
+
+    /// How `delta` × `scale` would move `character` now, with their inertia: each axis it
+    /// touches, with its working (DESIGN.md §5.2, §5.3). `None` for an unknown character.
+    pub fn shift(
+        &self,
+        character: &CharacterId,
+        delta: AlignmentDelta,
+        scale: Fixed,
+    ) -> Option<Shift> {
+        let from = self.alignment(character)?;
+        let (profile, inertia) = self.inertia_of(character);
+        Some(Shift {
+            profile: profile.clone(),
+            axes: shifts(from, delta, scale, inertia),
+        })
     }
 
     /// The outcomes, in id order.
@@ -1902,10 +2006,11 @@ where
 mod tests {
     use super::*;
     use crate::{
-        AXIS_LIMIT, ActionStanding, AlignmentDelta, Band, Condition, ConditionCheck, Effects,
-        JoinBlock, LeaveReason, Observed, Part, Rank, RankCheck, RankRef, RelationEnds, Role,
-        StandingEffects, StartingMembership, Tolerances, Verdict, Witnesses,
+        AXIS_LIMIT, ActionStanding, AlignmentDelta, AxisShift, Band, Condition, ConditionCheck,
+        Effects, JoinBlock, LeaveReason, Observed, Part, Rank, RankCheck, RankRef, RelationEnds,
+        Role, StandingEffects, StartingMembership, Tolerances, Verdict, Witnesses,
     };
+    use factional_core::Ratio;
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
@@ -1921,6 +2026,7 @@ mod tests {
             name: name.to_owned(),
             alignment: Alignment::new(h(law), h(good)).expect("in range"),
             weights: None,
+            inertia: None,
             memberships: Vec::new(),
             standing: StandingEffects::default(),
         }
@@ -2138,6 +2244,10 @@ mod tests {
             },
             same_faction: h(40_00),
             rule_tables: [(TableKind::Defectors, sample_defectors())].into(),
+            inertia: Inertia {
+                default_profile: profile_id("hardening"),
+                profiles: [(profile_id("hardening"), hardening())].into(),
+            },
         };
         let world = World::new(Content {
             balance: balance.clone(),
@@ -5071,6 +5181,204 @@ mod tests {
         assert_eq!(
             replayed.alignment(&id("player")),
             Some(aligned(-15_00, -9_00))
+        );
+    }
+
+    // Inertia (DESIGN.md §5.3)
+
+    fn profile_id(text: &str) -> ProfileId {
+        ProfileId::new(text).expect("a valid id")
+    }
+
+    fn points(points: &[(i64, i64)]) -> Curve {
+        Curve::from_points(points.iter().map(|&(x, y)| (h(x), h(y))).collect()).expect("valid")
+    }
+
+    /// DESIGN.md §5.3's `hardening`.
+    fn hardening() -> InertiaProfile {
+        InertiaProfile {
+            curves: [
+                (
+                    Toward::Good,
+                    points(&[(-100_00, 50), (0, 1_00), (100_00, 30)]),
+                ),
+                (
+                    Toward::Evil,
+                    points(&[(-100_00, 30), (0, 1_00), (100_00, 50)]),
+                ),
+            ]
+            .into(),
+        }
+    }
+
+    fn hardened(mut character: Character) -> Character {
+        character.inertia = Some(profile_id("hardening"));
+        character
+    }
+
+    /// Riverhold's factions and actions, `steady` and `hardening` profiles, and
+    /// `rescued_merchant` (good +6).
+    fn with_inertia(characters: impl IntoIterator<Item = Character>) -> Content {
+        let rescued = Outcome {
+            id: outcome_id("rescued_merchant"),
+            effects: Effects {
+                alignment: AlignmentDelta {
+                    law: h(0),
+                    good: h(6_00),
+                },
+                standing: StandingEffects::default(),
+            },
+        };
+        let mut inertia = Inertia::default();
+        inertia
+            .profiles
+            .insert(profile_id("hardening"), hardening());
+        Content {
+            balance: Balance {
+                inertia,
+                ..Balance::default()
+            },
+            characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),
+            factions: factions(),
+            actions: actions(),
+            relations: relations(),
+            outcomes: [(rescued.id.clone(), rescued)].into(),
+        }
+    }
+
+    fn mira() -> Character {
+        hardened(character("Mira", 35_00, 85_00))
+    }
+
+    #[test]
+    fn a_hardening_priestess_is_moved_less_by_a_good_deed() {
+        let mut world = World::new(with_inertia([mira(), character("Ava", 20_00, 10_00)]))
+            .expect("valid content");
+        let help = AlignmentDelta {
+            law: h(0),
+            good: h(4_00),
+        };
+        let shift = world
+            .shift(&id("mira"), help, Fixed::ONE)
+            .expect("mira exists");
+        assert_eq!(shift.profile, profile_id("hardening"));
+        // toward_good at 85 is 0.405: 4.00 × 0.405 = 1.62, rounded once.
+        assert_eq!(
+            shift.axes,
+            [AxisShift {
+                axis: Axis::Good,
+                from: h(85_00),
+                base: h(4_00),
+                scale: Fixed::ONE,
+                // 0.405 is 0.81 × 0.50.
+                inertia: Some((
+                    Toward::Good,
+                    Ratio::from_fixed(h(81))
+                        .checked_mul(Ratio::from_fixed(h(50)))
+                        .expect("small"),
+                )),
+                shift: h(1_62),
+                to: h(86_62),
+            }]
+        );
+        let events = world
+            .execute(act("mira", "help_stranger", Some("ava"), 1_00))
+            .expect("accepted");
+        assert_eq!(
+            events[1].payload,
+            Change::AlignmentChanged {
+                character: id("mira"),
+                from: Alignment::new(h(35_00), h(85_00)).expect("in range"),
+                to: Alignment::new(h(35_00), h(86_62)).expect("in range"),
+            }
+        );
+        assert_eq!(world.shift(&id("ghost"), help, Fixed::ONE), None);
+    }
+
+    #[test]
+    fn the_default_profile_applies_to_anyone_without_their_own() {
+        let mut steady = character("Ava", 20_00, 60_00);
+        steady.inertia = Some(Inertia::steady());
+        let mut content = with_inertia([character("Hale", 75_00, 60_00), steady]);
+        content.balance.inertia.default_profile = profile_id("hardening");
+        let world = World::new(content).expect("valid content");
+        let help = AlignmentDelta {
+            law: h(0),
+            good: h(4_00),
+        };
+        let shifted = |who: &str| {
+            let shift = world.shift(&id(who), help, Fixed::ONE).expect("exists");
+            (shift.profile.to_string(), shift.axes[0].shift)
+        };
+        // toward_good at 60 is 0.58: +2.32 (DESIGN.md §5.3).
+        assert_eq!(shifted("hale"), ("hardening".to_owned(), h(232)));
+        assert_eq!(shifted("ava"), ("steady".to_owned(), h(4_00)));
+    }
+
+    #[test]
+    fn outcomes_move_alignment_with_inertia_too() {
+        let mut world = World::new(with_inertia([mira()])).expect("valid content");
+        let events = world
+            .execute(outcome("rescued_merchant", "mira"))
+            .expect("accepted");
+        // 6.00 × 0.405 = 2.43.
+        assert_eq!(
+            events[1].payload,
+            Change::AlignmentChanged {
+                character: id("mira"),
+                from: Alignment::new(h(35_00), h(85_00)).expect("in range"),
+                to: Alignment::new(h(35_00), h(87_43)).expect("in range"),
+            }
+        );
+    }
+
+    #[test]
+    fn inertia_profiles_are_checked_when_content_loads() {
+        let mut stedy = character("Ava", 20_00, 10_00);
+        stedy.inertia = Some(profile_id("stedy"));
+        let mut content = with_inertia([stedy, mira()]);
+        content.balance.inertia.default_profile = profile_id("hardenning");
+        let profile = content
+            .balance
+            .inertia
+            .profiles
+            .get_mut(&profile_id("hardening"))
+            .expect("hardening");
+        profile
+            .curves
+            .insert(Toward::Lawful, points(&[(-100_00, 1_00), (100_00, -10)]));
+        // A multiplier of exactly 0 is allowed: it stops a shift without reversing it.
+        profile
+            .curves
+            .insert(Toward::Chaotic, Curve::constant(Fixed::ZERO));
+        assert_eq!(
+            content.problems(),
+            [
+                ContentProblem::UnknownProfile {
+                    user: ProfileUser::Default,
+                    profile: profile_id("hardenning"),
+                    suggestion: Some(profile_id("hardening")),
+                },
+                ContentProblem::NegativeInertia {
+                    profile: profile_id("hardening"),
+                    toward: Toward::Lawful,
+                    value: h(-10),
+                },
+                ContentProblem::UnknownProfile {
+                    user: ProfileUser::Character(id("ava")),
+                    profile: profile_id("stedy"),
+                    suggestion: Some(Inertia::steady()),
+                },
+            ]
+        );
+        let messages: Vec<String> = content.problems().iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "unknown inertia profile 'hardenning' (did you mean 'hardening'?)",
+                "-0.10 is below 0.00: inertia can damp or amplify a shift, never reverse it",
+                "unknown inertia profile 'stedy' (did you mean 'steady'?)",
+            ]
         );
     }
 

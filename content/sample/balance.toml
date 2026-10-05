@@ -14,6 +14,24 @@ metric = "euclidean"
 # The weights of any faction or character without their own, 0 to 1 per axis.
 default_weights = { law = 1.0, good = 1.0 }
 
+[inertia]
+# How hard alignment is to move (DESIGN.md §5.3). A profile gives up to four curves, one per
+# axis and direction: law.toward_lawful, law.toward_chaotic, good.toward_good and
+# good.toward_evil. Each is read at the character's position before the act and multiplies
+# that axis's shift; a curve left out is 1.0, and none may go below 0. The shift is
+# base × scale × inertia, rounded once. Characters choose a profile with `inertia = "<id>"`;
+# without one, default_profile applies. Try `act <character> <action> --explain`.
+default_profile = "steady"
+
+[inertia.profiles.steady]
+# Every act counts in full. Always there, even if left out here.
+
+[inertia.profiles.hardening]
+# Convictions harden toward the extremes: the more good someone is, the less a good deed
+# moves them, and evil acts move them less than they would someone neutral.
+good.toward_good = [[-100.0, 0.5], [0.0, 1.0], [100.0, 0.3]]
+good.toward_evil = [[-100.0, 0.3], [0.0, 1.0], [100.0, 0.5]]
+
 [disposition]
 # How alignment distance turns into liking (DESIGN.md §8.1): 50 when identical, 0 at 60
 # apart, -50 at 200. A curve is [x, y] points, straight between them and flat beyond the

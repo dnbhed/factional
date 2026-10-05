@@ -1,0 +1,33 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/inertia.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act sister_mira help_stranger --target merchant_ava --explain
+#1 at tick 0: sister_mira did help_stranger, targeting merchant_ava
+#2 at tick 0: sister_mira's alignment moved from law 35.00, good 85.00 to law 35.00, good 86.62
+#3 at tick 0: sister_mira's standing with merchant_ava moved from 0.00 to 10.00
+shift = base × scale × inertia, rounded once; sister_mira's inertia profile is hardening
+good: 4.00 × 1.00 × 0.405 (good.toward_good at 85.00) = 1.62, from 85.00 to 86.62
+> assert show character sister_mira == sister_mira — Sister Mira — law 35.00, good 86.62 — Lawful Good — member of temple (ordained) since tick 0
+> act player help_stranger --target merchant_ava --explain
+#4 at tick 0: player did help_stranger, targeting merchant_ava
+#5 at tick 0: player's alignment moved from law 0.00, good 0.00 to law 0.00, good 4.00
+#6 at tick 0: player's standing with merchant_ava moved from 0.00 to 10.00
+shift = base × scale × inertia, rounded once; player's inertia profile is steady
+good: 4.00 × 1.00 × 1.00 (steady has no good.toward_good curve) = 4.00, from 0.00 to 4.00
+> act captain_hale steal --explain
+#7 at tick 0: captain_hale did steal
+#8 at tick 0: captain_hale's alignment moved from law 75.00, good 30.00 to law 70.00, good 27.45
+shift = base × scale × inertia, rounded once; captain_hale's inertia profile is hardening
+law: -5.00 × 1.00 × 1.00 (hardening has no law.toward_chaotic curve) = -5.00, from 75.00 to 70.00
+good: -3.00 × 1.00 × 0.85 (good.toward_evil at 30.00) = -2.55, from 30.00 to 27.45
+> assert show character captain_hale == captain_hale — Captain Hale — law 70.00, good 27.45 — Lawful Neutral — member of city_watch (captain) since tick 0
+> outcome rescued_merchant sister_mira
+#9 at tick 0: outcome rescued_merchant applied to sister_mira
+#10 at tick 0: sister_mira's alignment moved from law 35.00, good 86.62 to law 35.00, good 88.98
+#11 at tick 0: sister_mira's standing with city_watch moved from 0.00 to 10.00
+#12 at tick 0: sister_mira's standing with merchant_ava moved from 10.00 to 40.00
+> assert show character sister_mira == sister_mira — Sister Mira — law 35.00, good 88.98 — Lawful Good — member of temple (ordained) since tick 0

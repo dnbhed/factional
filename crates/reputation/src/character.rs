@@ -1,4 +1,6 @@
-use crate::{Alignment, CharacterId, FactionId, StandingEffects, StartingMembership, Weights};
+use crate::{
+    Alignment, CharacterId, FactionId, ProfileId, StandingEffects, StartingMembership, Weights,
+};
 
 impl Character {
     /// The factions they start in, as listed.
@@ -20,6 +22,8 @@ pub struct Character {
     /// How much they care about each axis when judging others; `None` means the balance
     /// default. Characters never inherit weights from their factions (P-21).
     pub weights: Option<Weights>,
+    /// Their inertia profile; `None` means the balance default (DESIGN.md §5.3).
+    pub inertia: Option<ProfileId>,
     /// The factions they start in, as content lists them. Their memberships now are
     /// [`World::memberships`](crate::World::memberships).
     pub memberships: Vec<StartingMembership>,

@@ -47,6 +47,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M4 — the full disposition: affinity, standing, kinship (with `same_faction`), faction opinion and modifiers (0 until M10), each clamped to ±100, weighted by `disposition.weights` and summed; `disposition --explain` shows DESIGN.md §8.2's table, with where kinship and faction opinion came from; done 2026-10-05 (#14)
 - M5 — rank ladders: `[[<faction>.ranks]]` with standing requirements and stricter tolerances, starting ranks, new members on the lowest rung; `Promote` (only on request, refused with every unmet requirement) and `Demote`, with `RankChanged`; `assess_promotion`; rank load checks and warnings; `ranks`, `promote [--explain]`, `demote`; done 2026-10-05 (#16)
 - M7 — joining an enemy: `membership.defectors` and `membership.deserters` rule tables, and a faction's own, which may name its ranks; built in, defectors refuse everyone and deserters release everyone (D-4); load checks for conditions, outcomes, rungs, rank ids and a last rule that always decides; `assess_join` reports every rule tried in each table; defecting emits `LeftFaction(defected)` with the deserter cost, then `JoinedFaction` with the defector cost; `can-join --explain` shows each table; done 2026-10-05 (#18)
+- A4 — inertia: `[inertia]` profiles (up to four curves per profile, a curve left out is 1.0, `steady` always there) and `default_profile`, a character's `inertia`; each shift is base × scale × inertia, computed exactly and rounded once (`Ratio` in core, `Curve::exact_at`), for actions, outcomes and effects; load checks for unknown profiles and negative curves; a property test for invariant 8; a `shift` query; `act --explain`; done 2026-10-05 (#19)
 
 ---
 
@@ -128,51 +129,28 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Modifiers expire on `AdvanceTime`.
 - The modifiers component of disposition.
 
-### A4 · Inertia profiles — P1 · Next
+### A5 · Target-aware action effects — P1 · Next
 
-**Why:** D-6, where how easily an act moves someone depends on where they already stand. The same good deed moves a saint less than a neutral character (DESIGN.md §5.3, P-5).
+**Why:** D-18, where who an act is done to changes how much it moves the actor. Killing the wicked, or a sworn enemy, is less evil than killing a saint (DESIGN.md §5.4, P-28).
 
 **Scope**
 
-- **Content.**
-  - `balance.toml` gains `[inertia]`: `default_profile`, and `[inertia.profiles.<id>]`, each with up to four curves, `law.toward_lawful`, `law.toward_chaotic`, `good.toward_good` and `good.toward_evil`. Any curve a profile leaves out is 1.0.
-  - A character may set `inertia = "<profile>"`; without it, the default profile applies.
-  - Built in, with no `[inertia]`, the default is `steady`, whose every curve is 1.0: every act counts in full, as now.
-- **The shift formula** (§5.2) multiplies each axis's shift by the curve for that axis and the direction of the shift, read at the character's position before the act. The product is computed exactly and rounded once (P-1): a curve value isn't rounded on its own first.
-- **Outcomes and effects** move alignment with the character's inertia, as actions do.
-- **CLI.** `act --explain` shows, per axis, the base delta, the scale, the inertia multiplier with its profile and curve, and the shift.
+- **Content.** An action gains optional curves, each giving multipliers ≥ 0:
+  - `by_target.law` and `by_target.good`: over the target's position on that axis, scaling the action's delta on that axis;
+  - `by_target.relation`: over the most hostile relation from any of the actor's factions toward any of the target's factions, scaling both axes. It's read at 0 if either side belongs to no faction.
+- **The shift formula** (§5.2) becomes base × scale × target(axis) × inertia, where target(axis) is `by_target.<axis>` × `by_target.relation`. The product is computed exactly and rounded once (P-1, P-43), extending A4's working. Without a target, or without the curves, target(axis) is 1.
+- **Outcomes and effects have no target,** so they're unaffected.
+- **CLI.** `act --explain` shows each target multiplier and where it came from: the target's position, or the relation and the two factions it's between.
 
-**Acceptance** (DESIGN.md §5.3, with the `hardening` profile from `docs/examples/riverhold`)
+**Acceptance** (`murder` as in DESIGN.md §5.4: law −10.00, good −15.00)
 
-1. **A hardening character at good 60.00:**
-   - helps a stranger (good +4.00): `toward_good` at 60 is 0.58, so +2.32, ending at 62.32;
-   - extorts someone instead (good −6.00): `toward_evil` at 60 is 0.70, so −4.20, ending at 55.80.
-2. **Rounded once.** `sister_mira`, hardening, at good 85.00 helps a stranger: `toward_good` at 85 is 0.405, so 4.00 × 0.405 = 1.62, ending at 86.62. (The outline had ×0.41 → +1.64, which rounds the multiplier first; P-1 rounds the product once.)
-3. **A steady character** gets the full shift: +4.00.
-4. **A curve left out** is 1.0: a hardening character's law moves in full.
+1. **The player murders brother_ash** (good −70): `by_target.good` at −70 is 0.44, and the player is in no faction, so the relation multiplier is 1.00. Good −15.00 × 0.44 = −6.60; law −10.00.
+2. **The player murders sister_mira** (good 85): `by_target.good` at 85 is 1.425, so good −15.00 × 1.425 = −21.375, rounded once to −21.38; law −10.00.
+3. **captain_hale murders vex.** For good: target 0.84 (at −20), relation 0.62 (the Watch regards the Guild at −80), and Hale's hardening `toward_evil` at 30, 0.85. So −15.00 × 0.84 × 0.62 × 0.85 = −6.6402, rounded once to −6.64. For law: −10.00 × 0.62 = −6.20, since hardening has no law curve.
+4. **No change otherwise.** `murder` with no target, and an action without `by_target`, shift exactly as before.
 5. **Load errors at their keys:**
-   - a character's `inertia`, or `default_profile`, naming a profile that doesn't exist, with a "did you mean";
-   - a curve name other than the four, such as `good.toward_lawful`;
-   - a multiplier below 0 anywhere on a curve.
-
-**Validates** (DESIGN.md §12.2): a character's `inertia`, and `inertia.default_profile`, name a profile that exists; profiles use only `law`/`good` × `toward_*` curves; multipliers are ≥ 0.
-
-### A5 · Target-aware action effects — P1 · Outline
-
-**Covers:** DESIGN.md §5.4; D-18, P-28.
-
-**Scope**
-
-- Optional `by_target.<axis>` and `by_target.relation` curves on actions, with every multiplier validated ≥ 0.
-- The target multiplier joins the shift formula (§5.2), which still rounds once.
-- `act --explain` shows each multiplier and where it came from.
-
-**Anchors** (`murder`, as in DESIGN.md §13)
-
-- The player murders brother_ash: good × 0.44 → −6.60; law −10.00, unscaled.
-- The player murders sister_mira: good × 1.43 → −21.45.
-- captain_hale murders vex: good −6.64 (target 0.84, relation 0.62, inertia 0.85); law −6.20 (relation 0.62).
-- An action without `by_target` curves, or performed without a target, shifts exactly as before.
+   - a `by_target` multiplier below 0;
+   - `by_target` naming anything but `law`, `good` or `relation`, with a "did you mean".
 
 **Validates** (DESIGN.md §12.2): `by_target` multipliers are ≥ 0, and `by_target` names only an axis or `relation`.
 

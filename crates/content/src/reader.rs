@@ -89,6 +89,19 @@ impl<'t> Section<'t> {
         self.to_fixed(key, value, report)
     }
 
+    /// The table under a key that isn't a fixed field name, such as a profile's id in
+    /// `[inertia.profiles.hardening]`. `None` if it's absent or not a table (that's reported).
+    pub(crate) fn table_any(
+        &mut self,
+        key: &str,
+        example: &str,
+        report: &mut Report,
+    ) -> Option<Section<'t>> {
+        self.mark(key);
+        let value = self.table.get(key)?;
+        self.to_section(key, value, example, report)
+    }
+
     /// Any value under `key`, as it is; `None` if it's absent.
     pub(crate) fn optional_value(&mut self, key: &'static str) -> Option<&'t Value> {
         self.get(key)
