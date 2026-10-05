@@ -41,6 +41,18 @@ const COMMANDS: &[(&str, &str)] = &[
         "<character> leaves <faction>",
     ),
     (
+        "relations [<faction>]",
+        "how factions regard each other, or just <faction>, with bands and conflicts",
+    ),
+    (
+        "relate <from> <to> <value> [--one-way]",
+        "set how <from> and <to> regard each other; --one-way sets only <from> → <to>",
+    ),
+    (
+        "relate <from> <to> --by <n> [--one-way]",
+        "shift a relation by <n>, stopping at -100 and 100",
+    ),
+    (
         "disposition <observer> <subject> [--explain]",
         "how <observer>, a faction or character, regards <subject>: a score and its band",
     ),
@@ -164,6 +176,8 @@ impl Session {
             "distance" => Ok(self.distance(rest)),
             "disposition" => Ok(self.disposition(rest)),
             "can-join" => Ok(self.can_join(rest)),
+            "relations" => Ok(self.relations(rest)),
+            "relate" => Ok(self.relate(rest)),
             "join" => Ok(self.membership(rest, true)),
             "leave" => Ok(self.membership(rest, false)),
             "actions" => Ok(self.actions()),
@@ -293,6 +307,64 @@ impl Session {
                 .factions()
                 .map(|faction| describe_faction(world, faction)),
         ))
+    }
+
+    /// `relations [<faction>]`: every relation set, or those involving one faction.
+    fn relations(&self, args: &str) -> Outcome {
+        let only = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [] => None,
+            [faction] => Some(faction),
+            _ => {
+                return Outcome::Error(
+                    "relations needs the form: relations [<faction>]".to_owned(),
+                );
+            }
+        };
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        if let Some(faction) = only.filter(|id| !world.factions().any(|f| f.id.as_str() == *id)) {
+            let ids: Vec<&str> = world.factions().map(|f| f.id.as_str()).collect();
+            return Outcome::Error(format!("unknown faction '{faction}'{}", hint(faction, ids)));
+        }
+        let listed: Vec<String> = world
+            .relations()
+            .into_iter()
+            .filter(|regard| {
+                only.is_none_or(|id| regard.from.as_str() == id || regard.to.as_str() == id)
+            })
+            .map(|regard| {
+                let conflict = world
+                    .in_conflict(&regard.from, &regard.to)
+                    .expect("factions from the world");
+                let marker = if conflict { " — in conflict" } else { "" };
+                format!(
+                    "{} → {}: {} ({}){marker}",
+                    regard.from, regard.to, regard.value, regard.band
+                )
+            })
+            .collect();
+        Outcome::Output(match (listed.is_empty(), only) {
+            (false, _) => listed.join("\n"),
+            (true, Some(faction)) => format!("no relations set for {faction}"),
+            (true, None) => "no relations set".to_owned(),
+        })
+    }
+
+    /// `relate <from> <to> <value> [--one-way]` or `relate <from> <to> --by <n> [--one-way]`:
+    /// the engine decides, and the events or its refusal are shown.
+    fn relate(&mut self, args: &str) -> Outcome {
+        let command = match parse_relate(args) {
+            Ok(command) => command,
+            Err(message) => return Outcome::Error(message),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(command) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
     }
 
     /// `can-join <character> <faction> [--explain]`: whether the character may join now, from
@@ -633,6 +705,12 @@ fn describe_event(event: &Event) -> String {
             };
             format!("{character} left {faction} ({reason})")
         }
+        Change::RelationChanged {
+            from,
+            to,
+            before,
+            after,
+        } => format!("{from} → {to} changed from {before} to {after}"),
         Change::AlignmentChanged {
             character,
             from,
@@ -652,6 +730,18 @@ fn describe_command(command: &Command) -> String {
         Command::AdvanceTime { ticks } => format!("advance {ticks}"),
         Command::JoinFaction { character, faction } => format!("join {character} {faction}"),
         Command::LeaveFaction { character, faction } => format!("leave {character} {faction}"),
+        Command::SetRelation {
+            from,
+            to,
+            value,
+            mutual,
+        } => format!("relate {from} {to} {value}{}", one_way(*mutual)),
+        Command::ShiftRelation {
+            from,
+            to,
+            by,
+            mutual,
+        } => format!("relate {from} {to} --by {by}{}", one_way(*mutual)),
         Command::PerformAction {
             actor,
             action,
@@ -707,6 +797,53 @@ fn parse_act(args: &str) -> Result<Command, String> {
 /// `law -5.00, good -3.00`.
 fn axes(alignment: Alignment) -> String {
     format!("law {}, good {}", alignment.law(), alignment.good())
+}
+
+/// Whether a word is an option such as `--one-way`, rather than a value. Negative numbers
+/// have one dash.
+fn is_flag(word: &str) -> bool {
+    word.starts_with("--")
+}
+
+fn one_way(mutual: bool) -> &'static str {
+    if mutual { "" } else { " --one-way" }
+}
+
+/// `relate`'s arguments as a command.
+fn parse_relate(args: &str) -> Result<Command, String> {
+    const USAGE: &str = "relate needs the form: relate <from> <to> <value> [--one-way], or relate <from> <to> --by <n> [--one-way]";
+    let words: Vec<&str> = args.split_whitespace().collect();
+    let (from, to, rest) = match &words[..] {
+        [from, to, rest @ ..] => (*from, *to, rest),
+        _ => return Err(USAGE.to_owned()),
+    };
+    let (shifting, number, mutual) = match rest {
+        ["--by", n] if !is_flag(n) => (true, *n, true),
+        ["--by", n, "--one-way"] if !is_flag(n) => (true, *n, false),
+        [value] if !is_flag(value) => (false, *value, true),
+        [value, "--one-way"] if !is_flag(value) => (false, *value, false),
+        _ => return Err(USAGE.to_owned()),
+    };
+    let faction = |id: &str| FactionId::new(id).map_err(|invalid| invalid.to_string());
+    let (from, to) = (faction(from)?, faction(to)?);
+    let number: Fixed = number
+        .parse()
+        .map_err(|error: ParseFixedError| error.to_string())?;
+    Ok(if shifting {
+        Command::ShiftRelation {
+            from,
+            to,
+            by: number,
+            mutual,
+        }
+    } else {
+        Command::SetRelation {
+            from,
+            to,
+            value: number,
+            mutual,
+        }
+    })
 }
 
 fn lines(items: impl Iterator<Item = String>) -> String {
@@ -1715,6 +1852,177 @@ mod tests {
         );
     }
 
+    // Relations
+
+    #[test]
+    fn relations_lists_each_direction_with_its_band_and_conflicts() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("relations city_watch"),
+            output(
+                "ashen_circle → city_watch: -40.00 (rival)\n\
+                 city_watch → ashen_circle: -40.00 (rival)\n\
+                 city_watch → free_company: -30.00 (rival)\n\
+                 city_watch → lantern_guild: -80.00 (enemy) — in conflict\n\
+                 city_watch → temple: 60.00 (allied)\n\
+                 free_company → city_watch: -10.00 (neutral)\n\
+                 lantern_guild → city_watch: -80.00 (enemy) — in conflict\n\
+                 temple → city_watch: 60.00 (allied)"
+            )
+        );
+        let Ok(Outcome::Output(all)) = session.execute("relations") else {
+            panic!("expected the list");
+        };
+        // Five `between` entries set two directions each, and two set one.
+        assert_eq!(all.lines().count(), 12);
+        assert!(
+            all.contains("temple → ashen_circle: -90.00 (enemy) — in conflict"),
+            "{all}"
+        );
+        assert_eq!(
+            session.execute("relations tempel"),
+            command_error("unknown faction 'tempel' (did you mean 'temple'?)")
+        );
+        assert_eq!(
+            session.execute("relations a b"),
+            command_error("relations needs the form: relations [<faction>]")
+        );
+    }
+
+    #[test]
+    fn relations_says_when_there_are_none() {
+        let mut session = repo();
+        session
+            .execute("load crates/cli/tests/fixtures/worlds/diamonds")
+            .expect("valid");
+        assert_eq!(session.execute("relations"), output("no relations set"));
+        assert_eq!(
+            session.execute("relations city_watch"),
+            output("no relations set for city_watch")
+        );
+    }
+
+    #[test]
+    fn relate_sets_or_shifts_a_relation_and_shows_the_events() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("relate city_watch free_company -60 --one-way"),
+            output("#1 at tick 0: city_watch → free_company changed from -30.00 to -60.00")
+        );
+        assert_eq!(
+            session.execute("relate temple ashen_circle --by 50"),
+            output(
+                "#2 at tick 0: temple → ashen_circle changed from -90.00 to -40.00\n\
+                 #3 at tick 0: ashen_circle → temple changed from -90.00 to -40.00"
+            )
+        );
+        assert_eq!(
+            session.execute("relate city_watch temple --by -15 --one-way"),
+            output("#4 at tick 0: city_watch → temple changed from 60.00 to 45.00")
+        );
+        assert_eq!(
+            session.execute("relate city_watch temple 45 --one-way"),
+            output("")
+        );
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. relate city_watch free_company -60.00 --one-way — accepted\n\
+                 2. relate temple ashen_circle --by 50.00 — accepted\n\
+                 3. relate city_watch temple --by -15.00 --one-way — accepted\n\
+                 4. relate city_watch temple 45.00 --one-way — accepted"
+            )
+        );
+    }
+
+    #[test]
+    fn relate_reports_refusals_and_bad_input() {
+        let mut session = riverhold();
+        for (line, message) in [
+            (
+                "relate city_wach temple 10",
+                "unknown faction 'city_wach' (did you mean 'city_watch'?)",
+            ),
+            (
+                "relate temple temple 10",
+                "a faction can't have a relation with itself",
+            ),
+            (
+                "relate temple city_watch 150",
+                "150.00 is outside -100.00..100.00",
+            ),
+            ("relate temple city_watch x", "'x' is not a number"),
+            (
+                "relate temple city_watch --by 1.234",
+                "1.234 has more than 2 decimal places",
+            ),
+            (
+                "relate Temple city_watch 10",
+                "'Temple' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(message), "{line}");
+        }
+        let usage = command_error(
+            "relate needs the form: relate <from> <to> <value> [--one-way], or relate <from> <to> --by <n> [--one-way]",
+        );
+        for line in [
+            "relate",
+            "relate temple city_watch",
+            "relate temple city_watch --by",
+            "relate temple city_watch 10 --both",
+            "relate temple city_watch --by --one-way",
+            "relate temple city_watch --by --by",
+            "relate temple city_watch --by --by --one-way",
+            "relate temple city_watch --both --one-way",
+            "relate temple city_watch 10 --one-way extra",
+        ] {
+            assert_eq!(session.execute(line), usage, "{line}");
+        }
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        assert_eq!(run("relations"), none);
+        assert_eq!(run("relate temple city_watch 10"), none);
+    }
+
+    #[test]
+    fn enemy_membership_bars_joining_until_the_war_ends() {
+        let mut session = riverhold();
+        session
+            .execute("act player steal --scale 4")
+            .expect("valid");
+        session.execute("join player lantern_guild").expect("valid");
+        assert_eq!(
+            session.execute("can-join player city_watch"),
+            output(
+                "no: 90.35 from The City Watch, tolerance is 40.00; \
+                 player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)"
+            )
+        );
+        session
+            .execute("relate city_watch lantern_guild 0")
+            .expect("valid");
+        assert_eq!(
+            session.execute("can-join player city_watch"),
+            output("no: 90.35 from The City Watch, tolerance is 40.00")
+        );
+    }
+
+    #[test]
+    fn a_war_between_two_of_a_characters_factions_is_refused_for_now() {
+        let mut session = riverhold();
+        session
+            .execute("act player steal --scale 4")
+            .expect("valid");
+        session.execute("join player lantern_guild").expect("valid");
+        session.execute("join player free_company").expect("valid");
+        assert_eq!(
+            session.execute("relate lantern_guild free_company -60"),
+            command_error(
+                "that would put two of player's factions in conflict: free_company and lantern_guild"
+            )
+        );
+    }
+
     // Disposition
 
     #[test]
@@ -1853,6 +2161,9 @@ mod tests {
             "can-join <character> <faction> [--explain]",
             "join <character> <faction>",
             "leave <character> <faction>",
+            "relations [<faction>]",
+            "relate <from> <to> <value> [--one-way]",
+            "relate <from> <to> --by <n> [--one-way]",
             "actions",
             "act <actor> <action> [--target <id>] [--scale <n>]",
             "advance <ticks>",

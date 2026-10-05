@@ -1,0 +1,21 @@
+# Relations between factions and enemy exclusion (DESIGN.md §9.4): factions regard each
+# other from -100 to 100, and two are in conflict when either regards the other at or below
+# -50. A member of one can't join the other.
+load content/sample
+relations city_watch
+# The Watch and the mercenaries are rivals, but not in conflict.
+relations free_company
+# A thief joins the Lantern Guild, and the Watch turns them away on both counts.
+act player steal --scale 4
+join player lantern_guild
+can-join player city_watch --explain
+# A truce lifts the enemy bar; distance still keeps the player out.
+relate city_watch lantern_guild --by 40
+assert can-join player city_watch == no: 90.35 from The City Watch, tolerance is 40.00
+# A one-way grudge is enough for conflict.
+relate city_watch free_company -60 --one-way
+relations free_company
+# Until the engine can settle a war between someone's own factions (M9), it won't start one.
+join player free_company
+assert relate lantern_guild free_company -60 == error: that would put two of player's factions in conflict: free_company and lantern_guild
+journal

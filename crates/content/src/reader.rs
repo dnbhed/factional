@@ -70,6 +70,18 @@ impl<'t> Section<'t> {
         &self.path
     }
 
+    /// Any value under `key`, as it is; `None` if it's absent.
+    pub(crate) fn optional_value(&mut self, key: &'static str) -> Option<&'t Value> {
+        self.get(key)
+    }
+
+    /// Whether any of `keys` is there. They all count as known keys, so `finish` won't call
+    /// them unknown even when they're not read.
+    pub(crate) fn has_any(&mut self, keys: &[&'static str]) -> bool {
+        self.read.extend(keys);
+        keys.iter().any(|key| self.table.contains_key(*key))
+    }
+
     /// The path to `key` inside this section, such as `vex.alignment`.
     pub(crate) fn path_to(&self, key: &str) -> String {
         if self.path.is_empty() {

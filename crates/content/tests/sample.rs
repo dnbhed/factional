@@ -303,3 +303,64 @@ fn the_player_must_turn_thief_to_join_the_lantern_guild() {
         [&character("player"), &character("vex")]
     );
 }
+
+fn faction_id(id: &str) -> FactionId {
+    FactionId::new(id).expect("valid id")
+}
+
+#[test]
+fn riverholds_factions_regard_each_other_as_written() {
+    let world = riverhold();
+    let regard = |from: &str, to: &str| {
+        let regard = world
+            .relation(&faction_id(from), &faction_id(to))
+            .expect("both exist");
+        format!("{} ({})", regard.value, regard.band)
+    };
+    assert_eq!(regard("city_watch", "lantern_guild"), "-80.00 (enemy)");
+    assert_eq!(regard("city_watch", "free_company"), "-30.00 (rival)");
+    assert_eq!(regard("free_company", "city_watch"), "-10.00 (neutral)");
+    assert_eq!(regard("city_watch", "ashen_circle"), "-40.00 (rival)");
+    let conflict = |a: &str, b: &str| {
+        world
+            .in_conflict(&faction_id(a), &faction_id(b))
+            .expect("both exist")
+    };
+    assert!(conflict("city_watch", "lantern_guild"));
+    assert!(conflict("temple", "ashen_circle"));
+    assert!(!conflict("city_watch", "free_company"));
+    assert!(!conflict("city_watch", "ashen_circle"));
+}
+
+#[test]
+fn a_guild_thief_is_turned_away_by_the_watch_on_both_counts() {
+    let mut world = riverhold();
+    for _ in 0..4 {
+        world
+            .execute(Command::PerformAction {
+                actor: character("player"),
+                action: ActionId::new("steal").expect("valid id"),
+                target: None,
+                scale: Fixed::ONE,
+                witnesses: Witnesses::Everyone,
+            })
+            .expect("accepted");
+    }
+    world
+        .execute(Command::JoinFaction {
+            character: character("player"),
+            faction: faction_id("lantern_guild"),
+        })
+        .expect("40.01 is within 45.00");
+    let refusal = world
+        .execute(Command::JoinFaction {
+            character: character("player"),
+            faction: faction_id("city_watch"),
+        })
+        .expect_err("too far, and an enemy");
+    assert_eq!(
+        refusal.to_string(),
+        "player can't join city_watch: 90.35 from The City Watch, tolerance is 40.00; \
+         player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)"
+    );
+}

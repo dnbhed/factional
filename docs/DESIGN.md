@@ -409,7 +409,10 @@ Drift is checked whenever the member's alignment, the faction's alignment, or a 
 - **Direction.** It may be asymmetric (the Watch can distrust mercenaries more than they distrust it), but it's authored symmetrically by default.
 - **Bands** default to enemy ≤ −50 < rival ≤ −15 < neutral ≤ 15 < friendly ≤ 50 < allied.
 - **Conflict.** Two factions are in conflict when either regards the other at or below `relations.conflict_threshold` (−50).
-- **Runtime changes.** Relations change through `SetRelation` and `ShiftRelation`, for wars and treaties sent by a quest module or the CLI.
+- **Runtime changes.** Relations change through `SetRelation` and `ShiftRelation`, for wars and treaties sent by a quest module or the CLI. Each emits a `RelationChanged` for every direction that moved. Shifts stop at ±100, and a set outside ±100 is refused.
+- **Content.** `relations.toml` lists `[[relation]]` entries, each `between = [a, b]` (both directions) or `from`/`to` (one), with a `value`. Every direction may be set once, and any left out is 0.
+- **Enemy exclusion (D-4).** A member of a faction in conflict with another can't join it. The refusal names the faction and the more hostile of the two directions. M7 replaces this plain refusal with rule tables.
+- **Until M9.** A relation change that would put two of one character's factions in conflict is refused, so invariant 6 holds without `MembershipConflict` (P-38).
 
 **War between your own factions (D-16).** If a relation change puts two of a character's factions in conflict:
 
@@ -578,14 +581,14 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | `by_target` multipliers ≥ 0 | error | A5 |
 | Faction ids are unique across factions and characters | error | D1 (done) |
 | Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 (done) |
-| Bands: at least one; unique names that are ids; increasing `up_to`; only the last open-ended | error | D2 (done, disposition), M2 (relations) |
+| Bands: at least one; unique names that are ids; increasing `up_to`; only the last open-ended | error | D2 (done, disposition), M2 (done, relations) |
 | `disposition.affinity` stays within ±100 | error | D2 (done) |
 | `hysteresis` ≥ 0 | error | D3 |
 | A membership names a faction that exists, at most once per character | error | M1 (done) |
 | 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 (done) |
 | A starting member outside their member tolerance | warning | M1 (done) |
-| A relation names two different factions that exist; each direction is set at most once | error | M2 |
-| No character starts in two factions that are in conflict (invariant 6) | error | M2 |
+| A relation names two different factions that exist; each direction is set at most once; values within ±100; `conflict_threshold` within ±100 | error | M2 (done) |
+| No character starts in two factions that are in conflict (invariant 6) | error | M2 (done) |
 | Standing names factions and characters that exist; values within ±100 | error | M3 |
 | A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung | error | M5 |
 | A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 |

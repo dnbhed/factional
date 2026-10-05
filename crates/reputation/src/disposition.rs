@@ -113,6 +113,22 @@ impl Bands {
         ])
     }
 
+    /// enemy ≤ −50 < rival ≤ −15 < neutral ≤ 15 < friendly ≤ 50 < allied: the default
+    /// relation bands (DESIGN.md §9.4).
+    pub fn relations() -> Bands {
+        let band = |name: &str, up_to: Option<i64>| Band {
+            name: name.to_owned(),
+            up_to: up_to.map(Fixed::from_hundredths),
+        };
+        Bands(vec![
+            band("enemy", Some(-50_00)),
+            band("rival", Some(-15_00)),
+            band("neutral", Some(15_00)),
+            band("friendly", Some(50_00)),
+            band("allied", None),
+        ])
+    }
+
     /// The band `score` falls in: the first whose `up_to` is at or above it.
     pub fn band_for(&self, score: Fixed) -> &Band {
         self.0
@@ -216,6 +232,19 @@ mod tests {
         let bands = Bands::new(vec![band("indifferent", None)]).expect("valid bands");
         assert_eq!(band_name(&bands, -100_00), "indifferent");
         assert_eq!(band_name(&bands, 100_00), "indifferent");
+    }
+
+    #[test]
+    fn the_default_relation_bands_run_from_enemy_to_allied() {
+        let bands = Bands::relations();
+        assert_eq!(band_name(&bands, -80_00), "enemy");
+        assert_eq!(band_name(&bands, -50_00), "enemy");
+        assert_eq!(band_name(&bands, -40_00), "rival");
+        assert_eq!(band_name(&bands, -10_00), "neutral");
+        assert_eq!(band_name(&bands, 20_00), "friendly");
+        assert_eq!(band_name(&bands, 60_00), "allied");
+        let listed: Vec<Band> = bands.iter().cloned().collect();
+        assert_eq!(Bands::new(listed), Ok(Bands::relations()));
     }
 
     #[test]

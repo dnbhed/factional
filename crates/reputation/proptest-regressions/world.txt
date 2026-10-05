@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc be978f5e041172599db382009cbb52361f6df49f633ebe39ce07e1f15d2611ac # shrinks to commands = [JoinFaction { character: CharacterId("vex"), faction: FactionId("free_company") }, JoinFaction { character: CharacterId("vex"), faction: FactionId("lantern_guild") }]

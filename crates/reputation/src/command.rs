@@ -2,7 +2,9 @@ use std::fmt;
 
 use factional_core::{Envelope, Fixed, Tick};
 
-use crate::{ActionId, Alignment, CharacterId, FactionId, JoinAssessment, LeaveReason, Witnesses};
+use crate::{
+    AXIS_LIMIT, ActionId, Alignment, CharacterId, FactionId, JoinAssessment, LeaveReason, Witnesses,
+};
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +30,20 @@ pub enum Command {
     LeaveFaction {
         character: CharacterId,
         faction: FactionId,
+    },
+    /// Sets how `from` regards `to`, and with `mutual`, how `to` regards `from` too.
+    SetRelation {
+        from: FactionId,
+        to: FactionId,
+        value: Fixed,
+        mutual: bool,
+    },
+    /// Moves how `from` regards `to` by `by`, clamped to ±100; with `mutual`, both ways.
+    ShiftRelation {
+        from: FactionId,
+        to: FactionId,
+        by: Fixed,
+        mutual: bool,
     },
 }
 
@@ -60,6 +76,13 @@ pub enum Change {
         character: CharacterId,
         faction: FactionId,
         reason: LeaveReason,
+    },
+    /// How `from` regards `to` changed.
+    RelationChanged {
+        from: FactionId,
+        to: FactionId,
+        before: Fixed,
+        after: Fixed,
     },
 }
 
@@ -109,6 +132,16 @@ pub enum CommandError {
     NotAMember {
         character: CharacterId,
         faction: FactionId,
+    },
+    /// A relation between a faction and itself.
+    SelfRelation,
+    /// `SetRelation` to a value outside −100…100.
+    RelationOutOfRange { value: Fixed },
+    /// The change would put two of `character`'s factions in conflict. Until M9 can resolve
+    /// that, it's refused, so no one is ever in two factions at war (invariant 6).
+    WouldPutInConflict {
+        character: CharacterId,
+        factions: (FactionId, FactionId),
     },
 }
 
@@ -181,6 +214,19 @@ impl fmt::Display for CommandError {
             CommandError::NotAMember { character, faction } => {
                 write!(f, "{character} isn't a member of {faction}")
             }
+            CommandError::SelfRelation => {
+                f.write_str("a faction can't have a relation with itself")
+            }
+            CommandError::RelationOutOfRange { value } => {
+                write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
+            }
+            CommandError::WouldPutInConflict {
+                character,
+                factions: (a, b),
+            } => write!(
+                f,
+                "that would put two of {character}'s factions in conflict: {a} and {b}"
+            ),
         }
     }
 }

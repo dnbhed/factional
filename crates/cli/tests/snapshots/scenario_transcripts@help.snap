@@ -14,6 +14,9 @@ show faction <id>                                   a faction's alignment, label
 can-join <character> <faction> [--explain]          whether <character> may join <faction> now, and why not
 join <character> <faction>                          <character> joins <faction>, if they may
 leave <character> <faction>                         <character> leaves <faction>
+relations [<faction>]                               how factions regard each other, or just <faction>, with bands and conflicts
+relate <from> <to> <value> [--one-way]              set how <from> and <to> regard each other; --one-way sets only <from> → <to>
+relate <from> <to> --by <n> [--one-way]             shift a relation by <n>, stopping at -100 and 100
 disposition <observer> <subject> [--explain]        how <observer>, a faction or character, regards <subject>: a score and its band
 distance <observer> <subject> [--explain]           how far <subject> is from <observer>, a faction or character, as the observer sees it
 actions                                             list the action catalogue and how each act moves alignment
