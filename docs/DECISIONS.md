@@ -232,3 +232,7 @@ None right now. A new question gets the next free number, starting at O-5.
 - **X-2 · Host engine and integration route.** A Bevy plugin, or a C ABI for Godot, Unity or Unreal. Settled in E0.
 - **X-3 · Save format and versioning.** Settled in T4.
 - **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Which factions a quest affects, directly and through spillover, war and membership; what counts as a conflict with another faction's questline at a stage; and how to check this without exploring every combination of stages. Settled in Q0, the quest module's design pass (DESIGN.md §16.1).
+- **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). Two candidates, chosen between in U0:
+  - **Web frontend:** one frontend, shipped both as a desktop app through Tauri and in a browser through a wasm build of the engine. Mature form generators and graph editors (React Flow, Svelte Flow) suit questlines. The cost is two languages and a JSON boundary.
+  - **egui (eframe):** all Rust, using the engine's types directly; also runs in a browser through wasm. Fastest to build, with node graphs from `egui-snarl`. The cost is a utilitarian look and more hand-drawn UI.
+  - **Either way:** the editor reads and writes the content TOML, so hand edits, the CLI and the editor stay interchangeable. It validates through `parse_content` and maps each `Diagnostic`'s file and key to a field. Previews come from engine queries. It never re-implements a rule (D-20, P-24, P-32).
