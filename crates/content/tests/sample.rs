@@ -485,3 +485,66 @@ fn riverholds_people_start_with_standing_in_their_factions() {
         "30.00"
     );
 }
+
+fn rank_of(world: &World, who: &str, faction: &str) -> String {
+    world
+        .memberships(&character(who))
+        .expect("the character exists")
+        .find(|(member_of, _)| member_of.as_str() == faction)
+        .map(|(_, membership)| membership.rank.to_string())
+        .expect("a member")
+}
+
+fn promote(who: &str, faction: &str) -> Command {
+    Command::Promote {
+        character: character(who),
+        faction: faction_id(faction),
+    }
+}
+
+#[test]
+fn riverholds_people_start_at_their_ranks() {
+    let world = riverhold();
+    assert_eq!(rank_of(&world, "captain_hale", "city_watch"), "captain");
+    assert_eq!(rank_of(&world, "sister_mira", "temple"), "ordained");
+    assert_eq!(rank_of(&world, "vex", "lantern_guild"), "fence");
+    assert_eq!(rank_of(&world, "brother_ash", "ashen_circle"), "initiate");
+    let content = load_dir(&sample_dir()).expect("the sample content is valid");
+    assert!(factional_content::warnings(&content).is_empty());
+}
+
+#[test]
+fn promotion_in_riverhold_needs_the_next_ranks_requirements() {
+    let mut world = riverhold();
+    assert_eq!(
+        world
+            .execute(promote("vex", "lantern_guild"))
+            .expect_err("not yet")
+            .to_string(),
+        "vex can't be promoted in lantern_guild: shadow needs standing 60.00, vex has 30.00"
+    );
+    world
+        .execute(Command::ApplyOutcome {
+            outcome: OutcomeId::new("fenced_the_crown_jewels").expect("valid id"),
+            character: character("vex"),
+        })
+        .expect("accepted");
+    world
+        .execute(promote("vex", "lantern_guild"))
+        .expect("60.00 now");
+    assert_eq!(rank_of(&world, "vex", "lantern_guild"), "shadow");
+    assert_eq!(
+        world
+            .execute(promote("captain_hale", "city_watch"))
+            .expect_err("the top")
+            .to_string(),
+        "captain_hale is already a captain, the highest rank of city_watch"
+    );
+    assert_eq!(
+        world
+            .execute(promote("sister_mira", "temple"))
+            .expect_err("standing")
+            .to_string(),
+        "sister_mira can't be promoted in temple: high_priest needs standing 80.00, sister_mira has 40.00"
+    );
+}

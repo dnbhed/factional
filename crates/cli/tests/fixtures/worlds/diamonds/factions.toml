@@ -4,3 +4,6 @@ alignment = { law = 70.0, good = 20.0 }
 weights = { law = 1.0, good = 0.25 }
 tolerance = 40.0
 member_tolerance = 50.0
+
+[[city_watch.ranks]]
+id = "recruit"

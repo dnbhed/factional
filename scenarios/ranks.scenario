@@ -1,0 +1,19 @@
+# Ranks (DESIGN.md §7.2): each faction's ladder, lowest first. New members start on the
+# first rung, and promotion only happens when something asks for it.
+load content/sample
+ranks lantern_guild
+# Vex is a fence; a shadow needs standing 60 with the Guild, and he has 30.
+assert promote vex lantern_guild == error: vex can't be promoted in lantern_guild: shadow needs standing 60.00, vex has 30.00
+outcome fenced_the_crown_jewels vex
+# Meeting the requirement doesn't promote him by itself.
+assert show character vex == vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild (fence) since tick 0
+promote vex lantern_guild
+assert promote captain_hale city_watch == error: captain_hale is already a captain, the highest rank of city_watch
+# Mira is close enough in alignment to be a high priest, but her standing is too low.
+promote sister_mira temple --explain
+# A new member starts at the bottom.
+act player steal --scale 4
+join player lantern_guild
+assert demote player lantern_guild == error: player is already a cutpurse, the lowest rank of lantern_guild
+demote vex lantern_guild
+show faction lantern_guild

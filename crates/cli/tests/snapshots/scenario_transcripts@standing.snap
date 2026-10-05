@@ -19,6 +19,7 @@ loaded 6 characters from content/sample
 #7 at tick 0: player's standing with temple moved from 0.00 to 10.00
 > assert standing player temple == 10.00
 > outcomes
+fenced_the_crown_jewels — standing: lantern_guild 30.00
 fined_by_watch — standing: city_watch -20.00, captain_hale -10.00
 rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00
 > outcome fined_by_watch player
@@ -53,7 +54,7 @@ temple: 10.00
 captain_hale: -60.00
 vex: -20.00
 > join player free_company
-#25 at tick 0: player joined free_company
+#25 at tick 0: player joined free_company as a sellsword
 > leave player free_company
 #26 at tick 0: player left free_company (voluntary)
 #27 at tick 0: player's standing with free_company moved from 0.00 to -10.00

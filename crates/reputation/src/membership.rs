@@ -2,7 +2,7 @@ use std::fmt;
 
 use factional_core::{Fixed, Tick};
 
-use crate::{CharacterId, Distance, FactionId};
+use crate::{CharacterId, Distance, FactionId, RankId};
 
 /// How close to a faction's alignment someone must be to join it, and to stay in it
 /// (DESIGN.md §9.1). Staying is never harder than joining: easier to stay than to get in.
@@ -60,10 +60,20 @@ impl fmt::Display for ToleranceProblem {
 }
 
 /// A character's place in a faction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Membership {
     /// When they joined; tick 0 for a starting member.
     pub since: Tick,
+    /// Their rung on the faction's ladder.
+    pub rank: RankId,
+}
+
+/// A faction a character starts in, as `characters.toml` lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartingMembership {
+    pub faction: FactionId,
+    /// Their starting rank; `None` means the lowest rung.
+    pub rank: Option<RankId>,
 }
 
 /// Why a character left a faction. Defection, expulsion and conflict resolution arrive with
@@ -71,6 +81,66 @@ pub struct Membership {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeaveReason {
     Voluntary,
+}
+
+/// One requirement of the next rank (DESIGN.md §7.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RankCheck {
+    /// Standing with the faction at or above `required`.
+    Standing { required: Fixed, has: Fixed },
+    /// Distance from the faction within the rank's own `limit`.
+    Tolerance { limit: Fixed, distance: Fixed },
+}
+
+impl RankCheck {
+    pub fn met(self) -> bool {
+        match self {
+            RankCheck::Standing { required, has } => has >= required,
+            RankCheck::Tolerance { limit, distance } => distance <= limit,
+        }
+    }
+}
+
+/// Whether a member may be promoted now, and every requirement of the next rank (P-24).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromotionAssessment {
+    pub character: CharacterId,
+    pub faction: FactionId,
+    pub faction_name: String,
+    pub current: RankId,
+    /// `None` on the top rung.
+    pub next: Option<RankId>,
+    /// The next rank's requirements, standing first; empty on the top rung.
+    pub checks: Vec<RankCheck>,
+}
+
+impl PromotionAssessment {
+    pub fn allowed(&self) -> bool {
+        self.next.is_some() && self.checks.iter().all(|check| check.met())
+    }
+
+    /// Each failing requirement in words, such as `shadow needs standing 60.00, vex has 30.00`.
+    pub fn reasons(&self) -> Vec<String> {
+        let Some(next) = &self.next else {
+            return Vec::new();
+        };
+        self.checks
+            .iter()
+            .filter(|check| !check.met())
+            .map(|check| match check {
+                RankCheck::Standing { required, has } => {
+                    format!(
+                        "{next} needs standing {required}, {} has {has}",
+                        self.character
+                    )
+                }
+                RankCheck::Tolerance { limit, distance } => format!(
+                    "{next} needs to be within {limit} of {}, {} is {distance} away",
+                    self.faction_name, self.character
+                ),
+            })
+            .collect()
+    }
 }
 
 /// One reason a character can't join a faction now.

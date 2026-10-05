@@ -6,7 +6,7 @@ input_file: scenarios/membership.scenario
 > load content/sample
 loaded 6 characters from content/sample
 > show faction lantern_guild
-lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex
+lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex (fence)
 > can-join player lantern_guild --explain
 player → lantern_guild: no
 distance 60.21 (euclidean), tolerance 45.00
@@ -26,9 +26,9 @@ refused: 60.21 from The Lantern Guild, tolerance is 45.00
 #5 at tick 0: time advanced from 0 to 3
 > assert can-join player lantern_guild == yes: 40.01 from The Lantern Guild, tolerance is 45.00
 > join player lantern_guild
-#6 at tick 3: player joined lantern_guild
+#6 at tick 3: player joined lantern_guild as a cutpurse
 > show character player
-player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild since tick 3
+player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild (cutpurse) since tick 3
 > assert join player lantern_guild == error: player can't join lantern_guild: player is already a member of lantern_guild
 > leave player lantern_guild
 #7 at tick 3: player left lantern_guild (voluntary)

@@ -1,11 +1,11 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use factional_core::{Fixed, ParseFixedError, suggest};
+use factional_core::{Fixed, ParseFixedError, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Distance, Event, Faction, FactionId, LeaveReason, Observer, OutcomeId, Party,
-    StandingEffects, WeightsFrom, Witnesses, World,
+    RankCheck, StandingEffects, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -40,6 +40,15 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "leave <character> <faction>",
         "<character> leaves <faction>",
+    ),
+    ("ranks <faction>", "a faction's rank ladder, lowest first"),
+    (
+        "promote <character> <faction> [--explain]",
+        "move <character> up a rank, if the next rank's requirements hold",
+    ),
+    (
+        "demote <character> <faction>",
+        "move <character> down a rank",
     ),
     (
         "standing <subject> [<party>]",
@@ -187,6 +196,9 @@ impl Session {
             "disposition" => Ok(self.disposition(rest)),
             "can-join" => Ok(self.can_join(rest)),
             "relations" => Ok(self.relations(rest)),
+            "ranks" => Ok(self.ranks(rest)),
+            "promote" => Ok(self.promote(rest)),
+            "demote" => Ok(self.demote(rest)),
             "standing" => Ok(self.standing(rest)),
             "outcomes" => Ok(self.outcomes()),
             "outcome" => Ok(self.outcome(rest)),
@@ -320,6 +332,112 @@ impl Session {
                 .factions()
                 .map(|faction| describe_faction(world, faction)),
         ))
+    }
+
+    /// `ranks <faction>`.
+    fn ranks(&self, args: &str) -> Outcome {
+        let [faction] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error("ranks needs the form: ranks <faction>".to_owned());
+        };
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let Some(faction) = world.factions().find(|f| f.id.as_str() == faction) else {
+            let ids: Vec<&str> = world.factions().map(|f| f.id.as_str()).collect();
+            return Outcome::Error(format!("unknown faction '{faction}'{}", hint(faction, ids)));
+        };
+        Outcome::Output(lines(faction.ranks.iter().enumerate().map(
+            |(index, rank)| {
+                let needs: Vec<String> = [
+                    rank.requires_standing
+                        .map(|standing| format!("standing {standing}")),
+                    rank.tolerance.map(|limit| format!("to be within {limit}")),
+                ]
+                .into_iter()
+                .flatten()
+                .collect();
+                let mut line = format!("{}. {}", index + 1, rank.id);
+                if !needs.is_empty() {
+                    line += &format!(" — needs {}", needs.join(", and "));
+                }
+                line
+            },
+        )))
+    }
+
+    /// `promote <character> <faction> [--explain]`: the engine decides, and the event or its
+    /// refusal is shown; with `--explain`, every requirement of the next rank.
+    fn promote(&mut self, args: &str) -> Outcome {
+        const USAGE: &str = "promote needs the form: promote <character> <faction> [--explain]";
+        let (character, faction, explain) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [character, faction] => (character, faction, false),
+            [character, faction, "--explain"] => (character, faction, true),
+            _ => return Outcome::Error(USAGE.to_owned()),
+        };
+        let (character, faction) = match member_ids(character, faction) {
+            Ok(ids) => ids,
+            Err(message) => return Outcome::Error(message),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        if !explain {
+            return match world.execute(Command::Promote { character, faction }) {
+                Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+                Err(refusal) => Outcome::Error(refusal.to_string()),
+            };
+        }
+        let Some(assessment) = world.assess_promotion(&character, &faction) else {
+            // Not a member, or unknown: the engine's refusal says which.
+            let refusal = world
+                .clone()
+                .execute(Command::Promote { character, faction })
+                .expect_err("promoting a non-member is refused");
+            return Outcome::Error(refusal.to_string());
+        };
+        let Some(next) = &assessment.next else {
+            return Outcome::Output(format!(
+                "{character}: {} in {faction} is the highest rank",
+                assessment.current
+            ));
+        };
+        let verdict = if assessment.allowed() { "yes" } else { "no" };
+        let mut explained = vec![format!(
+            "{character}: {} → {next} in {faction}: {verdict}",
+            assessment.current
+        )];
+        explained.extend(assessment.checks.iter().map(|check| {
+            let met = if check.met() { "met" } else { "not met" };
+            match check {
+                RankCheck::Standing { required, has } => {
+                    format!("standing: needs {required}, has {has} — {met}")
+                }
+                RankCheck::Tolerance { limit, distance } => {
+                    format!("tolerance: within {limit}, is {distance} — {met}")
+                }
+            }
+        }));
+        Outcome::Output(explained.join("\n"))
+    }
+
+    /// `demote <character> <faction>`.
+    fn demote(&mut self, args: &str) -> Outcome {
+        let [character, faction] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error(
+                "demote needs the form: demote <character> <faction>".to_owned(),
+            );
+        };
+        let (character, faction) = match member_ids(character, faction) {
+            Ok(ids) => ids,
+            Err(message) => return Outcome::Error(message),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(Command::Demote { character, faction }) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
     }
 
     /// `standing <subject> [<party>]`.
@@ -878,7 +996,20 @@ fn describe_event(event: &Event) -> String {
             }
             what
         }
-        Change::JoinedFaction { character, faction } => format!("{character} joined {faction}"),
+        Change::JoinedFaction {
+            character,
+            faction,
+            rank,
+        } => format!(
+            "{character} joined {faction} as {} {rank}",
+            article(rank.as_str())
+        ),
+        Change::RankChanged {
+            character,
+            faction,
+            from,
+            to,
+        } => format!("{character}'s rank in {faction} changed from {from} to {to}"),
         Change::LeftFaction {
             character,
             faction,
@@ -925,6 +1056,8 @@ fn describe_command(command: &Command) -> String {
     match command {
         Command::AdvanceTime { ticks } => format!("advance {ticks}"),
         Command::JoinFaction { character, faction } => format!("join {character} {faction}"),
+        Command::Promote { character, faction } => format!("promote {character} {faction}"),
+        Command::Demote { character, faction } => format!("demote {character} {faction}"),
         Command::LeaveFaction { character, faction } => format!("leave {character} {faction}"),
         Command::ApplyOutcome { outcome, character } => format!("outcome {outcome} {character}"),
         Command::ApplyEffects {
@@ -999,6 +1132,14 @@ fn axes(alignment: Alignment) -> String {
     format!("law {}, good {}", alignment.law(), alignment.good())
 }
 
+/// A character and faction id from the command line.
+fn member_ids(character: &str, faction: &str) -> Result<(CharacterId, FactionId), String> {
+    Ok((
+        CharacterId::new(character).map_err(|invalid| invalid.to_string())?,
+        FactionId::new(faction).map_err(|invalid| invalid.to_string())?,
+    ))
+}
+
 /// Named standing effects as `city_watch -20.00, captain_hale -10.00`: factions first.
 fn named_effects(effects: &StandingEffects) -> Vec<String> {
     effects
@@ -1069,7 +1210,14 @@ fn describe_faction(world: &World, faction: &Faction) -> String {
         .members(&faction.id)
         .expect("a faction from the world")
         .into_iter()
-        .map(ToString::to_string)
+        .map(|member| {
+            let (_, membership) = world
+                .memberships(member)
+                .expect("a member of the world")
+                .find(|(member_of, _)| **member_of == faction.id)
+                .expect("a member of this faction");
+            format!("{member} ({})", membership.rank)
+        })
         .collect();
     let members = if members.is_empty() {
         "no members".to_owned()
@@ -1149,7 +1297,12 @@ fn describe(world: &World, character: &Character) -> String {
     let memberships: Vec<String> = world
         .memberships(&character.id)
         .expect("a character from the world")
-        .map(|(faction, membership)| format!("{faction} since tick {}", membership.since))
+        .map(|(faction, membership)| {
+            format!(
+                "{faction} ({}) since tick {}",
+                membership.rank, membership.since
+            )
+        })
         .collect();
     let mut line = format!(
         "{} — {} — {} — {}",
@@ -1350,7 +1503,7 @@ mod tests {
         assert_eq!(
             session.execute("show character vex"),
             output(
-                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild since tick 0"
+                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild (fence) since tick 0"
             )
         );
         assert_eq!(
@@ -1364,12 +1517,12 @@ mod tests {
         assert_eq!(
             riverhold().execute("characters"),
             output(
-                "brother_ash — Brother Ash — law 25.00, good -70.00 — Neutral Evil — member of ashen_circle since tick 0\n\
-                 captain_hale — Captain Hale — law 75.00, good 30.00 — Lawful Neutral — member of city_watch since tick 0\n\
+                "brother_ash — Brother Ash — law 25.00, good -70.00 — Neutral Evil — member of ashen_circle (initiate) since tick 0\n\
+                 captain_hale — Captain Hale — law 75.00, good 30.00 — Lawful Neutral — member of city_watch (captain) since tick 0\n\
                  merchant_ava — Merchant Ava — law 20.00, good 10.00 — True Neutral\n\
                  player — The Player — law 0.00, good 0.00 — True Neutral\n\
-                 sister_mira — Sister Mira — law 35.00, good 85.00 — Lawful Good — member of temple since tick 0\n\
-                 vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild since tick 0"
+                 sister_mira — Sister Mira — law 35.00, good 85.00 — Lawful Good — member of temple (ordained) since tick 0\n\
+                 vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild (fence) since tick 0"
             )
         );
     }
@@ -1401,7 +1554,7 @@ mod tests {
         assert_eq!(
             session.execute("show character vex"),
             output(
-                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild since tick 0"
+                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild (fence) since tick 0"
             )
         );
     }
@@ -1753,11 +1906,11 @@ mod tests {
         assert_eq!(
             riverhold().execute("factions"),
             output(
-                "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00 — members: brother_ash\n\
-                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00 — members: captain_hale\n\
+                "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00 — members: brother_ash (initiate)\n\
+                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00 — members: captain_hale (captain)\n\
                  free_company — The Free Company — law -10.00, good 0.00 — True Neutral — tolerance 60.00, member tolerance 80.00 — no members\n\
-                 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex\n\
-                 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira"
+                 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex (fence)\n\
+                 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira (ordained)"
             )
         );
     }
@@ -1768,7 +1921,7 @@ mod tests {
         assert_eq!(
             session.execute("show faction temple"),
             output(
-                "temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira"
+                "temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira (ordained)"
             )
         );
         assert_eq!(
@@ -1932,18 +2085,18 @@ mod tests {
         session.execute("advance 2").expect("valid");
         assert_eq!(
             session.execute("join player lantern_guild"),
-            output("#4 at tick 2: player joined lantern_guild")
+            output("#4 at tick 2: player joined lantern_guild as a cutpurse")
         );
         assert_eq!(
             session.execute("show character player"),
             output(
-                "player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild since tick 2"
+                "player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild (cutpurse) since tick 2"
             )
         );
         assert_eq!(
             session.execute("show faction lantern_guild"),
             output(
-                "lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: player, vex"
+                "lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: player (cutpurse), vex (fence)"
             )
         );
         assert_eq!(
@@ -1976,7 +2129,7 @@ mod tests {
         assert_eq!(
             session.execute("show character vex"),
             output(
-                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of free_company since tick 1, lantern_guild since tick 0"
+                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of free_company (sellsword) since tick 1, lantern_guild (fence) since tick 0"
             )
         );
     }
@@ -2059,9 +2212,127 @@ mod tests {
         assert_eq!(
             session.execute("show character vex"),
             output(
-                "vex — Vex — law 35.00, good 10.00 — Lawful Neutral — member of lantern_guild since tick 0"
+                "vex — Vex — law 35.00, good 10.00 — Lawful Neutral — member of lantern_guild (cutpurse) since tick 0"
             )
         );
+    }
+
+    // Ranks
+
+    #[test]
+    fn ranks_lists_a_ladder_with_its_requirements() {
+        assert_eq!(
+            riverhold().execute("ranks city_watch"),
+            output(
+                "1. recruit\n\
+                 2. sergeant — needs standing 30.00\n\
+                 3. captain — needs standing 70.00, and to be within 25.00"
+            )
+        );
+        assert_eq!(
+            riverhold().execute("ranks city_wach"),
+            command_error("unknown faction 'city_wach' (did you mean 'city_watch'?)")
+        );
+    }
+
+    #[test]
+    fn promote_moves_a_member_up_when_the_next_rank_allows() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("promote vex lantern_guild"),
+            command_error(
+                "vex can't be promoted in lantern_guild: shadow needs standing 60.00, vex has 30.00"
+            )
+        );
+        session
+            .execute("outcome fenced_the_crown_jewels vex")
+            .expect("valid");
+        assert_eq!(
+            session.execute("promote vex lantern_guild"),
+            output("#3 at tick 0: vex's rank in lantern_guild changed from fence to shadow")
+        );
+        assert_eq!(
+            session.execute("promote vex lantern_guild"),
+            command_error("vex is already a shadow, the highest rank of lantern_guild")
+        );
+        assert_eq!(
+            session.execute("demote vex lantern_guild"),
+            output("#4 at tick 0: vex's rank in lantern_guild changed from shadow to fence")
+        );
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. promote vex lantern_guild — refused: vex can't be promoted in lantern_guild: shadow needs standing 60.00, vex has 30.00\n\
+                 2. outcome fenced_the_crown_jewels vex — accepted\n\
+                 3. promote vex lantern_guild — accepted\n\
+                 4. promote vex lantern_guild — refused: vex is already a shadow, the highest rank of lantern_guild\n\
+                 5. demote vex lantern_guild — accepted"
+            )
+        );
+    }
+
+    #[test]
+    fn promote_explains_each_requirement() {
+        assert_eq!(
+            riverhold().execute("promote sister_mira temple --explain"),
+            output(
+                "sister_mira: ordained → high_priest in temple: no\n\
+                 standing: needs 80.00, has 40.00 — not met\n\
+                 tolerance: within 20.00, is 5.59 — met"
+            )
+        );
+        assert_eq!(
+            riverhold().execute("promote captain_hale city_watch --explain"),
+            output("captain_hale: captain in city_watch is the highest rank")
+        );
+    }
+
+    #[test]
+    fn rank_commands_report_mistakes() {
+        let mut session = riverhold();
+        for (line, message) in [
+            ("promote player temple", "player isn't a member of temple"),
+            ("demote player temple", "player isn't a member of temple"),
+            (
+                "promote plyer temple",
+                "unknown character 'plyer' (did you mean 'player'?)",
+            ),
+            (
+                "demote vex tempel",
+                "unknown faction 'tempel' (did you mean 'temple'?)",
+            ),
+            (
+                "promote player temple --explain",
+                "player isn't a member of temple",
+            ),
+            (
+                "demote brother_ash ashen_circle",
+                "brother_ash is already an initiate, the lowest rank of ashen_circle",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(message), "{line}");
+        }
+        for (line, usage) in [
+            ("ranks", "ranks needs the form: ranks <faction>"),
+            (
+                "promote vex",
+                "promote needs the form: promote <character> <faction> [--explain]",
+            ),
+            (
+                "promote vex lantern_guild --why",
+                "promote needs the form: promote <character> <faction> [--explain]",
+            ),
+            (
+                "demote vex",
+                "demote needs the form: demote <character> <faction>",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(usage), "{line}");
+        }
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        for line in ["ranks temple", "promote vex temple", "demote vex temple"] {
+            assert_eq!(run(line), none, "{line}");
+        }
     }
 
     // Standing and outcomes
@@ -2100,7 +2371,8 @@ mod tests {
         assert_eq!(
             session.execute("outcomes"),
             output(
-                "fined_by_watch — standing: city_watch -20.00, captain_hale -10.00\n\
+                "fenced_the_crown_jewels — standing: lantern_guild 30.00\n\
+                 fined_by_watch — standing: city_watch -20.00, captain_hale -10.00\n\
                  rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00"
             )
         );
@@ -2593,6 +2865,9 @@ mod tests {
             "can-join <character> <faction> [--explain]",
             "join <character> <faction>",
             "leave <character> <faction>",
+            "ranks <faction>",
+            "promote <character> <faction> [--explain]",
+            "demote <character> <faction>",
             "standing <subject> [<party>]",
             "outcomes",
             "outcome <outcome> <character>",

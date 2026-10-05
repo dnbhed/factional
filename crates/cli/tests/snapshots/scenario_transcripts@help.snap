@@ -14,6 +14,9 @@ show faction <id>                                   a faction's alignment, label
 can-join <character> <faction> [--explain]          whether <character> may join <faction> now, and why not
 join <character> <faction>                          <character> joins <faction>, if they may
 leave <character> <faction>                         <character> leaves <faction>
+ranks <faction>                                     a faction's rank ladder, lowest first
+promote <character> <faction> [--explain]           move <character> up a rank, if the next rank's requirements hold
+demote <character> <faction>                        move <character> down a rank
 standing <subject> [<party>]                        how factions and characters regard <subject> from what has passed between them
 outcomes                                            list the outcomes, such as quest results
 outcome <outcome> <character>                       apply an outcome's effects to <character>

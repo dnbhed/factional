@@ -255,7 +255,9 @@ tolerance = 25.0          # captains are held to a stricter standard
 
 - `Promote` moves a member up one rung if the next rank's requirements hold: standing at or above its minimum, and alignment within that rank's `tolerance` if it sets one.
 - `Demote` moves a member down one rung.
-- A refusal says which requirement failed.
+- A refusal says which requirement failed, with its numbers, and `promote --explain` shows every requirement of the next rank.
+- `Demote` refuses on the bottom rung, and `Promote` on the top one.
+- A starting membership may name its rank (`{ faction = "city_watch", rank = "captain" }`); otherwise it's the lowest rung. `JoinedFaction` carries the rung a new member starts on.
 - Promotion only happens when something asks for it, such as a quest, dialogue or the CLI sending `Promote` (D-17). Meeting the requirements makes a promotion possible, never automatic.
 - Rank feeds the join rules (§9.2) and the drift policy (§9.3).
 
@@ -599,8 +601,8 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | A relation names two different factions that exist; each direction is set at most once; values within ±100; `conflict_threshold` within ±100 | error | M2 (done) |
 | No character starts in two factions that are in conflict (invariant 6) | error | M2 (done) |
 | Standing names factions and characters that exist; values within ±100; `leave_standing_change` within ±100 | error | M3 (done) |
-| A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung | error | M5 |
-| A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 |
+| A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung; rank standing requirements within ±100, tolerances ≥ 0 | error | M5 (done) |
+| A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 (done) |
 | Spillover multipliers within −1…1 | error | M6 |
 | Rule tables use known conditions; rank ids only in a faction's own tables and only its ranks; every table ends with a rule that always decides | error | M7 |
 | Drift policies are known; probation has `grace_ticks` > 0 and a `then` | error | M8 |
