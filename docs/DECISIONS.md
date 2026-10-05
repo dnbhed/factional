@@ -244,6 +244,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Content refusals need a reason, and a refusal can't change standing:** nothing happens, so there's nothing to charge. The built-in refusal has no reason; it's named "the built-in defectors rule".
   - **Costs.** Each enemy faction's deserters `standing_change` follows its own `LeftFaction`. The defectors changes, one per enemy faction left, add up into one `StandingChanged` after `JoinedFaction` (as P-39 adds effects on one party). `leave_standing_change` doesn't apply to defection: the deserters table sets that price.
   - *Why:* tables can always be checked at load to decide, explanations name every rule a designer can edit, and the events say exactly what changed.
+- **P-43 · How inertia applies** (made in A4, 2026-10-05).
+  - **One rounding per shift.** The shift is base × scale × inertia, kept as an exact fraction (`Ratio` in `factional-core`) and rounded once, half away from zero (P-1). A curve's value isn't rounded on its own: Mira's 4.00 × 0.405 is 1.62, not 4.00 × 0.41 = 1.64. A5's target multipliers join the same product.
+  - **The direction is the act's.** Each axis uses the curve for the way the act pushes it, read at the position before the act. An axis the act doesn't touch has no working.
+  - **`steady` always exists,** with every curve 1.0, and is the default `default_profile`. A world without `[inertia]` moves exactly as before.
+  - **Outcomes and effects use inertia too,** at scale 1.00. They're the same kind of change to a character as an act.
+  - **Too big to compute still lands at the end of the axis,** as before: the shift saturates in the act's direction.
+  - **`--explain` shows exact multipliers,** to up to four decimals, marked `≈` when they need more. A rounded multiplier would show a number the engine didn't use (P-24).
+  - *Why:* every shift is a single, explainable multiplication of exact values, and designers can reproduce it by hand.
 
 ## Open
 

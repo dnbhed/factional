@@ -8,6 +8,8 @@
 #
 # weights (optional): how much a character cares about each axis when judging how far away
 # someone is, 0 to 1. Without it, balance.toml's default_weights apply.
+# inertia (optional): how hard their alignment is to move, a profile from balance.toml's
+# [inertia.profiles]. Without it, the default profile applies.
 # memberships (optional): the factions they start in, from factions.toml, each with an
 # optional rank from that faction's ladder (the lowest if left out). Loading warns if someone
 # starts further from a faction than its member_tolerance, or below their rank's standing.
@@ -23,12 +25,15 @@ name = "Captain Hale"
 alignment = { law = 75.0, good = 30.0 }
 # Like the Watch he serves, Hale judges people by their respect for the law.
 weights = { law = 1.0, good = 0.25 }
+# Hale's convictions have hardened over the years.
+inertia = "hardening"
 memberships = [{ faction = "city_watch", rank = "captain" }]
 standing = { factions = { city_watch = 75.0 } }
 
 [sister_mira]
 name = "Sister Mira"
 alignment = { law = 35.0, good = 85.0 }
+inertia = "hardening"
 memberships = [{ faction = "temple", rank = "ordained" }]
 standing = { factions = { temple = 40.0 } }
 

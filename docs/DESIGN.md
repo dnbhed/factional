@@ -107,6 +107,7 @@ new(axis)   = clamp( position(axis) + shift(axis), −100, +100 )
 - `scale` (default 1.00, must be > 0) lets the host say how big this instance was, such as stealing a loaf versus a crown.
 - `target` is the target-aware multiplier (§5.4). It's 1.00 when the action has no target scaling, or no target.
 - `inertia` is read from the character's inertia profile at their position **before** the act (P-5).
+- The product is computed exactly and rounded once (P-1, P-43): a curve's value isn't rounded on its own first. `act --explain` shows each multiplier exactly, to up to four decimals.
 - Every multiplier is ≥ 0, so each can damp or amplify a shift but never reverse it. A shift's direction is always the action's own.
 
 `PerformAction` emits `ActionPerformed`, then `AlignmentChanged { from, to }` if the actor's alignment moved. An actor already at the end of an axis the act pushes toward gets no `AlignmentChanged`. A scale too large to compute with still lands at the end of the axis; it never overflows. In `actions.toml`, an axis an action leaves out isn't moved (P-34).
@@ -126,12 +127,13 @@ good.toward_good = [[-100.0, 0.5], [0.0, 1.0], [100.0, 0.3]]
 good.toward_evil = [[-100.0, 0.3], [0.0, 1.0], [100.0, 0.5]]
 ```
 
-A character opts in with `inertia = "hardening"`.
+A character opts in with `inertia = "hardening"`; without it, `default_profile` applies. The curves are `law.toward_lawful`, `law.toward_chaotic`, `good.toward_good` and `good.toward_evil`, and the direction is the way the act pushes that axis. `steady` is always there, even if content leaves it out, so `default_profile` defaults to it. Outcomes and effects from other modules move alignment with inertia too, at scale 1.00.
 
 Worked example: take a *hardening* character at good 60.00.
 
 - They help a stranger (good +4.00). `toward_good` at 60 is 0.58, so the shift is +2.32 and they end at 62.32.
 - If instead they extort someone (good −6.00), `toward_evil` at 60 is 0.70, so the shift is −4.20 and they end at 55.80.
+- Sister Mira, hardening, at good 85.00 helps a stranger. `toward_good` at 85 is 0.405, so the shift is 4.00 × 0.405 = 1.62, rounded once, and she ends at 86.62.
 
 The same mechanism expresses other shapes:
 
@@ -158,7 +160,7 @@ Worked examples:
 | Act | Multipliers | Shift |
 | --- | --- | --- |
 | The player murders brother_ash (good −70) | good × 0.44 | good −6.60, law −10.00 |
-| The player murders sister_mira (good 85) | good × 1.43 | good −21.45, law −10.00 |
+| The player murders sister_mira (good 85) | good × 1.425 | good −21.38 (−21.375, rounded once), law −10.00 |
 | captain_hale (City Watch) murders vex (Lantern Guild, good −20) | good × 0.84 (target); both × 0.62 (the Watch regards the guild at −80); good × 0.85 (hale's hardening inertia) | good −6.64, law −6.20 |
 
 A target can soften or sharpen an act, but never make it good. An act that should be good against some targets, such as slaying a demon, is a separate action that the host chooses.
@@ -598,7 +600,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Alignment axes within −100…100; `label_threshold` 0.01–100 | error | A1 (done) |
 | Unknown keys, missing fields, wrong types, bad numbers | error | A1 (done), then every increment for its own fields |
 | Action alignment names only `law` and `good` | error | A3 (done) |
-| `inertia` and `inertia.default_profile` name a profile that exists; multipliers ≥ 0 | error | A4 |
+| `inertia` and `inertia.default_profile` name a profile that exists; profiles use only `law.toward_lawful`, `law.toward_chaotic`, `good.toward_good` and `good.toward_evil`; multipliers ≥ 0 | error | A4 (done) |
 | `by_target` multipliers ≥ 0 | error | A5 |
 | Faction ids are unique across factions and characters | error | D1 (done) |
 | Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 (done) |

@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::de::{self, Deserialize, Deserializer, IntoDeserializer, SeqAccess, Visitor};
 
-use crate::{Fixed, div_round};
+use crate::{Fixed, Ratio};
 
 /// A piecewise-linear map from one number to another: the shape of most tuning knobs
 /// (DESIGN.md §4.2, DECISIONS.md P-4). Either a constant, or two or more points with strictly
@@ -59,10 +59,11 @@ impl Curve {
         Ok(Curve(Shape::Points(points)))
     }
 
-    /// The curve's value at `x`.
-    pub fn at(&self, x: Fixed) -> Fixed {
+    /// The curve's exact value at `x`, unrounded, for a computation that multiplies it by
+    /// other values and rounds once at the end (P-1).
+    pub fn exact_at(&self, x: Fixed) -> Ratio {
         match &self.0 {
-            Shape::Constant(y) => *y,
+            Shape::Constant(y) => Ratio::from_fixed(*y),
             Shape::Points(points) => {
                 // Clamping holds the end values beyond the first and last points.
                 let x = x.clamp(points[0].x, points[points.len() - 1].x);
@@ -72,6 +73,26 @@ impl Curve {
                     .expect("a clamped x lies on one of the segments");
                 interpolate(segment[0], segment[1], x)
             }
+        }
+    }
+
+    /// The curve's value at `x`, rounded once.
+    pub fn at(&self, x: Fixed) -> Fixed {
+        self.exact_at(x)
+            .round()
+            .expect("a curve's value lies between two of its points' values")
+    }
+
+    /// The lowest value anywhere on the curve: its lowest point, since between points the
+    /// curve never leaves the range of its points.
+    pub fn lowest(&self) -> Fixed {
+        match &self.0 {
+            Shape::Constant(y) => *y,
+            Shape::Points(points) => points
+                .iter()
+                .map(|point| point.y)
+                .min()
+                .expect("a curve has at least two points"),
         }
     }
 
@@ -90,16 +111,13 @@ impl Curve {
     }
 }
 
-/// The value at `x` on the straight line from `start` to `end`, computed exactly in
-/// hundredths and rounded once: `(y0·(x1 − x0) + (y1 − y0)·(x − x0)) / (x1 − x0)`.
-fn interpolate(start: Point, end: Point, x: Fixed) -> Fixed {
+/// The value at `x` on the straight line from `start` to `end`, exactly: in hundredths,
+/// `(y0·(x1 − x0) + (y1 − y0)·(x − x0)) / (x1 − x0)`.
+fn interpolate(start: Point, end: Point, x: Fixed) -> Ratio {
     let [x0, y0, x1, y1, x] =
         [start.x, start.y, end.x, end.y, x].map(|value| i128::from(value.hundredths()));
     let span = x1 - x0;
-    let hundredths = div_round(y0 * span + (y1 - y0) * (x - x0), span);
-    Fixed::from_hundredths(
-        i64::try_from(hundredths).expect("an interpolated value lies between its two points"),
-    )
+    Ratio::new(y0 * span + (y1 - y0) * (x - x0), span * 100)
 }
 
 impl fmt::Display for CurveError {
@@ -187,6 +205,28 @@ mod tests {
     /// `[[0, 1.00], [50, 0.70], [100, 0.30]]`, from PLAN.md F2.
     fn falloff() -> Curve {
         curve(&[(0, 100), (5000, 70), (10000, 30)])
+    }
+
+    #[test]
+    fn the_lowest_value_is_the_lowest_point() {
+        assert_eq!(falloff().lowest(), h(30));
+        assert_eq!(curve(&[(0, -5), (100, 20), (200, -10)]).lowest(), h(-10));
+        assert_eq!(Curve::constant(h(7)).lowest(), h(7));
+    }
+
+    #[test]
+    fn exact_values_are_not_rounded_until_asked() {
+        // DESIGN.md §5.3's hardening `toward_good`: 0.405 at 85, which `at` rounds to 0.41.
+        let toward_good = curve(&[(-100_00, 50), (0, 1_00), (100_00, 30)]);
+        assert_eq!(toward_good.exact_at(h(85_00)), Ratio::new(405, 1000));
+        assert_eq!(toward_good.at(h(85_00)), h(41));
+        assert_eq!(toward_good.exact_at(h(60_00)), Ratio::new(58, 100));
+        // Beyond the ends it holds the end values, exactly.
+        assert_eq!(toward_good.exact_at(h(-150_00)), Ratio::new(1, 2));
+        assert_eq!(Curve::constant(h(1_25)).exact_at(h(7_00)), Ratio::new(5, 4));
+        // A third of the way along a segment needs more than two decimals.
+        let thirds = curve(&[(0, 0), (3_00, 1)]);
+        assert_eq!(thirds.exact_at(h(1_00)), Ratio::new(1, 300));
     }
 
     /// The disposition affinity curve, `[[0, 50], [60, 0], [200, -50]]` (DESIGN.md §8.1).

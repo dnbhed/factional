@@ -9,12 +9,13 @@ use std::{fmt, fs, io};
 
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
-    Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands,
-    Character, CharacterId, ComponentKind, Condition, Content, ContentProblem, ContentWarning,
-    DispositionWeights, Effects, Faction, FactionId, InvalidId, Metric, Outcome, OutcomeId, Party,
-    Rank, RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects,
-    StandingKey, StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem,
-    ToleranceProblem, Tolerances, Verdict, WeightProblem, Weights,
+    Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Axis, Balance, Band, BandProblem,
+    Bands, Character, CharacterId, ComponentKind, Condition, Content, ContentProblem,
+    ContentWarning, DispositionWeights, Effects, Faction, FactionId, Inertia, InertiaProfile,
+    InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser, Rank, RankId, RankKey,
+    RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects, StandingKey,
+    StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem, ToleranceProblem,
+    Tolerances, Toward, Verdict, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -245,6 +246,24 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             ContentProblem::SameFactionOutOfRange(_) => {
                 (BALANCE_FILE, "disposition.same_faction".to_owned())
             }
+            ContentProblem::UnknownProfile {
+                user: ProfileUser::Default,
+                ..
+            } => (BALANCE_FILE, "inertia.default_profile".to_owned()),
+            ContentProblem::UnknownProfile {
+                user: ProfileUser::Character(character),
+                ..
+            } => (CHARACTERS_FILE, format!("{character}.inertia")),
+            ContentProblem::NegativeInertia {
+                profile, toward, ..
+            } => (
+                BALANCE_FILE,
+                format!(
+                    "inertia.profiles.{profile}.{}.{}",
+                    toward.axis().key(),
+                    toward.key()
+                ),
+            ),
             ContentProblem::RuleTable {
                 owner,
                 kind,
@@ -403,6 +422,10 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         }
         disposition.finish(report);
     }
+    if let Some(mut inertia) = file.optional_table("inertia", "[inertia]", report) {
+        balance.inertia = read_inertia(&mut inertia, report);
+        inertia.finish(report);
+    }
     if let Some(mut membership) = file.optional_table("membership", "[membership]", report) {
         balance.rule_tables = read_rule_tables(&mut membership, report);
         membership.finish(report);
@@ -418,6 +441,59 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
     }
     file.finish(report);
     balance
+}
+
+/// `[inertia]`: `default_profile`, and `[inertia.profiles.<id>]`, each with up to four
+/// curves, such as `good.toward_good` (DESIGN.md §5.3). `steady` is always there. Whether
+/// the profiles named exist, and the curves stay at or above 0, are the world's checks
+/// (P-32).
+fn read_inertia(section: &mut Section<'_>, report: &mut Report) -> Inertia {
+    let mut inertia = Inertia::default();
+    if let Some(text) = section.optional_text("default_profile", report) {
+        match ProfileId::new(&text) {
+            Ok(id) => inertia.default_profile = id,
+            Err(invalid) => report.error(&section.path_to("default_profile"), invalid.to_string()),
+        }
+    }
+    let example = format!("[{}]", section.path_to("profiles.steady"));
+    let Some(mut profiles) = section.optional_table("profiles", &example, report) else {
+        return inertia;
+    };
+    for key in profiles.keys() {
+        let id = match ProfileId::new(&key) {
+            Ok(id) => id,
+            Err(invalid) => {
+                profiles.mark(&key);
+                report.error(profiles.path(), invalid.to_string());
+                continue;
+            }
+        };
+        let example = format!("[{}]", profiles.path_to(&key));
+        let Some(mut fields) = profiles.table_any(&key, &example, report) else {
+            continue;
+        };
+        let mut curves = BTreeMap::new();
+        for axis in [Axis::Law, Axis::Good] {
+            let towards: Vec<Toward> = Toward::ALL
+                .into_iter()
+                .filter(|toward| toward.axis() == axis)
+                .collect();
+            let example = format!("{{ {} = 1.0 }}", towards[0].key());
+            let Some(mut directions) = fields.optional_table(axis.key(), &example, report) else {
+                continue;
+            };
+            for toward in towards {
+                if let Some(curve) = directions.optional_curve(toward.key(), report) {
+                    curves.insert(toward, curve);
+                }
+            }
+            directions.finish(report);
+        }
+        fields.finish(report);
+        inertia.profiles.insert(id, InertiaProfile { curves });
+    }
+    profiles.finish(report);
+    inertia
 }
 
 /// `disposition.bands`, lowest first. The checks across bands only run once every band has
@@ -507,6 +583,16 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
     let name = section.text("name", report);
     let alignment = read_alignment(&mut section, report);
     let weights = read_weights(&mut section, "weights", report);
+    let inertia =
+        section
+            .optional_text("inertia", report)
+            .and_then(|text| match ProfileId::new(&text) {
+                Ok(id) => Some(id),
+                Err(invalid) => {
+                    report.error(&section.path_to("inertia"), invalid.to_string());
+                    None
+                }
+            });
     let memberships = read_memberships(&mut section, report);
     let standing = section
         .optional_table("standing", STANDING_EXAMPLE, report)
@@ -518,6 +604,7 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
         name: name?,
         alignment: alignment?,
         weights,
+        inertia,
         memberships: memberships?,
         standing,
     })
@@ -1096,7 +1183,8 @@ mod tests {
     use super::*;
     use factional_core::Fixed;
     use factional_reputation::{
-        CharacterId, Condition, FactionId, Metric, RankRef, Rule, TableKind, Verdict, Weights,
+        CharacterId, Condition, FactionId, Inertia, InertiaProfile, Metric, ProfileId, RankRef,
+        Rule, TableKind, Toward, Verdict, Weights,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -1881,6 +1969,134 @@ mod tests {
             found,
             [
                 "factions.toml: vex: 'vex' is also a character's id: factions and characters need different ids"
+            ]
+        );
+    }
+
+    // Inertia (A4)
+
+    const HARDENING: &str = r#"
+        [inertia]
+        default_profile = "hardening"
+
+        [inertia.profiles.hardening]
+        good.toward_good = [[-100.0, 0.5], [0.0, 1.0], [100.0, 0.3]]
+        good.toward_evil = [[-100.0, 0.3], [0.0, 1.0], [100.0, 0.5]]
+        law.toward_lawful = 0.8
+    "#;
+
+    fn profile(id: &str) -> ProfileId {
+        ProfileId::new(id).expect("valid id")
+    }
+
+    #[test]
+    fn reads_inertia_profiles_and_keeps_steady() {
+        let content = balance(HARDENING).expect("valid content");
+        let inertia = &content.balance.inertia;
+        assert_eq!(inertia.default_profile, profile("hardening"));
+        let curve = |text: &str| parse_curve(text).expect("valid curve");
+        assert_eq!(
+            inertia.profiles,
+            [
+                (
+                    profile("hardening"),
+                    InertiaProfile {
+                        curves: [
+                            (Toward::Lawful, curve("0.8")),
+                            (
+                                Toward::Good,
+                                curve("[[-100.0, 0.5], [0.0, 1.0], [100.0, 0.3]]")
+                            ),
+                            (
+                                Toward::Evil,
+                                curve("[[-100.0, 0.3], [0.0, 1.0], [100.0, 0.5]]")
+                            ),
+                        ]
+                        .into()
+                    }
+                ),
+                (Inertia::steady(), InertiaProfile::default()),
+            ]
+            .into()
+        );
+        assert_eq!(
+            balance("").expect("valid").balance.inertia,
+            Inertia::default()
+        );
+    }
+
+    #[test]
+    fn reads_a_characters_inertia_profile() {
+        let content = parse_content(Sources {
+            balance: Some(HARDENING),
+            characters: Some(&format!("{VEX}inertia = \"steady\"\n")),
+            ..Sources::default()
+        })
+        .expect("valid content");
+        let vex = &content.characters[&CharacterId::new("vex").expect("valid id")];
+        assert_eq!(vex.inertia, Some(Inertia::steady()));
+        let plain = characters(VEX).expect("valid content");
+        assert_eq!(
+            plain.characters[&CharacterId::new("vex").expect("valid id")].inertia,
+            None
+        );
+    }
+
+    #[test]
+    fn reports_inertia_mistakes_at_their_keys() {
+        let text = r#"
+            [inertia]
+            default_profile = "Hardening"
+            profile = 3
+
+            [inertia.profiles]
+            steady = 1.0
+
+            [inertia.profiles.hardening]
+            good.toward_lawful = 0.5
+            good.toward_good = [[0.0, 1.0]]
+            loyalty.toward_good = 1.0
+
+            [inertia.profiles.Soft]
+        "#;
+        assert_eq!(
+            problems(balance(text)),
+            [
+                "balance.toml: inertia.default_profile: 'Hardening' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "balance.toml: inertia.profiles: 'Soft' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "balance.toml: inertia.profiles.hardening.good.toward_good: a curve is a single number or at least 2 points",
+                "balance.toml: inertia.profiles.hardening.good: unknown key 'toward_lawful'",
+                "balance.toml: inertia.profiles.hardening: unknown key 'loyalty'",
+                "balance.toml: inertia.profiles.steady: expected a table, like [inertia.profiles.steady]",
+                "balance.toml: inertia: unknown key 'profile' (did you mean 'profiles'?)",
+            ]
+        );
+        assert_eq!(
+            problems(characters(&format!("{VEX}inertia = 3\n"))),
+            ["characters.toml: vex.inertia: expected text in quotes"]
+        );
+    }
+
+    #[test]
+    fn reports_profiles_that_do_not_exist_or_go_below_zero() {
+        let text = r#"
+            [inertia]
+            default_profile = "hardenin"
+
+            [inertia.profiles.hardening]
+            good.toward_evil = [[-100.0, -0.1], [100.0, 0.5]]
+        "#;
+        let result = parse_content(Sources {
+            balance: Some(text),
+            characters: Some(&format!("{VEX}inertia = \"stedy\"\n")),
+            ..Sources::default()
+        });
+        assert_eq!(
+            problems(result),
+            [
+                "balance.toml: inertia.default_profile: unknown inertia profile 'hardenin' (did you mean 'hardening'?)",
+                "balance.toml: inertia.profiles.hardening.good.toward_evil: -0.10 is below 0.00: inertia can damp or amplify a shift, never reverse it",
+                "characters.toml: vex.inertia: unknown inertia profile 'stedy' (did you mean 'steady'?)",
             ]
         );
     }

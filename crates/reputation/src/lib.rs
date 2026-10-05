@@ -15,6 +15,7 @@ mod disposition;
 mod distance;
 mod faction;
 mod id;
+mod inertia;
 mod membership;
 mod relation;
 mod standing;
@@ -33,7 +34,8 @@ pub use disposition::{
 };
 pub use distance::{Metric, WeightProblem, Weights, measure};
 pub use faction::{Faction, Rank};
-pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId, RankId};
+pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId, ProfileId, RankId};
+pub use inertia::{AxisShift, Inertia, InertiaProfile, Shift, Toward};
 pub use membership::{
     JoinAssessment, JoinBlock, LeaveReason, Membership, PromotionAssessment, RankCheck,
     StartingMembership, ToleranceProblem, Tolerances,
@@ -43,6 +45,6 @@ pub use standing::{
     ActionStanding, Effects, Outcome, Party, StandingEffects, StandingKey, StandingOwner,
 };
 pub use world::{
-    Balance, Content, ContentProblem, ContentWarning, Distance, Observer, RankKey, WeightsFrom,
-    World,
+    Balance, Content, ContentProblem, ContentWarning, Distance, Observer, ProfileUser, RankKey,
+    WeightsFrom, World,
 };

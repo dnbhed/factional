@@ -1,0 +1,17 @@
+# Inertia (DESIGN.md §5.3): how hard alignment is to move depends on where it already is.
+# Hale and Mira are "hardening": the further they lean, the less an act moves them. The
+# player is "steady": every act counts in full. Each shift is base × scale × inertia,
+# computed exactly and rounded once.
+load content/sample
+# Mira at good 85: toward_good is 0.405, so a good deed moves her 4.00 × 0.405 = 1.62.
+act sister_mira help_stranger --target merchant_ava --explain
+assert show character sister_mira == sister_mira — Sister Mira — law 35.00, good 86.62 — Lawful Good — member of temple (ordained) since tick 0
+# The player is steady: the same deed counts in full.
+act player help_stranger --target merchant_ava --explain
+# Hale's profile has no law curves, so law moves in full; toward_evil at 30 is 0.85.
+act captain_hale steal --explain
+assert show character captain_hale == captain_hale — Captain Hale — law 70.00, good 27.45 — Lawful Neutral — member of city_watch (captain) since tick 0
+# An outcome moves alignment with inertia too: 6.00 × toward_good at 86.62.
+outcome rescued_merchant sister_mira
+# 1 − 0.7 × 0.8662 = 0.39366, and 6.00 × 0.39366 = 2.36196, rounded once to 2.36.
+assert show character sister_mira == sister_mira — Sister Mira — law 35.00, good 88.98 — Lawful Good — member of temple (ordained) since tick 0

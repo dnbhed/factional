@@ -77,6 +77,11 @@ id_type!(
     FactionId
 );
 
+id_type!(
+    /// An inertia profile's id, such as `hardening` (DESIGN.md §5.3).
+    ProfileId
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
