@@ -82,6 +82,13 @@ pub enum JoinBlock {
         distance: Fixed,
         tolerance: Fixed,
     },
+    /// A member of a faction in conflict with this one; `relation` is the more hostile of the
+    /// two directions.
+    EnemyMembership {
+        faction: FactionId,
+        faction_name: String,
+        relation: Fixed,
+    },
 }
 
 /// Whether a character may join a faction, with every reason they can't (DESIGN.md §9.1, P-24).
@@ -117,6 +124,14 @@ impl JoinAssessment {
                 } => format!(
                     "{distance} from {}, tolerance is {tolerance}",
                     self.faction_name
+                ),
+                JoinBlock::EnemyMembership {
+                    faction_name,
+                    relation,
+                    ..
+                } => format!(
+                    "{} belongs to {faction_name}, in conflict with {} ({relation})",
+                    self.character, self.faction_name
                 ),
             })
             .collect()

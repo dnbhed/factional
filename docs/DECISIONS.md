@@ -206,6 +206,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Leaving a faction you're not in is refused,** rather than silently doing nothing. It's almost always a mistake in a script or quest.
   - **Warnings** come from `Content::warnings`. `World::new` builds the world anyway, and the CLI prints each warning after `load`'s summary as `warning: file: key: message`.
   - *Why:* designers see exactly why someone can't join, and every rule that decides it lives in the engine.
+- **P-38 · How relations are written and changed** (made in M2, 2026-10-05).
+  - **Content.** A `[[relation]]` is either `between = [a, b]` or `from`/`to`, never both, with a `value`. Each direction may be set once, and any left out is 0. A duplicate is reported at the later entry, naming the first.
+  - **Conflict** is a property of the pair. It's shown on both directions, because either side regarding the other at or below the threshold is enough.
+  - **Changes emit one `RelationChanged` per direction that moved,** in `from → to`, then `to → from` order. A set that changes nothing emits nothing.
+  - **A war between someone's own factions is refused until M9.** M9 brings `MembershipConflict` and `ResolveConflict`. Until then, refusing keeps invariant 6 true at every moment, and the refusal names the character and both factions.
+  - **The CLI's flags are never values.** `relate a b --by --one-way` is a usage error, not "'--one-way' is not a number". Negative numbers have one dash.
+  - *Why:* relations are authored the way designers think about them (mostly mutual, sometimes a grudge), and no state the engine can't yet handle is ever reachable.
 
 ## Open
 

@@ -7,7 +7,8 @@ use crate::distance::gap;
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
     CommandError, Disposition, Event, Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry,
-    LeaveReason, Membership, Metric, Role, Weights, Witnesses, measure,
+    LeaveReason, Membership, Metric, Regard, Relation, RelationSide, Role, Weights, Witnesses,
+    measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -23,9 +24,16 @@ pub struct Balance {
     pub affinity: Curve,
     /// The named bands a disposition score falls into (DESIGN.md §8.1).
     pub bands: Bands,
+    /// The named bands a relation between factions falls into (DESIGN.md §9.4).
+    pub relation_bands: Bands,
+    /// Two factions are in conflict when either regards the other at or below this.
+    pub conflict_threshold: Fixed,
 }
 
 impl Balance {
+    /// `relations.conflict_threshold`'s default: −50.00.
+    pub const DEFAULT_CONFLICT_THRESHOLD: Fixed = Fixed::from_hundredths(-50_00);
+
     /// `alignment.label_threshold`'s default: 33.00.
     pub const DEFAULT_LABEL_THRESHOLD: Fixed = Fixed::from_hundredths(33_00);
 
@@ -49,6 +57,8 @@ impl Default for Balance {
             metric: Metric::default(),
             affinity: Balance::default_affinity(),
             bands: Bands::standard(),
+            relation_bands: Bands::relations(),
+            conflict_threshold: Balance::DEFAULT_CONFLICT_THRESHOLD,
         }
     }
 }
@@ -62,6 +72,8 @@ pub struct Content {
     pub factions: BTreeMap<FactionId, Faction>,
     /// The action catalogue.
     pub actions: BTreeMap<ActionId, Action>,
+    /// How factions regard each other, as written; any direction left out is 0.
+    pub relations: Vec<Relation>,
 }
 
 /// Something wrong with content as a whole, found before a world is built from it (P-32).
@@ -86,6 +98,36 @@ pub enum ContentProblem {
         character: CharacterId,
         index: usize,
         faction: FactionId,
+    },
+    /// A relation names a faction that doesn't exist. `index` is the relation's place in the
+    /// list, from 0.
+    UnknownRelationFaction {
+        index: usize,
+        side: RelationSide,
+        faction: FactionId,
+        suggestion: Option<FactionId>,
+    },
+    /// A relation between a faction and itself.
+    SelfRelation { index: usize },
+    /// A relation's value is outside −100…100.
+    RelationOutOfRange { index: usize, value: Fixed },
+    /// A relation sets a direction an earlier one, `first`, already set.
+    DuplicateRelation {
+        index: usize,
+        from: FactionId,
+        to: FactionId,
+        first: usize,
+    },
+    /// `relations.conflict_threshold` is outside −100…100.
+    ConflictThresholdOutOfRange(Fixed),
+    /// A character starts in two factions in conflict (invariant 6): `faction`, at `index`,
+    /// and `other`, earlier in their list.
+    StartsInConflict {
+        character: CharacterId,
+        index: usize,
+        faction: FactionId,
+        other: FactionId,
+        relation: Fixed,
     },
 }
 
@@ -120,6 +162,72 @@ impl Content {
                 CharacterId::new(faction.as_str()).is_ok_and(|id| self.characters.contains_key(&id))
             })
             .map(|faction| ContentProblem::SharedId(faction.clone()));
+        let threshold = (!(-AXIS_LIMIT..=AXIS_LIMIT).contains(&self.balance.conflict_threshold))
+            .then_some(ContentProblem::ConflictThresholdOutOfRange(
+                self.balance.conflict_threshold,
+            ));
+        let relations = self
+            .relations
+            .iter()
+            .enumerate()
+            .flat_map(|(index, relation)| {
+                let mut problems: Vec<ContentProblem> = relation
+                    .named()
+                    .into_iter()
+                    .filter(|(_, faction)| !self.factions.contains_key(*faction))
+                    .map(|(side, faction)| ContentProblem::UnknownRelationFaction {
+                        index,
+                        side,
+                        faction: faction.clone(),
+                        suggestion: closest(faction.as_str(), self.factions.keys()),
+                    })
+                    .collect();
+                let directions = relation.directions();
+                if directions[0].0 == directions[0].1 {
+                    problems.push(ContentProblem::SelfRelation { index });
+                }
+                if !(-AXIS_LIMIT..=AXIS_LIMIT).contains(&relation.value) {
+                    problems.push(ContentProblem::RelationOutOfRange {
+                        index,
+                        value: relation.value,
+                    });
+                }
+                for (from, to) in directions {
+                    let earlier = self.relations[..index].iter().position(|earlier| {
+                        earlier.directions().contains(&(from.clone(), to.clone()))
+                    });
+                    if let Some(first) = earlier {
+                        problems.push(ContentProblem::DuplicateRelation {
+                            index,
+                            from,
+                            to,
+                            first,
+                        });
+                    }
+                }
+                problems
+            });
+        let values = &self.relation_values();
+        let starts_in_conflict = self.characters.values().flat_map(|character| {
+            let listed = &character.memberships;
+            listed
+                .iter()
+                .enumerate()
+                .filter_map(move |(index, faction)| {
+                    listed[..index].iter().find_map(|other| {
+                        let relation = hostility(values, other, faction);
+                        (relation <= self.balance.conflict_threshold && other != faction).then(
+                            || ContentProblem::StartsInConflict {
+                                character: character.id.clone(),
+                                index,
+                                faction: faction.clone(),
+                                other: other.clone(),
+                                relation,
+                            },
+                        )
+                    })
+                })
+        });
         let memberships = self.characters.values().flat_map(|character| {
             character
                 .memberships
@@ -146,9 +254,23 @@ impl Content {
         });
         affinity
             .into_iter()
+            .chain(threshold)
             .chain(shared_ids)
             .chain(memberships)
+            .chain(relations)
+            .chain(starts_in_conflict)
             .collect()
+    }
+
+    /// Every direction the relations set, first setting first; any other is 0.
+    fn relation_values(&self) -> BTreeMap<(FactionId, FactionId), Fixed> {
+        let mut values = BTreeMap::new();
+        for relation in &self.relations {
+            for direction in relation.directions() {
+                values.entry(direction).or_insert(relation.value);
+            }
+        }
+        values
     }
 
     /// Everything probably not meant, for content with no problems.
@@ -208,6 +330,37 @@ impl fmt::Display for ContentProblem {
             ContentProblem::DuplicateMembership {
                 character, faction, ..
             } => write!(f, "{character} already belongs to {faction}"),
+            ContentProblem::UnknownRelationFaction {
+                faction,
+                suggestion,
+                ..
+            } => {
+                write!(f, "unknown faction '{faction}'")?;
+                match suggestion {
+                    Some(close) => write!(f, " (did you mean '{close}'?)"),
+                    None => Ok(()),
+                }
+            }
+            ContentProblem::SelfRelation { .. } => {
+                f.write_str("a faction can't have a relation with itself")
+            }
+            ContentProblem::RelationOutOfRange { value, .. }
+            | ContentProblem::ConflictThresholdOutOfRange(value) => {
+                write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
+            }
+            ContentProblem::DuplicateRelation {
+                from, to, first, ..
+            } => write!(f, "{from} → {to} is already set by relation[{first}]"),
+            ContentProblem::StartsInConflict {
+                character,
+                faction,
+                other,
+                relation,
+                ..
+            } => write!(
+                f,
+                "{character} can't start in both {other} and {faction}: they're in conflict ({relation})"
+            ),
         }
     }
 }
@@ -285,6 +438,8 @@ struct State {
     alignments: BTreeMap<CharacterId, Alignment>,
     /// Every character's factions now, by character; a character in none has no entry.
     memberships: BTreeMap<CharacterId, BTreeMap<FactionId, Membership>>,
+    /// Every direction set so far, `(from, to)` → value; any other is 0.
+    relations: BTreeMap<(FactionId, FactionId), Fixed>,
 }
 
 impl State {
@@ -313,6 +468,7 @@ impl State {
                     (character.id.clone(), factions.collect())
                 })
                 .collect(),
+            relations: content.relation_values(),
         }
     }
 }
@@ -456,7 +612,90 @@ impl World {
                     reason: LeaveReason::Voluntary,
                 }])
             }
+            Command::SetRelation {
+                from,
+                to,
+                value,
+                mutual,
+            } => {
+                if !(-AXIS_LIMIT..=AXIS_LIMIT).contains(value) {
+                    self.relation_ends(from, to)?;
+                    return Err(CommandError::RelationOutOfRange { value: *value });
+                }
+                self.relation_changes(from, to, *mutual, |_| *value)
+            }
+            Command::ShiftRelation {
+                from,
+                to,
+                by,
+                mutual,
+            } => self.relation_changes(from, to, *mutual, |before| {
+                // A sum too big to hold means a shift that reaches the end by itself.
+                let moved = before.checked_add(*by).unwrap_or(*by);
+                moved.clamp(-AXIS_LIMIT, AXIS_LIMIT)
+            }),
         }
+    }
+
+    /// Checks a relation's two ends: both exist, and they're different factions.
+    fn relation_ends(&self, from: &FactionId, to: &FactionId) -> Result<(), CommandError> {
+        for end in [from, to] {
+            self.faction(end).ok_or_else(|| self.unknown_faction(end))?;
+        }
+        if from == to {
+            return Err(CommandError::SelfRelation);
+        }
+        Ok(())
+    }
+
+    /// The changes from giving `from → to` (and with `mutual`, `to → from`) the value `after`
+    /// works out from what's there now. Refused if it would put two of anyone's factions in
+    /// conflict: until M9 can resolve that, invariant 6 holds by refusal.
+    fn relation_changes(
+        &self,
+        from: &FactionId,
+        to: &FactionId,
+        mutual: bool,
+        after: impl Fn(Fixed) -> Fixed,
+    ) -> Result<Vec<Change>, CommandError> {
+        self.relation_ends(from, to)?;
+        let mut directions = vec![(from.clone(), to.clone())];
+        if mutual {
+            directions.push((to.clone(), from.clone()));
+        }
+        let mut relations = self.state.relations.clone();
+        let mut changes = Vec::new();
+        for (from, to) in directions {
+            let before = relations
+                .get(&(from.clone(), to.clone()))
+                .copied()
+                .unwrap_or_default();
+            let after = after(before);
+            if after != before {
+                relations.insert((from.clone(), to.clone()), after);
+                changes.push(Change::RelationChanged {
+                    from,
+                    to,
+                    before,
+                    after,
+                });
+            }
+        }
+        let threshold = self.content.balance.conflict_threshold;
+        for (character, factions) in &self.state.memberships {
+            let factions: Vec<&FactionId> = factions.keys().collect();
+            for (i, a) in factions.iter().enumerate() {
+                for b in &factions[i + 1..] {
+                    if hostility(&relations, a, b) <= threshold {
+                        return Err(CommandError::WouldPutInConflict {
+                            character: character.clone(),
+                            factions: ((*a).clone(), (*b).clone()),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(changes)
     }
 
     fn unknown_faction(&self, faction: &FactionId) -> CommandError {
@@ -519,6 +758,16 @@ impl World {
                 ref character, to, ..
             } => {
                 self.state.alignments.insert(character.clone(), to);
+            }
+            Change::RelationChanged {
+                ref from,
+                ref to,
+                after,
+                ..
+            } => {
+                self.state
+                    .relations
+                    .insert((from.clone(), to.clone()), after);
             }
         }
         self.events.push(event);
@@ -595,6 +844,51 @@ impl World {
         )
     }
 
+    /// How `from` regards `to` now, with its band (DESIGN.md §9.4). `None` if either is unknown.
+    pub fn relation(&self, from: &FactionId, to: &FactionId) -> Option<Regard> {
+        self.faction(from)?;
+        self.faction(to)?;
+        let value = self
+            .state
+            .relations
+            .get(&(from.clone(), to.clone()))
+            .copied()
+            .unwrap_or_default();
+        Some(self.regard(from, to, value))
+    }
+
+    fn regard(&self, from: &FactionId, to: &FactionId, value: Fixed) -> Regard {
+        Regard {
+            from: from.clone(),
+            to: to.clone(),
+            value,
+            band: self
+                .content
+                .balance
+                .relation_bands
+                .band_for(value)
+                .name
+                .clone(),
+        }
+    }
+
+    /// Whether either faction regards the other at or below `relations.conflict_threshold`.
+    /// `None` if either is unknown.
+    pub fn in_conflict(&self, a: &FactionId, b: &FactionId) -> Option<bool> {
+        self.faction(a)?;
+        self.faction(b)?;
+        Some(hostility(&self.state.relations, a, b) <= self.content.balance.conflict_threshold)
+    }
+
+    /// Every direction written in content or set since, in `(from, to)` order.
+    pub fn relations(&self) -> Vec<Regard> {
+        self.state
+            .relations
+            .iter()
+            .map(|((from, to), value)| self.regard(from, to, *value))
+            .collect()
+    }
+
     /// A faction's members now, in id order. `None` for an unknown faction.
     pub fn members(&self, faction: &FactionId) -> Option<Vec<&CharacterId>> {
         self.faction(faction)?;
@@ -627,6 +921,17 @@ impl World {
                 distance: distance.value,
                 tolerance,
             });
+        }
+        let current = self.state.memberships.get(character).into_iter().flatten();
+        for (member_of, _) in current.filter(|(member_of, _)| *member_of != faction) {
+            let relation = hostility(&self.state.relations, member_of, faction);
+            if relation <= self.content.balance.conflict_threshold {
+                blocks.push(JoinBlock::EnemyMembership {
+                    faction: member_of.clone(),
+                    faction_name: self.content.factions[member_of].name.clone(),
+                    relation,
+                });
+            }
         }
         Some(JoinAssessment {
             character: character.clone(),
@@ -681,6 +986,21 @@ impl World {
     }
 }
 
+/// The more hostile of the two directions between `a` and `b`; any direction not set is 0.
+fn hostility(
+    relations: &BTreeMap<(FactionId, FactionId), Fixed>,
+    a: &FactionId,
+    b: &FactionId,
+) -> Fixed {
+    let value = |from: &FactionId, to: &FactionId| {
+        relations
+            .get(&(from.clone(), to.clone()))
+            .copied()
+            .unwrap_or_default()
+    };
+    value(a, b).min(value(b, a))
+}
+
 /// The id among `ids` closest to a misspelt `word`, if one is close enough to suggest.
 fn closest<'a, Id>(word: &str, mut ids: impl Iterator<Item = &'a Id> + Clone) -> Option<Id>
 where
@@ -694,7 +1014,8 @@ where
 mod tests {
     use super::*;
     use crate::{
-        AXIS_LIMIT, AlignmentDelta, Band, JoinBlock, LeaveReason, Role, Tolerances, Witnesses,
+        AXIS_LIMIT, AlignmentDelta, Band, JoinBlock, LeaveReason, RelationEnds, Role, Tolerances,
+        Witnesses,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -777,8 +1098,37 @@ mod tests {
             characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),
             factions: factions(),
             actions: actions.into_iter().map(|a| (a.id.clone(), a)).collect(),
+            relations: relations(),
         })
         .expect("valid content")
+    }
+
+    fn between(a: &str, b: &str, value: i64) -> Relation {
+        Relation {
+            ends: RelationEnds::Between(faction_id(a), faction_id(b)),
+            value: h(value),
+        }
+    }
+
+    fn one_way(from: &str, to: &str, value: i64) -> Relation {
+        Relation {
+            ends: RelationEnds::Directed {
+                from: faction_id(from),
+                to: faction_id(to),
+            },
+            value: h(value),
+        }
+    }
+
+    /// Riverhold's relations among the test factions (DESIGN.md §13).
+    fn relations() -> Vec<Relation> {
+        vec![
+            between("city_watch", "lantern_guild", -80_00),
+            between("city_watch", "temple", 60_00),
+            between("lantern_guild", "free_company", 20_00),
+            one_way("city_watch", "free_company", -30_00),
+            one_way("free_company", "city_watch", -10_00),
+        ]
     }
 
     fn riverhold() -> World {
@@ -827,6 +1177,8 @@ mod tests {
                 up_to: None,
             }])
             .expect("valid bands"),
+            relation_bands: Bands::standard(),
+            conflict_threshold: h(-60_00),
         };
         let world = World::new(Content {
             balance: balance.clone(),
@@ -1613,6 +1965,550 @@ mod tests {
         assert_eq!(content(1, -10_00).warnings().len(), 1);
     }
 
+    // Relations (DESIGN.md §9.4)
+
+    fn relation_of(world: &World, from: &str, to: &str) -> (Fixed, String) {
+        let regard = world
+            .relation(&faction_id(from), &faction_id(to))
+            .expect("both exist");
+        (regard.value, regard.band)
+    }
+
+    fn conflict(world: &World, a: &str, b: &str) -> bool {
+        world
+            .in_conflict(&faction_id(a), &faction_id(b))
+            .expect("both exist")
+    }
+
+    fn set(from: &str, to: &str, value: i64, mutual: bool) -> Command {
+        Command::SetRelation {
+            from: faction_id(from),
+            to: faction_id(to),
+            value: h(value),
+            mutual,
+        }
+    }
+
+    fn shift(from: &str, to: &str, by: i64, mutual: bool) -> Command {
+        Command::ShiftRelation {
+            from: faction_id(from),
+            to: faction_id(to),
+            by: h(by),
+            mutual,
+        }
+    }
+
+    fn changed(seq: u64, from: &str, to: &str, before: i64, after: i64) -> Event {
+        Event {
+            seq,
+            tick: Tick(0),
+            payload: Change::RelationChanged {
+                from: faction_id(from),
+                to: faction_id(to),
+                before: h(before),
+                after: h(after),
+            },
+        }
+    }
+
+    #[test]
+    fn relations_have_a_value_and_a_band_in_each_direction() {
+        let world = riverhold();
+        assert_eq!(
+            relation_of(&world, "city_watch", "lantern_guild"),
+            (h(-80_00), "enemy".into())
+        );
+        assert_eq!(
+            relation_of(&world, "lantern_guild", "city_watch"),
+            (h(-80_00), "enemy".into())
+        );
+        assert_eq!(
+            relation_of(&world, "city_watch", "free_company"),
+            (h(-30_00), "rival".into())
+        );
+        assert_eq!(
+            relation_of(&world, "free_company", "city_watch"),
+            (h(-10_00), "neutral".into())
+        );
+        assert_eq!(
+            relation_of(&world, "city_watch", "temple"),
+            (h(60_00), "allied".into())
+        );
+        assert_eq!(
+            relation_of(&world, "temple", "lantern_guild"),
+            (h(0), "neutral".into()),
+            "unwritten"
+        );
+        assert_eq!(
+            world.relation(&faction_id("nowhere"), &faction_id("temple")),
+            None
+        );
+        assert_eq!(
+            world.relation(&faction_id("temple"), &faction_id("nowhere")),
+            None
+        );
+    }
+
+    #[test]
+    fn factions_are_in_conflict_when_either_regards_the_other_as_an_enemy() {
+        let world = riverhold();
+        assert!(conflict(&world, "city_watch", "lantern_guild"));
+        assert!(conflict(&world, "lantern_guild", "city_watch"));
+        assert!(
+            !conflict(&world, "city_watch", "free_company"),
+            "-30 and -10"
+        );
+        assert!(!conflict(&world, "lantern_guild", "free_company"));
+        assert_eq!(
+            world.in_conflict(&faction_id("nowhere"), &faction_id("temple")),
+            None
+        );
+        assert_eq!(
+            world.in_conflict(&faction_id("temple"), &faction_id("nowhere")),
+            None
+        );
+        // One side at exactly the threshold is enough.
+        let content = Content {
+            factions: factions(),
+            relations: vec![one_way("temple", "free_company", -50_00)],
+            ..Content::default()
+        };
+        let edge = World::new(content).expect("valid content");
+        assert!(conflict(&edge, "free_company", "temple"));
+        let content = Content {
+            factions: factions(),
+            relations: vec![one_way("temple", "free_company", -49_99)],
+            ..Content::default()
+        };
+        assert!(!conflict(
+            &World::new(content).expect("valid content"),
+            "free_company",
+            "temple"
+        ));
+    }
+
+    #[test]
+    fn the_conflict_threshold_is_a_setting() {
+        let content = Content {
+            balance: Balance {
+                conflict_threshold: h(-30_00),
+                ..Balance::default()
+            },
+            factions: factions(),
+            relations: relations(),
+            ..Content::default()
+        };
+        let world = World::new(content).expect("valid content");
+        assert!(
+            conflict(&world, "city_watch", "free_company"),
+            "-30 is now enough"
+        );
+    }
+
+    #[test]
+    fn lists_every_relation_set_in_order() {
+        let world = riverhold();
+        let listed: Vec<(String, String, Fixed)> = world
+            .relations()
+            .into_iter()
+            .map(|r| (r.from.to_string(), r.to.to_string(), r.value))
+            .collect();
+        let expected = [
+            ("city_watch", "free_company", -30_00),
+            ("city_watch", "lantern_guild", -80_00),
+            ("city_watch", "temple", 60_00),
+            ("free_company", "city_watch", -10_00),
+            ("free_company", "lantern_guild", 20_00),
+            ("lantern_guild", "city_watch", -80_00),
+            ("lantern_guild", "free_company", 20_00),
+            ("temple", "city_watch", 60_00),
+        ]
+        .map(|(from, to, value)| (from.to_owned(), to.to_owned(), h(value)));
+        assert_eq!(listed, expected);
+    }
+
+    #[test]
+    fn a_member_of_an_enemy_faction_cannot_join() {
+        let mut world = riverhold();
+        steal_times(&mut world, 4);
+        world
+            .execute(join("player", "lantern_guild"))
+            .expect("accepted");
+        let assessment = world
+            .assess_join(&id("player"), &faction_id("city_watch"))
+            .expect("both exist");
+        assert_eq!(
+            assessment.blocks,
+            [
+                // Gaps 90 and 32, weighted 90 and 8: sqrt(8164) = 90.354…
+                JoinBlock::OutsideTolerance {
+                    distance: h(90_35),
+                    tolerance: h(40_00)
+                },
+                JoinBlock::EnemyMembership {
+                    faction: faction_id("lantern_guild"),
+                    faction_name: "The Lantern Guild".to_owned(),
+                    relation: h(-80_00),
+                },
+            ]
+        );
+        assert_eq!(
+            assessment.reasons(),
+            [
+                "90.35 from The City Watch, tolerance is 40.00",
+                "player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)",
+            ]
+        );
+    }
+
+    #[test]
+    fn enemy_exclusion_names_the_more_hostile_direction() {
+        let content = Content {
+            characters: [member_of(character("Ava", 70_00, 20_00), &["free_company"])]
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .collect(),
+            factions: factions(),
+            relations: vec![
+                one_way("free_company", "city_watch", -60_00),
+                one_way("city_watch", "free_company", -20_00),
+            ],
+            ..Content::default()
+        };
+        let world = World::new(content).expect("valid content");
+        let assessment = world
+            .assess_join(&id("ava"), &faction_id("city_watch"))
+            .expect("both exist");
+        assert_eq!(
+            assessment.blocks,
+            [JoinBlock::EnemyMembership {
+                faction: faction_id("free_company"),
+                faction_name: "The Free Company".to_owned(),
+                relation: h(-60_00),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_rival_faction_does_not_bar_joining() {
+        let world = world_of([member_of(character("Ava", 70_00, 20_00), &["free_company"])]);
+        let assessment = world
+            .assess_join(&id("ava"), &faction_id("city_watch"))
+            .expect("both exist");
+        assert!(assessment.allowed(), "{:?}", assessment.blocks);
+    }
+
+    #[test]
+    fn setting_a_relation_one_way_changes_that_direction_only() {
+        let mut world = riverhold();
+        assert_eq!(
+            world.execute(set("city_watch", "free_company", -60_00, false)),
+            Ok(vec![changed(
+                1,
+                "city_watch",
+                "free_company",
+                -30_00,
+                -60_00
+            )])
+        );
+        assert_eq!(
+            relation_of(&world, "free_company", "city_watch"),
+            (h(-10_00), "neutral".into())
+        );
+        assert!(conflict(&world, "city_watch", "free_company"));
+    }
+
+    #[test]
+    fn setting_a_relation_mutually_changes_each_direction_that_moves() {
+        let mut world = riverhold();
+        assert_eq!(
+            world.execute(set("free_company", "city_watch", -10_00, true)),
+            Ok(vec![changed(
+                1,
+                "city_watch",
+                "free_company",
+                -30_00,
+                -10_00
+            )]),
+            "free_company → city_watch is already -10"
+        );
+        assert_eq!(
+            world.execute(set("temple", "city_watch", 60_00, true)),
+            Ok(vec![])
+        );
+        assert_eq!(
+            world.execute(set("temple", "lantern_guild", -55_00, true)),
+            Ok(vec![
+                changed(2, "temple", "lantern_guild", 0, -55_00),
+                changed(3, "lantern_guild", "temple", 0, -55_00),
+            ])
+        );
+    }
+
+    #[test]
+    fn shifting_a_relation_moves_it_and_stops_at_the_ends() {
+        let mut world = riverhold();
+        assert_eq!(
+            world.execute(shift("city_watch", "lantern_guild", 50_00, true)),
+            Ok(vec![
+                changed(1, "city_watch", "lantern_guild", -80_00, -30_00),
+                changed(2, "lantern_guild", "city_watch", -80_00, -30_00),
+            ])
+        );
+        assert!(!conflict(&world, "city_watch", "lantern_guild"));
+        assert_eq!(
+            world.execute(shift("city_watch", "temple", 50_00, false)),
+            Ok(vec![changed(3, "city_watch", "temple", 60_00, 100_00)])
+        );
+        assert_eq!(
+            world.execute(shift("temple", "free_company", -150_00, false)),
+            Ok(vec![changed(4, "temple", "free_company", 0, -100_00)])
+        );
+        assert_eq!(
+            world.execute(shift("city_watch", "temple", 1_00, false)),
+            Ok(vec![])
+        );
+    }
+
+    #[test]
+    fn relation_changes_are_refused_for_bad_factions_and_values() {
+        let mut world = riverhold();
+        for command in [
+            set("city_wach", "temple", 0, false),
+            shift("temple", "city_wach", 0, true),
+        ] {
+            assert_eq!(
+                refused(&mut world, command),
+                CommandError::UnknownFaction {
+                    faction: faction_id("city_wach"),
+                    suggestion: Some(faction_id("city_watch")),
+                }
+            );
+        }
+        assert_eq!(
+            refused(&mut world, set("temple", "temple", 10_00, false)),
+            CommandError::SelfRelation
+        );
+        assert_eq!(
+            refused(&mut world, shift("temple", "temple", 10_00, true)),
+            CommandError::SelfRelation
+        );
+        for value in [100_01, -100_01] {
+            assert_eq!(
+                refused(&mut world, set("temple", "free_company", value, true)),
+                CommandError::RelationOutOfRange { value: h(value) }
+            );
+        }
+        assert!(
+            world
+                .execute(set("temple", "free_company", -100_00, true))
+                .is_ok()
+        );
+        assert_eq!(
+            CommandError::RelationOutOfRange { value: h(120_00) }.to_string(),
+            "120.00 is outside -100.00..100.00"
+        );
+        assert_eq!(
+            CommandError::SelfRelation.to_string(),
+            "a faction can't have a relation with itself"
+        );
+    }
+
+    #[test]
+    fn a_relation_change_cannot_put_two_of_a_characters_factions_at_war() {
+        let mut world = riverhold();
+        steal_times(&mut world, 4);
+        world
+            .execute(join("player", "lantern_guild"))
+            .expect("accepted");
+        world
+            .execute(join("player", "free_company"))
+            .expect("accepted");
+        let refusal = refused(
+            &mut world,
+            set("lantern_guild", "free_company", -60_00, false),
+        );
+        assert_eq!(
+            refusal,
+            CommandError::WouldPutInConflict {
+                character: id("player"),
+                factions: (faction_id("free_company"), faction_id("lantern_guild")),
+            }
+        );
+        assert_eq!(
+            refusal.to_string(),
+            "that would put two of player's factions in conflict: free_company and lantern_guild"
+        );
+        assert_eq!(
+            refused(
+                &mut world,
+                shift("free_company", "lantern_guild", -70_00, false)
+            ),
+            refusal
+        );
+        // Short of conflict is fine.
+        assert!(
+            world
+                .execute(set("lantern_guild", "free_company", -49_99, true))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_faction_is_never_in_conflict_with_itself() {
+        // With a threshold above 0, any two unrelated factions are in conflict, but a
+        // membership is never checked against itself.
+        let content = Content {
+            balance: Balance {
+                conflict_threshold: h(10_00),
+                ..Balance::default()
+            },
+            characters: [member_of(
+                character("Vex", -55_00, -20_00),
+                &["lantern_guild"],
+            )]
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect(),
+            factions: factions(),
+            ..Content::default()
+        };
+        let mut world = World::new(content).expect("valid content");
+        assert!(
+            world
+                .execute(set("temple", "free_company", 50_00, true))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn replaying_rebuilds_relations() {
+        let mut world = riverhold();
+        world
+            .execute(set("temple", "free_company", -70_00, true))
+            .expect("accepted");
+        world
+            .execute(shift("city_watch", "lantern_guild", 10_00, false))
+            .expect("accepted");
+        let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
+        assert_eq!(replayed.state, world.state);
+        assert_eq!(
+            relation_of(&replayed, "city_watch", "lantern_guild").0,
+            h(-70_00)
+        );
+    }
+
+    // Relations in content (P-32)
+
+    #[test]
+    fn relations_must_name_two_different_factions_that_exist() {
+        let content = Content {
+            factions: factions(),
+            relations: vec![
+                between("city_watch", "lantern_gild", -80_00),
+                one_way("nowhere", "temple", 10_00),
+                between("temple", "temple", 50_00),
+            ],
+            ..Content::default()
+        };
+        assert_eq!(
+            content.problems(),
+            [
+                ContentProblem::UnknownRelationFaction {
+                    index: 0,
+                    side: RelationSide::Between(1),
+                    faction: faction_id("lantern_gild"),
+                    suggestion: Some(faction_id("lantern_guild")),
+                },
+                ContentProblem::UnknownRelationFaction {
+                    index: 1,
+                    side: RelationSide::From,
+                    faction: faction_id("nowhere"),
+                    suggestion: None,
+                },
+                ContentProblem::SelfRelation { index: 2 },
+            ]
+        );
+    }
+
+    #[test]
+    fn each_direction_is_set_once_and_within_range() {
+        let content = Content {
+            factions: factions(),
+            relations: vec![
+                between("city_watch", "lantern_guild", -80_00),
+                one_way("lantern_guild", "city_watch", -60_00),
+                one_way("temple", "free_company", 100_01),
+                one_way("free_company", "temple", -100_00),
+            ],
+            balance: Balance {
+                conflict_threshold: h(-100_01),
+                ..Balance::default()
+            },
+            ..Content::default()
+        };
+        let problems = content.problems();
+        assert_eq!(
+            problems,
+            [
+                ContentProblem::ConflictThresholdOutOfRange(h(-100_01)),
+                ContentProblem::DuplicateRelation {
+                    index: 1,
+                    from: faction_id("lantern_guild"),
+                    to: faction_id("city_watch"),
+                    first: 0,
+                },
+                ContentProblem::RelationOutOfRange {
+                    index: 2,
+                    value: h(100_01),
+                },
+            ]
+        );
+        let messages: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "-100.01 is outside -100.00..100.00",
+                "lantern_guild → city_watch is already set by relation[0]",
+                "100.01 is outside -100.00..100.00",
+            ]
+        );
+    }
+
+    #[test]
+    fn no_one_starts_in_two_factions_in_conflict() {
+        let content = Content {
+            characters: [
+                member_of(
+                    character("Vex", 0, 0),
+                    &["lantern_guild", "temple", "city_watch"],
+                ),
+                member_of(character("Ava", 0, 0), &["city_watch", "free_company"]),
+            ]
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect(),
+            factions: factions(),
+            relations: relations(),
+            ..Content::default()
+        };
+        let problems = content.problems();
+        assert_eq!(
+            problems,
+            [ContentProblem::StartsInConflict {
+                character: id("vex"),
+                index: 2,
+                faction: faction_id("city_watch"),
+                other: faction_id("lantern_guild"),
+                relation: h(-80_00),
+            }]
+        );
+        assert_eq!(
+            problems[0].to_string(),
+            "vex can't start in both lantern_guild and city_watch: they're in conflict (-80.00)"
+        );
+    }
+
     #[test]
     fn distance_needs_an_observer_and_a_subject_that_exist() {
         let world = riverhold();
@@ -2030,7 +2926,26 @@ mod tests {
                 leave(who, faction)
             }
         });
-        let command = prop_oneof![(0_u64..=1_000).prop_map(advance), action, membership];
+        let relate = (
+            faction(),
+            faction(),
+            -120_00_i64..=120_00,
+            any::<bool>(),
+            any::<bool>(),
+        )
+            .prop_map(|(from, to, value, mutual, shifting)| {
+                if shifting {
+                    shift(from, to, value, mutual)
+                } else {
+                    set(from, to, value, mutual)
+                }
+            });
+        let command = prop_oneof![
+            (0_u64..=1_000).prop_map(advance),
+            action,
+            membership,
+            relate
+        ];
         proptest::collection::vec(command, 0..30)
     }
 
@@ -2090,6 +3005,33 @@ mod tests {
                 })
                 .sum();
             prop_assert_eq!(world.now(), Tick(total));
+        }
+
+        /// DESIGN.md §14, invariant 6 (until M9 adds `MembershipConflict`).
+        #[test]
+        fn no_one_is_ever_in_two_factions_in_conflict(commands in commands()) {
+            let world = run(&commands);
+            for character in world.characters() {
+                let factions: Vec<&FactionId> = world
+                    .memberships(&character.id)
+                    .expect("the character exists")
+                    .map(|(faction, _)| faction)
+                    .collect();
+                for (i, a) in factions.iter().enumerate() {
+                    for b in &factions[i + 1..] {
+                        prop_assert!(!world.in_conflict(a, b).expect("both exist"));
+                    }
+                }
+            }
+        }
+
+        /// DESIGN.md §14, invariant 1, for relations.
+        #[test]
+        fn relations_always_stay_within_range(commands in commands()) {
+            let world = run(&commands);
+            for regard in world.relations() {
+                prop_assert!((-AXIS_LIMIT..=AXIS_LIMIT).contains(&regard.value));
+            }
         }
 
         #[test]

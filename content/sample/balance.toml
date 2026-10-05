@@ -28,3 +28,17 @@ bands = [
   { name = "neutral", up_to = 25.0 },
   { name = "friendly" },
 ]
+
+[relations]
+# Two factions are in conflict when either regards the other at or below this; a member of
+# one can't join the other.
+conflict_threshold = -50.0
+
+# Names for relation values, lowest first, with the same rules as disposition bands.
+bands = [
+  { name = "enemy", up_to = -50.0 },
+  { name = "rival", up_to = -15.0 },
+  { name = "neutral", up_to = 15.0 },
+  { name = "friendly", up_to = 50.0 },
+  { name = "allied" },
+]

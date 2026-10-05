@@ -1,0 +1,55 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/relations.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> relations city_watch
+ashen_circle → city_watch: -40.00 (rival)
+city_watch → ashen_circle: -40.00 (rival)
+city_watch → free_company: -30.00 (rival)
+city_watch → lantern_guild: -80.00 (enemy) — in conflict
+city_watch → temple: 60.00 (allied)
+free_company → city_watch: -10.00 (neutral)
+lantern_guild → city_watch: -80.00 (enemy) — in conflict
+temple → city_watch: 60.00 (allied)
+> relations free_company
+city_watch → free_company: -30.00 (rival)
+free_company → city_watch: -10.00 (neutral)
+free_company → lantern_guild: 20.00 (friendly)
+lantern_guild → free_company: 20.00 (friendly)
+> act player steal --scale 4
+#1 at tick 0: player did steal, at scale 4.00
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -20.00, good -12.00
+> join player lantern_guild
+#3 at tick 0: player joined lantern_guild
+> can-join player city_watch --explain
+player → city_watch: no
+distance 90.35 (euclidean), tolerance 40.00
+law: 70.00 vs -20.00, gap 90.00, weight 1.00
+good: 20.00 vs -12.00, gap 32.00, weight 0.25
+weights: city_watch's own
+refused: 90.35 from The City Watch, tolerance is 40.00
+refused: player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)
+> relate city_watch lantern_guild --by 40
+#4 at tick 0: city_watch → lantern_guild changed from -80.00 to -40.00
+#5 at tick 0: lantern_guild → city_watch changed from -80.00 to -40.00
+> assert can-join player city_watch == no: 90.35 from The City Watch, tolerance is 40.00
+> relate city_watch free_company -60 --one-way
+#6 at tick 0: city_watch → free_company changed from -30.00 to -60.00
+> relations free_company
+city_watch → free_company: -60.00 (enemy) — in conflict
+free_company → city_watch: -10.00 (neutral) — in conflict
+free_company → lantern_guild: 20.00 (friendly)
+lantern_guild → free_company: 20.00 (friendly)
+> join player free_company
+#7 at tick 0: player joined free_company
+> assert relate lantern_guild free_company -60 == error: that would put two of player's factions in conflict: free_company and lantern_guild
+> journal
+1. act player steal --scale 4.00 — accepted
+2. join player lantern_guild — accepted
+3. relate city_watch lantern_guild --by 40.00 — accepted
+4. relate city_watch free_company -60.00 --one-way — accepted
+5. join player free_company — accepted
+6. relate lantern_guild free_company -60.00 — refused: that would put two of player's factions in conflict: free_company and lantern_guild

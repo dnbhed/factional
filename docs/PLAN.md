@@ -42,6 +42,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - D1 — weights and distance: `factions.toml` (name, alignment, weights), character weights, `alignment.metric` and `alignment.default_weights`; an exact `distance(observer, subject)` query with its working; one id namespace for factions and characters, checked by `World::new` (P-32's mechanism, arriving early); `factions`, `show faction`, `distance [--explain]`; done 2026-10-05 (#9)
 - D2 — disposition from affinity: `disposition.affinity` (a curve, checked within ±100 by `World::new`) and `disposition.bands` (validated: valid unique names, increasing `up_to`, only the last open-ended); a `disposition(observer, subject)` query with score, band and working; `disposition [--explain]`; plain "expected a number" errors; done 2026-10-05 (#10)
 - M1 — factions' `tolerance` and `member_tolerance`, starting `memberships`; `JoinFaction` (refused with every failing check) and `LeaveFaction`; `assess_join` and membership queries; load warnings, starting with members outside member tolerance; `can-join [--explain]`, `join`, `leave`, memberships in `show`; done 2026-10-05 (#11)
+- M2 — relations between factions: `relations.toml` (`between` and `from`/`to`), relation bands and `conflict_threshold`; `SetRelation` and `ShiftRelation` with `RelationChanged`; enemy exclusion in `assess_join`; invariant 6 kept by refusing a war between a character's own factions until M9; `relations`, `relate`; done 2026-10-05 (#12)
 
 ---
 
@@ -65,70 +66,43 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M2 · Relations and enemy exclusion — P0 · Next
+### M3 · Standing, action effects and outcomes — P0 · Next
 
-**Why:** the brief's "joining certain factions will mean not being able to join factions with which they are enemies" (DESIGN.md §9.4, D-4).
+**Why:** the brief's "relationships develop through actions performed and quests completed" (DESIGN.md §7.1). Standing is the memory of what passed between a character and others.
 
 **Scope**
 
+- **Standing store.** `standing(subject, party)` is how `party` (a faction or a character) regards `subject`: −100…100, 0 unless set, clamped.
 - **Content.**
-  - `relations.toml`: `[[relation]]` entries, each either `between = [a, b]` (both directions) or `from = a` with `to = b` (one direction), plus a `value` in −100…100. Pairs left out are 0.
-  - `balance.toml [relations]`: `conflict_threshold` (default −50) and `bands` (default enemy ≤ −50 < rival ≤ −15 < neutral ≤ 15 < friendly ≤ 50 < allied), with the same rules as D2's bands.
-- **State and queries.**
-  - Relations live in state, because they change in play.
-  - `relation(from, to)` returns the value and its band.
-  - `in_conflict(a, b)` is true when either regards the other at or below the threshold.
-- **Commands.** Each changed direction emits `RelationChanged { from, to, before, after }`.
-  - `SetRelation { from, to, value, mutual }`. A value outside ±100 is refused.
-  - `ShiftRelation { from, to, by, mutual }`. Shifts clamp at ±100.
-- **Enemy exclusion.** `assess_join` gains a block when the joiner belongs to a faction in conflict with the target. Until M7 that's a plain refusal; M7 replaces it with rule tables.
-- **Interim rule, until M9 (proposed).** A relation change that would put two of one character's factions in conflict is refused, so invariant 6 always holds. M9 replaces the refusal with `MembershipConflict`.
+  - Characters gain a starting `standing = { factions = { … }, characters = { … } }`, meaning how others regard them.
+  - Actions gain `standing = { target, target_factions, factions = { … }, characters = { … } }`.
+  - `outcomes.toml` holds named bundles of `alignment` and `standing` effects.
+  - Factions gain `leave_standing_change` (default 0), which `LeaveFaction` now applies.
+- **Commands.** All effects go through one path. Effects on the same party add up first, then apply once, giving one `StandingChanged { subject, party, before, after }` per party that moved, factions before characters, each in id order.
+  - `PerformAction` applies the action's standing effects to the actor. `target` and `target_factions` need a target, and are skipped without one.
+  - `ApplyOutcome { outcome, character }` emits `OutcomeApplied`, then the outcome's alignment and standing changes.
+  - `ApplyEffects { source, character, effects }` does the same for effects sent directly by another module (P-26).
+- **The `awareness(party, event)` seam.** It's 1.00 under the omniscient model, and every standing effect is multiplied by it. K1 replaces it.
 - **CLI.**
-  - `relations [<faction>]` lists each authored or changed direction with its band.
-  - `relate <from> <to> <value> [--one-way]` sets a relation.
-  - `relate <from> <to> --by <n> [--one-way]` shifts one.
+  - `standing <subject> [<party>]` shows how others regard a character.
+  - `outcomes` lists the outcomes.
+  - `outcome <outcome> <character>` applies one.
 
-**Acceptance** (Riverhold, from `docs/examples/riverhold/relations.toml`)
+**Acceptance** (Riverhold)
 
-1. `city_watch` and `lantern_guild` are in conflict at −80 (enemy). `city_watch` ↔ `ashen_circle` at −40 is rival, not conflict.
-2. `city_watch` → `free_company` is −30 (rival) and `free_company` → `city_watch` is −10 (neutral), so they're not in conflict.
-3. The player, in the Guild at −20 / −12, applies to the Watch. The refusal gives both reasons:
-   - `90.35 from The City Watch, tolerance is 40.00`. That's √(90² + 8²) = √8164 = 90.35.
-   - `player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)`.
-4. `relate city_watch free_company -60 --one-way` emits one `RelationChanged` (−30 → −60), and the two are now in conflict.
-5. `relate temple ashen_circle --by 50` emits two events, −90 → −40 each way: rival, no longer in conflict. Shifting −90 by −50 stops at −100.
-6. The interim rule: the player, in both the Guild and the Free Company (friendly at 20), sees `relate lantern_guild free_company -60` refused, because it would put two of the player's factions in conflict.
-7. Load errors at their keys:
-   - an unknown faction, with a "did you mean";
-   - a faction related to itself;
-   - a direction set twice: `city_watch → lantern_guild is already set by relation[0]`;
-   - an entry with both `between` and `from`/`to`, or neither;
-   - a value outside ±100;
-   - a `conflict_threshold` outside ±100;
-   - bad bands;
-   - a character starting in two factions in conflict (invariant 6), reported at the second membership.
+1. `act player steal --target merchant_ava`: `merchant_ava`'s standing toward the player goes 0 → −20.00. Ava is in no faction, so nothing else changes.
+2. `act player steal --target vex`: vex −20.00, and the Lantern Guild −10.00 (`target_factions`).
+3. `outcome fined_by_watch player`: the City Watch −20.00 and `captain_hale` −10.00.
+4. **Clamping.** After five fines the Watch is at −100.00. A sixth moves only Hale (−50.00 → −60.00), so it emits one `StandingChanged`.
+5. `act player donate_to_temple`, with no target: the Temple +10.00. Without a target, an action's `target` effects do nothing.
+6. **Starting standing.** `standing captain_hale` shows the City Watch at 75.00.
+7. **Leaving.** In a fixture faction with `leave_standing_change = -15.0`, `leave` emits `LeftFaction`, then a `StandingChanged` of −15.00 with that faction.
+8. **Errors.**
+   - An unknown outcome gets a "did you mean".
+   - Load errors at their keys, such as `actions.toml: report_crime.standing.factions.city_wach: unknown faction 'city_wach' (did you mean 'city_watch'?)`.
+   - A starting standing outside ±100, an effect outside ±100, and unknown keys in a `standing` block are load errors too.
 
-**Validates** (DESIGN.md §12.2): a relation names two different factions that exist, and sets each direction at most once; relation bands follow the D2 band rules; `conflict_threshold` is within ±100; no character starts in two factions that are in conflict (invariant 6).
-
-### M3 · Standing, action effects and outcomes — P0 · Outline
-
-**Covers:** DESIGN.md §7.1, without spillover.
-
-**Scope**
-
-- The standing store, and action `standing` effects.
-- `outcomes.toml`; `ApplyOutcome` and `ApplyEffects`; `StandingChanged`.
-- The `awareness()` seam, which returns 1.00 under the omniscient model.
-- CLI: `standing`, `outcome`.
-
-**Anchors**
-
-- Stealing from `merchant_ava` puts `merchant_ava`'s standing toward the player at −20.00.
-- Stealing from vex: vex −20.00 and `lantern_guild` −10.00.
-- `outcome fined_by_watch player`: `city_watch` −20.00 and `captain_hale` −10.00.
-- Standing clamps at −100.00.
-
-**Validates** (DESIGN.md §12.2): standing in characters, actions and outcomes names factions and characters that exist, with values within ±100; outcome ids.
+**Validates** (DESIGN.md §12.2): standing in characters, actions and outcomes names factions and characters that exist, with values within ±100; outcome ids; `leave_standing_change` within ±100.
 
 ### M4 · Disposition from standing, kinship and faction opinion — P0 · Outline
 
@@ -212,7 +186,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 **Scope**
 
-- A relation change that puts two of a character's factions in conflict emits `MembershipConflict` and marks both memberships as conflicted.
+- A relation change that puts two of a character's factions in conflict emits `MembershipConflict` and marks both memberships as conflicted. This replaces M2's interim refusal (P-38).
 - `ResolveConflict { character, keep }` ends the other membership with `LeftFaction { reason: ConflictResolved }`.
 - `membership.conflict` sets the optional automatic rule, applied straight away or after `auto_after_ticks`. The rule keeps the higher rank, then the higher standing, then the longer service, then the lower faction id.
 - Settle the standing consequences of leaving, and record the choice in DECISIONS.md.

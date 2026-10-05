@@ -15,6 +15,7 @@ mod distance;
 mod faction;
 mod id;
 mod membership;
+mod relation;
 mod world;
 
 pub use action::{Action, Witnesses};
@@ -28,6 +29,7 @@ pub use id::{ActionId, CharacterId, FactionId, InvalidId};
 pub use membership::{
     JoinAssessment, JoinBlock, LeaveReason, Membership, ToleranceProblem, Tolerances,
 };
+pub use relation::{Regard, Relation, RelationEnds, RelationSide};
 pub use world::{
     Balance, Content, ContentProblem, ContentWarning, Distance, Observer, WeightsFrom, World,
 };

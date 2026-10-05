@@ -11,7 +11,7 @@ use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands, Character,
     CharacterId, Content, ContentProblem, ContentWarning, Faction, FactionId, InvalidId, Metric,
-    ToleranceProblem, Tolerances, WeightProblem, Weights,
+    Relation, RelationEnds, RelationSide, ToleranceProblem, Tolerances, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -41,12 +41,14 @@ pub struct Sources<'a> {
     pub factions: Option<&'a str>,
     pub characters: Option<&'a str>,
     pub actions: Option<&'a str>,
+    pub relations: Option<&'a str>,
 }
 
 const BALANCE_FILE: &str = "balance.toml";
 const FACTIONS_FILE: &str = "factions.toml";
 const CHARACTERS_FILE: &str = "characters.toml";
 const ACTIONS_FILE: &str = "actions.toml";
+const RELATIONS_FILE: &str = "relations.toml";
 
 /// Reads and validates the content files in `dir`.
 pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
@@ -75,11 +77,13 @@ pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
     let factions = read(FACTIONS_FILE)?;
     let characters = read(CHARACTERS_FILE)?;
     let actions = read(ACTIONS_FILE)?;
+    let relations = read(RELATIONS_FILE)?;
     parse_content(Sources {
         balance: balance.as_deref(),
         factions: factions.as_deref(),
         characters: characters.as_deref(),
         actions: actions.as_deref(),
+        relations: relations.as_deref(),
     })
 }
 
@@ -93,6 +97,12 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         sources.factions,
         &mut reports,
         |text, report| read_tables(text, report, "faction", FactionId::new, read_faction),
+    );
+    let relations = read_file(
+        RELATIONS_FILE,
+        sources.relations,
+        &mut reports,
+        read_relations,
     );
     let characters = read_file(
         CHARACTERS_FILE,
@@ -119,6 +129,7 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         factions: factions.unwrap_or_default(),
         characters: characters.unwrap_or_default(),
         actions: actions.unwrap_or_default(),
+        relations: relations.unwrap_or_default(),
     };
 
     let mut diagnostics: Vec<Diagnostic> = reports
@@ -133,6 +144,30 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
                 character, index, ..
             }
             | ContentProblem::DuplicateMembership {
+                character, index, ..
+            } => (
+                CHARACTERS_FILE,
+                format!("{character}.memberships[{index}].faction"),
+            ),
+            ContentProblem::ConflictThresholdOutOfRange(_) => {
+                (BALANCE_FILE, "relations.conflict_threshold".into())
+            }
+            ContentProblem::UnknownRelationFaction { index, side, .. } => {
+                let side = match side {
+                    RelationSide::Between(end) => format!("between[{end}]"),
+                    RelationSide::From => "from".to_owned(),
+                    RelationSide::To => "to".to_owned(),
+                };
+                (RELATIONS_FILE, format!("relation[{index}].{side}"))
+            }
+            ContentProblem::SelfRelation { index }
+            | ContentProblem::DuplicateRelation { index, .. } => {
+                (RELATIONS_FILE, format!("relation[{index}]"))
+            }
+            ContentProblem::RelationOutOfRange { index, .. } => {
+                (RELATIONS_FILE, format!("relation[{index}].value"))
+            }
+            ContentProblem::StartsInConflict {
                 character, index, ..
             } => (
                 CHARACTERS_FILE,
@@ -231,6 +266,15 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
             balance.bands = bands;
         }
         disposition.finish(report);
+    }
+    if let Some(mut relations) = file.optional_table("relations", "[relations]", report) {
+        if let Some(threshold) = relations.optional_fixed("conflict_threshold", report) {
+            balance.conflict_threshold = threshold;
+        }
+        if let Some(bands) = read_bands(&mut relations, report) {
+            balance.relation_bands = bands;
+        }
+        relations.finish(report);
     }
     file.finish(report);
     balance
@@ -363,6 +407,99 @@ fn read_memberships(section: &mut Section<'_>, report: &mut Report) -> Option<Ve
         factions.push(faction);
     }
     factions.into_iter().collect()
+}
+
+/// `relations.toml`: a list of `[[relation]]` tables. Whether the factions they name exist,
+/// and each direction is set once, are the world's checks (P-32).
+fn read_relations(text: &str, report: &mut Report) -> Vec<Relation> {
+    let Some(table) = report.parse(text) else {
+        return Vec::new();
+    };
+    let mut file = Section::new(&table, String::new());
+    let mut relations = Vec::new();
+    match file.optional_value("relation") {
+        None => {}
+        Some(Value::Array(items)) => {
+            for (index, item) in items.iter().enumerate() {
+                let at = format!("relation[{index}]");
+                let Value::Table(fields) = item else {
+                    report.error(&at, "expected a table, like [[relation]]");
+                    continue;
+                };
+                relations.extend(read_relation(Section::new(fields, at), report));
+            }
+        }
+        Some(_) => report.error("relation", "expected a list of [[relation]] tables"),
+    }
+    file.finish(report);
+    relations
+}
+
+/// One `[[relation]]`: `between = [a, b]`, or `from` and `to`, and a `value`.
+fn read_relation(mut section: Section<'_>, report: &mut Report) -> Option<Relation> {
+    const PAIR: &str = "[\"city_watch\", \"lantern_guild\"]";
+    let between = section.optional_value("between").map(|value| {
+        let path = section.path_to("between");
+        let ids = match value {
+            Value::Array(items) if items.len() == 2 => items
+                .iter()
+                .enumerate()
+                .map(|(end, item)| match item {
+                    Value::String(text) => FactionId::new(text)
+                        .map_err(|invalid| {
+                            report.error(&format!("{path}[{end}]"), invalid.to_string())
+                        })
+                        .ok(),
+                    _ => {
+                        report.error(&format!("{path}[{end}]"), "expected text in quotes");
+                        None
+                    }
+                })
+                .collect::<Option<Vec<FactionId>>>(),
+            _ => {
+                report.error(&path, format!("expected 2 factions, like {PAIR}"));
+                None
+            }
+        };
+        ids.map(|ids| (ids[0].clone(), ids[1].clone()))
+    });
+    let directed = section.has_any(&["from", "to"]);
+    let ends = match (between, directed) {
+        (Some(_), true) => {
+            report.error(
+                section.path(),
+                "give either between = [a, b], or from and to, not both",
+            );
+            None
+        }
+        (Some(between), false) => between.map(|(a, b)| RelationEnds::Between(a, b)),
+        (None, false) => {
+            report.error(
+                section.path(),
+                "give either between = [a, b], or from and to",
+            );
+            None
+        }
+        (None, true) => {
+            let mut end = |key| {
+                let text = section.text(key, report)?;
+                FactionId::new(&text)
+                    .map_err(|invalid| report.error(&section.path_to(key), invalid.to_string()))
+                    .ok()
+            };
+            let (from, to) = (end("from"), end("to"));
+            Some(RelationEnds::Directed {
+                from: from?,
+                to: to?,
+            })
+        }
+    };
+    let value = section.fixed("value", report);
+    section.finish(report);
+    Some(Relation {
+        ends: ends?,
+        value: value?,
+    })
 }
 
 /// One faction in `factions.toml`.
@@ -1088,6 +1225,176 @@ mod tests {
         );
     }
 
+    // relations.toml
+
+    fn relations_of(factions: &str, relations: &str) -> Result<Content, ContentError> {
+        parse_content(Sources {
+            factions: Some(factions),
+            relations: Some(relations),
+            ..Sources::default()
+        })
+    }
+
+    const RELATIONS: &str = r#"
+        [[relation]]
+        between = ["city_watch", "lantern_guild"]
+        value = -80.0
+
+        [[relation]]
+        from = "city_watch"
+        to = "lantern_guild"
+        value = -90.0
+    "#;
+
+    #[test]
+    fn reads_relations_both_ways_and_one_way() {
+        let content = relations_of(
+            &format!("{WATCH}{GUILD}"),
+            r#"
+            [[relation]]
+            between = ["city_watch", "lantern_guild"]
+            value = -80.0
+            "#,
+        )
+        .expect("valid content");
+        assert_eq!(
+            content.relations,
+            [Relation {
+                ends: RelationEnds::Between(
+                    FactionId::new("city_watch").expect("valid id"),
+                    FactionId::new("lantern_guild").expect("valid id")
+                ),
+                value: h(-80_00),
+            }]
+        );
+        let content = relations_of(
+            &format!("{WATCH}{GUILD}"),
+            r#"
+            [[relation]]
+            from = "city_watch"
+            to = "lantern_guild"
+            value = -30.0
+            "#,
+        )
+        .expect("valid content");
+        assert_eq!(
+            content.relations,
+            [Relation {
+                ends: RelationEnds::Directed {
+                    from: FactionId::new("city_watch").expect("valid id"),
+                    to: FactionId::new("lantern_guild").expect("valid id"),
+                },
+                value: h(-30_00),
+            }]
+        );
+    }
+
+    #[test]
+    fn reports_relation_mistakes_at_their_keys() {
+        assert_eq!(
+            problems(relations_of(&format!("{WATCH}{GUILD}"), RELATIONS)),
+            [
+                "relations.toml: relation[1]: city_watch → lantern_guild is already set by relation[0]"
+            ]
+        );
+        let text = r#"
+            [[relation]]
+            between = ["city_watch", "lantern_gild"]
+            value = -80.0
+
+            [[relation]]
+            from = "city_watch"
+            to = "city_watch"
+            value = 120.0
+
+            [[relation]]
+            between = ["city_watch"]
+            from = "city_watch"
+            value = 1
+
+            [[relation]]
+            value = 1
+            colour = "red"
+
+            [[relation]]
+            between = ["city_watch", "Lantern Guild"]
+        "#;
+        assert_eq!(
+            problems(relations_of(&format!("{WATCH}{GUILD}"), text)),
+            [
+                "relations.toml: relation[2].between: expected 2 factions, like [\"city_watch\", \"lantern_guild\"]",
+                "relations.toml: relation[2]: give either between = [a, b], or from and to, not both",
+                "relations.toml: relation[3]: give either between = [a, b], or from and to",
+                "relations.toml: relation[3]: unknown key 'colour'",
+                "relations.toml: relation[4].between[1]: 'Lantern Guild' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "relations.toml: relation[4]: missing 'value'",
+                "relations.toml: relation[0].between[1]: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)",
+                "relations.toml: relation[1]: a faction can't have a relation with itself",
+                "relations.toml: relation[1].value: 120.00 is outside -100.00..100.00",
+            ]
+        );
+        assert_eq!(
+            problems(relations_of(WATCH, "relation = 3")),
+            ["relations.toml: relation: expected a list of [[relation]] tables"]
+        );
+        assert_eq!(
+            problems(relations_of(WATCH, "[[relations]]\nvalue = 1")),
+            ["relations.toml: unknown key 'relations' (did you mean 'relation'?)"]
+        );
+    }
+
+    #[test]
+    fn reads_the_conflict_threshold_and_relation_bands() {
+        let content = balance(
+            r#"
+            [relations]
+            conflict_threshold = -40.0
+            bands = [{ name = "foe", up_to = 0 }, { name = "friend" }]
+            "#,
+        )
+        .expect("valid content");
+        assert_eq!(content.balance.conflict_threshold, h(-40_00));
+        let names: Vec<&str> = content
+            .balance
+            .relation_bands
+            .iter()
+            .map(|b| b.name.as_str())
+            .collect();
+        assert_eq!(names, ["foe", "friend"]);
+        assert_eq!(
+            problems(balance("[relations]\nconflict_threshold = -120.0")),
+            ["balance.toml: relations.conflict_threshold: -120.00 is outside -100.00..100.00"]
+        );
+        assert_eq!(
+            problems(balance(
+                "[relations]\nbands = [{ name = \"foe\", up_to = 0 }]"
+            )),
+            [
+                "balance.toml: relations.bands[0].up_to: the last band can't have 'up_to': it takes every score above the band before it"
+            ]
+        );
+    }
+
+    #[test]
+    fn no_one_starts_in_two_factions_in_conflict() {
+        let found = problems(parse_content(Sources {
+            factions: Some(&format!("{WATCH}{GUILD}")),
+            relations: Some(
+                "[[relation]]\nbetween = [\"city_watch\", \"lantern_guild\"]\nvalue = -80.0",
+            ),
+            characters: Some(&format!(
+                "{VEX}memberships = [{{ faction = \"lantern_guild\" }}, {{ faction = \"city_watch\" }}]"
+            )),
+            ..Sources::default()
+        }));
+        assert_eq!(
+            found,
+            [
+                "characters.toml: vex.memberships[1].faction: vex can't start in both lantern_guild and city_watch: they're in conflict (-80.00)"
+            ]
+        );
+    }
+
     // actions.toml
 
     const STEAL: &str = r#"
@@ -1221,6 +1528,7 @@ mod tests {
             ),
             actions: Some("[steal]\nalignment = { evil = 3.0 }"),
             factions: Some("[watch]\nname = \"The Watch\""),
+            relations: Some("[[relation]]\nfrom = \"watch\"\nto = \"guild\""),
         }));
         assert_eq!(
             found,
@@ -1228,6 +1536,7 @@ mod tests {
                 "balance.toml: alignment.label_threshold: 0.00 must be between 0.01 and 100.00",
                 "factions.toml: watch: missing 'alignment'",
                 "factions.toml: watch: missing 'tolerance'",
+                "relations.toml: relation[0]: missing 'value'",
                 "characters.toml: abe.name: expected text in quotes",
                 "characters.toml: zed: missing 'name'",
                 "actions.toml: steal.alignment: unknown key 'evil'",
