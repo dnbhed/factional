@@ -58,6 +58,14 @@ impl Alignment {
         self.law
     }
 
+    /// The value on one axis.
+    pub fn on(self, axis: Axis) -> Fixed {
+        match axis {
+            Axis::Law => self.law,
+            Axis::Good => self.good,
+        }
+    }
+
     pub fn good(self) -> Fixed {
         self.good
     }
@@ -197,6 +205,10 @@ mod tests {
     fn keeps_both_axes() {
         let vex = aligned(-55_00, -20_00);
         assert_eq!((vex.law(), vex.good()), (h(-55_00), h(-20_00)));
+        assert_eq!(
+            (vex.on(Axis::Law), vex.on(Axis::Good)),
+            (h(-55_00), h(-20_00))
+        );
     }
 
     #[test]

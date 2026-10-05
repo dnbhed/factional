@@ -165,7 +165,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - *Why:* designers fix content in one pass, and nothing half-loaded ever runs.
 - **P-32 · Content is checked completely before a world exists** (2026-10-04, at the user's request). This is how this module meets D-20.
   - **Load time is content's compile time.** Every reference (a membership's faction, a rank, an inertia profile, a standing's faction or character) must resolve, and every value must be in range, or the world isn't built. The checks are listed in DESIGN.md §12.2.
-  - **The rules live in `factional-reputation`.** `World::new` refuses invalid content, so content built in code gets the same checks as content from TOML. `factional-content` only maps problems to file and key paths. This arrives with M1, the first cross-file reference.
+  - **The rules live in `factional-reputation`.** `World::new` refuses invalid content, so content built in code gets the same checks as content from TOML. `factional-content` only maps problems to file and key paths. This arrived with D1, whose id-namespace check was the first to span two files (P-35).
   - **Each increment adds the checks for the content it introduces**, in the same PR, with tests. They aren't saved up for T1, which keeps only the whole-world warnings and the `validate` command.
   - **Errors stop loading; warnings are printed but don't.** A rule table must end with a rule that always decides. Spillover multipliers stay within −1…1.
   - *Why:* a world that starts can't hit a dangling reference mid-game, and designers learn about every mistake when they load, not when a player finds it.
@@ -182,6 +182,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Huge scales saturate.** `base × scale` is computed exactly and, beyond `Fixed`'s range, held at its end, so any scale lands at the end of the axis rather than panicking. The host sends scale, so it isn't validated content (P-30).
   - **Current versus starting alignment.** `World::alignment` is where a character is now. `Character::alignment` stays as content gave it, the starting point that replay begins from.
   - *Why:* designers write only what an act does; hosts get a plain reason for every refusal; and no input a host can send crashes the engine.
+- **P-35 · How distance is measured and explained** (made in D1, 2026-10-05).
+  - **One id namespace.** Factions and characters share one set of ids, so `distance city_watch player` needs no prefix, and content reads unambiguously. A clash is a load error, reported at the faction.
+  - **Who judges whom.** The observer is a faction or a character; the subject is a character. Faction-to-faction measures can come later if a rule needs them.
+  - **Exactness.** Each weighted gap is exact in ten-thousandths. Euclidean takes an exact integer square root, `(⌊√T⌋ + 50) / 100`, which rounds half up and is never off by one. Manhattan and Chebyshev round their sum or maximum once.
+  - **The working shows what was used.** The breakdown gives each axis's two positions, the gap and the weight, then the metric and whose weights they were. It doesn't show the weighted terms: they carry four decimals, and showing them rounded would show numbers the engine didn't use (P-24).
+  - **`World::new` can refuse content** (`Result<World, Vec<ContentProblem>>`), which is P-32's mechanism. `Content::problems` is the shared check, and the loader maps each problem to a file and key.
+  - **Weights are optional, and all-or-nothing.** Leave `weights` out to use the default; give both axes or neither.
+  - *Why:* designers type bare ids, and every distance the CLI prints can be checked by hand from the breakdown.
 
 ## Open
 

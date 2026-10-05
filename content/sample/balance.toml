@@ -4,3 +4,12 @@
 # An axis at or beyond ±label_threshold reads as Lawful/Chaotic or Good/Evil, so 33 splits
 # each axis into thirds. Labels are for display only: no rule ever uses them.
 label_threshold = 33.0
+
+# How the weighted gaps on the two axes combine into one distance (DESIGN.md §6):
+#   "euclidean": the straight line; who seems close forms an ellipse
+#   "manhattan": the two added together; a diamond
+#   "chebyshev": the larger of the two; a rectangle
+metric = "euclidean"
+
+# The weights of any faction or character without their own, 0 to 1 per axis.
+default_weights = { law = 1.0, good = 1.0 }

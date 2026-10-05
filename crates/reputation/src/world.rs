@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use factional_core::{Fixed, Tick, suggest};
 
+use crate::distance::gap;
 use crate::{
-    Action, ActionId, Alignment, Change, Character, CharacterId, Command, CommandError, Event,
-    JournalEntry, Role, Witnesses,
+    Action, ActionId, Alignment, Axis, Change, Character, CharacterId, Command, CommandError,
+    Event, Faction, FactionId, JournalEntry, Metric, Role, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -12,6 +14,10 @@ use crate::{
 pub struct Balance {
     /// An axis at or beyond ±this reads as Lawful/Chaotic or Good/Evil (DESIGN.md §5.1).
     pub label_threshold: Fixed,
+    /// The weights of any faction or character without their own (DESIGN.md §6).
+    pub default_weights: Weights,
+    /// How weighted gaps combine into a distance, for the whole world (DESIGN.md §6).
+    pub metric: Metric,
 }
 
 impl Balance {
@@ -23,6 +29,8 @@ impl Default for Balance {
     fn default() -> Balance {
         Balance {
             label_threshold: Balance::DEFAULT_LABEL_THRESHOLD,
+            default_weights: Weights::EVEN,
+            metric: Metric::default(),
         }
     }
 }
@@ -33,8 +41,77 @@ impl Default for Balance {
 pub struct Content {
     pub balance: Balance,
     pub characters: BTreeMap<CharacterId, Character>,
+    pub factions: BTreeMap<FactionId, Faction>,
     /// The action catalogue.
     pub actions: BTreeMap<ActionId, Action>,
+}
+
+/// Something wrong with content as a whole, found before a world is built from it (P-32).
+/// Problems within one value, such as an axis out of range, can't be built at all, so they
+/// never get this far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContentProblem {
+    /// A faction and a character share an id, so an id alone couldn't say which is meant.
+    SharedId(FactionId),
+}
+
+impl Content {
+    /// Every problem with this content, in a fixed order; empty if a world can be built
+    /// from it.
+    pub fn problems(&self) -> Vec<ContentProblem> {
+        self.factions
+            .keys()
+            .filter(|faction| {
+                CharacterId::new(faction.as_str()).is_ok_and(|id| self.characters.contains_key(&id))
+            })
+            .map(|faction| ContentProblem::SharedId(faction.clone()))
+            .collect()
+    }
+}
+
+impl fmt::Display for ContentProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ContentProblem::SharedId(id) => write!(
+                f,
+                "'{id}' is also a character's id: factions and characters need different ids"
+            ),
+        }
+    }
+}
+
+/// Who is doing the judging: a faction, or a character.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Observer {
+    Faction(FactionId),
+    Character(CharacterId),
+}
+
+/// Whose weights a measurement used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeightsFrom {
+    /// The observer's own.
+    Own,
+    /// `alignment.default_weights`, because the observer has none of their own.
+    Default,
+}
+
+/// How far a subject is from an observer, with its working (P-24).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Distance {
+    pub value: Fixed,
+    pub metric: Metric,
+    pub observer: Alignment,
+    pub subject: Alignment,
+    pub weights: Weights,
+    pub weights_from: WeightsFrom,
+}
+
+impl Distance {
+    /// How far apart observer and subject are on one axis, before weighting.
+    pub fn gap(&self, axis: Axis) -> Fixed {
+        gap(self.observer.on(axis), self.subject.on(axis))
+    }
 }
 
 /// The reputation module's world: the content it started from, plus everything that has
@@ -74,24 +151,29 @@ impl State {
 }
 
 impl World {
-    /// A world at tick 0, with nothing yet happened.
-    pub fn new(content: Content) -> World {
-        World {
+    /// A world at tick 0, with nothing yet happened; or, if the content has problems, all of
+    /// them, and no world (P-32).
+    pub fn new(content: Content) -> Result<World, Vec<ContentProblem>> {
+        let problems = content.problems();
+        if !problems.is_empty() {
+            return Err(problems);
+        }
+        Ok(World {
             state: State::initial(&content),
             content,
             events: Vec::new(),
             journal: Vec::new(),
-        }
+        })
     }
 
     /// Rebuilds a world from its content and its event log, without running any rules: what
     /// saves are built on (P-16).
-    pub fn replay(content: Content, events: &[Event]) -> World {
-        let mut world = World::new(content);
+    pub fn replay(content: Content, events: &[Event]) -> Result<World, Vec<ContentProblem>> {
+        let mut world = World::new(content)?;
         for event in events {
             world.apply(event.clone());
         }
-        world
+        Ok(world)
     }
 
     /// Runs a command. Refused: nothing changes, and the error says why. Accepted: the events
@@ -254,6 +336,41 @@ impl World {
     pub fn actions(&self) -> impl Iterator<Item = &Action> {
         self.content.actions.values()
     }
+
+    /// Every faction, in id order.
+    pub fn factions(&self) -> impl Iterator<Item = &Faction> {
+        self.content.factions.values()
+    }
+
+    pub fn faction(&self, id: &FactionId) -> Option<&Faction> {
+        self.content.factions.get(id)
+    }
+
+    /// How far `subject` is from `observer`, as the observer sees it: measured with the
+    /// observer's weights and the world's metric (DESIGN.md §6). `None` if either is unknown.
+    pub fn distance(&self, observer: &Observer, subject: &CharacterId) -> Option<Distance> {
+        let (from, own_weights) = match observer {
+            Observer::Faction(id) => {
+                let faction = self.faction(id)?;
+                (faction.alignment, faction.weights)
+            }
+            Observer::Character(id) => (self.alignment(id)?, self.character(id)?.weights),
+        };
+        let to = self.alignment(subject)?;
+        let (weights, weights_from) = match own_weights {
+            Some(weights) => (weights, WeightsFrom::Own),
+            None => (self.content.balance.default_weights, WeightsFrom::Default),
+        };
+        let metric = self.content.balance.metric;
+        Some(Distance {
+            value: measure(from, to, weights, metric),
+            metric,
+            observer: from,
+            subject: to,
+            weights,
+            weights_from,
+        })
+    }
 }
 
 /// The id among `ids` closest to a misspelt `word`, if one is close enough to suggest.
@@ -283,7 +400,38 @@ mod tests {
             id: id(&name.to_lowercase()),
             name: name.to_owned(),
             alignment: Alignment::new(h(law), h(good)).expect("in range"),
+            weights: None,
         }
+    }
+
+    fn weights(law: i64, good: i64) -> Weights {
+        Weights::new(h(law), h(good)).expect("valid weights")
+    }
+
+    fn faction_id(text: &str) -> FactionId {
+        FactionId::new(text).expect("a valid id")
+    }
+
+    fn faction(id: &str, law: i64, good: i64, w: Option<(i64, i64)>) -> Faction {
+        Faction {
+            id: faction_id(id),
+            name: id.to_owned(),
+            alignment: Alignment::new(h(law), h(good)).expect("in range"),
+            weights: w.map(|(law, good)| weights(law, good)),
+        }
+    }
+
+    /// Riverhold's factions with their weights (DESIGN.md §13), plus one that has none.
+    fn factions() -> BTreeMap<FactionId, Faction> {
+        [
+            faction("city_watch", 70_00, 20_00, Some((1_00, 25))),
+            faction("lantern_guild", -60_00, -10_00, Some((1_00, 50))),
+            faction("temple", 30_00, 80_00, Some((50, 1_00))),
+            faction("free_company", -10_00, 0, None),
+        ]
+        .into_iter()
+        .map(|f| (f.id.clone(), f))
+        .collect()
     }
 
     fn action_id(text: &str) -> ActionId {
@@ -309,8 +457,10 @@ mod tests {
         World::new(Content {
             balance: Balance::default(),
             characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),
+            factions: factions(),
             actions: actions.into_iter().map(|a| (a.id.clone(), a)).collect(),
         })
+        .expect("valid content")
     }
 
     fn riverhold() -> World {
@@ -349,13 +499,237 @@ mod tests {
 
     #[test]
     fn keeps_the_balance_it_was_given() {
+        let balance = Balance {
+            label_threshold: h(40_00),
+            default_weights: weights(50, 1_00),
+            metric: Metric::Chebyshev,
+        };
         let world = World::new(Content {
-            balance: Balance {
-                label_threshold: h(40_00),
-            },
+            balance: balance.clone(),
             ..Content::default()
+        })
+        .expect("valid content");
+        assert_eq!(world.balance(), &balance);
+    }
+
+    #[test]
+    fn default_weights_are_even_and_the_default_metric_is_euclidean() {
+        let balance = Balance::default();
+        assert_eq!(balance.default_weights, Weights::EVEN);
+        assert_eq!(balance.metric, Metric::Euclidean);
+    }
+
+    // Factions and content problems
+
+    #[test]
+    fn lists_factions_in_id_order() {
+        let world = riverhold();
+        let ids: Vec<&str> = world.factions().map(|f| f.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["city_watch", "free_company", "lantern_guild", "temple"]
+        );
+        let temple = world.faction(&faction_id("temple")).expect("exists");
+        assert_eq!(temple.weights, Some(weights(50, 1_00)));
+        assert_eq!(world.faction(&faction_id("nobody")), None);
+    }
+
+    #[test]
+    fn a_faction_and_a_character_cannot_share_an_id() {
+        let content = Content {
+            characters: [
+                character("Temple", 0, 0),
+                character("Vex", 0, 0),
+                character("City_watch", 0, 0),
+            ]
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect(),
+            factions: factions(),
+            ..Content::default()
+        };
+        let problems = vec![
+            ContentProblem::SharedId(faction_id("city_watch")),
+            ContentProblem::SharedId(faction_id("temple")),
+        ];
+        assert_eq!(content.problems(), problems);
+        assert_eq!(World::new(content.clone()).err(), Some(problems.clone()));
+        assert_eq!(World::replay(content, &[]).err(), Some(problems));
+    }
+
+    #[test]
+    fn describes_content_problems() {
+        assert_eq!(
+            ContentProblem::SharedId(faction_id("vex")).to_string(),
+            "'vex' is also a character's id: factions and characters need different ids"
+        );
+    }
+
+    // Distance (DESIGN.md §6)
+
+    fn as_faction(text: &str) -> Observer {
+        Observer::Faction(faction_id(text))
+    }
+
+    fn as_character(text: &str) -> Observer {
+        Observer::Character(id(text))
+    }
+
+    fn distance(world: &World, observer: &Observer, subject: &str) -> Fixed {
+        world
+            .distance(observer, &id(subject))
+            .expect("both exist")
+            .value
+    }
+
+    #[test]
+    fn a_faction_measures_distance_with_its_own_weights() {
+        let world = riverhold();
+        let measured = world
+            .distance(&as_faction("city_watch"), &id("player"))
+            .expect("both exist");
+        assert_eq!(
+            measured,
+            Distance {
+                value: h(70_18),
+                metric: Metric::Euclidean,
+                observer: aligned(70_00, 20_00),
+                subject: aligned(0, 0),
+                weights: weights(1_00, 25),
+                weights_from: WeightsFrom::Own,
+            }
+        );
+        assert_eq!(
+            (measured.gap(Axis::Law), measured.gap(Axis::Good)),
+            (h(70_00), h(20_00))
+        );
+        assert_eq!(distance(&world, &as_faction("temple"), "vex"), {
+            // Gaps 85 and 100, weighted 42.5 and 100: sqrt(1806.25 + 10000) = 108.656…
+            h(108_66)
         });
-        assert_eq!(world.balance().label_threshold, h(40_00));
+    }
+
+    #[test]
+    fn gaps_are_how_far_apart_the_two_are_whichever_side_is_higher() {
+        let world = riverhold();
+        let measured = world
+            .distance(&as_faction("lantern_guild"), &id("ava"))
+            .expect("both exist");
+        assert_eq!(
+            (measured.gap(Axis::Law), measured.gap(Axis::Good)),
+            (h(80_00), h(20_00))
+        );
+    }
+
+    #[test]
+    fn an_observer_without_weights_uses_the_default() {
+        let world = riverhold();
+        let measured = world
+            .distance(&as_faction("free_company"), &id("player"))
+            .expect("both exist");
+        assert_eq!(measured.weights, Weights::EVEN);
+        assert_eq!(measured.weights_from, WeightsFrom::Default);
+        assert_eq!(measured.value, h(10_00));
+        // Ava (20 / 10, default weights) sees the player (0 / 0): sqrt(400 + 100) = 22.360…
+        assert_eq!(distance(&world, &as_character("ava"), "player"), h(22_36));
+    }
+
+    #[test]
+    fn a_character_measures_distance_with_their_own_weights() {
+        let mut hale = character("Captain_hale", 75_00, 30_00);
+        hale.weights = Some(weights(1_00, 25));
+        let world = world_of([hale, character("Player", 0, 0)]);
+        let measured = world
+            .distance(&as_character("captain_hale"), &id("player"))
+            .expect("both exist");
+        // Gaps 75 and 30, weighted 75 and 7.5: sqrt(5681.25) = 75.374…
+        assert_eq!(measured.value, h(75_37));
+        assert_eq!(measured.weights_from, WeightsFrom::Own);
+    }
+
+    #[test]
+    fn distance_follows_alignment_as_it_moves() {
+        let mut world = riverhold();
+        let guild = as_faction("lantern_guild");
+        for _ in 0..2 {
+            world
+                .execute(act("player", "steal", None, 1_00))
+                .expect("accepted");
+        }
+        assert_eq!(distance(&world, &guild, "player"), h(50_04));
+        for _ in 0..2 {
+            world
+                .execute(act("player", "steal", None, 1_00))
+                .expect("accepted");
+        }
+        assert_eq!(distance(&world, &guild, "player"), h(40_01));
+        let observed = world
+            .distance(&as_character("player"), &id("vex"))
+            .expect("both exist");
+        assert_eq!(observed.observer, aligned(-20_00, -12_00), "the player now");
+    }
+
+    #[test]
+    fn the_worlds_metric_applies_to_every_measurement() {
+        let content = |metric| Content {
+            balance: Balance {
+                metric,
+                ..Balance::default()
+            },
+            characters: [character("Player", 0, 0)]
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .collect(),
+            factions: factions(),
+            ..Content::default()
+        };
+        for (metric, expected) in [
+            (Metric::Euclidean, h(70_18)),
+            (Metric::Manhattan, h(75_00)),
+            (Metric::Chebyshev, h(70_00)),
+        ] {
+            let world = World::new(content(metric)).expect("valid content");
+            let measured = world
+                .distance(&as_faction("city_watch"), &id("player"))
+                .expect("both exist");
+            assert_eq!((measured.value, measured.metric), (expected, metric));
+        }
+    }
+
+    #[test]
+    fn the_default_weights_are_a_setting() {
+        let content = Content {
+            balance: Balance {
+                default_weights: weights(50, 1_00),
+                ..Balance::default()
+            },
+            characters: [character("Player", 0, 0)]
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .collect(),
+            factions: factions(),
+            ..Content::default()
+        };
+        let world = World::new(content).expect("valid content");
+        // free_company (−10 / 0) has no weights of its own: gap 10 × 0.50 = 5.00.
+        assert_eq!(
+            distance(&world, &as_faction("free_company"), "player"),
+            h(5_00)
+        );
+    }
+
+    #[test]
+    fn distance_needs_an_observer_and_a_subject_that_exist() {
+        let world = riverhold();
+        assert_eq!(
+            world.distance(&as_faction("city_wach"), &id("player")),
+            None
+        );
+        assert_eq!(world.distance(&as_character("nobody"), &id("player")), None);
+        assert_eq!(
+            world.distance(&as_faction("city_watch"), &id("nobody")),
+            None
+        );
     }
 
     // Commands, events and time
@@ -471,7 +845,7 @@ mod tests {
         for ticks in [4, 6] {
             world.execute(advance(ticks)).expect("accepted");
         }
-        let replayed = World::replay(world.content.clone(), world.events());
+        let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
         assert_eq!(replayed.now(), Tick(10));
         assert_eq!(replayed.events(), world.events());
         assert!(replayed.journal().is_empty());
@@ -724,7 +1098,7 @@ mod tests {
         world
             .execute(act("player", "steal", Some("ava"), 3_00))
             .expect("accepted");
-        let replayed = World::replay(world.content.clone(), world.events());
+        let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
         assert_eq!(
             replayed.alignment(&id("player")),
             Some(aligned(-15_00, -9_00))
@@ -762,7 +1136,7 @@ mod tests {
         #[test]
         fn replaying_events_reproduces_the_state(commands in commands()) {
             let world = run(&commands);
-            let replayed = World::replay(world.content.clone(), world.events());
+            let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
             prop_assert_eq!(&replayed.state, &world.state);
             prop_assert_eq!(replayed.events(), world.events());
         }

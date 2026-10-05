@@ -1,0 +1,25 @@
+# Weights and distance (DESIGN.md §6): how far apart two alignments are, as the observer sees
+# it. Each observer, faction or character, weighs the axes its own way.
+load content/sample
+factions
+assert show faction temple == temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good
+# The Watch cares about law far more than goodness: gaps 70 and 20, weighted 70 and 5.
+distance city_watch player --explain
+assert distance temple sister_mira == 5.59
+# Characters use their own weights, or else balance.toml's default_weights.
+assert distance captain_hale player == 75.37
+distance merchant_ava player --explain
+# Distance follows the subject as they move: each theft brings the player closer to the
+# Lantern Guild.
+act player steal --scale 2
+assert distance lantern_guild player == 50.04
+act player steal --scale 2
+assert distance lantern_guild player == 40.01
+# Mistakes.
+assert distance city_wach player == error: unknown observer 'city_wach' (did you mean 'city_watch'?)
+assert distance city_watch plyer == error: unknown subject 'plyer' (did you mean 'player'?)
+assert distance player city_watch == error: a distance's subject must be a character
+
+# The metric is a world-wide setting.
+load crates/cli/tests/fixtures/worlds/diamonds
+distance city_watch player --explain

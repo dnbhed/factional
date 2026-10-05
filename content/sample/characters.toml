@@ -5,6 +5,9 @@
 #   law:  chaotic (-100) to lawful (+100)
 #   good: evil (-100) to good (+100)
 # The player is an ordinary character.
+#
+# weights (optional): how much a character cares about each axis when judging how far away
+# someone is, 0 to 1. Without it, balance.toml's default_weights apply.
 
 [player]
 name = "The Player"
@@ -13,6 +16,8 @@ alignment = { law = 0.0, good = 0.0 }
 [captain_hale]
 name = "Captain Hale"
 alignment = { law = 75.0, good = 30.0 }
+# Like the Watch he serves, Hale judges people by their respect for the law.
+weights = { law = 1.0, good = 0.25 }
 
 [sister_mira]
 name = "Sister Mira"

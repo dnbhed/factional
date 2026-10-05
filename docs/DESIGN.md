@@ -173,7 +173,9 @@ Distance from observer O to subject S is measured with O's weights:
 d = sqrt( (w_law · Δlaw)² + (w_good · Δgood)² )      # euclidean, the default
 ```
 
-It's computed exactly and rounded once.
+It's computed exactly and rounded once: the weighted gaps are exact in ten-thousandths, and the Euclidean root is an exact integer square root, rounded half up to hundredths (P-35).
+
+Observers are factions or characters; subjects are characters. Factions and characters share one set of ids, so an id alone names an observer (P-35).
 
 `alignment.metric` can switch the whole world to a different measure:
 
@@ -572,8 +574,8 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Action alignment names only `law` and `good` | error | A3 (done) |
 | `inertia` and `inertia.default_profile` name a profile that exists; multipliers ≥ 0 | error | A4 |
 | `by_target` multipliers ≥ 0 | error | A5 |
-| Faction ids are unique across factions and characters | error | D1 |
-| Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 |
+| Faction ids are unique across factions and characters | error | D1 (done) |
+| Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 (done) |
 | Bands: unique names, increasing `up_to`, only the last open-ended | error | D2 (disposition), M2 (relations) |
 | `hysteresis` ≥ 0 | error | D3 |
 | A membership names a faction that exists, at most once per character | error | M1 |
