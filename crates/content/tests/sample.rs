@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use factional_content::load_dir;
 use factional_core::Fixed;
 use factional_reputation::{
-    ActionId, CharacterId, Command, FactionId, Metric, Observer, WeightsFrom, Witnesses, World,
+    ActionId, CharacterId, Command, FactionId, Metric, Observer, OutcomeId, Party, WeightsFrom,
+    Witnesses, World,
 };
 
 fn sample_dir() -> PathBuf {
@@ -362,5 +363,95 @@ fn a_guild_thief_is_turned_away_by_the_watch_on_both_counts() {
         refusal.to_string(),
         "player can't join city_watch: 90.35 from The City Watch, tolerance is 40.00; \
          player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)"
+    );
+}
+
+fn standing(world: &World, subject: &str, party: Party) -> String {
+    world
+        .standing(&character(subject), &party)
+        .expect("both exist")
+        .to_string()
+}
+
+fn act(world: &mut World, action: &str, target: Option<&str>) {
+    world
+        .execute(Command::PerformAction {
+            actor: character("player"),
+            action: ActionId::new(action).expect("valid id"),
+            target: target.map(character),
+            scale: Fixed::ONE,
+            witnesses: Witnesses::Everyone,
+        })
+        .expect("accepted");
+}
+
+#[test]
+fn riverholds_acts_and_outcomes_change_standing() {
+    let mut world = riverhold();
+    act(&mut world, "steal", Some("merchant_ava"));
+    assert_eq!(
+        standing(
+            &world,
+            "player",
+            Party::Character(character("merchant_ava"))
+        ),
+        "-20.00"
+    );
+    act(&mut world, "steal", Some("vex"));
+    assert_eq!(
+        standing(&world, "player", Party::Character(character("vex"))),
+        "-20.00"
+    );
+    assert_eq!(
+        standing(
+            &world,
+            "player",
+            Party::Faction(faction_id("lantern_guild"))
+        ),
+        "-10.00"
+    );
+    world
+        .execute(Command::ApplyOutcome {
+            outcome: OutcomeId::new("fined_by_watch").expect("valid id"),
+            character: character("player"),
+        })
+        .expect("accepted");
+    assert_eq!(
+        standing(&world, "player", Party::Faction(faction_id("city_watch"))),
+        "-20.00"
+    );
+    assert_eq!(
+        standing(
+            &world,
+            "player",
+            Party::Character(character("captain_hale"))
+        ),
+        "-10.00"
+    );
+    act(&mut world, "donate_to_temple", None);
+    assert_eq!(
+        standing(&world, "player", Party::Faction(faction_id("temple"))),
+        "10.00"
+    );
+}
+
+#[test]
+fn riverholds_people_start_with_standing_in_their_factions() {
+    let world = riverhold();
+    assert_eq!(
+        standing(
+            &world,
+            "captain_hale",
+            Party::Faction(faction_id("city_watch"))
+        ),
+        "75.00"
+    );
+    assert_eq!(
+        standing(&world, "sister_mira", Party::Faction(faction_id("temple"))),
+        "40.00"
+    );
+    assert_eq!(
+        standing(&world, "vex", Party::Faction(faction_id("lantern_guild"))),
+        "30.00"
     );
 }

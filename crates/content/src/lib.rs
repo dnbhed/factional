@@ -9,9 +9,11 @@ use std::{fmt, fs, io};
 
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
-    Action, ActionId, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands, Character,
-    CharacterId, Content, ContentProblem, ContentWarning, Faction, FactionId, InvalidId, Metric,
-    Relation, RelationEnds, RelationSide, ToleranceProblem, Tolerances, WeightProblem, Weights,
+    Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands,
+    Character, CharacterId, Content, ContentProblem, ContentWarning, Effects, Faction, FactionId,
+    InvalidId, Metric, Outcome, OutcomeId, Party, Relation, RelationEnds, RelationSide,
+    StandingEffects, StandingKey, StandingOwner, ToleranceProblem, Tolerances, WeightProblem,
+    Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -42,6 +44,7 @@ pub struct Sources<'a> {
     pub characters: Option<&'a str>,
     pub actions: Option<&'a str>,
     pub relations: Option<&'a str>,
+    pub outcomes: Option<&'a str>,
 }
 
 const BALANCE_FILE: &str = "balance.toml";
@@ -49,6 +52,7 @@ const FACTIONS_FILE: &str = "factions.toml";
 const CHARACTERS_FILE: &str = "characters.toml";
 const ACTIONS_FILE: &str = "actions.toml";
 const RELATIONS_FILE: &str = "relations.toml";
+const OUTCOMES_FILE: &str = "outcomes.toml";
 
 /// Reads and validates the content files in `dir`.
 pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
@@ -77,6 +81,7 @@ pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
     let factions = read(FACTIONS_FILE)?;
     let characters = read(CHARACTERS_FILE)?;
     let actions = read(ACTIONS_FILE)?;
+    let outcomes = read(OUTCOMES_FILE)?;
     let relations = read(RELATIONS_FILE)?;
     parse_content(Sources {
         balance: balance.as_deref(),
@@ -84,6 +89,7 @@ pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
         characters: characters.as_deref(),
         actions: actions.as_deref(),
         relations: relations.as_deref(),
+        outcomes: outcomes.as_deref(),
     })
 }
 
@@ -124,12 +130,27 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             )
         },
     );
+    let outcomes = read_file(
+        OUTCOMES_FILE,
+        sources.outcomes,
+        &mut reports,
+        |text, report| {
+            read_tables(
+                text,
+                report,
+                "outcome",
+                OutcomeId::new,
+                |id, fields, report| Some(read_outcome(id, fields, report)),
+            )
+        },
+    );
     let content = Content {
         balance: balance.unwrap_or_default(),
         factions: factions.unwrap_or_default(),
         characters: characters.unwrap_or_default(),
         actions: actions.unwrap_or_default(),
         relations: relations.unwrap_or_default(),
+        outcomes: outcomes.unwrap_or_default(),
     };
 
     let mut diagnostics: Vec<Diagnostic> = reports
@@ -173,6 +194,27 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
                 CHARACTERS_FILE,
                 format!("{character}.memberships[{index}].faction"),
             ),
+            ContentProblem::UnknownStandingParty { owner, party, .. } => {
+                let (file, at) = standing_owner(owner);
+                let kind = match party {
+                    Party::Faction(_) => "factions",
+                    Party::Character(_) => "characters",
+                };
+                (file, format!("{at}.standing.{kind}.{party}"))
+            }
+            ContentProblem::StandingOutOfRange { owner, key, .. } => {
+                let (file, at) = standing_owner(owner);
+                let key = match key {
+                    StandingKey::Target => "target".to_owned(),
+                    StandingKey::TargetFactions => "target_factions".to_owned(),
+                    StandingKey::Party(Party::Faction(id)) => format!("factions.{id}"),
+                    StandingKey::Party(Party::Character(id)) => format!("characters.{id}"),
+                };
+                (file, format!("{at}.standing.{key}"))
+            }
+            ContentProblem::LeaveStandingOutOfRange { faction, .. } => {
+                (FACTIONS_FILE, format!("{faction}.leave_standing_change"))
+            }
         };
         Diagnostic {
             file: file.to_owned(),
@@ -368,6 +410,10 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
     let alignment = read_alignment(&mut section, report);
     let weights = read_weights(&mut section, "weights", report);
     let memberships = read_memberships(&mut section, report);
+    let standing = section
+        .optional_table("standing", STANDING_EXAMPLE, report)
+        .map(|standing| read_named_standing(standing, report))
+        .unwrap_or_default();
     section.finish(report);
     Some(Character {
         id,
@@ -375,7 +421,63 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
         alignment: alignment?,
         weights,
         memberships: memberships?,
+        standing,
     })
+}
+
+const STANDING_EXAMPLE: &str = "{ factions = { city_watch = 10.0 }, characters = { vex = -5.0 } }";
+
+/// A `standing` block's `factions` and `characters`, each a table of ids and values, then
+/// the rest of the block checked for unknown keys. Whether each party exists, and each value
+/// is in range, are the world's checks (P-32).
+fn read_named_standing(mut section: Section<'_>, report: &mut Report) -> StandingEffects {
+    let effects = named_standing(&mut section, report);
+    section.finish(report);
+    effects
+}
+
+fn named_standing(section: &mut Section<'_>, report: &mut Report) -> StandingEffects {
+    StandingEffects {
+        factions: standing_table(section, "factions", FactionId::new, report),
+        characters: standing_table(section, "characters", CharacterId::new, report),
+    }
+}
+
+/// One table of `id = value` pairs, such as `factions = { city_watch = -20.0 }`.
+fn standing_table<Id: Ord>(
+    section: &mut Section<'_>,
+    key: &'static str,
+    new_id: impl Fn(&str) -> Result<Id, InvalidId>,
+    report: &mut Report,
+) -> BTreeMap<Id, Fixed> {
+    let mut values = BTreeMap::new();
+    let Some(mut table) = section.optional_table(key, "{ city_watch = 10.0 }", report) else {
+        return values;
+    };
+    for name in &table.keys() {
+        match new_id(name) {
+            Ok(id) => {
+                if let Some(value) = table.fixed_any(name, report) {
+                    values.insert(id, value);
+                }
+            }
+            Err(invalid) => {
+                table.mark(name);
+                report.error(table.path(), invalid.to_string());
+            }
+        }
+    }
+    table.finish(report);
+    values
+}
+
+/// Where a `standing` block's owner lives: its file and key.
+fn standing_owner(owner: &StandingOwner) -> (&'static str, String) {
+    match owner {
+        StandingOwner::Character(id) => (CHARACTERS_FILE, id.to_string()),
+        StandingOwner::Action(id) => (ACTIONS_FILE, id.to_string()),
+        StandingOwner::Outcome(id) => (OUTCOMES_FILE, id.to_string()),
+    }
 }
 
 /// A character's optional `memberships = [{ faction = "lantern_guild" }]`, as listed. Whether
@@ -510,6 +612,9 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
     let weights = read_weights(&mut section, "weights", report);
     let tolerance = section.fixed("tolerance", report);
     let member = section.optional_fixed("member_tolerance", report);
+    let leave_standing_change = section
+        .optional_fixed("leave_standing_change", report)
+        .unwrap_or_default();
     let tolerances = tolerance.and_then(|tolerance| match Tolerances::new(tolerance, member) {
         Ok(tolerances) => Some(tolerances),
         Err(problem) => {
@@ -528,6 +633,7 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
         alignment: alignment?,
         weights,
         tolerances: tolerances?,
+        leave_standing_change,
     })
 }
 
@@ -581,6 +687,25 @@ fn read_weights(
 /// both axes, or alignment at all. Any problem is reported, and fails the whole load.
 fn read_action(id: ActionId, fields: &toml::Table, report: &mut Report) -> Action {
     let mut section = Section::new(fields, id.to_string());
+    let alignment = read_delta(&mut section, report);
+    let mut standing = ActionStanding::default();
+    let example = "{ target = -20.0, target_factions = -10.0, factions = { city_watch = 5.0 } }";
+    if let Some(mut block) = section.optional_table("standing", example, report) {
+        standing.target = block.optional_fixed("target", report);
+        standing.target_factions = block.optional_fixed("target_factions", report);
+        standing.named = named_standing(&mut block, report);
+        block.finish(report);
+    }
+    section.finish(report);
+    Action {
+        id,
+        alignment,
+        standing,
+    }
+}
+
+/// An optional `alignment = { law = …, good = … }` change; an axis left out isn't moved.
+fn read_delta(section: &mut Section<'_>, report: &mut Report) -> AlignmentDelta {
     let mut alignment = AlignmentDelta::default();
     if let Some(mut axes) = section.optional_table("alignment", "{ law = 0.0, good = 0.0 }", report)
     {
@@ -588,8 +713,26 @@ fn read_action(id: ActionId, fields: &toml::Table, report: &mut Report) -> Actio
         alignment.good = axes.optional_fixed("good", report).unwrap_or_default();
         axes.finish(report);
     }
+    alignment
+}
+
+/// One outcome in `outcomes.toml`: an optional `alignment` change and `standing` effects,
+/// applied together (P-26).
+fn read_outcome(id: OutcomeId, fields: &toml::Table, report: &mut Report) -> Outcome {
+    let mut section = Section::new(fields, id.to_string());
+    let alignment = read_delta(&mut section, report);
+    let standing = section
+        .optional_table("standing", STANDING_EXAMPLE, report)
+        .map(|standing| read_named_standing(standing, report))
+        .unwrap_or_default();
     section.finish(report);
-    Action { id, alignment }
+    Outcome {
+        id,
+        effects: Effects {
+            alignment,
+            standing,
+        },
+    }
 }
 
 impl fmt::Display for Diagnostic {
@@ -1395,6 +1538,134 @@ mod tests {
         );
     }
 
+    // Standing (M3)
+
+    fn sources<'a>(
+        factions: &'a str,
+        characters: &'a str,
+        actions: &'a str,
+        outcomes: &'a str,
+    ) -> Result<Content, ContentError> {
+        parse_content(Sources {
+            factions: Some(factions),
+            characters: Some(characters),
+            actions: Some(actions),
+            outcomes: Some(outcomes),
+            ..Sources::default()
+        })
+    }
+
+    fn fixed(text: &str) -> Fixed {
+        text.parse().expect("a number")
+    }
+
+    #[test]
+    fn reads_standing_in_characters_actions_and_outcomes() {
+        let characters = format!(
+            "{VEX}standing = {{ factions = {{ lantern_guild = 30.0 }}, characters = {{ vex2 = -5 }} }}\n[vex2]\nname = \"Vex Two\"\nalignment = {{ law = 0.0, good = 0.0 }}"
+        );
+        let actions = r#"
+            [steal]
+            alignment = { law = -5.0, good = -3.0 }
+            standing = { target = -20.0, target_factions = -10.0 }
+
+            [donate_to_temple]
+            standing = { factions = { lantern_guild = 10.0 }, characters = { vex = 2.5 } }
+        "#;
+        let outcomes = r#"
+            [fined_by_watch]
+            standing = { factions = { lantern_guild = -20.0 }, characters = { vex = -10.0 } }
+
+            [rescued_merchant]
+            alignment = { good = 6.0 }
+        "#;
+        let content = sources(GUILD, &characters, actions, outcomes).expect("valid content");
+        let vex = &content.characters[&CharacterId::new("vex").expect("valid")];
+        assert_eq!(
+            vex.standing
+                .parties()
+                .iter()
+                .map(|(p, v)| (p.to_string(), *v))
+                .collect::<Vec<_>>(),
+            [
+                ("lantern_guild".to_owned(), fixed("30")),
+                ("vex2".to_owned(), fixed("-5"))
+            ]
+        );
+        let steal = &content.actions[&ActionId::new("steal").expect("valid")].standing;
+        assert_eq!(
+            (steal.target, steal.target_factions),
+            (Some(fixed("-20")), Some(fixed("-10")))
+        );
+        assert!(steal.named.parties().is_empty());
+        let donate = &content.actions[&ActionId::new("donate_to_temple").expect("valid")].standing;
+        assert_eq!((donate.target, donate.target_factions), (None, None));
+        assert_eq!(donate.named.parties().len(), 2);
+        let fined = &content.outcomes[&OutcomeId::new("fined_by_watch").expect("valid")];
+        assert_eq!(fined.effects.standing.parties().len(), 2);
+        assert_eq!(fined.effects.alignment, AlignmentDelta::default());
+        let rescued = &content.outcomes[&OutcomeId::new("rescued_merchant").expect("valid")];
+        assert_eq!(rescued.effects.alignment.good, fixed("6"));
+        assert!(rescued.effects.standing.parties().is_empty());
+    }
+
+    #[test]
+    fn reports_standing_mistakes_at_their_keys() {
+        let characters =
+            format!("{VEX}standing = {{ factions = {{ lantern_gild = 30.0 }}, friends = {{}} }}");
+        let actions = r#"
+            [report_crime]
+            standing = { factions = { city_wach = 5.0 }, target = 150.0 }
+        "#;
+        let outcomes = r#"
+            [fined_by_watch]
+            standing = { characters = { "Captain Hale" = -10.0, vx = -5.0 } }
+            ["Bad Outcome"]
+        "#;
+        assert_eq!(
+            problems(sources(
+                &format!("{WATCH}{GUILD}"),
+                &characters,
+                actions,
+                outcomes
+            )),
+            [
+                // Each file's own problems first...
+                "characters.toml: vex.standing: unknown key 'friends'",
+                "outcomes.toml: Bad Outcome: 'Bad Outcome' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "outcomes.toml: fined_by_watch.standing.characters: 'Captain Hale' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                // ...then the world's checks across files.
+                "characters.toml: vex.standing.factions.lantern_gild: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)",
+                "actions.toml: report_crime.standing.target: 150.00 is outside -100.00..100.00",
+                "actions.toml: report_crime.standing.factions.city_wach: unknown faction 'city_wach' (did you mean 'city_watch'?)",
+                "outcomes.toml: fined_by_watch.standing.characters.vx: unknown character 'vx' (did you mean 'vex'?)",
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_and_checks_leave_standing_change() {
+        let content = factions(&WATCH.replace(
+            "tolerance = 40.0",
+            "tolerance = 40.0\nleave_standing_change = -15.0",
+        ))
+        .expect("valid content");
+        let watch = &content.factions[&FactionId::new("city_watch").expect("valid")];
+        assert_eq!(watch.leave_standing_change, fixed("-15"));
+        let plain = factions(WATCH).expect("valid content");
+        assert_eq!(
+            plain.factions[&FactionId::new("city_watch").expect("valid")].leave_standing_change,
+            Fixed::ZERO
+        );
+        assert_eq!(
+            problems(factions(&WATCH.replace(
+                "tolerance = 40.0",
+                "tolerance = 40.0\nleave_standing_change = -120.0"
+            ))),
+            ["factions.toml: city_watch.leave_standing_change: -120.00 is outside -100.00..100.00"]
+        );
+    }
+
     // actions.toml
 
     const STEAL: &str = r#"
@@ -1461,6 +1732,7 @@ mod tests {
             [murder]
             alignment = { law = -10.005 }
             standing = { target = -100.0 }
+            witnesses = "all"
         "#;
         assert_eq!(
             problems(actions(text)),
@@ -1469,7 +1741,7 @@ mod tests {
                 "actions.toml: bow: expected a table of action fields, like [bow]",
                 "actions.toml: extort.alignment: expected a table, like { law = 0.0, good = 0.0 }",
                 "actions.toml: murder.alignment.law: -10.005 has more than 2 decimal places",
-                "actions.toml: murder: unknown key 'standing'",
+                "actions.toml: murder: unknown key 'witnesses'",
             ]
         );
     }
@@ -1529,6 +1801,7 @@ mod tests {
             actions: Some("[steal]\nalignment = { evil = 3.0 }"),
             factions: Some("[watch]\nname = \"The Watch\""),
             relations: Some("[[relation]]\nfrom = \"watch\"\nto = \"guild\""),
+            outcomes: Some("[fine]\nweight = 3"),
         }));
         assert_eq!(
             found,
@@ -1540,6 +1813,7 @@ mod tests {
                 "characters.toml: abe.name: expected text in quotes",
                 "characters.toml: zed: missing 'name'",
                 "actions.toml: steal.alignment: unknown key 'evil'",
+                "outcomes.toml: fine: unknown key 'weight'",
             ]
         );
     }

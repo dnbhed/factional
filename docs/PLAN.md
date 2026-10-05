@@ -43,6 +43,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - D2 — disposition from affinity: `disposition.affinity` (a curve, checked within ±100 by `World::new`) and `disposition.bands` (validated: valid unique names, increasing `up_to`, only the last open-ended); a `disposition(observer, subject)` query with score, band and working; `disposition [--explain]`; plain "expected a number" errors; done 2026-10-05 (#10)
 - M1 — factions' `tolerance` and `member_tolerance`, starting `memberships`; `JoinFaction` (refused with every failing check) and `LeaveFaction`; `assess_join` and membership queries; load warnings, starting with members outside member tolerance; `can-join [--explain]`, `join`, `leave`, memberships in `show`; done 2026-10-05 (#11)
 - M2 — relations between factions: `relations.toml` (`between` and `from`/`to`), relation bands and `conflict_threshold`; `SetRelation` and `ShiftRelation` with `RelationChanged`; enemy exclusion in `assess_join`; invariant 6 kept by refusing a war between a character's own factions until M9; `relations`, `relate`; done 2026-10-05 (#12)
+- M3 — standing: a store of how factions and characters regard each character; starting standing, action `standing` effects (target, target factions, named), `outcomes.toml`, `ApplyOutcome`, `ApplyEffects` and `StandingChanged`; the `awareness` seam (1.00); `leave_standing_change`; `standing`, `outcomes`, `outcome`; done 2026-10-05 (#13)
 
 ---
 
@@ -66,52 +67,38 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M3 · Standing, action effects and outcomes — P0 · Next
+### M4 · Disposition from standing, kinship and faction opinion — P0 · Next
 
-**Why:** the brief's "relationships develop through actions performed and quests completed" (DESIGN.md §7.1). Standing is the memory of what passed between a character and others.
+**Why:** with alignment alone, a completed quest could never change how someone sees you. P-6 adds history and allegiance (DESIGN.md §8.1 in full, and §8.2).
 
 **Scope**
 
-- **Standing store.** `standing(subject, party)` is how `party` (a faction or a character) regards `subject`: −100…100, 0 unless set, clamped.
-- **Content.**
-  - Characters gain a starting `standing = { factions = { … }, characters = { … } }`, meaning how others regard them.
-  - Actions gain `standing = { target, target_factions, factions = { … }, characters = { … } }`.
-  - `outcomes.toml` holds named bundles of `alignment` and `standing` effects.
-  - Factions gain `leave_standing_change` (default 0), which `LeaveFaction` now applies.
-- **Commands.** All effects go through one path. Effects on the same party add up first, then apply once, giving one `StandingChanged { subject, party, before, after }` per party that moved, factions before characters, each in id order.
-  - `PerformAction` applies the action's standing effects to the actor. `target` and `target_factions` need a target, and are skipped without one.
-  - `ApplyOutcome { outcome, character }` emits `OutcomeApplied`, then the outcome's alignment and standing changes.
-  - `ApplyEffects { source, character, effects }` does the same for effects sent directly by another module (P-26).
-- **The `awareness(party, event)` seam.** It's 1.00 under the omniscient model, and every standing effect is multiplied by it. K1 replaces it.
-- **CLI.**
-  - `standing <subject> [<party>]` shows how others regard a character.
-  - `outcomes` lists the outcomes.
-  - `outcome <outcome> <character>` applies one.
+- **Components**, each clamped to ±100 (P-7):
+  - **affinity**, from D2;
+  - **standing:** how the observer, a character or a faction, regards the subject (M3);
+  - **kinship:** the sum of relation(F → G) over the observer's factions F (or the faction itself) and the subject's factions G. A faction both share counts as `disposition.same_faction`.
+  - **faction opinion:** for a character observer, the sum of the subject's standing with each of the observer's factions;
+  - **modifiers:** always 0 until M10.
+- **Score.** `score = clamp(Σ round(weight × component), −100, 100)`, with `disposition.weights` (default affinity 1, standing 1, kinship 0.5, faction opinion 0.5, modifiers 1).
+- **Explain.** `disposition --explain` shows the table in §8.2: each component, its weight, its weighted value, and a note saying where it came from.
 
-**Acceptance** (Riverhold)
+**Acceptance** (Riverhold; worked by hand from §6 and §8)
 
-1. `act player steal --target merchant_ava`: `merchant_ava`'s standing toward the player goes 0 → −20.00. Ava is in no faction, so nothing else changes.
-2. `act player steal --target vex`: vex −20.00, and the Lantern Guild −10.00 (`target_factions`).
-3. `outcome fined_by_watch player`: the City Watch −20.00 and `captain_hale` −10.00.
-4. **Clamping.** After five fines the Watch is at −100.00. A sixth moves only Hale (−50.00 → −60.00), so it emits one `StandingChanged`.
-5. `act player donate_to_temple`, with no target: the Temple +10.00. Without a target, an action's `target` effects do nothing.
-6. **Starting standing.** `standing captain_hale` shows the City Watch at 75.00.
-7. **Leaving.** In a fixture faction with `leave_standing_change = -15.0`, `leave` emits `LeftFaction`, then a `StandingChanged` of −15.00 with that faction.
-8. **Errors.**
-   - An unknown outcome gets a "did you mean".
-   - Load errors at their keys, such as `actions.toml: report_crime.standing.factions.city_wach: unknown faction 'city_wach' (did you mean 'city_watch'?)`.
-   - A starting standing outside ±100, an effect outside ±100, and unknown keys in a `standing` block are load errors too.
+1. **§8.2's worked example.** The player steals twice from `merchant_ava` (−10 / −6) and is `fined_by_watch`. Then `disposition captain_hale player` → `-29.10 (unfriendly)`, made of:
+   - affinity −9.10 × 1.00: the distance is 85.48;
+   - standing −10.00 × 1.00;
+   - kinship 0.00 × 0.50: the player belongs to no factions;
+   - faction opinion −20.00 × 0.50 = −10.00: `city_watch` is at −20.00;
+   - modifiers 0.00.
+2. `disposition city_watch vex` → `-63.36 (unfriendly)`: affinity −23.36, plus kinship −80.00 × 0.50 (the Watch regards the Guild at −80).
+3. `disposition captain_hale sister_mira` → `44.75 (friendly)`:
+   - affinity 14.75: the distance is √(40² + 13.75²) = 42.30, and 50 − 50 × 42.30 / 60 = 14.75;
+   - kinship 60.00 × 0.50 = 30.00 (the Watch regards the Temple at 60).
+4. **Same faction.** Two Watch members see kinship at `same_faction` (50) × 0.50 = 25.00.
+5. **Clamping.** A component beyond ±100 is clamped before weighting, and so is the final score.
+6. **Settings.** With `disposition.weights.kinship = 0`, `disposition city_watch vex` is −23.36.
 
-**Validates** (DESIGN.md §12.2): standing in characters, actions and outcomes names factions and characters that exist, with values within ±100; outcome ids; `leave_standing_change` within ±100.
-
-### M4 · Disposition from standing, kinship and faction opinion — P0 · Outline
-
-**Covers:** DESIGN.md §8.1 in full, and §8.2.
-
-**Anchors**
-
-- §8.2's worked example: `captain_hale` → player is −29.10, unfriendly, and the explain table adds up.
-- `city_watch` → vex is −63.36, unfriendly: affinity −23.36 plus kinship −80 × 0.50.
+**Validates** (DESIGN.md §12.2): `disposition.weights` names only the five components, each ≥ 0; `same_faction` within ±100.
 
 ### M5 · Rank ladders and promotion — P0 · Outline
 

@@ -3,7 +3,8 @@ use std::fmt;
 use factional_core::{Envelope, Fixed, Tick};
 
 use crate::{
-    AXIS_LIMIT, ActionId, Alignment, CharacterId, FactionId, JoinAssessment, LeaveReason, Witnesses,
+    AXIS_LIMIT, ActionId, Alignment, CharacterId, Effects, FactionId, JoinAssessment, LeaveReason,
+    OutcomeId, Party, Witnesses,
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
@@ -45,6 +46,17 @@ pub enum Command {
         by: Fixed,
         mutual: bool,
     },
+    /// Applies a named outcome from content to `character`, such as a quest's result (P-26).
+    ApplyOutcome {
+        outcome: OutcomeId,
+        character: CharacterId,
+    },
+    /// Applies effects sent directly by another module; `source` says which, for the record.
+    ApplyEffects {
+        source: String,
+        character: CharacterId,
+        effects: Effects,
+    },
 }
 
 /// What changed, carried in an [`Event`]. Events hold absolute before-and-after values, so
@@ -76,6 +88,23 @@ pub enum Change {
         character: CharacterId,
         faction: FactionId,
         reason: LeaveReason,
+    },
+    /// How `party` regards `subject` changed.
+    StandingChanged {
+        subject: CharacterId,
+        party: Party,
+        before: Fixed,
+        after: Fixed,
+    },
+    /// An outcome was applied; its changes follow as their own events.
+    OutcomeApplied {
+        outcome: OutcomeId,
+        character: CharacterId,
+    },
+    /// Effects from another module were applied; their changes follow.
+    EffectsApplied {
+        source: String,
+        character: CharacterId,
     },
     /// How `from` regards `to` changed.
     RelationChanged {
@@ -135,8 +164,13 @@ pub enum CommandError {
     },
     /// A relation between a faction and itself.
     SelfRelation,
-    /// `SetRelation` to a value outside −100…100.
-    RelationOutOfRange { value: Fixed },
+    /// `ApplyOutcome` named an outcome that isn't in content.
+    UnknownOutcome {
+        outcome: OutcomeId,
+        suggestion: Option<OutcomeId>,
+    },
+    /// A relation or effect outside −100…100.
+    ValueOutOfRange { value: Fixed },
     /// The change would put two of `character`'s factions in conflict. Until M9 can resolve
     /// that, it's refused, so no one is ever in two factions at war (invariant 6).
     WouldPutInConflict {
@@ -214,10 +248,18 @@ impl fmt::Display for CommandError {
             CommandError::NotAMember { character, faction } => {
                 write!(f, "{character} isn't a member of {faction}")
             }
+            CommandError::UnknownOutcome {
+                outcome,
+                suggestion,
+            } => write!(
+                f,
+                "unknown outcome '{outcome}'{}",
+                hint(suggestion.as_ref().map(OutcomeId::as_str))
+            ),
             CommandError::SelfRelation => {
                 f.write_str("a faction can't have a relation with itself")
             }
-            CommandError::RelationOutOfRange { value } => {
+            CommandError::ValueOutOfRange { value } => {
                 write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
             }
             CommandError::WouldPutInConflict {

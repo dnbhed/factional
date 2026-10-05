@@ -14,6 +14,9 @@ show faction <id>                                   a faction's alignment, label
 can-join <character> <faction> [--explain]          whether <character> may join <faction> now, and why not
 join <character> <faction>                          <character> joins <faction>, if they may
 leave <character> <faction>                         <character> leaves <faction>
+standing <subject> [<party>]                        how factions and characters regard <subject> from what has passed between them
+outcomes                                            list the outcomes, such as quest results
+outcome <outcome> <character>                       apply an outcome's effects to <character>
 relations [<faction>]                               how factions regard each other, or just <faction>, with bands and conflicts
 relate <from> <to> <value> [--one-way]              set how <from> and <to> regard each other; --one-way sets only <from> → <to>
 relate <from> <to> --by <n> [--one-way]             shift a relation by <n>, stopping at -100 and 100

@@ -1,0 +1,13 @@
+# Riverhold's outcomes: named bundles of effects applied to a character at once, such as a
+# quest's result (DESIGN.md §7.1, P-26). Apply one with `outcome <outcome> <character>`.
+#
+# alignment (optional): moves the character, like an action at scale 1.00.
+# standing (optional): how named factions and characters come to regard the character,
+#   -100 to 100: standing = { factions = { … }, characters = { … } }
+
+[fined_by_watch]
+standing = { factions = { city_watch = -20.0 }, characters = { captain_hale = -10.0 } }
+
+[rescued_merchant]
+alignment = { good = 6.0 }
+standing = { factions = { city_watch = 10.0 }, characters = { merchant_ava = 30.0 } }

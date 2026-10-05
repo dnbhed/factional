@@ -11,6 +11,8 @@
 #            `distance <faction> <character>` does.
 # member_tolerance (optional): how far a member may drift before it matters; at least the
 #            tolerance, which it defaults to. Easier to stay than to get in.
+# leave_standing_change (optional): the change in someone's standing with the faction when
+#            they leave of their own accord, -100 to 100; 0 if left out.
 
 [city_watch]
 name = "The City Watch"
@@ -41,6 +43,8 @@ alignment = { law = -10.0, good = 0.0 }
 weights = { law = 0.25, good = 0.25 }
 tolerance = 60.0
 member_tolerance = 80.0
+# Mercenaries don't take kindly to deserters.
+leave_standing_change = -10.0
 
 [ashen_circle]
 name = "The Ashen Circle"

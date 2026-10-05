@@ -63,6 +63,11 @@ id_type!(
 );
 
 id_type!(
+    /// An outcome's id in `outcomes.toml`, such as `fined_by_watch`.
+    OutcomeId
+);
+
+id_type!(
     /// A faction's id, such as `city_watch`. Factions and characters share one set of ids.
     FactionId
 );

@@ -1,0 +1,27 @@
+# Standing (DESIGN.md §7.1): how factions and characters regard someone because of what has
+# passed between them. Actions and outcomes change it; it runs -100 to 100.
+load content/sample
+assert standing captain_hale == city_watch: 75.00
+# Robbing a guild member costs standing with the victim and with the guild.
+act player steal --target vex
+assert standing player vex == -20.00
+assert standing player lantern_guild == -10.00
+# A donation needs no target.
+act player donate_to_temple
+assert standing player temple == 10.00
+# Outcomes are named bundles of effects, such as a quest's result.
+outcomes
+outcome fined_by_watch player
+assert standing player captain_hale == -10.00
+# Standing stops at -100: after five fines the Watch can think no worse of the player.
+outcome fined_by_watch player
+outcome fined_by_watch player
+outcome fined_by_watch player
+outcome fined_by_watch player
+assert standing player city_watch == -100.00
+outcome fined_by_watch player
+standing player
+# Leaving the Free Company costs standing with it.
+join player free_company
+leave player free_company
+assert outcome fined_by_wach player == error: unknown outcome 'fined_by_wach' (did you mean 'fined_by_watch'?)

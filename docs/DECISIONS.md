@@ -213,6 +213,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A war between someone's own factions is refused until M9.** M9 brings `MembershipConflict` and `ResolveConflict`. Until then, refusing keeps invariant 6 true at every moment, and the refusal names the character and both factions.
   - **The CLI's flags are never values.** `relate a b --by --one-way` is a usage error, not "'--one-way' is not a number". Negative numbers have one dash.
   - *Why:* relations are authored the way designers think about them (mostly mutual, sometimes a grudge), and no state the engine can't yet handle is ever reachable.
+- **P-39 · How standing effects apply** (made in M3, 2026-10-05).
+  - **One change per party.** An act's effects on the same party add up first. Stealing from someone you also slander is one change, not two, so `StandingChanged` events say what happened, not how the content was written.
+  - **Order.** Factions first, then characters, each in id order.
+  - **Scale doesn't touch standing.** `--scale` says how big this instance was for alignment. Whether a bigger theft angers the victim more is the host's call: it can send `ApplyEffects` as well.
+  - **`target` effects need a target.** Without one they're skipped, not an error, so the same action works with or without a victim.
+  - **`ApplyEffects` checks its effects** like content (parties exist, values within ±100), but at run time, refusing rather than failing to load. Outcomes are checked at load.
+  - **Every number field reads ids as keys** in `factions = { … }` and `characters = { … }`. An invalid id is reported at the table, and an unknown one at its own key, with a "did you mean".
+  - *Why:* events stay one per real change, designers write effects naturally, and nothing a host or content sends can push standing out of range.
 
 ## Open
 

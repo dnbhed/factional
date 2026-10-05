@@ -199,7 +199,7 @@ Worked example: the City Watch (alignment 70 / 20, weights 1.00 / 0.25) looks at
 - Range −100…+100, default 0 (or a value set in content), clamped.
 - It exists whether or not the subject is a member of anything.
 
-Standing changes through effects:
+Standing starts at what `characters.toml` gives (`standing = { factions = { … }, characters = { … } }`), and changes through effects:
 
 - an action's `standing` block: toward the target, toward the target's factions, or toward named factions or characters;
 - outcome bundles;
@@ -214,6 +214,14 @@ standing  = { target = -20.0, target_factions = -10.0 }
 alignment = { good = 3.0 }
 standing  = { factions = { temple = 10.0 } }
 ```
+
+How effects apply (P-39):
+
+- `target` and `target_factions` need the act to have a target; named parties don't.
+- Effects on the same party add up first, then apply once, giving one `StandingChanged` per party that moved: factions first, then characters, each in id order.
+- Each change is multiplied by `awareness(party)`, which is 1.00 under the omniscient model (§10), then stops at ±100.
+- An action's `scale` changes its alignment shift only, not its standing effects.
+- Leaving a faction applies its `leave_standing_change` (P-22).
 
 **Spillover (P-13).** When standing with faction F changes, standing with every other faction G changes too, by:
 
@@ -589,7 +597,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | A starting member outside their member tolerance | warning | M1 (done) |
 | A relation names two different factions that exist; each direction is set at most once; values within ±100; `conflict_threshold` within ±100 | error | M2 (done) |
 | No character starts in two factions that are in conflict (invariant 6) | error | M2 (done) |
-| Standing names factions and characters that exist; values within ±100 | error | M3 |
+| Standing names factions and characters that exist; values within ±100; `leave_standing_change` within ±100 | error | M3 (done) |
 | A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung | error | M5 |
 | A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 |
 | Spillover multipliers within −1…1 | error | M6 |

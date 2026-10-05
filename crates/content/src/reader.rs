@@ -53,7 +53,7 @@ impl Report {
 pub(crate) struct Section<'t> {
     table: &'t Table,
     path: String,
-    read: Vec<&'static str>,
+    read: Vec<String>,
 }
 
 impl<'t> Section<'t> {
@@ -70,6 +70,25 @@ impl<'t> Section<'t> {
         &self.path
     }
 
+    /// Every key in the table, for tables whose keys are ids rather than field names.
+    pub(crate) fn keys(&self) -> Vec<String> {
+        self.table.keys().cloned().collect()
+    }
+
+    /// Counts `key` as known, so `finish` won't call it unknown.
+    pub(crate) fn mark(&mut self, key: &str) {
+        self.read.push(key.to_owned());
+    }
+
+    /// The number under a key that isn't a fixed field name, such as an id in
+    /// `factions = { city_watch = 10.0 }`. `None` if it's absent or not a number (that's
+    /// reported).
+    pub(crate) fn fixed_any(&mut self, key: &str, report: &mut Report) -> Option<Fixed> {
+        self.mark(key);
+        let value = self.table.get(key)?;
+        self.to_fixed(key, value, report)
+    }
+
     /// Any value under `key`, as it is; `None` if it's absent.
     pub(crate) fn optional_value(&mut self, key: &'static str) -> Option<&'t Value> {
         self.get(key)
@@ -78,7 +97,7 @@ impl<'t> Section<'t> {
     /// Whether any of `keys` is there. They all count as known keys, so `finish` won't call
     /// them unknown even when they're not read.
     pub(crate) fn has_any(&mut self, keys: &[&'static str]) -> bool {
-        self.read.extend(keys);
+        self.read.extend(keys.iter().map(|key| (*key).to_owned()));
         keys.iter().any(|key| self.table.contains_key(*key))
     }
 
@@ -92,7 +111,7 @@ impl<'t> Section<'t> {
     }
 
     fn get(&mut self, key: &'static str) -> Option<&'t Value> {
-        self.read.push(key);
+        self.read.push(key.to_owned());
         self.table.get(key)
     }
 
@@ -242,10 +261,10 @@ impl<'t> Section<'t> {
     /// Reports every key in the table that was never asked for.
     pub(crate) fn finish(self, report: &mut Report) {
         for key in self.table.keys() {
-            if self.read.contains(&key.as_str()) {
+            if self.read.contains(key) {
                 continue;
             }
-            let hint = suggest(key, self.read.iter().copied())
+            let hint = suggest(key, self.read.iter().map(String::as_str))
                 .map(|known| format!(" (did you mean '{known}'?)"))
                 .unwrap_or_default();
             report.error(&self.path, format!("unknown key '{key}'{hint}"));

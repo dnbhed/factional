@@ -1,0 +1,60 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/standing.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> assert standing captain_hale == city_watch: 75.00
+> act player steal --target vex
+#1 at tick 0: player did steal, targeting vex
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00
+#4 at tick 0: player's standing with vex moved from 0.00 to -20.00
+> assert standing player vex == -20.00
+> assert standing player lantern_guild == -10.00
+> act player donate_to_temple
+#5 at tick 0: player did donate_to_temple
+#6 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -5.00, good 0.00
+#7 at tick 0: player's standing with temple moved from 0.00 to 10.00
+> assert standing player temple == 10.00
+> outcomes
+fined_by_watch — standing: city_watch -20.00, captain_hale -10.00
+rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00
+> outcome fined_by_watch player
+#8 at tick 0: outcome fined_by_watch applied to player
+#9 at tick 0: player's standing with city_watch moved from 0.00 to -20.00
+#10 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
+> assert standing player captain_hale == -10.00
+> outcome fined_by_watch player
+#11 at tick 0: outcome fined_by_watch applied to player
+#12 at tick 0: player's standing with city_watch moved from -20.00 to -40.00
+#13 at tick 0: player's standing with captain_hale moved from -10.00 to -20.00
+> outcome fined_by_watch player
+#14 at tick 0: outcome fined_by_watch applied to player
+#15 at tick 0: player's standing with city_watch moved from -40.00 to -60.00
+#16 at tick 0: player's standing with captain_hale moved from -20.00 to -30.00
+> outcome fined_by_watch player
+#17 at tick 0: outcome fined_by_watch applied to player
+#18 at tick 0: player's standing with city_watch moved from -60.00 to -80.00
+#19 at tick 0: player's standing with captain_hale moved from -30.00 to -40.00
+> outcome fined_by_watch player
+#20 at tick 0: outcome fined_by_watch applied to player
+#21 at tick 0: player's standing with city_watch moved from -80.00 to -100.00
+#22 at tick 0: player's standing with captain_hale moved from -40.00 to -50.00
+> assert standing player city_watch == -100.00
+> outcome fined_by_watch player
+#23 at tick 0: outcome fined_by_watch applied to player
+#24 at tick 0: player's standing with captain_hale moved from -50.00 to -60.00
+> standing player
+city_watch: -100.00
+lantern_guild: -10.00
+temple: 10.00
+captain_hale: -60.00
+vex: -20.00
+> join player free_company
+#25 at tick 0: player joined free_company
+> leave player free_company
+#26 at tick 0: player left free_company (voluntary)
+#27 at tick 0: player's standing with free_company moved from 0.00 to -10.00
+> assert outcome fined_by_wach player == error: unknown outcome 'fined_by_wach' (did you mean 'fined_by_watch'?)
