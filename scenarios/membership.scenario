@@ -1,0 +1,24 @@
+# Joining and leaving factions (DESIGN.md §9.1): a character may join only when their
+# alignment is within the faction's tolerance, measured as `distance` measures it.
+load content/sample
+show faction lantern_guild
+# The player starts too far from the Lantern Guild...
+can-join player lantern_guild --explain
+assert join player lantern_guild == error: player can't join lantern_guild: 60.21 from The Lantern Guild, tolerance is 45.00
+# ...and two thefts aren't enough...
+act player steal --scale 2
+assert can-join player lantern_guild == no: 50.04 from The Lantern Guild, tolerance is 45.00
+# ...but four are.
+act player steal --scale 2
+advance 3
+assert can-join player lantern_guild == yes: 40.01 from The Lantern Guild, tolerance is 45.00
+join player lantern_guild
+show character player
+assert join player lantern_guild == error: player can't join lantern_guild: player is already a member of lantern_guild
+leave player lantern_guild
+assert leave player lantern_guild == error: player isn't a member of lantern_guild
+assert join player tempel == error: unknown faction 'tempel' (did you mean 'temple'?)
+journal
+
+# A starting member outside their faction's member tolerance loads, with a warning.
+load crates/cli/tests/fixtures/worlds/reformed

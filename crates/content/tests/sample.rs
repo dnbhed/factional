@@ -243,3 +243,63 @@ fn riverholds_factions_regard_people_by_how_close_they_are() {
         "-23.36 (neutral)"
     );
 }
+
+#[test]
+fn riverholds_people_start_in_their_factions_without_warnings() {
+    let content = load_dir(&sample_dir()).expect("the sample content is valid");
+    assert!(factional_content::warnings(&content).is_empty());
+    let world = World::new(content).expect("the sample content makes a world");
+    let members = |faction: &str| -> Vec<String> {
+        world
+            .members(&FactionId::new(faction).expect("valid id"))
+            .expect("the faction exists")
+            .into_iter()
+            .map(ToString::to_string)
+            .collect()
+    };
+    assert_eq!(members("city_watch"), ["captain_hale"]);
+    assert_eq!(members("temple"), ["sister_mira"]);
+    assert_eq!(members("lantern_guild"), ["vex"]);
+    assert_eq!(members("ashen_circle"), ["brother_ash"]);
+    assert!(members("free_company").is_empty());
+}
+
+#[test]
+fn the_player_must_turn_thief_to_join_the_lantern_guild() {
+    let mut world = riverhold();
+    let guild = FactionId::new("lantern_guild").expect("valid id");
+    let join = || Command::JoinFaction {
+        character: character("player"),
+        faction: guild.clone(),
+    };
+    let steal = || Command::PerformAction {
+        actor: character("player"),
+        action: ActionId::new("steal").expect("valid id"),
+        target: None,
+        scale: Fixed::ONE,
+        witnesses: Witnesses::Everyone,
+    };
+    let refusal = world.execute(join()).expect_err("too far at the start");
+    assert_eq!(
+        refusal.to_string(),
+        "player can't join lantern_guild: 60.21 from The Lantern Guild, tolerance is 45.00"
+    );
+    for _ in 0..2 {
+        world.execute(steal()).expect("accepted");
+    }
+    assert_eq!(
+        world
+            .execute(join())
+            .expect_err("still too far")
+            .to_string(),
+        "player can't join lantern_guild: 50.04 from The Lantern Guild, tolerance is 45.00"
+    );
+    for _ in 0..2 {
+        world.execute(steal()).expect("accepted");
+    }
+    world.execute(join()).expect("40.01 is within 45.00");
+    assert_eq!(
+        world.members(&guild).expect("the faction exists"),
+        [&character("player"), &character("vex")]
+    );
+}

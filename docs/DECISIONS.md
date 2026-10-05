@@ -198,6 +198,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Checks across bands wait for every band to read cleanly.** A band left out or misread would shift the indices, and every later path would point at the wrong band.
   - **A value of the wrong type for a number says so plainly:** `expected a number, like 25.0`. This replaced serde's `invalid type: string "low", expected …`, fixed in passing.
   - *Why:* bands are designer vocabulary that later events will carry, and every check that content has to pass is enforced by the engine itself.
+- **P-37 · How joining and leaving work** (made in M1, 2026-10-05).
+  - **Starting members** belong from tick 0, and `memberships` lists factions in any order. A faction listed twice is an error; an unknown faction gets a "did you mean".
+  - **A refused join lists every failing check** with its numbers, from `assess_join`. That's the same assessment `can-join` shows, so the CLI and the engine can't disagree.
+  - **Tolerance is measured as `distance <faction> <character>`:** the faction's alignment and weights, and the world's metric. A character exactly at the tolerance may join.
+  - **`tolerance` is required,** because every faction must say who can join it (D-20). `member_tolerance` defaults to it.
+  - **Leaving a faction you're not in is refused,** rather than silently doing nothing. It's almost always a mistake in a script or quest.
+  - **Warnings** come from `Content::warnings`. `World::new` builds the world anyway, and the CLI prints each warning after `load`'s summary as `warning: file: key: message`.
+  - *Why:* designers see exactly why someone can't join, and every rule that decides it lives in the engine.
 
 ## Open
 

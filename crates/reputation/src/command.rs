@@ -2,7 +2,7 @@ use std::fmt;
 
 use factional_core::{Envelope, Fixed, Tick};
 
-use crate::{ActionId, Alignment, CharacterId, Witnesses};
+use crate::{ActionId, Alignment, CharacterId, FactionId, JoinAssessment, LeaveReason, Witnesses};
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +18,16 @@ pub enum Command {
         target: Option<CharacterId>,
         scale: Fixed,
         witnesses: Witnesses,
+    },
+    /// `character` asks to join `faction`; refused unless they may (DESIGN.md §9.1).
+    JoinFaction {
+        character: CharacterId,
+        faction: FactionId,
+    },
+    /// `character` leaves `faction` of their own accord.
+    LeaveFaction {
+        character: CharacterId,
+        faction: FactionId,
     },
 }
 
@@ -42,6 +52,15 @@ pub enum Change {
         from: Alignment,
         to: Alignment,
     },
+    JoinedFaction {
+        character: CharacterId,
+        faction: FactionId,
+    },
+    LeftFaction {
+        character: CharacterId,
+        faction: FactionId,
+        reason: LeaveReason,
+    },
 }
 
 /// Something that happened in the world, numbered and stamped with when it happened.
@@ -53,6 +72,8 @@ pub enum Role {
     Actor,
     Target,
     Witness,
+    /// The character joining or leaving a faction.
+    Member,
 }
 
 /// Why a command was refused. A refused command changes nothing and emits nothing.
@@ -77,6 +98,18 @@ pub enum CommandError {
     ScaleNotPositive { scale: Fixed },
     /// `PerformAction` whose target is its actor.
     TargetIsActor,
+    /// A command named a faction that doesn't exist.
+    UnknownFaction {
+        faction: FactionId,
+        suggestion: Option<FactionId>,
+    },
+    /// `JoinFaction` for a character who may not join: the assessment says why.
+    JoinRefused(Box<JoinAssessment>),
+    /// `LeaveFaction` for a faction the character isn't in.
+    NotAMember {
+        character: CharacterId,
+        faction: FactionId,
+    },
 }
 
 /// One command as it was issued, and whether the world accepted it (P-16).
@@ -92,6 +125,7 @@ impl fmt::Display for Role {
             Role::Actor => "actor",
             Role::Target => "target",
             Role::Witness => "witness",
+            Role::Member => "character",
         })
     }
 }
@@ -128,6 +162,24 @@ impl fmt::Display for CommandError {
             }
             CommandError::TargetIsActor => {
                 f.write_str("an action's target must be another character")
+            }
+            CommandError::UnknownFaction {
+                faction,
+                suggestion,
+            } => write!(
+                f,
+                "unknown faction '{faction}'{}",
+                hint(suggestion.as_ref().map(FactionId::as_str))
+            ),
+            CommandError::JoinRefused(assessment) => write!(
+                f,
+                "{} can't join {}: {}",
+                assessment.character,
+                assessment.faction,
+                assessment.reasons().join("; ")
+            ),
+            CommandError::NotAMember { character, faction } => {
+                write!(f, "{character} isn't a member of {faction}")
             }
         }
     }

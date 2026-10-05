@@ -6,8 +6,8 @@ use factional_core::{Curve, CurveError, Fixed, Tick, suggest};
 use crate::distance::gap;
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
-    CommandError, Disposition, Event, Faction, FactionId, JournalEntry, Metric, Role, Weights,
-    Witnesses, measure,
+    CommandError, Disposition, Event, Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry,
+    LeaveReason, Membership, Metric, Role, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -73,6 +73,34 @@ pub enum ContentProblem {
     SharedId(FactionId),
     /// `disposition.affinity` gives a value outside −100…100, the range of a disposition.
     AffinityOutOfRange(CurveError),
+    /// A starting membership names a faction that doesn't exist. `index` is its place in the
+    /// character's list, from 0.
+    UnknownMembershipFaction {
+        character: CharacterId,
+        index: usize,
+        faction: FactionId,
+        suggestion: Option<FactionId>,
+    },
+    /// A character lists the same faction twice; `index` is the second.
+    DuplicateMembership {
+        character: CharacterId,
+        index: usize,
+        faction: FactionId,
+    },
+}
+
+/// Something in content that's allowed but probably not meant: it's reported, and the world
+/// is built anyway (P-32).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContentWarning {
+    /// A starting member further from their faction than its member tolerance.
+    OutsideMemberTolerance {
+        character: CharacterId,
+        index: usize,
+        faction_name: String,
+        distance: Fixed,
+        member_tolerance: Fixed,
+    },
 }
 
 impl Content {
@@ -92,7 +120,69 @@ impl Content {
                 CharacterId::new(faction.as_str()).is_ok_and(|id| self.characters.contains_key(&id))
             })
             .map(|faction| ContentProblem::SharedId(faction.clone()));
-        affinity.into_iter().chain(shared_ids).collect()
+        let memberships = self.characters.values().flat_map(|character| {
+            character
+                .memberships
+                .iter()
+                .enumerate()
+                .filter_map(|(index, faction)| {
+                    if !self.factions.contains_key(faction) {
+                        Some(ContentProblem::UnknownMembershipFaction {
+                            character: character.id.clone(),
+                            index,
+                            faction: faction.clone(),
+                            suggestion: closest(faction.as_str(), self.factions.keys()),
+                        })
+                    } else if character.memberships[..index].contains(faction) {
+                        Some(ContentProblem::DuplicateMembership {
+                            character: character.id.clone(),
+                            index,
+                            faction: faction.clone(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+        });
+        affinity
+            .into_iter()
+            .chain(shared_ids)
+            .chain(memberships)
+            .collect()
+    }
+
+    /// Everything probably not meant, for content with no problems.
+    pub fn warnings(&self) -> Vec<ContentWarning> {
+        let balance = &self.balance;
+        self.characters
+            .values()
+            .flat_map(|character| {
+                character
+                    .memberships
+                    .iter()
+                    .enumerate()
+                    .filter_map(move |(index, id)| {
+                        let faction = self.factions.get(id)?;
+                        let weights = faction.weights.unwrap_or(balance.default_weights);
+                        let distance = measure(
+                            faction.alignment,
+                            character.alignment,
+                            weights,
+                            balance.metric,
+                        );
+                        let member_tolerance = faction.tolerances.member();
+                        (distance > member_tolerance).then(|| {
+                            ContentWarning::OutsideMemberTolerance {
+                                character: character.id.clone(),
+                                index,
+                                faction_name: faction.name.clone(),
+                                distance,
+                                member_tolerance,
+                            }
+                        })
+                    })
+            })
+            .collect()
     }
 }
 
@@ -104,6 +194,37 @@ impl fmt::Display for ContentProblem {
                 "'{id}' is also a character's id: factions and characters need different ids"
             ),
             ContentProblem::AffinityOutOfRange(error) => error.fmt(f),
+            ContentProblem::UnknownMembershipFaction {
+                faction,
+                suggestion,
+                ..
+            } => {
+                write!(f, "unknown faction '{faction}'")?;
+                match suggestion {
+                    Some(close) => write!(f, " (did you mean '{close}'?)"),
+                    None => Ok(()),
+                }
+            }
+            ContentProblem::DuplicateMembership {
+                character, faction, ..
+            } => write!(f, "{character} already belongs to {faction}"),
+        }
+    }
+}
+
+impl fmt::Display for ContentWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ContentWarning::OutsideMemberTolerance {
+                character,
+                faction_name,
+                distance,
+                member_tolerance,
+                ..
+            } => write!(
+                f,
+                "{character} starts {distance} from {faction_name}, outside its member tolerance of {member_tolerance}"
+            ),
         }
     }
 }
@@ -162,6 +283,8 @@ struct State {
     now: Tick,
     /// Every character's alignment now.
     alignments: BTreeMap<CharacterId, Alignment>,
+    /// Every character's factions now, by character; a character in none has no entry.
+    memberships: BTreeMap<CharacterId, BTreeMap<FactionId, Membership>>,
 }
 
 impl State {
@@ -173,6 +296,22 @@ impl State {
                 .characters
                 .values()
                 .map(|character| (character.id.clone(), character.alignment))
+                .collect(),
+            memberships: content
+                .characters
+                .values()
+                .filter(|character| !character.memberships.is_empty())
+                .map(|character| {
+                    let factions = character.memberships.iter().map(|faction| {
+                        (
+                            faction.clone(),
+                            Membership {
+                                since: Tick::default(),
+                            },
+                        )
+                    });
+                    (character.id.clone(), factions.collect())
+                })
                 .collect(),
         }
     }
@@ -288,7 +427,50 @@ impl World {
                 }
                 Ok(changes)
             }
+            Command::JoinFaction { character, faction } => {
+                self.existing(character, Role::Member)?;
+                let assessment = self
+                    .assess_join(character, faction)
+                    .ok_or_else(|| self.unknown_faction(faction))?;
+                if !assessment.allowed() {
+                    return Err(CommandError::JoinRefused(Box::new(assessment)));
+                }
+                Ok(vec![Change::JoinedFaction {
+                    character: character.clone(),
+                    faction: faction.clone(),
+                }])
+            }
+            Command::LeaveFaction { character, faction } => {
+                self.existing(character, Role::Member)?;
+                self.faction(faction)
+                    .ok_or_else(|| self.unknown_faction(faction))?;
+                if !self.is_member(character, faction) {
+                    return Err(CommandError::NotAMember {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                    });
+                }
+                Ok(vec![Change::LeftFaction {
+                    character: character.clone(),
+                    faction: faction.clone(),
+                    reason: LeaveReason::Voluntary,
+                }])
+            }
         }
+    }
+
+    fn unknown_faction(&self, faction: &FactionId) -> CommandError {
+        CommandError::UnknownFaction {
+            faction: faction.clone(),
+            suggestion: closest(faction.as_str(), self.content.factions.keys()),
+        }
+    }
+
+    fn is_member(&self, character: &CharacterId, faction: &FactionId) -> bool {
+        self.state
+            .memberships
+            .get(character)
+            .is_some_and(|factions| factions.contains_key(faction))
     }
 
     /// A character's alignment now, or a refusal naming them in their `role`.
@@ -310,6 +492,29 @@ impl World {
         match event.payload {
             Change::TimeAdvanced { to, .. } => self.state.now = to,
             Change::ActionPerformed { .. } => {}
+            Change::JoinedFaction {
+                ref character,
+                ref faction,
+            } => {
+                let since = event.tick;
+                self.state
+                    .memberships
+                    .entry(character.clone())
+                    .or_default()
+                    .insert(faction.clone(), Membership { since });
+            }
+            Change::LeftFaction {
+                ref character,
+                ref faction,
+                ..
+            } => {
+                if let Some(factions) = self.state.memberships.get_mut(character) {
+                    factions.remove(faction);
+                    if factions.is_empty() {
+                        self.state.memberships.remove(character);
+                    }
+                }
+            }
             Change::AlignmentChanged {
                 ref character, to, ..
             } => {
@@ -374,6 +579,65 @@ impl World {
         self.content.factions.get(id)
     }
 
+    /// A character's factions now, in id order, with when they joined. `None` for an unknown
+    /// character; empty for one in no faction.
+    pub fn memberships(
+        &self,
+        character: &CharacterId,
+    ) -> Option<impl Iterator<Item = (&FactionId, &Membership)>> {
+        self.character(character)?;
+        Some(
+            self.state
+                .memberships
+                .get(character)
+                .into_iter()
+                .flat_map(BTreeMap::iter),
+        )
+    }
+
+    /// A faction's members now, in id order. `None` for an unknown faction.
+    pub fn members(&self, faction: &FactionId) -> Option<Vec<&CharacterId>> {
+        self.faction(faction)?;
+        Some(
+            self.state
+                .memberships
+                .iter()
+                .filter(|(_, factions)| factions.contains_key(faction))
+                .map(|(character, _)| character)
+                .collect(),
+        )
+    }
+
+    /// Whether `character` may join `faction` now, and every reason they can't (DESIGN.md
+    /// §9.1). `None` if either is unknown.
+    pub fn assess_join(
+        &self,
+        character: &CharacterId,
+        faction: &FactionId,
+    ) -> Option<JoinAssessment> {
+        let found = self.faction(faction)?;
+        let distance = self.distance(&Observer::Faction(faction.clone()), character)?;
+        let tolerance = found.tolerances.tolerance();
+        let mut blocks = Vec::new();
+        if self.is_member(character, faction) {
+            blocks.push(JoinBlock::AlreadyMember);
+        }
+        if distance.value > tolerance {
+            blocks.push(JoinBlock::OutsideTolerance {
+                distance: distance.value,
+                tolerance,
+            });
+        }
+        Some(JoinAssessment {
+            character: character.clone(),
+            faction: faction.clone(),
+            faction_name: found.name.clone(),
+            distance,
+            tolerance,
+            blocks,
+        })
+    }
+
     /// How `observer` regards `subject`: the score, its band and the working (DESIGN.md §8).
     /// `None` if either is unknown.
     pub fn disposition(&self, observer: &Observer, subject: &CharacterId) -> Option<Disposition> {
@@ -429,7 +693,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AXIS_LIMIT, AlignmentDelta, Band, Role, Witnesses};
+    use crate::{
+        AXIS_LIMIT, AlignmentDelta, Band, JoinBlock, LeaveReason, Role, Tolerances, Witnesses,
+    };
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
@@ -445,6 +711,7 @@ mod tests {
             name: name.to_owned(),
             alignment: Alignment::new(h(law), h(good)).expect("in range"),
             weights: None,
+            memberships: Vec::new(),
         }
     }
 
@@ -457,11 +724,18 @@ mod tests {
     }
 
     fn faction(id: &str, law: i64, good: i64, w: Option<(i64, i64)>) -> Faction {
+        let (name, tolerance, member) = match id {
+            "city_watch" => ("The City Watch", 40_00, 50_00),
+            "lantern_guild" => ("The Lantern Guild", 45_00, 60_00),
+            "temple" => ("Temple of the Dawn", 35_00, 45_00),
+            _ => ("The Free Company", 60_00, 80_00),
+        };
         Faction {
             id: faction_id(id),
-            name: id.to_owned(),
+            name: name.to_owned(),
             alignment: Alignment::new(h(law), h(good)).expect("in range"),
             weights: w.map(|(law, good)| weights(law, good)),
+            tolerances: Tolerances::new(h(tolerance), Some(h(member))).expect("valid"),
         }
     }
 
@@ -950,6 +1224,395 @@ mod tests {
         );
     }
 
+    // Membership (DESIGN.md §9.1)
+
+    fn member_of(mut character: Character, factions: &[&str]) -> Character {
+        character.memberships = factions.iter().map(|f| faction_id(f)).collect();
+        character
+    }
+
+    fn join(character: &str, faction: &str) -> Command {
+        Command::JoinFaction {
+            character: id(character),
+            faction: faction_id(faction),
+        }
+    }
+
+    fn leave(character: &str, faction: &str) -> Command {
+        Command::LeaveFaction {
+            character: id(character),
+            faction: faction_id(faction),
+        }
+    }
+
+    fn factions_of(world: &World, character: &str) -> Vec<(String, Tick)> {
+        world
+            .memberships(&id(character))
+            .expect("the character exists")
+            .map(|(faction, membership)| (faction.to_string(), membership.since))
+            .collect()
+    }
+
+    fn steal_times(world: &mut World, times: usize) {
+        for _ in 0..times {
+            world
+                .execute(act("player", "steal", None, 1_00))
+                .expect("accepted");
+        }
+    }
+
+    #[test]
+    fn starting_members_belong_from_tick_zero() {
+        let world = world_of([
+            member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+            member_of(character("Ava", 20_00, 10_00), &["temple", "city_watch"]),
+            character("Player", 0, 0),
+        ]);
+        assert_eq!(
+            factions_of(&world, "vex"),
+            [("lantern_guild".to_owned(), Tick(0))]
+        );
+        assert_eq!(
+            factions_of(&world, "ava"),
+            [
+                ("city_watch".to_owned(), Tick(0)),
+                ("temple".to_owned(), Tick(0))
+            ]
+        );
+        assert!(factions_of(&world, "player").is_empty());
+        assert!(world.memberships(&id("nobody")).is_none());
+        let members = |faction| {
+            world
+                .members(&faction_id(faction))
+                .expect("the faction exists")
+                .into_iter()
+                .map(CharacterId::to_string)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(members("lantern_guild"), ["vex"]);
+        assert_eq!(members("temple"), ["ava"]);
+        assert!(members("free_company").is_empty());
+        assert_eq!(world.members(&faction_id("nobody")), None);
+    }
+
+    #[test]
+    fn a_character_too_far_from_a_faction_cannot_join_it() {
+        let world = riverhold();
+        let assessment = world
+            .assess_join(&id("player"), &faction_id("lantern_guild"))
+            .expect("both exist");
+        // Gaps 60 and 10, weighted 60 and 5: sqrt(3625) = 60.207…
+        assert_eq!(assessment.distance.value, h(60_21));
+        assert_eq!(assessment.tolerance, h(45_00));
+        assert_eq!(
+            assessment.blocks,
+            [JoinBlock::OutsideTolerance {
+                distance: h(60_21),
+                tolerance: h(45_00)
+            }]
+        );
+        assert!(!assessment.allowed());
+        assert_eq!(
+            assessment.reasons(),
+            ["60.21 from The Lantern Guild, tolerance is 45.00"]
+        );
+    }
+
+    #[test]
+    fn a_thief_drifts_into_the_lantern_guilds_reach() {
+        let mut world = riverhold();
+        let guild = faction_id("lantern_guild");
+        steal_times(&mut world, 2);
+        let refused = world
+            .assess_join(&id("player"), &guild)
+            .expect("both exist");
+        assert_eq!(
+            refused.reasons(),
+            ["50.04 from The Lantern Guild, tolerance is 45.00"]
+        );
+        steal_times(&mut world, 2);
+        let accepted = world
+            .assess_join(&id("player"), &guild)
+            .expect("both exist");
+        assert_eq!(accepted.distance.value, h(40_01));
+        assert!(accepted.allowed());
+        assert!(accepted.reasons().is_empty());
+    }
+
+    #[test]
+    fn joining_makes_a_character_a_member_from_that_tick() {
+        let mut world = riverhold();
+        steal_times(&mut world, 4);
+        world.execute(advance(3)).expect("accepted");
+        let events = world
+            .execute(join("player", "lantern_guild"))
+            .expect("accepted");
+        assert_eq!(
+            events,
+            [Event {
+                // Each theft is two events, and advancing time one.
+                seq: 10,
+                tick: Tick(3),
+                payload: Change::JoinedFaction {
+                    character: id("player"),
+                    faction: faction_id("lantern_guild"),
+                },
+            }]
+        );
+        assert_eq!(
+            factions_of(&world, "player"),
+            [("lantern_guild".to_owned(), Tick(3))]
+        );
+        assert_eq!(
+            world.members(&faction_id("lantern_guild")),
+            Some(vec![&id("player")])
+        );
+    }
+
+    #[test]
+    fn a_refused_join_says_why_and_changes_nothing() {
+        let mut world = riverhold();
+        let error = refused(&mut world, join("player", "lantern_guild"));
+        assert_eq!(
+            error.to_string(),
+            "player can't join lantern_guild: 60.21 from The Lantern Guild, tolerance is 45.00"
+        );
+        let CommandError::JoinRefused(assessment) = error else {
+            panic!("expected a refused join");
+        };
+        assert_eq!(
+            Some(*assessment),
+            world.assess_join(&id("player"), &faction_id("lantern_guild"))
+        );
+    }
+
+    #[test]
+    fn a_member_cannot_join_again() {
+        let mut world = world_of([member_of(
+            character("Vex", -55_00, -20_00),
+            &["lantern_guild"],
+        )]);
+        assert_eq!(
+            refused(&mut world, join("vex", "lantern_guild")).to_string(),
+            "vex can't join lantern_guild: vex is already a member of lantern_guild"
+        );
+        // Every failing check is listed, in order.
+        let mut far = world_of([member_of(
+            character("Player", 100_00, 100_00),
+            &["lantern_guild"],
+        )]);
+        let error = refused(&mut far, join("player", "lantern_guild"));
+        let CommandError::JoinRefused(assessment) = error else {
+            panic!("expected a refused join");
+        };
+        assert_eq!(assessment.blocks.len(), 2);
+        assert_eq!(assessment.blocks[0], JoinBlock::AlreadyMember);
+    }
+
+    #[test]
+    fn a_character_exactly_at_the_tolerance_may_join() {
+        let edge = |tolerance| {
+            let mut faction = faction("free_company", 10_00, 0, None);
+            faction.tolerances = Tolerances::new(h(tolerance), None).expect("valid");
+            let content = Content {
+                characters: [character("Player", 0, 0)]
+                    .into_iter()
+                    .map(|c| (c.id.clone(), c))
+                    .collect(),
+                factions: [(faction.id.clone(), faction)].into(),
+                ..Content::default()
+            };
+            World::new(content)
+                .expect("valid content")
+                .assess_join(&id("player"), &faction_id("free_company"))
+                .expect("both exist")
+                .allowed()
+        };
+        assert!(edge(10_00), "10.00 away, tolerance 10.00");
+        assert!(!edge(9_99), "10.00 away, tolerance 9.99");
+    }
+
+    #[test]
+    fn leaving_ends_a_membership() {
+        let mut world = world_of([member_of(
+            character("Vex", -55_00, -20_00),
+            &["lantern_guild"],
+        )]);
+        assert_eq!(
+            world.execute(leave("vex", "lantern_guild")),
+            Ok(vec![Event {
+                seq: 1,
+                tick: Tick(0),
+                payload: Change::LeftFaction {
+                    character: id("vex"),
+                    faction: faction_id("lantern_guild"),
+                    reason: LeaveReason::Voluntary,
+                },
+            }])
+        );
+        assert!(factions_of(&world, "vex").is_empty());
+        assert_eq!(
+            refused(&mut world, leave("vex", "lantern_guild")),
+            CommandError::NotAMember {
+                character: id("vex"),
+                faction: faction_id("lantern_guild"),
+            }
+        );
+        assert_eq!(
+            refused(&mut world, leave("vex", "lantern_guild")).to_string(),
+            "vex isn't a member of lantern_guild"
+        );
+    }
+
+    #[test]
+    fn joining_and_leaving_need_a_character_and_faction_that_exist() {
+        let mut world = riverhold();
+        for command in [join, leave] {
+            assert_eq!(
+                refused(&mut world, command("plyer", "temple")),
+                CommandError::UnknownCharacter {
+                    role: Role::Member,
+                    id: id("plyer"),
+                    suggestion: Some(id("player")),
+                }
+            );
+            assert_eq!(
+                refused(&mut world, command("player", "tempel")),
+                CommandError::UnknownFaction {
+                    faction: faction_id("tempel"),
+                    suggestion: Some(faction_id("temple")),
+                }
+            );
+        }
+        assert_eq!(
+            refused(&mut world, join("player", "tempel")).to_string(),
+            "unknown faction 'tempel' (did you mean 'temple'?)"
+        );
+        assert_eq!(
+            refused(&mut world, join("plyer", "temple")).to_string(),
+            "unknown character 'plyer' (did you mean 'player'?)"
+        );
+        assert_eq!(
+            world.assess_join(&id("nobody"), &faction_id("temple")),
+            None
+        );
+        assert_eq!(
+            world.assess_join(&id("player"), &faction_id("nobody")),
+            None
+        );
+    }
+
+    #[test]
+    fn replaying_rebuilds_memberships() {
+        let mut world = world_of([
+            member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+            character("Player", 0, 0),
+        ]);
+        world
+            .execute(leave("vex", "lantern_guild"))
+            .expect("accepted");
+        world.execute(advance(2)).expect("accepted");
+        world
+            .execute(join("player", "free_company"))
+            .expect("accepted");
+        let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
+        assert_eq!(replayed.state, world.state);
+        assert_eq!(
+            factions_of(&replayed, "player"),
+            [("free_company".to_owned(), Tick(2))]
+        );
+    }
+
+    // Membership in content (P-32)
+
+    #[test]
+    fn a_membership_must_name_a_faction_that_exists_once() {
+        let content = Content {
+            characters: [
+                member_of(
+                    character("Vex", 0, 0),
+                    &["lantern_gild", "temple", "temple"],
+                ),
+                member_of(character("Ava", 0, 0), &["nowhere"]),
+            ]
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect(),
+            factions: factions(),
+            ..Content::default()
+        };
+        let problems = content.problems();
+        assert_eq!(
+            problems,
+            [
+                ContentProblem::UnknownMembershipFaction {
+                    character: id("ava"),
+                    index: 0,
+                    faction: faction_id("nowhere"),
+                    suggestion: None,
+                },
+                ContentProblem::UnknownMembershipFaction {
+                    character: id("vex"),
+                    index: 0,
+                    faction: faction_id("lantern_gild"),
+                    suggestion: Some(faction_id("lantern_guild")),
+                },
+                ContentProblem::DuplicateMembership {
+                    character: id("vex"),
+                    index: 2,
+                    faction: faction_id("temple"),
+                },
+            ]
+        );
+        let messages: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "unknown faction 'nowhere'",
+                "unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)",
+                "vex already belongs to temple",
+            ]
+        );
+        assert!(World::new(content).is_err());
+    }
+
+    #[test]
+    fn a_starting_member_outside_member_tolerance_is_a_warning() {
+        let content = |law, good| Content {
+            characters: [member_of(character("Vex", law, good), &["lantern_guild"])]
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .collect(),
+            factions: factions(),
+            ..Content::default()
+        };
+        // A reformed Vex at 35 / 10 is 95.52 from the guild, beyond its 60.00.
+        let reformed = content(35_00, 10_00);
+        let warnings = reformed.warnings();
+        assert_eq!(
+            warnings,
+            [ContentWarning::OutsideMemberTolerance {
+                character: id("vex"),
+                index: 0,
+                faction_name: "The Lantern Guild".to_owned(),
+                distance: h(95_52),
+                member_tolerance: h(60_00),
+            }]
+        );
+        assert_eq!(
+            warnings[0].to_string(),
+            "vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00"
+        );
+        assert!(
+            World::new(reformed).is_ok(),
+            "a warning doesn't stop the world"
+        );
+        assert_eq!(content(-55_00, -20_00).warnings(), [], "7.07 away");
+        // Exactly 60.00 away on the law axis is still within.
+        assert_eq!(content(0, -10_00).warnings(), []);
+        assert_eq!(content(1, -10_00).warnings().len(), 1);
+    }
+
     #[test]
     fn distance_needs_an_observer_and_a_subject_that_exist() {
         let world = riverhold();
@@ -1352,7 +2015,22 @@ mod tests {
             prop_oneof![0_i64..=500, Just(i64::MAX)],
         )
             .prop_map(|(actor, action, target, scale)| act(actor, action, target, scale));
-        let command = prop_oneof![(0_u64..=1_000).prop_map(advance), action];
+        let faction = || {
+            prop_oneof![
+                Just("lantern_guild"),
+                Just("free_company"),
+                Just("temple"),
+                Just("nowhere")
+            ]
+        };
+        let membership = (any::<bool>(), who(), faction()).prop_map(|(joining, who, faction)| {
+            if joining {
+                join(who, faction)
+            } else {
+                leave(who, faction)
+            }
+        });
+        let command = prop_oneof![(0_u64..=1_000).prop_map(advance), action, membership];
         proptest::collection::vec(command, 0..30)
     }
 
@@ -1408,7 +2086,7 @@ mod tests {
                 .iter()
                 .filter_map(|command| match command {
                     Command::AdvanceTime { ticks } => Some(*ticks),
-                    Command::PerformAction { .. } => None,
+                    _ => None,
                 })
                 .sum();
             prop_assert_eq!(world.now(), Tick(total));

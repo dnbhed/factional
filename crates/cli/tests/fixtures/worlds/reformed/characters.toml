@@ -1,0 +1,5 @@
+# Vex has reformed (DESIGN.md §9.2), but still starts in the Lantern Guild: loading warns.
+[vex]
+name = "Vex"
+alignment = { law = 35.0, good = 10.0 }
+memberships = [{ faction = "lantern_guild" }]

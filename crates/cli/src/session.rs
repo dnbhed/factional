@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use factional_core::{Fixed, ParseFixedError, suggest};
 use factional_reputation::{
     ActionId, Alignment, Axis, Change, Character, CharacterId, Command, Distance, Event, Faction,
-    Observer, WeightsFrom, Witnesses, World,
+    FactionId, LeaveReason, Observer, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -20,8 +20,26 @@ const COMMANDS: &[(&str, &str)] = &[
         "show character <id>",
         "a character's alignment and its label",
     ),
-    ("factions", "list the factions"),
-    ("show faction <id>", "a faction's alignment and its label"),
+    (
+        "factions",
+        "list the factions, with their tolerances and members",
+    ),
+    (
+        "show faction <id>",
+        "a faction's alignment, label, tolerances and members",
+    ),
+    (
+        "can-join <character> <faction> [--explain]",
+        "whether <character> may join <faction> now, and why not",
+    ),
+    (
+        "join <character> <faction>",
+        "<character> joins <faction>, if they may",
+    ),
+    (
+        "leave <character> <faction>",
+        "<character> leaves <faction>",
+    ),
     (
         "disposition <observer> <subject> [--explain]",
         "how <observer>, a faction or character, regards <subject>: a score and its band",
@@ -145,6 +163,9 @@ impl Session {
             "factions" => Ok(self.factions()),
             "distance" => Ok(self.distance(rest)),
             "disposition" => Ok(self.disposition(rest)),
+            "can-join" => Ok(self.can_join(rest)),
+            "join" => Ok(self.membership(rest, true)),
+            "leave" => Ok(self.membership(rest, false)),
             "actions" => Ok(self.actions()),
             "act" => Ok(self.act(rest)),
             "advance" => Ok(self.advance(rest)),
@@ -190,10 +211,13 @@ impl Session {
                 } else {
                     "characters"
                 };
+                let warnings = factional_content::warnings(&content);
                 match World::new(content) {
                     Ok(world) => {
                         self.world = Some(world);
-                        Outcome::Output(format!("loaded {count} {noun} from {dir}"))
+                        let summary = format!("loaded {count} {noun} from {dir}");
+                        let warnings = warnings.iter().map(|warning| format!("warning: {warning}"));
+                        Outcome::Output(lines(std::iter::once(summary).chain(warnings)))
                     }
                     // The loader reports every problem a world would refuse, so this means
                     // the two disagree: show it rather than hide it.
@@ -269,6 +293,95 @@ impl Session {
                 .factions()
                 .map(|faction| describe_faction(world, faction)),
         ))
+    }
+
+    /// `can-join <character> <faction> [--explain]`: whether the character may join now, from
+    /// the engine's assessment, and with `--explain`, its working.
+    fn can_join(&self, args: &str) -> Outcome {
+        const USAGE: &str = "can-join needs the form: can-join <character> <faction> [--explain]";
+        let (character, faction, explain) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [character, faction] => (character, faction, false),
+            [character, faction, "--explain"] => (character, faction, true),
+            _ => return Outcome::Error(USAGE.to_owned()),
+        };
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let Some(character) = world.characters().find(|c| c.id.as_str() == character) else {
+            let ids: Vec<&str> = world.characters().map(|c| c.id.as_str()).collect();
+            return Outcome::Error(format!(
+                "unknown character '{character}'{}",
+                hint(character, ids)
+            ));
+        };
+        let Some(faction) = world.factions().find(|f| f.id.as_str() == faction) else {
+            let ids: Vec<&str> = world.factions().map(|f| f.id.as_str()).collect();
+            return Outcome::Error(format!("unknown faction '{faction}'{}", hint(faction, ids)));
+        };
+        let assessment = world
+            .assess_join(&character.id, &faction.id)
+            .expect("both were found");
+        let verdict = if assessment.allowed() { "yes" } else { "no" };
+        if !explain {
+            let why = if assessment.allowed() {
+                format!(
+                    "{} from {}, tolerance is {}",
+                    assessment.distance.value, assessment.faction_name, assessment.tolerance
+                )
+            } else {
+                assessment.reasons().join("; ")
+            };
+            return Outcome::Output(format!("{verdict}: {why}"));
+        }
+        let distance = &assessment.distance;
+        let mut explained = vec![
+            format!("{} → {}: {verdict}", character.id, faction.id),
+            format!(
+                "distance {} ({}), tolerance {}",
+                distance.value,
+                distance.metric.key(),
+                assessment.tolerance
+            ),
+        ];
+        explained.extend(working(distance, faction.id.as_str()));
+        explained.extend(
+            assessment
+                .reasons()
+                .into_iter()
+                .map(|reason| format!("refused: {reason}")),
+        );
+        Outcome::Output(explained.join("\n"))
+    }
+
+    /// `join <character> <faction>` or `leave <character> <faction>`: the engine decides, and
+    /// the events or its refusal are shown.
+    fn membership(&mut self, args: &str, joining: bool) -> Outcome {
+        let name = if joining { "join" } else { "leave" };
+        let [character, faction] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error(format!(
+                "{name} needs the form: {name} <character> <faction>"
+            ));
+        };
+        let character = match CharacterId::new(character) {
+            Ok(id) => id,
+            Err(invalid) => return Outcome::Error(invalid.to_string()),
+        };
+        let faction = match FactionId::new(faction) {
+            Ok(id) => id,
+            Err(invalid) => return Outcome::Error(invalid.to_string()),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        let command = if joining {
+            Command::JoinFaction { character, faction }
+        } else {
+            Command::LeaveFaction { character, faction }
+        };
+        match world.execute(command) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
     }
 
     /// `disposition <observer> <subject> [--explain]`: how the observer regards the subject,
@@ -509,6 +622,17 @@ fn describe_event(event: &Event) -> String {
             }
             what
         }
+        Change::JoinedFaction { character, faction } => format!("{character} joined {faction}"),
+        Change::LeftFaction {
+            character,
+            faction,
+            reason,
+        } => {
+            let reason = match reason {
+                LeaveReason::Voluntary => "voluntary",
+            };
+            format!("{character} left {faction} ({reason})")
+        }
         Change::AlignmentChanged {
             character,
             from,
@@ -526,6 +650,8 @@ fn describe_event(event: &Event) -> String {
 fn describe_command(command: &Command) -> String {
     match command {
         Command::AdvanceTime { ticks } => format!("advance {ticks}"),
+        Command::JoinFaction { character, faction } => format!("join {character} {faction}"),
+        Command::LeaveFaction { character, faction } => format!("leave {character} {faction}"),
         Command::PerformAction {
             actor,
             action,
@@ -593,12 +719,25 @@ fn no_world() -> Outcome {
 
 /// One line about a faction: `temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good`.
 fn describe_faction(world: &World, faction: &Faction) -> String {
+    let members: Vec<String> = world
+        .members(&faction.id)
+        .expect("a faction from the world")
+        .into_iter()
+        .map(ToString::to_string)
+        .collect();
+    let members = if members.is_empty() {
+        "no members".to_owned()
+    } else {
+        format!("members: {}", members.join(", "))
+    };
     format!(
-        "{} — {} — {} — {}",
+        "{} — {} — {} — {} — tolerance {}, member tolerance {} — {members}",
         faction.id,
         faction.name,
         axes(faction.alignment),
-        faction.alignment.label(world.balance().label_threshold)
+        faction.alignment.label(world.balance().label_threshold),
+        faction.tolerances.tolerance(),
+        faction.tolerances.member(),
     )
 }
 
@@ -661,13 +800,22 @@ fn describe(world: &World, character: &Character) -> String {
     let alignment = world
         .alignment(&character.id)
         .expect("every character in the world has an alignment");
-    format!(
+    let memberships: Vec<String> = world
+        .memberships(&character.id)
+        .expect("a character from the world")
+        .map(|(faction, membership)| format!("{faction} since tick {}", membership.since))
+        .collect();
+    let mut line = format!(
         "{} — {} — {} — {}",
         character.id,
         character.name,
         axes(alignment),
         alignment.label(world.balance().label_threshold)
-    )
+    );
+    if !memberships.is_empty() {
+        line += &format!(" — member of {}", memberships.join(", "));
+    }
+    line
 }
 
 /// `calc <a> <op> <b>`: the engine's fixed-point arithmetic, so a designer can check how a
@@ -855,11 +1003,13 @@ mod tests {
         let mut session = riverhold();
         assert_eq!(
             session.execute("show character vex"),
-            output("vex — Vex — law -55.00, good -20.00 — Chaotic Neutral")
+            output(
+                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild since tick 0"
+            )
         );
         assert_eq!(
-            session.execute("show character sister_mira"),
-            output("sister_mira — Sister Mira — law 35.00, good 85.00 — Lawful Good")
+            session.execute("show character merchant_ava"),
+            output("merchant_ava — Merchant Ava — law 20.00, good 10.00 — True Neutral")
         );
     }
 
@@ -868,12 +1018,12 @@ mod tests {
         assert_eq!(
             riverhold().execute("characters"),
             output(
-                "brother_ash — Brother Ash — law 25.00, good -70.00 — Neutral Evil\n\
-                 captain_hale — Captain Hale — law 75.00, good 30.00 — Lawful Neutral\n\
+                "brother_ash — Brother Ash — law 25.00, good -70.00 — Neutral Evil — member of ashen_circle since tick 0\n\
+                 captain_hale — Captain Hale — law 75.00, good 30.00 — Lawful Neutral — member of city_watch since tick 0\n\
                  merchant_ava — Merchant Ava — law 20.00, good 10.00 — True Neutral\n\
                  player — The Player — law 0.00, good 0.00 — True Neutral\n\
-                 sister_mira — Sister Mira — law 35.00, good 85.00 — Lawful Good\n\
-                 vex — Vex — law -55.00, good -20.00 — Chaotic Neutral"
+                 sister_mira — Sister Mira — law 35.00, good 85.00 — Lawful Good — member of temple since tick 0\n\
+                 vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild since tick 0"
             )
         );
     }
@@ -904,7 +1054,9 @@ mod tests {
         );
         assert_eq!(
             session.execute("show character vex"),
-            output("vex — Vex — law -55.00, good -20.00 — Chaotic Neutral")
+            output(
+                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild since tick 0"
+            )
         );
     }
 
@@ -1252,11 +1404,11 @@ mod tests {
         assert_eq!(
             riverhold().execute("factions"),
             output(
-                "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil\n\
-                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral\n\
-                 free_company — The Free Company — law -10.00, good 0.00 — True Neutral\n\
-                 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral\n\
-                 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good"
+                "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00 — members: brother_ash\n\
+                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00 — members: captain_hale\n\
+                 free_company — The Free Company — law -10.00, good 0.00 — True Neutral — tolerance 60.00, member tolerance 80.00 — no members\n\
+                 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex\n\
+                 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira"
             )
         );
     }
@@ -1266,7 +1418,9 @@ mod tests {
         let mut session = riverhold();
         assert_eq!(
             session.execute("show faction temple"),
-            output("temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good")
+            output(
+                "temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira"
+            )
         );
         assert_eq!(
             session.execute("show faction city_wach"),
@@ -1375,6 +1529,190 @@ mod tests {
         ] {
             assert_eq!(run(line), none, "{line}");
         }
+    }
+
+    // Joining and leaving
+
+    #[test]
+    fn can_join_says_whether_and_why_not() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("can-join player lantern_guild"),
+            output("no: 60.21 from The Lantern Guild, tolerance is 45.00")
+        );
+        session
+            .execute("act player steal --scale 4")
+            .expect("valid");
+        assert_eq!(
+            session.execute("can-join player lantern_guild"),
+            output("yes: 40.01 from The Lantern Guild, tolerance is 45.00")
+        );
+        assert_eq!(
+            session.execute("can-join vex lantern_guild"),
+            output("no: vex is already a member of lantern_guild")
+        );
+    }
+
+    #[test]
+    fn can_join_explains_its_working() {
+        assert_eq!(
+            riverhold().execute("can-join player lantern_guild --explain"),
+            output(
+                "player → lantern_guild: no\n\
+                 distance 60.21 (euclidean), tolerance 45.00\n\
+                 law: -60.00 vs 0.00, gap 60.00, weight 1.00\n\
+                 good: -10.00 vs 0.00, gap 10.00, weight 0.50\n\
+                 weights: lantern_guild's own\n\
+                 refused: 60.21 from The Lantern Guild, tolerance is 45.00"
+            )
+        );
+    }
+
+    #[test]
+    fn joining_and_leaving_change_membership_and_show_the_events() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("join player lantern_guild"),
+            command_error(
+                "player can't join lantern_guild: 60.21 from The Lantern Guild, tolerance is 45.00"
+            )
+        );
+        session
+            .execute("act player steal --scale 4")
+            .expect("valid");
+        session.execute("advance 2").expect("valid");
+        assert_eq!(
+            session.execute("join player lantern_guild"),
+            output("#4 at tick 2: player joined lantern_guild")
+        );
+        assert_eq!(
+            session.execute("show character player"),
+            output(
+                "player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild since tick 2"
+            )
+        );
+        assert_eq!(
+            session.execute("show faction lantern_guild"),
+            output(
+                "lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: player, vex"
+            )
+        );
+        assert_eq!(
+            session.execute("leave player lantern_guild"),
+            output("#5 at tick 2: player left lantern_guild (voluntary)")
+        );
+        assert_eq!(
+            session.execute("leave player lantern_guild"),
+            command_error("player isn't a member of lantern_guild")
+        );
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. join player lantern_guild — refused: player can't join lantern_guild: 60.21 from The Lantern Guild, tolerance is 45.00\n\
+                 2. act player steal --scale 4.00 — accepted\n\
+                 3. advance 2 — accepted\n\
+                 4. join player lantern_guild — accepted\n\
+                 5. leave player lantern_guild — accepted\n\
+                 6. leave player lantern_guild — refused: player isn't a member of lantern_guild"
+            )
+        );
+    }
+
+    #[test]
+    fn a_character_in_several_factions_lists_them_all() {
+        let mut session = riverhold();
+        session.execute("advance 1").expect("valid");
+        // Vex is 12.31 from the Free Company, well within its 60.00.
+        session.execute("join vex free_company").expect("valid");
+        assert_eq!(
+            session.execute("show character vex"),
+            output(
+                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of free_company since tick 1, lantern_guild since tick 0"
+            )
+        );
+    }
+
+    #[test]
+    fn membership_commands_report_unknown_ids_and_bad_input() {
+        let mut session = riverhold();
+        for (line, message) in [
+            (
+                "join plyer temple",
+                "unknown character 'plyer' (did you mean 'player'?)",
+            ),
+            (
+                "join player tempel",
+                "unknown faction 'tempel' (did you mean 'temple'?)",
+            ),
+            (
+                "leave player tempel",
+                "unknown faction 'tempel' (did you mean 'temple'?)",
+            ),
+            (
+                "can-join plyer temple",
+                "unknown character 'plyer' (did you mean 'player'?)",
+            ),
+            (
+                "can-join player tempel",
+                "unknown faction 'tempel' (did you mean 'temple'?)",
+            ),
+            (
+                "join Player temple",
+                "'Player' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+            ),
+            (
+                "leave player Temple",
+                "'Temple' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(message), "{line}");
+        }
+        for (line, usage) in [
+            (
+                "join player",
+                "join needs the form: join <character> <faction>",
+            ),
+            (
+                "leave a b c",
+                "leave needs the form: leave <character> <faction>",
+            ),
+            (
+                "can-join player",
+                "can-join needs the form: can-join <character> <faction> [--explain]",
+            ),
+            (
+                "can-join player temple --why",
+                "can-join needs the form: can-join <character> <faction> [--explain]",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(usage), "{line}");
+        }
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        for line in [
+            "join player temple",
+            "leave player temple",
+            "can-join player temple",
+        ] {
+            assert_eq!(run(line), none, "{line}");
+        }
+    }
+
+    #[test]
+    fn load_prints_warnings_after_its_summary() {
+        let mut session = repo();
+        assert_eq!(
+            session.execute("load crates/cli/tests/fixtures/worlds/reformed"),
+            output(
+                "loaded 1 character from crates/cli/tests/fixtures/worlds/reformed\n\
+                 warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00"
+            )
+        );
+        assert_eq!(
+            session.execute("show character vex"),
+            output(
+                "vex — Vex — law 35.00, good 10.00 — Lawful Neutral — member of lantern_guild since tick 0"
+            )
+        );
     }
 
     // Disposition
@@ -1512,6 +1850,9 @@ mod tests {
             "show faction <id>",
             "distance <observer> <subject> [--explain]",
             "disposition <observer> <subject> [--explain]",
+            "can-join <character> <faction> [--explain]",
+            "join <character> <faction>",
+            "leave <character> <faction>",
             "actions",
             "act <actor> <action> [--target <id>] [--scale <n>]",
             "advance <ticks>",

@@ -7,30 +7,44 @@
 # weights:   how much the faction cares about each axis when judging how far away someone
 #            is, 0 to 1, with at least one above 0. Leave it out to use balance.toml's
 #            default_weights.
+# tolerance: how close to the faction's alignment someone must be to join it, measured as
+#            `distance <faction> <character>` does.
+# member_tolerance (optional): how far a member may drift before it matters; at least the
+#            tolerance, which it defaults to. Easier to stay than to get in.
 
 [city_watch]
 name = "The City Watch"
 alignment = { law = 70.0, good = 20.0 }
 # Cares about order far more than kindness.
 weights = { law = 1.0, good = 0.25 }
+tolerance = 40.0
+member_tolerance = 50.0
 
 [temple]
 name = "Temple of the Dawn"
 alignment = { law = 30.0, good = 80.0 }
 weights = { law = 0.5, good = 1.0 }
+tolerance = 35.0
+member_tolerance = 45.0
 
 [lantern_guild]
 name = "The Lantern Guild"
 alignment = { law = -60.0, good = -10.0 }
 weights = { law = 1.0, good = 0.5 }
+tolerance = 45.0
+member_tolerance = 60.0
 
 [free_company]
 name = "The Free Company"
 alignment = { law = -10.0, good = 0.0 }
 # Mercenaries barely care about either axis, so almost anyone seems close.
 weights = { law = 0.25, good = 0.25 }
+tolerance = 60.0
+member_tolerance = 80.0
 
 [ashen_circle]
 name = "The Ashen Circle"
 alignment = { law = 20.0, good = -80.0 }
 weights = { law = 0.25, good = 1.0 }
+tolerance = 30.0
+member_tolerance = 40.0
