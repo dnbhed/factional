@@ -6,9 +6,9 @@ use factional_core::{Curve, CurveError, Fixed, Tick, suggest};
 use crate::distance::gap;
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
-    CommandError, Disposition, Event, Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry,
-    LeaveReason, Membership, Metric, Regard, Relation, RelationSide, Role, Weights, Witnesses,
-    measure,
+    CommandError, Disposition, Effects, Event, Faction, FactionId, JoinAssessment, JoinBlock,
+    JournalEntry, LeaveReason, Membership, Metric, Outcome, OutcomeId, Party, Regard, Relation,
+    RelationSide, Role, StandingEffects, StandingKey, StandingOwner, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -74,6 +74,8 @@ pub struct Content {
     pub actions: BTreeMap<ActionId, Action>,
     /// How factions regard each other, as written; any direction left out is 0.
     pub relations: Vec<Relation>,
+    /// Named bundles of effects, such as quest results (P-26).
+    pub outcomes: BTreeMap<OutcomeId, Outcome>,
 }
 
 /// Something wrong with content as a whole, found before a world is built from it (P-32).
@@ -129,6 +131,20 @@ pub enum ContentProblem {
         other: FactionId,
         relation: Fixed,
     },
+    /// A `standing` block names a faction or character that doesn't exist.
+    UnknownStandingParty {
+        owner: StandingOwner,
+        party: Party,
+        suggestion: Option<Party>,
+    },
+    /// A standing value or change outside −100…100.
+    StandingOutOfRange {
+        owner: StandingOwner,
+        key: StandingKey,
+        value: Fixed,
+    },
+    /// A faction's `leave_standing_change` outside −100…100.
+    LeaveStandingOutOfRange { faction: FactionId, value: Fixed },
 }
 
 /// Something in content that's allowed but probably not meant: it's reported, and the world
@@ -259,7 +275,79 @@ impl Content {
             .chain(memberships)
             .chain(relations)
             .chain(starts_in_conflict)
+            .chain(self.standing_problems())
             .collect()
+    }
+
+    /// Problems with `leave_standing_change` and every `standing` block: each party must
+    /// exist, and each value must be within ±100. Factions, then characters, actions and
+    /// outcomes, each in id order.
+    fn standing_problems(&self) -> Vec<ContentProblem> {
+        let mut problems: Vec<ContentProblem> = self
+            .factions
+            .values()
+            .filter(|faction| !within_range(faction.leave_standing_change))
+            .map(|faction| ContentProblem::LeaveStandingOutOfRange {
+                faction: faction.id.clone(),
+                value: faction.leave_standing_change,
+            })
+            .collect();
+        for character in self.characters.values() {
+            let owner = StandingOwner::Character(character.id.clone());
+            self.check_standing(&owner, &character.standing, &mut problems);
+        }
+        for action in self.actions.values() {
+            let owner = StandingOwner::Action(action.id.clone());
+            let standing = &action.standing;
+            for (key, value) in [
+                (StandingKey::Target, standing.target),
+                (StandingKey::TargetFactions, standing.target_factions),
+            ] {
+                if let Some(value) = value.filter(|value| !within_range(*value)) {
+                    problems.push(ContentProblem::StandingOutOfRange {
+                        owner: owner.clone(),
+                        key,
+                        value,
+                    });
+                }
+            }
+            self.check_standing(&owner, &standing.named, &mut problems);
+        }
+        for outcome in self.outcomes.values() {
+            let owner = StandingOwner::Outcome(outcome.id.clone());
+            self.check_standing(&owner, &outcome.effects.standing, &mut problems);
+        }
+        problems
+    }
+
+    /// Each named party must exist (with a suggestion if not), and its value be within ±100.
+    fn check_standing(
+        &self,
+        owner: &StandingOwner,
+        effects: &StandingEffects,
+        problems: &mut Vec<ContentProblem>,
+    ) {
+        for (party, value) in effects.parties() {
+            let unknown = match &party {
+                Party::Faction(id) => (!self.factions.contains_key(id))
+                    .then(|| closest(id.as_str(), self.factions.keys()).map(Party::Faction)),
+                Party::Character(id) => (!self.characters.contains_key(id))
+                    .then(|| closest(id.as_str(), self.characters.keys()).map(Party::Character)),
+            };
+            if let Some(suggestion) = unknown {
+                problems.push(ContentProblem::UnknownStandingParty {
+                    owner: owner.clone(),
+                    party,
+                    suggestion,
+                });
+            } else if !within_range(value) {
+                problems.push(ContentProblem::StandingOutOfRange {
+                    owner: owner.clone(),
+                    key: StandingKey::Party(party),
+                    value,
+                });
+            }
+        }
     }
 
     /// Every direction the relations set, first setting first; any other is 0.
@@ -361,6 +449,23 @@ impl fmt::Display for ContentProblem {
                 f,
                 "{character} can't start in both {other} and {faction}: they're in conflict ({relation})"
             ),
+            ContentProblem::UnknownStandingParty {
+                party, suggestion, ..
+            } => {
+                let kind = match party {
+                    Party::Faction(_) => "faction",
+                    Party::Character(_) => "character",
+                };
+                write!(f, "unknown {kind} '{party}'")?;
+                match suggestion {
+                    Some(close) => write!(f, " (did you mean '{close}'?)"),
+                    None => Ok(()),
+                }
+            }
+            ContentProblem::StandingOutOfRange { value, .. }
+            | ContentProblem::LeaveStandingOutOfRange { value, .. } => {
+                write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
+            }
         }
     }
 }
@@ -440,6 +545,9 @@ struct State {
     memberships: BTreeMap<CharacterId, BTreeMap<FactionId, Membership>>,
     /// Every direction set so far, `(from, to)` → value; any other is 0.
     relations: BTreeMap<(FactionId, FactionId), Fixed>,
+    /// Every standing set so far, `(subject, party)` → how `party` regards `subject`; any
+    /// other is 0.
+    standings: BTreeMap<(CharacterId, Party), Fixed>,
 }
 
 impl State {
@@ -469,6 +577,17 @@ impl State {
                 })
                 .collect(),
             relations: content.relation_values(),
+            standings: content
+                .characters
+                .values()
+                .flat_map(|character| {
+                    character
+                        .standing
+                        .parties()
+                        .into_iter()
+                        .map(|(party, value)| ((character.id.clone(), party), value))
+                })
+                .collect(),
         }
     }
 }
@@ -581,6 +700,23 @@ impl World {
                         to,
                     });
                 }
+                let effects = &catalogued.standing;
+                let mut deltas = Deltas::new();
+                if let Some(target) = target {
+                    if let Some(change) = effects.target {
+                        add(&mut deltas, Party::Character(target.clone()), change);
+                    }
+                    if let Some(change) = effects.target_factions {
+                        let factions = self.state.memberships.get(target).into_iter().flatten();
+                        for (faction, _) in factions {
+                            add(&mut deltas, Party::Faction(faction.clone()), change);
+                        }
+                    }
+                }
+                for (party, change) in effects.named.parties() {
+                    add(&mut deltas, party, change);
+                }
+                changes.extend(self.standing_changes(actor, deltas));
                 Ok(changes)
             }
             Command::JoinFaction { character, faction } => {
@@ -606,11 +742,16 @@ impl World {
                         faction: faction.clone(),
                     });
                 }
-                Ok(vec![Change::LeftFaction {
+                let mut changes = vec![Change::LeftFaction {
                     character: character.clone(),
                     faction: faction.clone(),
                     reason: LeaveReason::Voluntary,
-                }])
+                }];
+                let cost = self.content.factions[faction].leave_standing_change;
+                let mut deltas = Deltas::new();
+                add(&mut deltas, Party::Faction(faction.clone()), cost);
+                changes.extend(self.standing_changes(character, deltas));
+                Ok(changes)
             }
             Command::SetRelation {
                 from,
@@ -620,7 +761,7 @@ impl World {
             } => {
                 if !(-AXIS_LIMIT..=AXIS_LIMIT).contains(value) {
                     self.relation_ends(from, to)?;
-                    return Err(CommandError::RelationOutOfRange { value: *value });
+                    return Err(CommandError::ValueOutOfRange { value: *value });
                 }
                 self.relation_changes(from, to, *mutual, |_| *value)
             }
@@ -634,7 +775,108 @@ impl World {
                 let moved = before.checked_add(*by).unwrap_or(*by);
                 moved.clamp(-AXIS_LIMIT, AXIS_LIMIT)
             }),
+            Command::ApplyOutcome { outcome, character } => {
+                self.existing(character, Role::Member)?;
+                let found = self.content.outcomes.get(outcome).ok_or_else(|| {
+                    CommandError::UnknownOutcome {
+                        outcome: outcome.clone(),
+                        suggestion: closest(outcome.as_str(), self.content.outcomes.keys()),
+                    }
+                })?;
+                let mut changes = vec![Change::OutcomeApplied {
+                    outcome: outcome.clone(),
+                    character: character.clone(),
+                }];
+                changes.extend(self.effect_changes(character, &found.effects));
+                Ok(changes)
+            }
+            Command::ApplyEffects {
+                source,
+                character,
+                effects,
+            } => {
+                self.existing(character, Role::Member)?;
+                for (party, change) in effects.standing.parties() {
+                    match &party {
+                        Party::Faction(faction) => {
+                            self.faction(faction)
+                                .ok_or_else(|| self.unknown_faction(faction))?;
+                        }
+                        Party::Character(id) => {
+                            self.existing(id, Role::Member)?;
+                        }
+                    }
+                    if !(-AXIS_LIMIT..=AXIS_LIMIT).contains(&change) {
+                        return Err(CommandError::ValueOutOfRange { value: change });
+                    }
+                }
+                let mut changes = vec![Change::EffectsApplied {
+                    source: source.clone(),
+                    character: character.clone(),
+                }];
+                changes.extend(self.effect_changes(character, effects));
+                Ok(changes)
+            }
         }
+    }
+
+    /// The changes from applying `effects` to `character`: alignment as an action at scale
+    /// 1.00 would move it, then standing.
+    fn effect_changes(&self, character: &CharacterId, effects: &Effects) -> Vec<Change> {
+        let mut changes = Vec::new();
+        let from = self.state.alignments[character];
+        let to = from.shifted(effects.alignment, Fixed::ONE);
+        if to != from {
+            changes.push(Change::AlignmentChanged {
+                character: character.clone(),
+                from,
+                to,
+            });
+        }
+        let mut deltas = Deltas::new();
+        for (party, change) in effects.standing.parties() {
+            add(&mut deltas, party, change);
+        }
+        changes.extend(self.standing_changes(character, deltas));
+        changes
+    }
+
+    /// One `StandingChanged` for each party whose standing toward `subject` moves, in party
+    /// order. Each change is scaled by the party's awareness of it, and stops at ±100.
+    fn standing_changes(&self, subject: &CharacterId, deltas: Deltas) -> Vec<Change> {
+        deltas
+            .into_iter()
+            .filter_map(|(party, delta)| {
+                let change = delta.saturating_mul(self.awareness(&party));
+                let before = self.standing_now(subject, &party);
+                // A sum too big to hold means a change that reaches the end by itself.
+                let after = before
+                    .checked_add(change)
+                    .unwrap_or(change)
+                    .clamp(-AXIS_LIMIT, AXIS_LIMIT);
+                (after != before).then(|| Change::StandingChanged {
+                    subject: subject.clone(),
+                    party,
+                    before,
+                    after,
+                })
+            })
+            .collect()
+    }
+
+    /// How much `party` learns of an act: 1.00 under the omniscient knowledge model, the only
+    /// one so far. Later models replace this seam (DESIGN.md §10, D-7).
+    fn awareness(&self, party: &Party) -> Fixed {
+        let _ = party;
+        Fixed::ONE
+    }
+
+    fn standing_now(&self, subject: &CharacterId, party: &Party) -> Fixed {
+        self.state
+            .standings
+            .get(&(subject.clone(), party.clone()))
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Checks a relation's two ends: both exist, and they're different factions.
@@ -769,6 +1011,17 @@ impl World {
                     .relations
                     .insert((from.clone(), to.clone()), after);
             }
+            Change::StandingChanged {
+                ref subject,
+                ref party,
+                after,
+                ..
+            } => {
+                self.state
+                    .standings
+                    .insert((subject.clone(), party.clone()), after);
+            }
+            Change::OutcomeApplied { .. } | Change::EffectsApplied { .. } => {}
         }
         self.events.push(event);
     }
@@ -842,6 +1095,36 @@ impl World {
                 .into_iter()
                 .flat_map(BTreeMap::iter),
         )
+    }
+
+    /// How `party` regards `subject` now, from what has passed between them (DESIGN.md §7.1).
+    /// `None` if either is unknown.
+    pub fn standing(&self, subject: &CharacterId, party: &Party) -> Option<Fixed> {
+        self.character(subject)?;
+        match party {
+            Party::Faction(id) => self.faction(id).map(|_| ()),
+            Party::Character(id) => self.character(id).map(|_| ()),
+        }?;
+        Some(self.standing_now(subject, party))
+    }
+
+    /// Everyone who regards `subject` other than neutrally, factions first, each in id order.
+    /// `None` for an unknown character.
+    pub fn standings(&self, subject: &CharacterId) -> Option<Vec<(Party, Fixed)>> {
+        self.character(subject)?;
+        Some(
+            self.state
+                .standings
+                .iter()
+                .filter(|((who, _), value)| who == subject && **value != Fixed::ZERO)
+                .map(|((_, party), value)| (party.clone(), *value))
+                .collect(),
+        )
+    }
+
+    /// The outcomes, in id order.
+    pub fn outcomes(&self) -> impl Iterator<Item = &Outcome> {
+        self.content.outcomes.values()
     }
 
     /// How `from` regards `to` now, with its band (DESIGN.md §9.4). `None` if either is unknown.
@@ -986,6 +1269,20 @@ impl World {
     }
 }
 
+fn within_range(value: Fixed) -> bool {
+    (-AXIS_LIMIT..=AXIS_LIMIT).contains(&value)
+}
+
+/// Standing changes by party, before they're applied.
+type Deltas = BTreeMap<Party, Fixed>;
+
+/// Adds `change` to what `party` is already due, so effects on one party make one change.
+fn add(deltas: &mut Deltas, party: Party, change: Fixed) {
+    let due = deltas.entry(party).or_default();
+    // Every effect is checked to be within ±100, so a few added together can't overflow.
+    *due = *due + change;
+}
+
 /// The more hostile of the two directions between `a` and `b`; any direction not set is 0.
 fn hostility(
     relations: &BTreeMap<(FactionId, FactionId), Fixed>,
@@ -1014,8 +1311,8 @@ where
 mod tests {
     use super::*;
     use crate::{
-        AXIS_LIMIT, AlignmentDelta, Band, JoinBlock, LeaveReason, RelationEnds, Role, Tolerances,
-        Witnesses,
+        AXIS_LIMIT, ActionStanding, AlignmentDelta, Band, Effects, JoinBlock, LeaveReason,
+        RelationEnds, Role, StandingEffects, Tolerances, Witnesses,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -1033,6 +1330,7 @@ mod tests {
             alignment: Alignment::new(h(law), h(good)).expect("in range"),
             weights: None,
             memberships: Vec::new(),
+            standing: StandingEffects::default(),
         }
     }
 
@@ -1057,6 +1355,7 @@ mod tests {
             alignment: Alignment::new(h(law), h(good)).expect("in range"),
             weights: w.map(|(law, good)| weights(law, good)),
             tolerances: Tolerances::new(h(tolerance), Some(h(member))).expect("valid"),
+            leave_standing_change: Fixed::ZERO,
         }
     }
 
@@ -1084,21 +1383,48 @@ mod tests {
                 law: h(law),
                 good: h(good),
             },
+            standing: ActionStanding::default(),
         }
     }
 
-    /// A world with these characters and Riverhold's `steal` and `help_stranger`.
+    fn named(factions: &[(&str, i64)], characters: &[(&str, i64)]) -> StandingEffects {
+        StandingEffects {
+            factions: factions
+                .iter()
+                .map(|&(f, v)| (faction_id(f), h(v)))
+                .collect(),
+            characters: characters.iter().map(|&(c, v)| (id(c), h(v))).collect(),
+        }
+    }
+
+    /// Riverhold's `steal`, `help_stranger` and `donate_to_temple` with their standing
+    /// effects (DESIGN.md §13).
+    fn actions() -> BTreeMap<ActionId, Action> {
+        let mut steal = action("steal", -5_00, -3_00);
+        steal.standing = ActionStanding {
+            target: Some(h(-20_00)),
+            target_factions: Some(h(-10_00)),
+            named: StandingEffects::default(),
+        };
+        let mut help = action("help_stranger", 0, 4_00);
+        help.standing.target = Some(h(10_00));
+        let mut donate = action("donate_to_temple", 0, 3_00);
+        donate.standing.named = named(&[("temple", 10_00)], &[]);
+        [steal, help, donate]
+            .into_iter()
+            .map(|a| (a.id.clone(), a))
+            .collect()
+    }
+
+    /// A world with these characters and the test actions.
     fn world_of(characters: impl IntoIterator<Item = Character>) -> World {
-        let actions = [
-            action("steal", -5_00, -3_00),
-            action("help_stranger", 0, 4_00),
-        ];
         World::new(Content {
             balance: Balance::default(),
             characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),
             factions: factions(),
-            actions: actions.into_iter().map(|a| (a.id.clone(), a)).collect(),
+            actions: actions(),
             relations: relations(),
+            outcomes: BTreeMap::new(),
         })
         .expect("valid content")
     }
@@ -2296,7 +2622,7 @@ mod tests {
         for value in [100_01, -100_01] {
             assert_eq!(
                 refused(&mut world, set("temple", "free_company", value, true)),
-                CommandError::RelationOutOfRange { value: h(value) }
+                CommandError::ValueOutOfRange { value: h(value) }
             );
         }
         assert!(
@@ -2305,7 +2631,7 @@ mod tests {
                 .is_ok()
         );
         assert_eq!(
-            CommandError::RelationOutOfRange { value: h(120_00) }.to_string(),
+            CommandError::ValueOutOfRange { value: h(120_00) }.to_string(),
             "120.00 is outside -100.00..100.00"
         );
         assert_eq!(
@@ -2509,6 +2835,527 @@ mod tests {
         );
     }
 
+    // Standing (DESIGN.md §7.1)
+
+    fn outcome_id(text: &str) -> OutcomeId {
+        OutcomeId::new(text).expect("a valid id")
+    }
+
+    fn party_faction(text: &str) -> Party {
+        Party::Faction(faction_id(text))
+    }
+
+    fn party_character(text: &str) -> Party {
+        Party::Character(id(text))
+    }
+
+    fn standing_of(world: &World, subject: &str, party: &Party) -> Fixed {
+        world.standing(&id(subject), party).expect("both exist")
+    }
+
+    fn standing_changed(seq: u64, subject: &str, party: Party, before: i64, after: i64) -> Event {
+        Event {
+            seq,
+            tick: Tick(0),
+            payload: Change::StandingChanged {
+                subject: id(subject),
+                party,
+                before: h(before),
+                after: h(after),
+            },
+        }
+    }
+
+    /// Riverhold's people, with Hale's starting standing, and its two outcomes.
+    fn with_outcomes() -> World {
+        let mut hale = member_of(character("Captain_hale", 75_00, 30_00), &["city_watch"]);
+        hale.standing = named(&[("city_watch", 75_00)], &[]);
+        let outcomes = [
+            Outcome {
+                id: outcome_id("fined_by_watch"),
+                effects: Effects {
+                    alignment: AlignmentDelta::default(),
+                    standing: named(&[("city_watch", -20_00)], &[("captain_hale", -10_00)]),
+                },
+            },
+            Outcome {
+                id: outcome_id("rescued_merchant"),
+                effects: Effects {
+                    alignment: AlignmentDelta {
+                        law: h(0),
+                        good: h(6_00),
+                    },
+                    standing: named(&[("city_watch", 10_00)], &[("ava", 30_00)]),
+                },
+            },
+        ];
+        World::new(Content {
+            characters: [
+                hale,
+                character("Player", 0, 0),
+                character("Ava", 20_00, 10_00),
+                member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+            ]
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect(),
+            factions: factions(),
+            actions: actions_with_slander(),
+            relations: relations(),
+            outcomes: outcomes.into_iter().map(|o| (o.id.clone(), o)).collect(),
+            ..Content::default()
+        })
+        .expect("valid content")
+    }
+
+    /// The test actions, and `slander`, which names vex, so its effects on him add up.
+    fn actions_with_slander() -> BTreeMap<ActionId, Action> {
+        let mut slander = action("slander", 0, -2_00);
+        slander.standing.target = Some(h(-5_00));
+        slander.standing.named = named(&[], &[("vex", -5_00)]);
+        let mut actions = actions();
+        actions.insert(slander.id.clone(), slander);
+        actions
+    }
+
+    fn outcome(outcome: &str, character: &str) -> Command {
+        Command::ApplyOutcome {
+            outcome: outcome_id(outcome),
+            character: id(character),
+        }
+    }
+
+    #[test]
+    fn lists_the_outcomes_in_id_order() {
+        let world = with_outcomes();
+        let ids: Vec<&str> = world.outcomes().map(|o| o.id.as_str()).collect();
+        assert_eq!(ids, ["fined_by_watch", "rescued_merchant"]);
+    }
+
+    #[test]
+    fn stealing_from_someone_lowers_their_standing_toward_the_thief() {
+        let mut world = with_outcomes();
+        let events = world
+            .execute(act("player", "steal", Some("ava"), 1_00))
+            .expect("accepted");
+        assert_eq!(events.len(), 3);
+        assert_eq!(
+            events[2],
+            standing_changed(3, "player", party_character("ava"), 0, -20_00)
+        );
+        assert_eq!(
+            standing_of(&world, "player", &party_character("ava")),
+            h(-20_00)
+        );
+    }
+
+    #[test]
+    fn stealing_from_a_member_also_costs_standing_with_their_factions() {
+        let mut world = with_outcomes();
+        let events = world
+            .execute(act("player", "steal", Some("vex"), 1_00))
+            .expect("accepted");
+        assert_eq!(
+            events[2..],
+            [
+                standing_changed(3, "player", party_faction("lantern_guild"), 0, -10_00),
+                standing_changed(4, "player", party_character("vex"), 0, -20_00),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_action_without_a_target_changes_only_named_standing() {
+        let mut world = with_outcomes();
+        let events = world
+            .execute(act("player", "donate_to_temple", None, 1_00))
+            .expect("accepted");
+        assert_eq!(
+            events[2..],
+            [standing_changed(
+                3,
+                "player",
+                party_faction("temple"),
+                0,
+                10_00
+            )]
+        );
+        let events = world
+            .execute(act("player", "steal", None, 1_00))
+            .expect("accepted");
+        assert_eq!(events.len(), 2, "no target, so no standing to change");
+    }
+
+    #[test]
+    fn effects_on_the_same_party_add_up_to_one_change() {
+        let mut world = with_outcomes();
+        let events = world
+            .execute(act("player", "slander", Some("vex"), 1_00))
+            .expect("accepted");
+        assert_eq!(
+            events[2..],
+            [standing_changed(
+                3,
+                "player",
+                party_character("vex"),
+                0,
+                -10_00
+            )]
+        );
+    }
+
+    #[test]
+    fn scale_does_not_change_standing_effects() {
+        let mut world = with_outcomes();
+        world
+            .execute(act("player", "steal", Some("ava"), 3_00))
+            .expect("accepted");
+        assert_eq!(
+            standing_of(&world, "player", &party_character("ava")),
+            h(-20_00)
+        );
+    }
+
+    #[test]
+    fn an_outcome_applies_its_bundle_of_effects() {
+        let mut world = with_outcomes();
+        assert_eq!(
+            world.execute(outcome("fined_by_watch", "player")),
+            Ok(vec![
+                Event {
+                    seq: 1,
+                    tick: Tick(0),
+                    payload: Change::OutcomeApplied {
+                        outcome: outcome_id("fined_by_watch"),
+                        character: id("player"),
+                    },
+                },
+                standing_changed(2, "player", party_faction("city_watch"), 0, -20_00),
+                standing_changed(3, "player", party_character("captain_hale"), 0, -10_00),
+            ])
+        );
+        let events = world
+            .execute(outcome("rescued_merchant", "player"))
+            .expect("accepted");
+        assert_eq!(
+            events[1].payload,
+            Change::AlignmentChanged {
+                character: id("player"),
+                from: aligned(0, 0),
+                to: aligned(0, 6_00),
+            }
+        );
+        assert_eq!(
+            events[2..],
+            [
+                standing_changed(6, "player", party_faction("city_watch"), -20_00, -10_00),
+                standing_changed(7, "player", party_character("ava"), 0, 30_00),
+            ]
+        );
+    }
+
+    #[test]
+    fn standing_stops_at_minus_100() {
+        let mut world = with_outcomes();
+        for _ in 0..5 {
+            world
+                .execute(outcome("fined_by_watch", "player"))
+                .expect("accepted");
+        }
+        assert_eq!(
+            standing_of(&world, "player", &party_faction("city_watch")),
+            h(-100_00)
+        );
+        let events = world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        assert_eq!(
+            events[1..],
+            [standing_changed(
+                17,
+                "player",
+                party_character("captain_hale"),
+                -50_00,
+                -60_00
+            )]
+        );
+    }
+
+    #[test]
+    fn starting_standing_comes_from_content() {
+        let world = with_outcomes();
+        assert_eq!(
+            standing_of(&world, "captain_hale", &party_faction("city_watch")),
+            h(75_00)
+        );
+        assert_eq!(
+            standing_of(&world, "captain_hale", &party_faction("temple")),
+            h(0)
+        );
+        assert_eq!(
+            world.standings(&id("captain_hale")),
+            Some(vec![(party_faction("city_watch"), h(75_00))])
+        );
+        assert_eq!(world.standings(&id("player")), Some(vec![]));
+        assert_eq!(world.standings(&id("nobody")), None);
+        assert_eq!(
+            world.standing(&id("nobody"), &party_faction("temple")),
+            None
+        );
+        assert_eq!(
+            world.standing(&id("player"), &party_faction("nowhere")),
+            None
+        );
+        assert_eq!(
+            world.standing(&id("player"), &party_character("nobody")),
+            None
+        );
+    }
+
+    #[test]
+    fn standings_lists_factions_then_characters() {
+        let mut world = with_outcomes();
+        world
+            .execute(outcome("rescued_merchant", "player"))
+            .expect("accepted");
+        world
+            .execute(act("player", "steal", Some("vex"), 1_00))
+            .expect("accepted");
+        assert_eq!(
+            world.standings(&id("player")),
+            Some(vec![
+                (party_faction("city_watch"), h(10_00)),
+                (party_faction("lantern_guild"), h(-10_00)),
+                (party_character("ava"), h(30_00)),
+                (party_character("vex"), h(-20_00)),
+            ])
+        );
+    }
+
+    #[test]
+    fn leaving_a_faction_can_cost_standing_with_it() {
+        let mut faction = faction("free_company", -10_00, 0, None);
+        faction.leave_standing_change = h(-15_00);
+        let content = Content {
+            characters: [member_of(
+                character("Vex", -55_00, -20_00),
+                &["free_company"],
+            )]
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect(),
+            factions: [(faction.id.clone(), faction)].into(),
+            ..Content::default()
+        };
+        let mut world = World::new(content).expect("valid content");
+        let events = world
+            .execute(leave("vex", "free_company"))
+            .expect("accepted");
+        assert_eq!(
+            events[1],
+            standing_changed(2, "vex", party_faction("free_company"), 0, -15_00)
+        );
+        let mut riverhold = riverhold();
+        let events = riverhold
+            .execute(join("player", "free_company"))
+            .and_then(|_| riverhold.execute(leave("player", "free_company")))
+            .expect("accepted");
+        assert_eq!(
+            events.len(),
+            1,
+            "a leave_standing_change of 0 changes nothing"
+        );
+    }
+
+    #[test]
+    fn other_modules_can_apply_effects_directly() {
+        let mut world = with_outcomes();
+        let effects = Effects {
+            alignment: AlignmentDelta::default(),
+            standing: named(&[("temple", 25_00)], &[]),
+        };
+        let command = Command::ApplyEffects {
+            source: "quest:lost_relic".to_owned(),
+            character: id("player"),
+            effects,
+        };
+        assert_eq!(
+            world.execute(command),
+            Ok(vec![
+                Event {
+                    seq: 1,
+                    tick: Tick(0),
+                    payload: Change::EffectsApplied {
+                        source: "quest:lost_relic".to_owned(),
+                        character: id("player"),
+                    },
+                },
+                standing_changed(2, "player", party_faction("temple"), 0, 25_00),
+            ])
+        );
+    }
+
+    #[test]
+    fn outcomes_and_effects_need_things_that_exist_and_values_in_range() {
+        let mut world = with_outcomes();
+        assert_eq!(
+            refused(&mut world, outcome("fined_by_wach", "player")),
+            CommandError::UnknownOutcome {
+                outcome: outcome_id("fined_by_wach"),
+                suggestion: Some(outcome_id("fined_by_watch")),
+            }
+        );
+        assert_eq!(
+            refused(&mut world, outcome("fined_by_wach", "player")).to_string(),
+            "unknown outcome 'fined_by_wach' (did you mean 'fined_by_watch'?)"
+        );
+        assert_eq!(
+            refused(&mut world, outcome("fined_by_watch", "plyer")),
+            CommandError::UnknownCharacter {
+                role: Role::Member,
+                id: id("plyer"),
+                suggestion: Some(id("player")),
+            }
+        );
+        let effects = |standing| Command::ApplyEffects {
+            source: "test".to_owned(),
+            character: id("player"),
+            effects: Effects {
+                alignment: AlignmentDelta::default(),
+                standing,
+            },
+        };
+        assert_eq!(
+            refused(&mut world, effects(named(&[("tempel", 5_00)], &[]))),
+            CommandError::UnknownFaction {
+                faction: faction_id("tempel"),
+                suggestion: Some(faction_id("temple")),
+            }
+        );
+        assert_eq!(
+            refused(&mut world, effects(named(&[], &[("avx", 5_00)]))),
+            CommandError::UnknownCharacter {
+                role: Role::Member,
+                id: id("avx"),
+                suggestion: Some(id("ava")),
+            }
+        );
+        assert_eq!(
+            refused(&mut world, effects(named(&[("temple", 100_01)], &[]))),
+            CommandError::ValueOutOfRange { value: h(100_01) }
+        );
+        assert_eq!(
+            refused(&mut world, effects(named(&[], &[("ava", -100_01)]))),
+            CommandError::ValueOutOfRange { value: h(-100_01) }
+        );
+        assert!(
+            world
+                .execute(effects(named(&[("temple", -100_00)], &[])))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn replaying_rebuilds_standings() {
+        let mut world = with_outcomes();
+        world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        world
+            .execute(act("player", "steal", Some("vex"), 1_00))
+            .expect("accepted");
+        let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
+        assert_eq!(replayed.state, world.state);
+    }
+
+    // Standing in content (P-32)
+
+    #[test]
+    fn standing_must_name_parties_that_exist_with_values_in_range() {
+        let mut vex = member_of(character("Vex", 0, 0), &["lantern_guild"]);
+        vex.standing = named(
+            &[("lantern_gild", 30_00), ("temple", 100_01)],
+            &[("vx", 5_00)],
+        );
+        let mut gossip = action("gossip", 0, 0);
+        gossip.standing = ActionStanding {
+            target: Some(h(-100_01)),
+            target_factions: Some(h(100_01)),
+            named: named(&[], &[("nobody", 1_00)]),
+        };
+        let fine = Outcome {
+            id: outcome_id("fine"),
+            effects: Effects {
+                alignment: AlignmentDelta::default(),
+                standing: named(&[("city_wach", -20_00)], &[]),
+            },
+        };
+        let mut company = faction("free_company", -10_00, 0, None);
+        company.leave_standing_change = h(-100_01);
+        let mut factions = factions();
+        factions.insert(company.id.clone(), company);
+        let content = Content {
+            characters: [(vex.id.clone(), vex)].into(),
+            factions,
+            actions: [(gossip.id.clone(), gossip)].into(),
+            outcomes: [(fine.id.clone(), fine)].into(),
+            ..Content::default()
+        };
+        let problems = content.problems();
+        let owner_character = StandingOwner::Character(id("vex"));
+        assert_eq!(
+            problems,
+            [
+                ContentProblem::LeaveStandingOutOfRange {
+                    faction: faction_id("free_company"),
+                    value: h(-100_01),
+                },
+                ContentProblem::UnknownStandingParty {
+                    owner: owner_character.clone(),
+                    party: party_faction("lantern_gild"),
+                    suggestion: Some(party_faction("lantern_guild")),
+                },
+                ContentProblem::StandingOutOfRange {
+                    owner: owner_character.clone(),
+                    key: StandingKey::Party(party_faction("temple")),
+                    value: h(100_01),
+                },
+                ContentProblem::UnknownStandingParty {
+                    owner: owner_character,
+                    party: party_character("vx"),
+                    suggestion: Some(party_character("vex")),
+                },
+                ContentProblem::StandingOutOfRange {
+                    owner: StandingOwner::Action(action_id("gossip")),
+                    key: StandingKey::Target,
+                    value: h(-100_01),
+                },
+                ContentProblem::StandingOutOfRange {
+                    owner: StandingOwner::Action(action_id("gossip")),
+                    key: StandingKey::TargetFactions,
+                    value: h(100_01),
+                },
+                ContentProblem::UnknownStandingParty {
+                    owner: StandingOwner::Action(action_id("gossip")),
+                    party: party_character("nobody"),
+                    suggestion: None,
+                },
+                ContentProblem::UnknownStandingParty {
+                    owner: StandingOwner::Outcome(outcome_id("fine")),
+                    party: party_faction("city_wach"),
+                    suggestion: Some(party_faction("city_watch")),
+                },
+            ]
+        );
+        let messages: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        assert_eq!(messages[0], "-100.01 is outside -100.00..100.00");
+        assert_eq!(
+            messages[1],
+            "unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)"
+        );
+        assert_eq!(messages[3], "unknown character 'vx' (did you mean 'vex'?)");
+    }
+
     #[test]
     fn distance_needs_an_observer_and_a_subject_that_exist() {
         let world = riverhold();
@@ -2693,6 +3540,8 @@ mod tests {
             Ok(vec![
                 performed(1, "player", "steal", Some("ava"), 1_00),
                 alignment_changed(2, "player", aligned(0, 0), aligned(-5_00, -3_00)),
+                // From M3, the victim thinks less of the thief too.
+                standing_changed(3, "player", party_character("ava"), 0, -20_00),
             ])
         );
         assert_eq!(world.alignment(&id("player")), Some(aligned(-5_00, -3_00)));
@@ -2880,7 +3729,7 @@ mod tests {
     fn lists_the_action_catalogue_in_id_order() {
         let world = riverhold();
         let ids: Vec<&str> = world.actions().map(|a| a.id.as_str()).collect();
-        assert_eq!(ids, ["help_stranger", "steal"]);
+        assert_eq!(ids, ["donate_to_temple", "help_stranger", "steal"]);
     }
 
     #[test]
@@ -2940,11 +3789,25 @@ mod tests {
                     set(from, to, value, mutual)
                 }
             });
+        let effects = (
+            who(),
+            prop_oneof![Just("temple"), Just("nowhere")],
+            -150_00_i64..=150_00,
+        )
+            .prop_map(|(who, faction, value)| Command::ApplyEffects {
+                source: "test".to_owned(),
+                character: id(who),
+                effects: Effects {
+                    alignment: AlignmentDelta::default(),
+                    standing: named(&[(faction, value)], &[("vex", value)]),
+                },
+            });
         let command = prop_oneof![
             (0_u64..=1_000).prop_map(advance),
             action,
             membership,
-            relate
+            relate,
+            effects
         ];
         proptest::collection::vec(command, 0..30)
     }
@@ -3026,6 +3889,16 @@ mod tests {
         }
 
         /// DESIGN.md §14, invariant 1, for relations.
+        #[test]
+        fn standings_always_stay_within_range(commands in commands()) {
+            let world = run(&commands);
+            for character in world.characters() {
+                for (_, value) in world.standings(&character.id).expect("the character exists") {
+                    prop_assert!((-AXIS_LIMIT..=AXIS_LIMIT).contains(&value));
+                }
+            }
+        }
+
         #[test]
         fn relations_always_stay_within_range(commands in commands()) {
             let world = run(&commands);

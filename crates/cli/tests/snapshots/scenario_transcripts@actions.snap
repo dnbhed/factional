@@ -6,19 +6,21 @@ input_file: scenarios/actions.scenario
 > load content/sample
 loaded 6 characters from content/sample
 > actions
-donate_to_temple — law 0.00, good 3.00
-extort — law -2.00, good -6.00
-help_stranger — law 0.00, good 4.00
-murder — law -10.00, good -15.00
-report_crime — law 4.00, good 1.00
-steal — law -5.00, good -3.00
+donate_to_temple — law 0.00, good 3.00 — standing: temple 10.00
+extort — law -2.00, good -6.00 — standing: target -30.00, target_factions -15.00
+help_stranger — law 0.00, good 4.00 — standing: target 10.00
+murder — law -10.00, good -15.00 — standing: target -100.00, target_factions -40.00
+report_crime — law 4.00, good 1.00 — standing: city_watch 5.00
+steal — law -5.00, good -3.00 — standing: target -20.00, target_factions -10.00
 > act player steal --target merchant_ava
 #1 at tick 0: player did steal, targeting merchant_ava
 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00
 > assert show character player == player — The Player — law -5.00, good -3.00 — True Neutral
 > act player steal --target merchant_ava --scale 2
-#3 at tick 0: player did steal, targeting merchant_ava, at scale 2.00
-#4 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -15.00, good -9.00
+#4 at tick 0: player did steal, targeting merchant_ava, at scale 2.00
+#5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -15.00, good -9.00
+#6 at tick 0: player's standing with merchant_ava moved from -20.00 to -40.00
 > assert show character player == player — The Player — law -15.00, good -9.00 — True Neutral
 > assert act player stael == error: unknown action 'stael' (did you mean 'steal'?)
 > assert act player steal --scale 0 == error: scale must be greater than 0.00
@@ -29,8 +31,10 @@ steal — law -5.00, good -3.00
 > events
 #1 at tick 0: player did steal, targeting merchant_ava
 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
-#3 at tick 0: player did steal, targeting merchant_ava, at scale 2.00
-#4 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -15.00, good -9.00
+#3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00
+#4 at tick 0: player did steal, targeting merchant_ava, at scale 2.00
+#5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -15.00, good -9.00
+#6 at tick 0: player's standing with merchant_ava moved from -20.00 to -40.00
 > journal
 1. act player steal --target merchant_ava — accepted
 2. act player steal --target merchant_ava --scale 2.00 — accepted

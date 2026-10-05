@@ -16,6 +16,7 @@ mod faction;
 mod id;
 mod membership;
 mod relation;
+mod standing;
 mod world;
 
 pub use action::{Action, Witnesses};
@@ -25,11 +26,14 @@ pub use command::{Change, Command, CommandError, Event, JournalEntry, Role};
 pub use disposition::{Band, BandProblem, Bands, Disposition};
 pub use distance::{Metric, WeightProblem, Weights, measure};
 pub use faction::Faction;
-pub use id::{ActionId, CharacterId, FactionId, InvalidId};
+pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId};
 pub use membership::{
     JoinAssessment, JoinBlock, LeaveReason, Membership, ToleranceProblem, Tolerances,
 };
 pub use relation::{Regard, Relation, RelationEnds, RelationSide};
+pub use standing::{
+    ActionStanding, Effects, Outcome, Party, StandingEffects, StandingKey, StandingOwner,
+};
 pub use world::{
     Balance, Content, ContentProblem, ContentWarning, Distance, Observer, WeightsFrom, World,
 };

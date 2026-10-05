@@ -1,3 +1,5 @@
+use factional_core::Fixed;
+
 use crate::{Alignment, FactionId, Tolerances, Weights};
 
 /// A faction, as content describes it (DESIGN.md §9).
@@ -11,4 +13,7 @@ pub struct Faction {
     pub weights: Option<Weights>,
     /// How close someone must be to join, and to stay (DESIGN.md §9.1).
     pub tolerances: Tolerances,
+    /// The change in a member's standing with the faction when they leave of their own
+    /// accord (P-22).
+    pub leave_standing_change: Fixed,
 }

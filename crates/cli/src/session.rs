@@ -3,8 +3,9 @@ use std::path::PathBuf;
 
 use factional_core::{Fixed, ParseFixedError, suggest};
 use factional_reputation::{
-    ActionId, Alignment, Axis, Change, Character, CharacterId, Command, Distance, Event, Faction,
-    FactionId, LeaveReason, Observer, WeightsFrom, Witnesses, World,
+    ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command, Distance,
+    Event, Faction, FactionId, LeaveReason, Observer, OutcomeId, Party, StandingEffects,
+    WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -39,6 +40,15 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "leave <character> <faction>",
         "<character> leaves <faction>",
+    ),
+    (
+        "standing <subject> [<party>]",
+        "how factions and characters regard <subject> from what has passed between them",
+    ),
+    ("outcomes", "list the outcomes, such as quest results"),
+    (
+        "outcome <outcome> <character>",
+        "apply an outcome's effects to <character>",
     ),
     (
         "relations [<faction>]",
@@ -177,6 +187,9 @@ impl Session {
             "disposition" => Ok(self.disposition(rest)),
             "can-join" => Ok(self.can_join(rest)),
             "relations" => Ok(self.relations(rest)),
+            "standing" => Ok(self.standing(rest)),
+            "outcomes" => Ok(self.outcomes()),
+            "outcome" => Ok(self.outcome(rest)),
             "relate" => Ok(self.relate(rest)),
             "join" => Ok(self.membership(rest, true)),
             "leave" => Ok(self.membership(rest, false)),
@@ -307,6 +320,106 @@ impl Session {
                 .factions()
                 .map(|faction| describe_faction(world, faction)),
         ))
+    }
+
+    /// `standing <subject> [<party>]`.
+    fn standing(&self, args: &str) -> Outcome {
+        let (subject, party) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [subject] => (subject, None),
+            [subject, party] => (subject, Some(party)),
+            _ => {
+                return Outcome::Error(
+                    "standing needs the form: standing <subject> [<party>]".to_owned(),
+                );
+            }
+        };
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let Some(subject) = world.characters().find(|c| c.id.as_str() == subject) else {
+            let ids: Vec<&str> = world.characters().map(|c| c.id.as_str()).collect();
+            return Outcome::Error(format!(
+                "unknown character '{subject}'{}",
+                hint(subject, ids)
+            ));
+        };
+        let Some(party) = party else {
+            let standings = world
+                .standings(&subject.id)
+                .expect("a character from the world");
+            if standings.is_empty() {
+                return Outcome::Output("no standing with anyone yet".to_owned());
+            }
+            return Outcome::Output(lines(
+                standings
+                    .into_iter()
+                    .map(|(party, value)| format!("{party}: {value}")),
+            ));
+        };
+        let found = if let Some(faction) = world.factions().find(|f| f.id.as_str() == party) {
+            Party::Faction(faction.id.clone())
+        } else if let Some(character) = world.characters().find(|c| c.id.as_str() == party) {
+            Party::Character(character.id.clone())
+        } else {
+            let factions = world.factions().map(|f| f.id.as_str());
+            let ids: Vec<&str> = factions
+                .chain(world.characters().map(|c| c.id.as_str()))
+                .collect();
+            return Outcome::Error(format!(
+                "unknown faction or character '{party}'{}",
+                hint(party, ids)
+            ));
+        };
+        let value = world
+            .standing(&subject.id, &found)
+            .expect("both were found");
+        Outcome::Output(value.to_string())
+    }
+
+    /// `outcomes`: the outcomes in content, with their effects.
+    fn outcomes(&self) -> Outcome {
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        Outcome::Output(lines(world.outcomes().map(|outcome| {
+            let effects = &outcome.effects;
+            let mut line = outcome.id.to_string();
+            if effects.alignment != AlignmentDelta::default() {
+                line += &format!(
+                    " — alignment: law {}, good {}",
+                    effects.alignment.law, effects.alignment.good
+                );
+            }
+            let standing = named_effects(&effects.standing);
+            if !standing.is_empty() {
+                line += &format!(" — standing: {}", standing.join(", "));
+            }
+            line
+        })))
+    }
+
+    /// `outcome <outcome> <character>`: applies an outcome, as a quest module would.
+    fn outcome(&mut self, args: &str) -> Outcome {
+        let [outcome, character] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error(
+                "outcome needs the form: outcome <outcome> <character>".to_owned(),
+            );
+        };
+        let outcome = match OutcomeId::new(outcome) {
+            Ok(id) => id,
+            Err(invalid) => return Outcome::Error(invalid.to_string()),
+        };
+        let character = match CharacterId::new(character) {
+            Ok(id) => id,
+            Err(invalid) => return Outcome::Error(invalid.to_string()),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(Command::ApplyOutcome { outcome, character }) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
     }
 
     /// `relations [<faction>]`: every relation set, or those involving one faction.
@@ -574,7 +687,20 @@ impl Session {
         };
         Outcome::Output(lines(world.actions().map(|action| {
             let delta = action.alignment;
-            format!("{} — law {}, good {}", action.id, delta.law, delta.good)
+            let standing = &action.standing;
+            let mut effects: Vec<String> = [
+                ("target", standing.target),
+                ("target_factions", standing.target_factions),
+            ]
+            .into_iter()
+            .filter_map(|(key, value)| value.map(|value| format!("{key} {value}")))
+            .collect();
+            effects.extend(named_effects(&standing.named));
+            let mut line = format!("{} — law {}, good {}", action.id, delta.law, delta.good);
+            if !effects.is_empty() {
+                line += &format!(" — standing: {}", effects.join(", "));
+            }
+            line
         })))
     }
 
@@ -711,6 +837,18 @@ fn describe_event(event: &Event) -> String {
             before,
             after,
         } => format!("{from} → {to} changed from {before} to {after}"),
+        Change::StandingChanged {
+            subject,
+            party,
+            before,
+            after,
+        } => format!("{subject}'s standing with {party} moved from {before} to {after}"),
+        Change::OutcomeApplied { outcome, character } => {
+            format!("outcome {outcome} applied to {character}")
+        }
+        Change::EffectsApplied { source, character } => {
+            format!("effects from {source} applied to {character}")
+        }
         Change::AlignmentChanged {
             character,
             from,
@@ -730,6 +868,10 @@ fn describe_command(command: &Command) -> String {
         Command::AdvanceTime { ticks } => format!("advance {ticks}"),
         Command::JoinFaction { character, faction } => format!("join {character} {faction}"),
         Command::LeaveFaction { character, faction } => format!("leave {character} {faction}"),
+        Command::ApplyOutcome { outcome, character } => format!("outcome {outcome} {character}"),
+        Command::ApplyEffects {
+            source, character, ..
+        } => format!("effects from {source} on {character}"),
         Command::SetRelation {
             from,
             to,
@@ -797,6 +939,15 @@ fn parse_act(args: &str) -> Result<Command, String> {
 /// `law -5.00, good -3.00`.
 fn axes(alignment: Alignment) -> String {
     format!("law {}, good {}", alignment.law(), alignment.good())
+}
+
+/// Named standing effects as `city_watch -20.00, captain_hale -10.00`: factions first.
+fn named_effects(effects: &StandingEffects) -> Vec<String> {
+    effects
+        .parties()
+        .into_iter()
+        .map(|(party, value)| format!("{party} {value}"))
+        .collect()
 }
 
 /// Whether a word is an option such as `--one-way`, rather than a value. Negative numbers
@@ -1044,7 +1195,7 @@ pub fn help_text() -> String {
 mod tests {
     use super::*;
     use factional_core::Tick;
-    use factional_reputation::{ActionId, CharacterId, Witnesses};
+    use factional_reputation::{ActionId, CharacterId, Effects, Witnesses};
 
     fn run(line: &str) -> Result<Outcome, ScriptError> {
         Session::default().execute(line)
@@ -1357,12 +1508,12 @@ mod tests {
         assert_eq!(
             riverhold().execute("actions"),
             output(
-                "donate_to_temple — law 0.00, good 3.00\n\
-                 extort — law -2.00, good -6.00\n\
-                 help_stranger — law 0.00, good 4.00\n\
-                 murder — law -10.00, good -15.00\n\
-                 report_crime — law 4.00, good 1.00\n\
-                 steal — law -5.00, good -3.00"
+                "donate_to_temple — law 0.00, good 3.00 — standing: temple 10.00\n\
+                 extort — law -2.00, good -6.00 — standing: target -30.00, target_factions -15.00\n\
+                 help_stranger — law 0.00, good 4.00 — standing: target 10.00\n\
+                 murder — law -10.00, good -15.00 — standing: target -100.00, target_factions -40.00\n\
+                 report_crime — law 4.00, good 1.00 — standing: city_watch 5.00\n\
+                 steal — law -5.00, good -3.00 — standing: target -20.00, target_factions -10.00"
             )
         );
     }
@@ -1374,7 +1525,8 @@ mod tests {
             session.execute("act player steal --target merchant_ava"),
             output(
                 "#1 at tick 0: player did steal, targeting merchant_ava\n\
-                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00"
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00\n\
+                 #3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00"
             )
         );
         assert_eq!(
@@ -1397,7 +1549,9 @@ mod tests {
             session.execute("act player steal --scale 0.5 --target vex"),
             output(
                 "#3 at tick 0: player did steal, targeting vex, at scale 0.50\n\
-                 #4 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -12.50, good -7.50"
+                 #4 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -12.50, good -7.50\n\
+                 #5 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00\n\
+                 #6 at tick 0: player's standing with vex moved from 0.00 to -20.00"
             )
         );
     }
@@ -1852,6 +2006,151 @@ mod tests {
         );
     }
 
+    // Standing and outcomes
+
+    #[test]
+    fn acts_change_standing_and_standing_shows_it() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("act player steal --target vex"),
+            output(
+                "#1 at tick 0: player did steal, targeting vex\n\
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00\n\
+                 #3 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00\n\
+                 #4 at tick 0: player's standing with vex moved from 0.00 to -20.00"
+            )
+        );
+        assert_eq!(
+            session.execute("standing player"),
+            output("lantern_guild: -10.00\nvex: -20.00")
+        );
+        assert_eq!(session.execute("standing player vex"), output("-20.00"));
+        assert_eq!(session.execute("standing player temple"), output("0.00"));
+        assert_eq!(
+            session.execute("standing merchant_ava"),
+            output("no standing with anyone yet")
+        );
+        assert_eq!(
+            session.execute("standing captain_hale"),
+            output("city_watch: 75.00")
+        );
+    }
+
+    #[test]
+    fn outcomes_lists_them_and_outcome_applies_one() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("outcomes"),
+            output(
+                "fined_by_watch — standing: city_watch -20.00, captain_hale -10.00\n\
+                 rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00"
+            )
+        );
+        assert_eq!(
+            session.execute("outcome fined_by_watch player"),
+            output(
+                "#1 at tick 0: outcome fined_by_watch applied to player\n\
+                 #2 at tick 0: player's standing with city_watch moved from 0.00 to -20.00\n\
+                 #3 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00"
+            )
+        );
+        assert_eq!(
+            session.execute("journal"),
+            output("1. outcome fined_by_watch player — accepted")
+        );
+    }
+
+    #[test]
+    fn standing_and_outcome_report_mistakes() {
+        let mut session = riverhold();
+        for (line, message) in [
+            (
+                "outcome fined_by_wach player",
+                "unknown outcome 'fined_by_wach' (did you mean 'fined_by_watch'?)",
+            ),
+            (
+                "outcome fined_by_watch plyer",
+                "unknown character 'plyer' (did you mean 'player'?)",
+            ),
+            (
+                "standing plyer",
+                "unknown character 'plyer' (did you mean 'player'?)",
+            ),
+            (
+                "standing player tempel",
+                "unknown faction or character 'tempel' (did you mean 'temple'?)",
+            ),
+            (
+                "outcome Fined player",
+                "'Fined' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(message), "{line}");
+        }
+        for (line, usage) in [
+            (
+                "standing",
+                "standing needs the form: standing <subject> [<party>]",
+            ),
+            (
+                "standing a b c",
+                "standing needs the form: standing <subject> [<party>]",
+            ),
+            (
+                "outcome fined_by_watch",
+                "outcome needs the form: outcome <outcome> <character>",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(usage), "{line}");
+        }
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        for line in [
+            "standing player",
+            "outcomes",
+            "outcome fined_by_watch player",
+        ] {
+            assert_eq!(run(line), none, "{line}");
+        }
+    }
+
+    #[test]
+    fn leaving_the_free_company_costs_standing_with_it() {
+        let mut session = riverhold();
+        session.execute("join player free_company").expect("valid");
+        assert_eq!(
+            session.execute("leave player free_company"),
+            output(
+                "#2 at tick 0: player left free_company (voluntary)\n\
+                 #3 at tick 0: player's standing with free_company moved from 0.00 to -10.00"
+            )
+        );
+    }
+
+    #[test]
+    fn describes_effects_from_other_modules() {
+        let event = Event {
+            seq: 2,
+            tick: Tick(5),
+            payload: Change::EffectsApplied {
+                source: "quest:lost_relic".to_owned(),
+                character: CharacterId::new("player").expect("valid id"),
+            },
+        };
+        assert_eq!(
+            describe_event(&event),
+            "#2 at tick 5: effects from quest:lost_relic applied to player"
+        );
+        let command = Command::ApplyEffects {
+            source: "quest:lost_relic".to_owned(),
+            character: CharacterId::new("player").expect("valid id"),
+            effects: Effects::default(),
+        };
+        assert_eq!(
+            describe_command(&command),
+            "effects from quest:lost_relic on player"
+        );
+    }
+
     // Relations
 
     #[test]
@@ -2161,6 +2460,9 @@ mod tests {
             "can-join <character> <faction> [--explain]",
             "join <character> <faction>",
             "leave <character> <faction>",
+            "standing <subject> [<party>]",
+            "outcomes",
+            "outcome <outcome> <character>",
             "relations [<faction>]",
             "relate <from> <to> <value> [--one-way]",
             "relate <from> <to> --by <n> [--one-way]",
