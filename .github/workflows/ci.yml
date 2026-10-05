@@ -29,9 +29,15 @@ jobs:
       - run: cargo test --workspace
 
   mutants:
-    name: mutation testing (PR diff)
+    name: mutation testing (PR diff, shard ${{ matrix.shard }}/4)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Mutants run one at a time within a job, so the diff's mutants are split across four
+    # jobs that run side by side. Every shard must pass.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -45,10 +51,10 @@ jobs:
       - name: Diff the PR against its base branch
         run: git diff "origin/${{ github.base_ref }}...HEAD" > branch.diff
       # A surviving mutant means a missing assertion (CLAUDE.md, Gates).
-      - run: cargo mutants --no-shuffle --in-place --in-diff branch.diff
+      - run: cargo mutants --no-shuffle --in-place --in-diff branch.diff --shard ${{ matrix.shard }}/4
       - name: Keep the report when mutants survive
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: mutants.out
+          name: mutants.out-shard-${{ matrix.shard }}
           path: mutants.out
