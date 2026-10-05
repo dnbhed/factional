@@ -9,8 +9,9 @@ use std::{fmt, fs, io};
 
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
-    Action, ActionId, Alignment, AlignmentDelta, Balance, Character, CharacterId, Content,
-    ContentProblem, Faction, FactionId, InvalidId, Metric, WeightProblem, Weights,
+    Action, ActionId, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands, Character,
+    CharacterId, Content, ContentProblem, Faction, FactionId, InvalidId, Metric, WeightProblem,
+    Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -124,12 +125,16 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         .into_iter()
         .flat_map(|report| report.diagnostics)
         .collect();
-    diagnostics.extend(content.problems().iter().map(|problem| match problem {
-        ContentProblem::SharedId(id) => Diagnostic {
-            file: FACTIONS_FILE.to_owned(),
-            key: Some(id.to_string()),
+    diagnostics.extend(content.problems().iter().map(|problem| {
+        let (file, key) = match problem {
+            ContentProblem::SharedId(id) => (FACTIONS_FILE, id.to_string()),
+            ContentProblem::AffinityOutOfRange(_) => (BALANCE_FILE, "disposition.affinity".into()),
+        };
+        Diagnostic {
+            file: file.to_owned(),
+            key: Some(key),
             message: problem.to_string(),
-        },
+        }
     }));
     if diagnostics.is_empty() {
         Ok(content)
@@ -191,8 +196,63 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         }
         alignment.finish(report);
     }
+    if let Some(mut disposition) = file.optional_table("disposition", "[disposition]", report) {
+        if let Some(affinity) = disposition.optional_curve("affinity", report) {
+            balance.affinity = affinity;
+        }
+        if let Some(bands) = read_bands(&mut disposition, report) {
+            balance.bands = bands;
+        }
+        disposition.finish(report);
+    }
     file.finish(report);
     balance
+}
+
+/// `disposition.bands`, lowest first. The checks across bands only run once every band has
+/// been read, so each problem's path names the band it's about.
+fn read_bands(section: &mut Section<'_>, report: &mut Report) -> Option<Bands> {
+    const BAND: &str = "{ name = \"neutral\", up_to = 25.0 }";
+    let example = format!("[{BAND}, {{ name = \"friendly\" }}]");
+    let items = section.optional_list("bands", &example, report)?;
+    let path = section.path_to("bands");
+    let at = |index: usize| format!("{path}[{index}]");
+    let mut bands = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let Value::Table(fields) = item else {
+            report.error(&at(index), format!("expected a table, like {BAND}"));
+            bands.push(None);
+            continue;
+        };
+        let mut band = Section::new(fields, at(index));
+        let errors = report.diagnostics.len();
+        let name = band.text("name", report);
+        let up_to = band.optional_fixed("up_to", report);
+        // A wrong `up_to` reads as none at all, so it would look open-ended: leave it out.
+        let read = report.diagnostics.len() == errors;
+        band.finish(report);
+        bands.push(name.filter(|_| read).map(|name| Band { name, up_to }));
+    }
+    let bands: Vec<Band> = bands.into_iter().collect::<Option<_>>()?;
+    match Bands::new(bands) {
+        Ok(bands) => Some(bands),
+        Err(problems) => {
+            for problem in problems {
+                let key = match problem {
+                    BandProblem::NoBands => path.clone(),
+                    BandProblem::InvalidName { index, .. }
+                    | BandProblem::DuplicateName { index, .. } => format!("{}.name", at(index)),
+                    BandProblem::MissingUpTo { index } => at(index),
+                    BandProblem::LastHasUpTo { index }
+                    | BandProblem::NotIncreasing { index, .. } => {
+                        format!("{}.up_to", at(index))
+                    }
+                };
+                report.error(&key, problem.to_string());
+            }
+            None
+        }
+    }
 }
 
 /// A file of tables keyed by id, such as `characters.toml`: each entry's id is checked, and
@@ -453,6 +513,124 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_affinity_curve_and_bands() {
+        let content = balance(
+            r#"
+            [disposition]
+            affinity = [[0.0, 100.0], [100.0, -100.0]]
+            bands = [
+              { name = "hostile", up_to = -30.0 },
+              { name = "wary", up_to = 10 },
+              { name = "warm" },
+            ]
+            "#,
+        )
+        .expect("valid content");
+        assert_eq!(content.balance.affinity.at(h(25_00)), h(50_00));
+        let bands: Vec<(&str, Option<Fixed>)> = content
+            .balance
+            .bands
+            .iter()
+            .map(|band| (band.name.as_str(), band.up_to))
+            .collect();
+        assert_eq!(
+            bands,
+            [
+                ("hostile", Some(h(-30_00))),
+                ("wary", Some(h(10_00))),
+                ("warm", None)
+            ]
+        );
+    }
+
+    #[test]
+    fn an_empty_disposition_section_keeps_the_defaults() {
+        let content = balance("[disposition]").expect("valid content");
+        assert_eq!(content.balance, Balance::default());
+    }
+
+    #[test]
+    fn reports_mistakes_in_the_bands_at_their_keys() {
+        let text = r#"
+            [disposition]
+            bands = [
+              { name = "unfriendly", up_to = -25.0 },
+              { name = "Very Cold", up_to = -30.0 },
+              { name = "unfriendly" },
+              { name = "friendly", up_to = 90.0, colour = "green" },
+            ]
+        "#;
+        assert_eq!(
+            problems(balance(text)),
+            [
+                "balance.toml: disposition.bands[3]: unknown key 'colour'",
+                "balance.toml: disposition.bands[1].name: 'Very Cold' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "balance.toml: disposition.bands[1].up_to: -30.00 must be above the previous band's -25.00",
+                "balance.toml: disposition.bands[2].name: another band is already called 'unfriendly'",
+                "balance.toml: disposition.bands[2]: missing 'up_to': only the last band takes every score above the band before it",
+                "balance.toml: disposition.bands[3].up_to: the last band can't have 'up_to': it takes every score above the band before it",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_a_band_list_that_is_empty_or_not_a_list() {
+        assert_eq!(
+            problems(balance("[disposition]\nbands = []")),
+            ["balance.toml: disposition.bands: there must be at least one band"]
+        );
+        assert_eq!(
+            problems(balance("[disposition]\nbands = \"three\"")),
+            [
+                "balance.toml: disposition.bands: expected a list, like [{ name = \"neutral\", up_to = 25.0 }, { name = \"friendly\" }]"
+            ]
+        );
+        // An entry that can't be read stops the checks across bands, so their paths stay true.
+        assert_eq!(
+            problems(balance(
+                "[disposition]\nbands = [{ up_to = 3.0 }, { name = \"x\" }]"
+            )),
+            ["balance.toml: disposition.bands[0]: missing 'name'"]
+        );
+        assert_eq!(
+            problems(balance(
+                "[disposition]\nbands = [{ name = \"x\", up_to = \"low\" }, { name = \"y\" }]"
+            )),
+            ["balance.toml: disposition.bands[0].up_to: expected a number, like 25.0"]
+        );
+        assert_eq!(
+            problems(balance(
+                "[disposition]\nbands = [7, { name = \"x\", up_to = 1.0 }]"
+            )),
+            [
+                "balance.toml: disposition.bands[0]: expected a table, like { name = \"neutral\", up_to = 25.0 }"
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_an_affinity_curve_that_is_invalid_or_out_of_range() {
+        assert_eq!(
+            problems(balance(
+                "[disposition]\naffinity = [[0.0, 150.0], [60.0, 0.0]]"
+            )),
+            ["balance.toml: disposition.affinity: curve value 150.00 is outside -100.00 to 100.00"]
+        );
+        assert_eq!(
+            problems(balance(
+                "[disposition]\naffinity = [[60.0, 50.0], [0.0, 0.0]]"
+            )),
+            [
+                "balance.toml: disposition.affinity: curve points must have increasing x: 60.00 then 0.00"
+            ]
+        );
+        assert_eq!(
+            problems(balance("[disposition]\naffinity = 20.0\nweights = 1")),
+            ["balance.toml: disposition: unknown key 'weights'"]
+        );
+    }
+
+    #[test]
     fn reports_an_unknown_metric() {
         assert_eq!(
             problems(balance("[alignment]\nmetric = \"euclidian\"")),
@@ -548,6 +726,14 @@ mod tests {
             problems(characters(&text)),
             ["characters.toml: vex.alignment.good: -20.125 has more than 2 decimal places"]
         );
+        for wrong in ["\"-20\"", "true", "[1.0]"] {
+            let text = VEX.replace("-20.0", wrong);
+            assert_eq!(
+                problems(characters(&text)),
+                ["characters.toml: vex.alignment.good: expected a number, like 25.0"],
+                "{wrong}"
+            );
+        }
     }
 
     #[test]

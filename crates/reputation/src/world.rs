@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use factional_core::{Fixed, Tick, suggest};
+use factional_core::{Curve, CurveError, Fixed, Tick, suggest};
 
 use crate::distance::gap;
 use crate::{
-    Action, ActionId, Alignment, Axis, Change, Character, CharacterId, Command, CommandError,
-    Event, Faction, FactionId, JournalEntry, Metric, Role, Weights, Witnesses, measure,
+    AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
+    CommandError, Disposition, Event, Faction, FactionId, JournalEntry, Metric, Role, Weights,
+    Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -18,11 +19,26 @@ pub struct Balance {
     pub default_weights: Weights,
     /// How weighted gaps combine into a distance, for the whole world (DESIGN.md §6).
     pub metric: Metric,
+    /// How alignment distance turns into liking: `disposition.affinity` (DESIGN.md §8.1).
+    pub affinity: Curve,
+    /// The named bands a disposition score falls into (DESIGN.md §8.1).
+    pub bands: Bands,
 }
 
 impl Balance {
     /// `alignment.label_threshold`'s default: 33.00.
     pub const DEFAULT_LABEL_THRESHOLD: Fixed = Fixed::from_hundredths(33_00);
+
+    /// `disposition.affinity`'s default: 50 when identical, 0 at 60 apart, −50 at 200.
+    pub fn default_affinity() -> Curve {
+        let point = |x: i64, y: i64| (Fixed::from_hundredths(x), Fixed::from_hundredths(y));
+        Curve::from_points(vec![
+            point(0, 50_00),
+            point(60_00, 0),
+            point(200_00, -50_00),
+        ])
+        .expect("the default affinity is a valid curve")
+    }
 }
 
 impl Default for Balance {
@@ -31,6 +47,8 @@ impl Default for Balance {
             label_threshold: Balance::DEFAULT_LABEL_THRESHOLD,
             default_weights: Weights::EVEN,
             metric: Metric::default(),
+            affinity: Balance::default_affinity(),
+            bands: Bands::standard(),
         }
     }
 }
@@ -53,19 +71,28 @@ pub struct Content {
 pub enum ContentProblem {
     /// A faction and a character share an id, so an id alone couldn't say which is meant.
     SharedId(FactionId),
+    /// `disposition.affinity` gives a value outside −100…100, the range of a disposition.
+    AffinityOutOfRange(CurveError),
 }
 
 impl Content {
     /// Every problem with this content, in a fixed order; empty if a world can be built
     /// from it.
     pub fn problems(&self) -> Vec<ContentProblem> {
-        self.factions
+        let affinity = self
+            .balance
+            .affinity
+            .check_y_within(-AXIS_LIMIT, AXIS_LIMIT)
+            .err()
+            .map(ContentProblem::AffinityOutOfRange);
+        let shared_ids = self
+            .factions
             .keys()
             .filter(|faction| {
                 CharacterId::new(faction.as_str()).is_ok_and(|id| self.characters.contains_key(&id))
             })
-            .map(|faction| ContentProblem::SharedId(faction.clone()))
-            .collect()
+            .map(|faction| ContentProblem::SharedId(faction.clone()));
+        affinity.into_iter().chain(shared_ids).collect()
     }
 }
 
@@ -76,6 +103,7 @@ impl fmt::Display for ContentProblem {
                 f,
                 "'{id}' is also a character's id: factions and characters need different ids"
             ),
+            ContentProblem::AffinityOutOfRange(error) => error.fmt(f),
         }
     }
 }
@@ -346,6 +374,22 @@ impl World {
         self.content.factions.get(id)
     }
 
+    /// How `observer` regards `subject`: the score, its band and the working (DESIGN.md §8).
+    /// `None` if either is unknown.
+    pub fn disposition(&self, observer: &Observer, subject: &CharacterId) -> Option<Disposition> {
+        let distance = self.distance(observer, subject)?;
+        let balance = &self.content.balance;
+        // Content checks keep the affinity within ±100 (P-32), so it needs no clamp until M4
+        // adds the other components to it.
+        let affinity = balance.affinity.at(distance.value);
+        Some(Disposition {
+            score: affinity,
+            band: balance.bands.band_for(affinity).name.clone(),
+            affinity,
+            distance,
+        })
+    }
+
     /// How far `subject` is from `observer`, as the observer sees it: measured with the
     /// observer's weights and the world's metric (DESIGN.md §6). `None` if either is unknown.
     pub fn distance(&self, observer: &Observer, subject: &CharacterId) -> Option<Distance> {
@@ -385,7 +429,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AXIS_LIMIT, AlignmentDelta, Role, Witnesses};
+    use crate::{AXIS_LIMIT, AlignmentDelta, Band, Role, Witnesses};
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
@@ -503,6 +547,12 @@ mod tests {
             label_threshold: h(40_00),
             default_weights: weights(50, 1_00),
             metric: Metric::Chebyshev,
+            affinity: Curve::constant(h(10_00)),
+            bands: Bands::new(vec![Band {
+                name: "indifferent".to_owned(),
+                up_to: None,
+            }])
+            .expect("valid bands"),
         };
         let world = World::new(Content {
             balance: balance.clone(),
@@ -715,6 +765,188 @@ mod tests {
         assert_eq!(
             distance(&world, &as_faction("free_company"), "player"),
             h(5_00)
+        );
+    }
+
+    // Disposition (DESIGN.md §8.1): affinity only, until M4
+
+    /// Riverhold's people that the disposition examples use.
+    fn riverhold_people() -> Vec<Character> {
+        vec![
+            character("Player", 0, 0),
+            character("Vex", -55_00, -20_00),
+            character("Sister_mira", 35_00, 85_00),
+            character("Brother_ash", 25_00, -70_00),
+        ]
+    }
+
+    fn regard(world: &World, observer: &Observer, subject: &str) -> (Fixed, String) {
+        let disposition = world
+            .disposition(observer, &id(subject))
+            .expect("both exist");
+        (disposition.score, disposition.band)
+    }
+
+    fn scored(score: i64, band: &str) -> (Fixed, String) {
+        (h(score), band.to_owned())
+    }
+
+    #[test]
+    fn the_watch_is_neutral_toward_a_neutral_player() {
+        let world = world_of(riverhold_people());
+        let disposition = world
+            .disposition(&as_faction("city_watch"), &id("player"))
+            .expect("both exist");
+        // Distance 70.18 is on the 60 → 200 segment: −50 × 10.18 / 140 = −3.636…
+        assert_eq!(
+            disposition,
+            Disposition {
+                // −3.64, written ungrouped: clippy reads `_64` as an `i64` suffix.
+                score: h(-364),
+                band: "neutral".to_owned(),
+                affinity: h(-364),
+                distance: world
+                    .distance(&as_faction("city_watch"), &id("player"))
+                    .expect("both exist"),
+            }
+        );
+    }
+
+    #[test]
+    fn close_alignments_are_friendly_and_distant_ones_unfriendly() {
+        let world = world_of(riverhold_people());
+        let temple = as_faction("temple");
+        // Distance 5.59: 50 − 50 × 5.59 / 60 = 45.341…
+        assert_eq!(
+            regard(&world, &temple, "sister_mira"),
+            scored(45_34, "friendly")
+        );
+        // Distance 150.02: −50 × 90.02 / 140 = −32.15
+        assert_eq!(
+            regard(&world, &temple, "brother_ash"),
+            scored(-32_15, "unfriendly")
+        );
+        // Distance 125.40: −50 × 65.40 / 140 = −23.357…
+        assert_eq!(
+            regard(&world, &as_faction("city_watch"), "vex"),
+            scored(-23_36, "neutral")
+        );
+    }
+
+    #[test]
+    fn a_character_regards_others_by_their_own_lights() {
+        let world = world_of(riverhold_people());
+        // Vex sees the player at sqrt(55² + 20²) = 58.52: 50 − 50 × 58.52 / 60 = 1.233…
+        assert_eq!(
+            regard(&world, &as_character("vex"), "player"),
+            scored(1_23, "neutral")
+        );
+    }
+
+    fn balanced(balance: Balance) -> World {
+        World::new(Content {
+            balance,
+            characters: riverhold_people()
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .collect(),
+            factions: factions(),
+            ..Content::default()
+        })
+        .expect("valid content")
+    }
+
+    #[test]
+    fn the_bands_are_a_setting() {
+        let band = |name: &str, up_to: Option<i64>| Band {
+            name: name.to_owned(),
+            up_to: up_to.map(h),
+        };
+        let world = balanced(Balance {
+            bands: Bands::new(vec![
+                band("hostile", Some(-30_00)),
+                band("unfriendly", Some(-25_00)),
+                band("neutral", Some(25_00)),
+                band("friendly", None),
+            ])
+            .expect("valid bands"),
+            ..Balance::default()
+        });
+        assert_eq!(
+            regard(&world, &as_faction("temple"), "brother_ash"),
+            scored(-32_15, "hostile")
+        );
+    }
+
+    #[test]
+    fn the_affinity_curve_is_a_setting() {
+        let curve = Curve::from_points(vec![(h(0), h(100_00)), (h(100_00), h(-100_00))])
+            .expect("valid curve");
+        let world = balanced(Balance {
+            affinity: curve,
+            ..Balance::default()
+        });
+        // 100 − 200 × 70.18 / 100 = −40.36
+        assert_eq!(
+            regard(&world, &as_faction("city_watch"), "player"),
+            scored(-40_36, "unfriendly")
+        );
+    }
+
+    #[test]
+    fn an_affinity_beyond_the_range_of_a_disposition_is_refused() {
+        let curve =
+            Curve::from_points(vec![(h(0), h(150_00)), (h(100_00), h(0))]).expect("valid curve");
+        let content = Content {
+            balance: Balance {
+                affinity: curve,
+                ..Balance::default()
+            },
+            ..Content::default()
+        };
+        let problems = content.problems();
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].to_string(),
+            "curve value 150.00 is outside -100.00 to 100.00"
+        );
+        assert!(World::new(content).is_err());
+        let at_the_edges = Content {
+            balance: Balance {
+                affinity: Curve::from_points(vec![(h(0), h(100_00)), (h(1_00), h(-100_00))])
+                    .expect("valid curve"),
+                ..Balance::default()
+            },
+            ..Content::default()
+        };
+        assert_eq!(at_the_edges.problems(), []);
+    }
+
+    #[test]
+    fn disposition_follows_alignment_as_it_moves() {
+        let mut world = world_of(riverhold_people());
+        for _ in 0..4 {
+            world
+                .execute(act("player", "steal", None, 1_00))
+                .expect("accepted");
+        }
+        // The guild sees the player at −20 / −12 from 40.01 away: 50 − 50 × 40.01 / 60 = 16.658…
+        assert_eq!(
+            regard(&world, &as_faction("lantern_guild"), "player"),
+            scored(16_66, "neutral")
+        );
+    }
+
+    #[test]
+    fn disposition_needs_an_observer_and_a_subject_that_exist() {
+        let world = riverhold();
+        assert_eq!(
+            world.disposition(&as_faction("city_wach"), &id("player")),
+            None
+        );
+        assert_eq!(
+            world.disposition(&as_faction("city_watch"), &id("nobody")),
+            None
         );
     }
 

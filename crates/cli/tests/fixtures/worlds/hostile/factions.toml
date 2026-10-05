@@ -1,0 +1,4 @@
+[temple]
+name = "Temple of the Dawn"
+alignment = { law = 30.0, good = 80.0 }
+weights = { law = 0.5, good = 1.0 }

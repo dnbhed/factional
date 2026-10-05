@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use factional_core::{Fixed, ParseFixedError, suggest};
 use factional_reputation::{
-    ActionId, Alignment, Axis, Change, Character, CharacterId, Command, Event, Faction, Observer,
-    WeightsFrom, Witnesses, World,
+    ActionId, Alignment, Axis, Change, Character, CharacterId, Command, Distance, Event, Faction,
+    Observer, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -22,6 +22,10 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     ("factions", "list the factions"),
     ("show faction <id>", "a faction's alignment and its label"),
+    (
+        "disposition <observer> <subject> [--explain]",
+        "how <observer>, a faction or character, regards <subject>: a score and its band",
+    ),
     (
         "distance <observer> <subject> [--explain]",
         "how far <subject> is from <observer>, a faction or character, as the observer sees it",
@@ -140,6 +144,7 @@ impl Session {
             "show" => Ok(self.show(rest)),
             "factions" => Ok(self.factions()),
             "distance" => Ok(self.distance(rest)),
+            "disposition" => Ok(self.disposition(rest)),
             "actions" => Ok(self.actions()),
             "act" => Ok(self.act(rest)),
             "advance" => Ok(self.advance(rest)),
@@ -266,75 +271,115 @@ impl Session {
         ))
     }
 
+    /// `disposition <observer> <subject> [--explain]`: how the observer regards the subject,
+    /// and with `--explain`, the working the engine returned.
+    fn disposition(&self, args: &str) -> Outcome {
+        let (world, query) = match self.judgement("disposition", args) {
+            Ok(found) => found,
+            Err(failed) => return failed,
+        };
+        let regard = world
+            .disposition(&query.observer, &query.subject)
+            .expect("both were found");
+        let summary = format!("{} ({})", regard.score, regard.band);
+        if !query.explain {
+            return Outcome::Output(summary);
+        }
+        let distance = &regard.distance;
+        let mut explained = vec![
+            format!("{} → {}: {summary}", query.observer_id, query.subject),
+            format!(
+                "affinity: {} at distance {} ({})",
+                regard.affinity,
+                distance.value,
+                distance.metric.key()
+            ),
+        ];
+        explained.extend(working(distance, query.observer_id));
+        explained.push(format!("bands: {}", describe_bands(world)));
+        Outcome::Output(explained.join("\n"))
+    }
+
     /// `distance <observer> <subject> [--explain]`: how far the subject is from the observer,
     /// and with `--explain`, the working the engine returned.
     fn distance(&self, args: &str) -> Outcome {
-        let (observer, subject, explain) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+        let (world, query) = match self.judgement("distance", args) {
+            Ok(found) => found,
+            Err(failed) => return failed,
+        };
+        let measured = world
+            .distance(&query.observer, &query.subject)
+            .expect("both were found");
+        if !query.explain {
+            return Outcome::Output(measured.value.to_string());
+        }
+        let mut explained = vec![format!(
+            "{} → {}: {} ({})",
+            query.observer_id,
+            query.subject,
+            measured.value,
+            measured.metric.key()
+        )];
+        explained.extend(working(&measured, query.observer_id));
+        Outcome::Output(explained.join("\n"))
+    }
+
+    /// Reads `<observer> <subject> [--explain]` for `command` and finds both in the world:
+    /// the observer is a faction or a character, the subject a character.
+    fn judgement<'a>(
+        &self,
+        command: &str,
+        args: &'a str,
+    ) -> Result<(&World, Judgement<'a>), Outcome> {
+        let (observer_id, subject_id, explain) = match args.split_whitespace().collect::<Vec<_>>()[..]
+        {
             [observer, subject] => (observer, subject, false),
             [observer, subject, "--explain"] => (observer, subject, true),
             _ => {
-                return Outcome::Error(
-                    "distance needs the form: distance <observer> <subject> [--explain]".to_owned(),
-                );
+                return Err(Outcome::Error(format!(
+                    "{command} needs the form: {command} <observer> <subject> [--explain]"
+                )));
             }
         };
         let Some(world) = &self.world else {
-            return no_world();
+            return Err(no_world());
         };
         let faction_ids = || world.factions().map(|faction| faction.id.as_str());
         let character_ids = || world.characters().map(|character| character.id.as_str());
-        let as_observer =
-            if let Some(faction) = world.factions().find(|f| f.id.as_str() == observer) {
+        let character = |id: &str| world.characters().find(|c| c.id.as_str() == id);
+        let observer =
+            if let Some(faction) = world.factions().find(|f| f.id.as_str() == observer_id) {
                 Observer::Faction(faction.id.clone())
-            } else if let Some(character) = world.characters().find(|c| c.id.as_str() == observer) {
-                Observer::Character(character.id.clone())
+            } else if let Some(found) = character(observer_id) {
+                Observer::Character(found.id.clone())
             } else {
                 let ids: Vec<&str> = faction_ids().chain(character_ids()).collect();
-                return Outcome::Error(format!(
-                    "unknown observer '{observer}'{}",
-                    hint(observer, ids)
-                ));
+                return Err(Outcome::Error(format!(
+                    "unknown observer '{observer_id}'{}",
+                    hint(observer_id, ids)
+                )));
             };
-        let Some(as_subject) = world.characters().find(|c| c.id.as_str() == subject) else {
-            if faction_ids().any(|id| id == subject) {
-                return Outcome::Error("a distance's subject must be a character".to_owned());
+        let Some(subject) = character(subject_id) else {
+            if faction_ids().any(|id| id == subject_id) {
+                return Err(Outcome::Error(format!(
+                    "a {command}'s subject must be a character"
+                )));
             }
             let ids: Vec<&str> = character_ids().collect();
-            return Outcome::Error(format!("unknown subject '{subject}'{}", hint(subject, ids)));
+            return Err(Outcome::Error(format!(
+                "unknown subject '{subject_id}'{}",
+                hint(subject_id, ids)
+            )));
         };
-        let measured = world
-            .distance(&as_observer, &as_subject.id)
-            .expect("both were found above");
-        if !explain {
-            return Outcome::Output(measured.value.to_string());
-        }
-        let axis_line = |axis: Axis| {
-            format!(
-                "{}: {} vs {}, gap {}, weight {}",
-                axis.key(),
-                measured.observer.on(axis),
-                measured.subject.on(axis),
-                measured.gap(axis),
-                measured.weights.on(axis)
-            )
-        };
-        let weights = match measured.weights_from {
-            WeightsFrom::Own => format!("{observer}'s own"),
-            WeightsFrom::Default => "the default (alignment.default_weights)".to_owned(),
-        };
-        Outcome::Output(
-            [
-                format!(
-                    "{observer} → {subject}: {} ({})",
-                    measured.value,
-                    measured.metric.key()
-                ),
-                axis_line(Axis::Law),
-                axis_line(Axis::Good),
-                format!("weights: {weights}"),
-            ]
-            .join("\n"),
-        )
+        Ok((
+            world,
+            Judgement {
+                observer,
+                observer_id,
+                subject: subject.id.clone(),
+                explain,
+            },
+        ))
     }
 
     /// `actions`: the action catalogue, in id order.
@@ -555,6 +600,52 @@ fn describe_faction(world: &World, faction: &Faction) -> String {
         axes(faction.alignment),
         faction.alignment.label(world.balance().label_threshold)
     )
+}
+
+/// The observer and subject of a `distance` or `disposition`, found in the world.
+struct Judgement<'a> {
+    observer: Observer,
+    /// The observer's id as typed.
+    observer_id: &'a str,
+    subject: CharacterId,
+    explain: bool,
+}
+
+/// The lines that explain a distance: each axis, then whose weights were used.
+fn working(distance: &Distance, observer: &str) -> [String; 3] {
+    let axis = |axis: Axis| {
+        format!(
+            "{}: {} vs {}, gap {}, weight {}",
+            axis.key(),
+            distance.observer.on(axis),
+            distance.subject.on(axis),
+            distance.gap(axis),
+            distance.weights.on(axis)
+        )
+    };
+    let weights = match distance.weights_from {
+        WeightsFrom::Own => format!("{observer}'s own"),
+        WeightsFrom::Default => "the default (alignment.default_weights)".to_owned(),
+    };
+    [
+        axis(Axis::Law),
+        axis(Axis::Good),
+        format!("weights: {weights}"),
+    ]
+}
+
+/// The world's bands in a line: `unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly`.
+fn describe_bands(world: &World) -> String {
+    let bands: Vec<String> = world
+        .balance()
+        .bands
+        .iter()
+        .map(|band| match band.up_to {
+            Some(up_to) => format!("{} ≤ {up_to} <", band.name),
+            None => band.name.clone(),
+        })
+        .collect();
+    bands.join(" ")
 }
 
 /// ` (did you mean 'x'?)` when one of `ids` is close to `word`; otherwise nothing.
@@ -1286,6 +1377,83 @@ mod tests {
         }
     }
 
+    // Disposition
+
+    #[test]
+    fn disposition_gives_the_score_and_its_band() {
+        let mut session = riverhold();
+        for (line, expected) in [
+            ("disposition city_watch player", "-3.64 (neutral)"),
+            ("disposition temple sister_mira", "45.34 (friendly)"),
+            ("disposition temple brother_ash", "-32.15 (unfriendly)"),
+            ("disposition city_watch vex", "-23.36 (neutral)"),
+        ] {
+            assert_eq!(session.execute(line), output(expected), "{line}");
+        }
+    }
+
+    #[test]
+    fn disposition_explains_its_working() {
+        assert_eq!(
+            riverhold().execute("disposition city_watch player --explain"),
+            output(
+                "city_watch → player: -3.64 (neutral)\n\
+                 affinity: -3.64 at distance 70.18 (euclidean)\n\
+                 law: 70.00 vs 0.00, gap 70.00, weight 1.00\n\
+                 good: 20.00 vs 0.00, gap 20.00, weight 0.25\n\
+                 weights: city_watch's own\n\
+                 bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly"
+            )
+        );
+    }
+
+    #[test]
+    fn disposition_uses_the_loaded_bands() {
+        let mut session = repo();
+        session
+            .execute("load crates/cli/tests/fixtures/worlds/hostile")
+            .expect("valid");
+        assert_eq!(
+            session.execute("disposition temple brother_ash"),
+            output("-32.15 (hostile)")
+        );
+    }
+
+    #[test]
+    fn disposition_reports_unknown_or_wrong_ids_and_bad_input() {
+        let mut session = riverhold();
+        for (line, message) in [
+            (
+                "disposition city_wach player",
+                "unknown observer 'city_wach' (did you mean 'city_watch'?)",
+            ),
+            (
+                "disposition city_watch plyer",
+                "unknown subject 'plyer' (did you mean 'player'?)",
+            ),
+            (
+                "disposition player temple",
+                "a disposition's subject must be a character",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(message), "{line}");
+        }
+        let usage = command_error(
+            "disposition needs the form: disposition <observer> <subject> [--explain]",
+        );
+        for line in [
+            "disposition",
+            "disposition temple",
+            "disposition temple vex --why",
+        ] {
+            assert_eq!(session.execute(line), usage, "{line}");
+        }
+        assert_eq!(
+            run("disposition temple vex"),
+            command_error("no world is loaded yet: use load <dir> first")
+        );
+    }
+
     #[test]
     fn curve_gives_a_curves_value_at_a_point() {
         assert_eq!(
@@ -1343,6 +1511,7 @@ mod tests {
             "factions",
             "show faction <id>",
             "distance <observer> <subject> [--explain]",
+            "disposition <observer> <subject> [--explain]",
             "actions",
             "act <actor> <action> [--target <id>] [--scale <n>]",
             "advance <ticks>",

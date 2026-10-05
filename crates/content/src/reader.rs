@@ -1,6 +1,6 @@
 //! Reading TOML tables while collecting every problem with the file and key path it's at.
 
-use factional_core::{Fixed, suggest};
+use factional_core::{Curve, Fixed, suggest};
 use serde::Deserialize;
 use toml::{Table, Value};
 
@@ -135,10 +135,51 @@ impl<'t> Section<'t> {
     }
 
     fn to_fixed(&self, key: &str, value: &Value, report: &mut Report) -> Option<Fixed> {
+        if !matches!(value, Value::Integer(_) | Value::Float(_)) {
+            report.error(&self.path_to(key), "expected a number, like 25.0");
+            return None;
+        }
         match Fixed::deserialize(value.clone()) {
             Ok(fixed) => Some(fixed),
             Err(error) => {
                 report.error(&self.path_to(key), error.message());
+                None
+            }
+        }
+    }
+
+    /// A curve that may be left out: a number, or `[x, y]` points (DESIGN.md §4.2). `None`
+    /// if it's absent or invalid (that's reported).
+    pub(crate) fn optional_curve(
+        &mut self,
+        key: &'static str,
+        report: &mut Report,
+    ) -> Option<Curve> {
+        let value = self.get(key)?;
+        match Curve::deserialize(value.clone()) {
+            Ok(curve) => Some(curve),
+            Err(error) => {
+                report.error(&self.path_to(key), error.message());
+                None
+            }
+        }
+    }
+
+    /// A list that may be left out, such as `bands = [...]`; `None` if it's absent or not a
+    /// list (that's reported).
+    pub(crate) fn optional_list(
+        &mut self,
+        key: &'static str,
+        example: &str,
+        report: &mut Report,
+    ) -> Option<&'t Vec<Value>> {
+        match self.get(key)? {
+            Value::Array(items) => Some(items),
+            _ => {
+                report.error(
+                    &self.path_to(key),
+                    format!("expected a list, like {example}"),
+                );
                 None
             }
         }

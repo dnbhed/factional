@@ -11,6 +11,7 @@ characters                                          list the loaded characters
 show character <id>                                 a character's alignment and its label
 factions                                            list the factions
 show faction <id>                                   a faction's alignment and its label
+disposition <observer> <subject> [--explain]        how <observer>, a faction or character, regards <subject>: a score and its band
 distance <observer> <subject> [--explain]           how far <subject> is from <observer>, a faction or character, as the observer sees it
 actions                                             list the action catalogue and how each act moves alignment
 act <actor> <action> [--target <id>] [--scale <n>]  <actor> does <action>; --scale says how big this instance was (default 1.00)

@@ -13,3 +13,18 @@ metric = "euclidean"
 
 # The weights of any faction or character without their own, 0 to 1 per axis.
 default_weights = { law = 1.0, good = 1.0 }
+
+[disposition]
+# How alignment distance turns into liking (DESIGN.md §8.1): 50 when identical, 0 at 60
+# apart, -50 at 200. A curve is [x, y] points, straight between them and flat beyond the
+# ends; its values must stay within -100 to 100. Try a shape with `curve <curve> at <x>`.
+affinity = [[0.0, 50.0], [60.0, 0.0], [200.0, -50.0]]
+
+# The bands a score falls into, lowest first: a score lands in the first band whose up_to
+# it doesn't exceed, and the last band, with no up_to, takes everything above. Add or
+# rename bands freely; names are ids, like hostile or allied.
+bands = [
+  { name = "unfriendly", up_to = -25.0 },
+  { name = "neutral", up_to = 25.0 },
+  { name = "friendly" },
+]
