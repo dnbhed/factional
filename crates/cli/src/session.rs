@@ -4,8 +4,9 @@ use std::path::PathBuf;
 use factional_core::{Fixed, ParseFixedError, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
-    ComponentKind, Distance, Event, Faction, FactionId, LeaveReason, Observer, OutcomeId, Party,
-    RankCheck, StandingEffects, WeightsFrom, Witnesses, World,
+    ComponentKind, Condition, ConditionCheck, Distance, Event, Faction, FactionId, LeaveReason,
+    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, StandingEffects, TableDecision,
+    TableSource, Verdict, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -647,6 +648,15 @@ impl Session {
             ),
         ];
         explained.extend(working(distance, faction.id.as_str()));
+        for defection in &assessment.defections {
+            explained.push(format!(
+                "leaving {}, in conflict with {} ({})",
+                defection.from, faction.id, defection.relation
+            ));
+            for table in [&defection.deserters, &defection.defectors] {
+                explained.extend(describe_table(table, &defection.from, &faction.id));
+            }
+        }
         explained.extend(
             assessment
                 .reasons()
@@ -968,6 +978,94 @@ impl Session {
     }
 }
 
+/// How a `defectors` or `deserters` table decided: where it came from, the rule that fired
+/// and what it decided, then each rule tried. `current` is the faction being left and
+/// `target` the one being joined.
+fn describe_table(table: &TableDecision, current: &FactionId, target: &FactionId) -> Vec<String> {
+    let source = match table.source {
+        TableSource::World => "balance.toml",
+        TableSource::Faction => "factions.toml",
+        TableSource::BuiltIn => "built in",
+    };
+    let verdict = match &table.verdict {
+        Verdict::Allow { standing_change } if *standing_change == Fixed::ZERO => {
+            table.kind.allow_key().to_owned()
+        }
+        Verdict::Allow { standing_change } => {
+            format!("{}, standing {standing_change}", table.kind.allow_key())
+        }
+        Verdict::Refuse {
+            reason: Some(reason),
+        } => format!("refuse, \"{reason}\""),
+        Verdict::Refuse { reason: None } => "refuse".to_owned(),
+    };
+    let mut lines = vec![format!(
+        "{}'s {} ({source}): rule {}, {verdict}",
+        table.faction,
+        table.kind,
+        table.fired() + 1
+    )];
+    for rule in &table.tried {
+        let checks = if rule.checks.is_empty() {
+            "always".to_owned()
+        } else {
+            let checks: Vec<String> = rule
+                .checks
+                .iter()
+                .map(|check| describe_check(check, current, target))
+                .collect();
+            checks.join("; ")
+        };
+        lines.push(format!("  rule {}: {checks}", rule.index + 1));
+    }
+    lines
+}
+
+/// One condition as content writes it, whether it held, and what it was checked against:
+/// `rank_at_least = 3? no, cutpurse is rung 1`.
+fn describe_check(check: &ConditionCheck, current: &FactionId, target: &FactionId) -> String {
+    let named = match &check.condition {
+        Condition::RankAtLeast(named) | Condition::RankBelow(named) => Some(named),
+        _ => None,
+    };
+    let value = match &check.condition {
+        Condition::RankAtLeast(RankRef::Rung(rung)) | Condition::RankBelow(RankRef::Rung(rung)) => {
+            rung.to_string()
+        }
+        Condition::RankAtLeast(RankRef::Id(id)) | Condition::RankBelow(RankRef::Id(id)) => {
+            format!("\"{id}\"")
+        }
+        Condition::StandingWithCurrentAtLeast(value)
+        | Condition::StandingWithCurrentBelow(value)
+        | Condition::StandingWithTargetAtLeast(value)
+        | Condition::StandingWithTargetBelow(value) => value.to_string(),
+        Condition::CloserToTarget(flag) | Condition::OutsideMemberTolerance(flag) => {
+            flag.to_string()
+        }
+    };
+    let observed = match &check.observed {
+        Observed::Rank {
+            rank,
+            rung,
+            named: at,
+        } => match named {
+            Some(RankRef::Id(id)) => format!("{rank} is rung {rung}, {id} is rung {at}"),
+            _ => format!("{rank} is rung {rung}"),
+        },
+        Observed::Standing(standing) => format!("standing {standing}"),
+        Observed::Distances {
+            target: to_target,
+            current: to_current,
+        } => format!("{to_target} from {target}, {to_current} from {current}"),
+        Observed::Tolerance {
+            distance,
+            tolerance,
+        } => format!("{distance} from {current}, tolerance {tolerance}"),
+    };
+    let held = if check.held { "yes" } else { "no" };
+    format!("{} = {value}? {held}, {observed}", check.condition.key())
+}
+
 /// `#1 at tick 0: time advanced from 0 to 5`.
 fn describe_event(event: &Event) -> String {
     let what = match &event.payload {
@@ -1017,6 +1115,7 @@ fn describe_event(event: &Event) -> String {
         } => {
             let reason = match reason {
                 LeaveReason::Voluntary => "voluntary",
+                LeaveReason::Defected => "defected",
             };
             format!("{character} left {faction} ({reason})")
         }
@@ -2624,7 +2723,8 @@ mod tests {
             session.execute("can-join player city_watch"),
             output(
                 "no: 90.35 from The City Watch, tolerance is 40.00; \
-                 player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)"
+                 player belongs to The Lantern Guild, in conflict with The City Watch (-80.00): \
+                 refused by The City Watch's defectors rule 3, \"You serve our enemies.\""
             )
         );
         session
@@ -2633,6 +2733,93 @@ mod tests {
         assert_eq!(
             session.execute("can-join player city_watch"),
             output("no: 90.35 from The City Watch, tolerance is 40.00")
+        );
+    }
+
+    #[test]
+    fn can_join_explains_how_each_rule_table_decided() {
+        let mut session = riverhold();
+        session
+            .execute("act player steal --scale 4")
+            .expect("valid");
+        session.execute("join player lantern_guild").expect("valid");
+        assert_eq!(
+            session.execute("can-join player city_watch --explain"),
+            output(
+                "player → city_watch: no\n\
+                 distance 90.35 (euclidean), tolerance 40.00\n\
+                 law: 70.00 vs -20.00, gap 90.00, weight 1.00\n\
+                 good: 20.00 vs -12.00, gap 32.00, weight 0.25\n\
+                 weights: city_watch's own\n\
+                 leaving lantern_guild, in conflict with city_watch (-80.00)\n\
+                 lantern_guild's deserters (balance.toml): rule 3, release, standing -40.00\n\
+                 \x20 rule 1: rank_at_least = 3? no, cutpurse is rung 1\n\
+                 \x20 rule 2: outside_member_tolerance = true? no, 40.01 from lantern_guild, tolerance 60.00\n\
+                 \x20 rule 3: always\n\
+                 city_watch's defectors (balance.toml): rule 3, refuse, \"You serve our enemies.\"\n\
+                 \x20 rule 1: standing_with_target_at_least = 50.00? no, standing 0.00\n\
+                 \x20 rule 2: closer_to_target = true? no, 90.35 from city_watch, 40.01 from lantern_guild\n\
+                 \x20 rule 3: always\n\
+                 refused: 90.35 from The City Watch, tolerance is 40.00\n\
+                 refused: player belongs to The Lantern Guild, in conflict with The City Watch (-80.00): \
+                 refused by The City Watch's defectors rule 3, \"You serve our enemies.\""
+            )
+        );
+    }
+
+    fn defectors() -> Session {
+        let mut session = repo();
+        let Ok(Outcome::Output(loaded)) =
+            session.execute("load crates/cli/tests/fixtures/worlds/defectors")
+        else {
+            panic!("the defectors world loads");
+        };
+        assert!(loaded.starts_with("loaded 4 characters"), "{loaded}");
+        session
+    }
+
+    #[test]
+    fn a_reformed_fence_defects_and_the_events_say_so() {
+        let mut session = defectors();
+        assert_eq!(
+            session.execute("join vex city_watch"),
+            output(
+                "#1 at tick 0: vex left lantern_guild (defected)\n\
+                 #2 at tick 0: vex joined city_watch as a recruit\n\
+                 #3 at tick 0: vex's standing with city_watch moved from 0.00 to -10.00"
+            )
+        );
+    }
+
+    #[test]
+    fn can_join_explains_rank_ids_and_a_factions_own_table() {
+        let mut session = defectors();
+        let Ok(Outcome::Output(explained)) =
+            session.execute("can-join kestrel city_watch --explain")
+        else {
+            panic!("expected the explanation");
+        };
+        assert!(
+            explained.contains(
+                "\nlantern_guild's deserters (balance.toml): rule 1, refuse, \"Officers don't walk away.\"\n\
+                 \x20 rule 1: rank_at_least = 3? yes, shadow is rung 3\n\
+                 city_watch's defectors (balance.toml): rule 2, accept, standing -10.00\n"
+            ),
+            "{explained}"
+        );
+        let Ok(Outcome::Output(explained)) =
+            session.execute("can-join brother_ash temple --explain")
+        else {
+            panic!("expected the explanation");
+        };
+        assert!(
+            explained.contains(
+                "\nashen_circle's deserters (factions.toml): rule 1, refuse, \"No one leaves the Circle.\"\n\
+                 \x20 rule 1: always\n\
+                 temple's defectors (factions.toml): rule 1, accept, standing -5.00\n\
+                 \x20 rule 1: rank_below = \"ordained\"? yes, initiate is rung 1, ordained is rung 2\n"
+            ),
+            "{explained}"
         );
     }
 

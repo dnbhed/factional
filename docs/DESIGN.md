@@ -335,7 +335,7 @@ A faction has:
 
 - isn't already a member;
 - is within tolerance (distance ≤ `tolerance`);
-- isn't blocked by a membership conflict (§9.2).
+- is let go by each enemy faction they're in, and taken by this one (§9.2).
 
 A refusal lists every failing check with its numbers:
 
@@ -354,16 +354,18 @@ By default you can't. Designers loosen that with two ordered rule tables, evalua
 
 How the tables work:
 
-- Rules are checked top to bottom, and the first whose conditions all hold decides.
-- **Conditions** come from a fixed vocabulary:
-  - `rank_at_least`, `rank_below`: rank position, 1 = lowest. A faction's own tables may use rank ids instead.
+- Rules are checked top to bottom, and the first whose conditions all hold decides. A rule with no `when` always holds, and every table's last rule must have none, so a table always decides (P-42).
+- **Conditions** come from a fixed vocabulary. "Current" is the enemy faction being left and "target" the faction being joined, in either table:
+  - `rank_at_least`, `rank_below`: the member's rung in the current faction, 1 = lowest. A faction's own tables may use one of its rank ids instead, standing for that rank's rung.
+  - `rank_at_least` is inclusive and `rank_below` strict; likewise the standing pairs: `_at_least` holds at the value itself, `_below` doesn't.
   - `standing_with_current_at_least`, `standing_with_current_below`
   - `standing_with_target_at_least`, `standing_with_target_below`
-  - `closer_to_target`: distance to the target is less than distance to the current faction, each measured with that faction's own weights.
-  - `outside_member_tolerance`: of the current faction, using the same rule as §9.3.
+  - `closer_to_target`: distance to the target is less than distance to the current faction, each measured with that faction's own weights. `false` means not closer.
+  - `outside_member_tolerance`: distance to the current faction is more than the member's tolerance there: their rank's `tolerance` if it's stricter than the faction's `member_tolerance`, otherwise that, the same rule as §9.3. `false` means within it.
 - **Outcomes:**
-  - `defectors` → `accept`, with an optional `standing_change` toward the target, or `refuse`, with a reason.
-  - `deserters` → `release`, with an optional `standing_change` toward the current faction, or `refuse`.
+  - `defectors` → `accept`, with an optional `standing_change` toward the target, or `refuse`, with a `reason`.
+  - `deserters` → `release`, with an optional `standing_change` toward the current faction, or `refuse`, with a `reason`.
+  - A refusal must give a reason and can't have a `standing_change`; letting someone through can't have a reason.
 - **Built-in defaults:** `defectors` refuses everyone and `deserters` releases everyone. That's exactly D-4: enemies exclude each other. The sample world ships richer tables:
 
 ```toml
@@ -384,8 +386,16 @@ rules = [
 
 The result:
 
-- **Defection.** If every `deserters` table releases and the target accepts, the character joins the target and leaves each conflicting faction, with the standing changes applied. Each defection emits a `LeftFaction { reason: Defected }` and a `JoinedFaction` event.
-- **Refusal.** Otherwise nothing changes, and the refusal names the rule that fired.
+- **Both tables, for each enemy faction.** For every faction the character is in that's in conflict with the target, that faction's `deserters` table and the target's `defectors` table each decide. A faction's own table replaces the world's; with neither, the built-in one decides. `assess_join` reports every rule tried in each table, so `can-join --explain` can show them.
+- **Defection.** If every table lets them through (and the other checks of §9.1 pass), the character leaves each enemy faction, in id order, then joins the target as a member of its lowest rank. The events are:
+  - for each enemy faction, `LeftFaction { reason: Defected }`, then its deserters `standing_change` toward that faction as a `StandingChanged`;
+  - then `JoinedFaction`, then the defectors `standing_change` toward the target. Leaving two enemy factions at once adds the two defectors changes together into one `StandingChanged` (P-42).
+  - A `standing_change` of 0, or none, emits nothing. A faction's `leave_standing_change` is for leaving of one's own accord, and doesn't apply.
+- **Refusal.** Otherwise nothing changes, and each table that refused is named with its rule and reason:
+
+> vex belongs to The Lantern Guild, in conflict with The City Watch (-80.00): refused by The Lantern Guild's deserters rule 1, "Officers don't walk away."
+
+  With no tables in content, the refusal names the built-in rule: `refused by the built-in defectors rule`.
 
 Worked example: Vex, a fence (rank 2) of the Lantern Guild, has reformed to 35 / 10.
 
@@ -393,6 +403,7 @@ Worked example: Vex, a fence (rank 2) of the Lantern Guild, has reformed to 35 /
 2. To the Guild, Vex is 95.52 away. The member tolerance is 60, so Vex has drifted.
 3. The Guild's `deserters` table releases Vex on `outside_member_tolerance`.
 4. The Watch's `defectors` table accepts on `closer_to_target`, with −10 standing.
+5. The events: `LeftFaction { reason: Defected }` from the Guild, `JoinedFaction` to the Watch as a recruit, then `StandingChanged` with the Watch, 0 → −10.00.
 
 At rank 3 (Shadow), the first `deserters` rule would have refused.
 
@@ -604,7 +615,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung; rank standing requirements within ±100, tolerances ≥ 0 | error | M5 (done) |
 | A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 (done) |
 | Spillover multipliers within −1…1 | error | M6 |
-| Rule tables use known conditions; rank ids only in a faction's own tables and only its ranks; every table ends with a rule that always decides | error | M7 |
+| Rule tables use known conditions, with the right kind of value, and only their table's outcomes; a refusal has a reason and no `standing_change`; rung numbers ≥ 1; rank ids only in a faction's own tables and only its ranks; standing thresholds and `standing_change` within ±100; every table ends with a rule that always decides | error | M7 (done) |
 | Drift policies are known; probation has `grace_ticks` > 0 and a `then` | error | M8 |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` ≥ 0 | error | M9 |
 | `knowledge.model` is a known model | error | K1 |

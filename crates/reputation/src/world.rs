@@ -3,13 +3,15 @@ use std::fmt;
 
 use factional_core::{Curve, CurveError, Fixed, Tick, article, suggest};
 
+use crate::defection::{self, Situation};
 use crate::distance::gap;
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
-    CommandError, Component, ComponentKind, Disposition, DispositionWeights, Effects, Event,
-    Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric,
-    Outcome, OutcomeId, Part, Party, PromotionAssessment, RankCheck, RankId, Regard, Relation,
-    RelationSide, Role, StandingEffects, StandingKey, StandingOwner, Weights, Witnesses, measure,
+    CommandError, Component, ComponentKind, Defection, Disposition, DispositionWeights, Effects,
+    Event, Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership,
+    Metric, Outcome, OutcomeId, Part, Party, PromotionAssessment, RankCheck, RankId, Regard,
+    Relation, RelationSide, Role, Rule, StandingEffects, StandingKey, StandingOwner, TableKind,
+    TableOwner, TableProblem, TableSource, Verdict, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -33,6 +35,9 @@ pub struct Balance {
     pub relation_bands: Bands,
     /// Two factions are in conflict when either regards the other at or below this.
     pub conflict_threshold: Fixed,
+    /// `membership.defectors` and `membership.deserters`; a table left out is built in
+    /// (DESIGN.md §9.2).
+    pub rule_tables: BTreeMap<TableKind, Vec<Rule>>,
 }
 
 impl Balance {
@@ -69,6 +74,7 @@ impl Default for Balance {
             same_faction: Balance::DEFAULT_SAME_FACTION,
             relation_bands: Bands::relations(),
             conflict_threshold: Balance::DEFAULT_CONFLICT_THRESHOLD,
+            rule_tables: BTreeMap::new(),
         }
     }
 }
@@ -184,6 +190,12 @@ pub enum ContentProblem {
         faction: FactionId,
         rank: RankId,
         suggestion: Option<RankId>,
+    },
+    /// Something wrong with a `defectors` or `deserters` table.
+    RuleTable {
+        owner: TableOwner,
+        kind: TableKind,
+        problem: TableProblem,
     },
 }
 
@@ -350,6 +362,7 @@ impl Content {
             .chain(shared_ids)
             .chain(memberships)
             .chain(self.rank_problems())
+            .chain(self.rule_table_problems())
             .chain(relations)
             .chain(starts_in_conflict)
             .chain(self.standing_problems())
@@ -391,6 +404,37 @@ impl Content {
             }
         }
         problems
+    }
+
+    /// Problems with the world's rule tables, then each faction's own, in id order.
+    fn rule_table_problems(&self) -> Vec<ContentProblem> {
+        let world = self
+            .balance
+            .rule_tables
+            .iter()
+            .map(|(kind, rules)| (TableOwner::World, *kind, rules, None));
+        let own = self.factions.values().flat_map(|faction| {
+            faction.rule_tables.iter().map(move |(kind, rules)| {
+                (
+                    TableOwner::Faction(faction.id.clone()),
+                    *kind,
+                    rules,
+                    Some(faction),
+                )
+            })
+        });
+        world
+            .chain(own)
+            .flat_map(|(owner, kind, rules, faction)| {
+                defection::problems(rules, faction)
+                    .into_iter()
+                    .map(move |problem| ContentProblem::RuleTable {
+                        owner: owner.clone(),
+                        kind,
+                        problem,
+                    })
+            })
+            .collect()
     }
 
     /// `disposition.weights` must each be at least 0, and `same_faction` within ±100.
@@ -655,6 +699,36 @@ impl fmt::Display for ContentProblem {
                     None => Ok(()),
                 }
             }
+            ContentProblem::RuleTable { owner, problem, .. } => match problem {
+                TableProblem::RungBelowOne { rung, .. } => {
+                    write!(f, "{rung} isn't a rung: rungs count from 1, the lowest")
+                }
+                TableProblem::RankInWorldTable { rank, .. } => write!(
+                    f,
+                    "'{rank}' is a rank id, but the world's tables can't name ranks: use a rung number, 1 for the lowest"
+                ),
+                TableProblem::UnknownRank {
+                    rank, suggestion, ..
+                } => {
+                    write!(f, "unknown rank '{rank}'")?;
+                    if let TableOwner::Faction(faction) = owner {
+                        write!(f, " for {faction}")?;
+                    }
+                    match suggestion {
+                        Some(close) => write!(f, " (did you mean '{close}'?)"),
+                        None => Ok(()),
+                    }
+                }
+                TableProblem::ValueOutOfRange { value, .. } => {
+                    write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
+                }
+                TableProblem::MightNotDecide { rules: 0 } => f.write_str(
+                    "a table needs at least one rule, and its last must have no conditions",
+                ),
+                TableProblem::MightNotDecide { .. } => f.write_str(
+                    "the last rule must have no conditions, so the table always decides",
+                ),
+            },
             ContentProblem::NegativeDispositionWeight { value, .. } => {
                 write!(f, "{value} must be at least {}", Fixed::ZERO)
             }
@@ -955,11 +1029,37 @@ impl World {
                     .expect("World::new checks every faction has a rank")
                     .id
                     .clone();
-                Ok(vec![Change::JoinedFaction {
+                // Defecting: leave each enemy faction, paying what its deserters table asks,
+                // then join, paying what the defectors table asks, once for all of them.
+                let mut changes = Vec::new();
+                let mut joining = Deltas::new();
+                for defection in &assessment.defections {
+                    let from = &defection.from;
+                    changes.push(Change::LeftFaction {
+                        character: character.clone(),
+                        faction: from.clone(),
+                        reason: LeaveReason::Defected,
+                    });
+                    if let Verdict::Allow { standing_change } = defection.deserters.verdict {
+                        let mut leaving = Deltas::new();
+                        add(&mut leaving, Party::Faction(from.clone()), standing_change);
+                        changes.extend(self.standing_changes(character, leaving));
+                    }
+                    if let Verdict::Allow { standing_change } = defection.defectors.verdict {
+                        add(
+                            &mut joining,
+                            Party::Faction(faction.clone()),
+                            standing_change,
+                        );
+                    }
+                }
+                changes.push(Change::JoinedFaction {
                     character: character.clone(),
                     faction: faction.clone(),
                     rank,
-                }])
+                });
+                changes.extend(self.standing_changes(character, joining));
+                Ok(changes)
             }
             Command::Promote { character, faction } => {
                 self.existing(character, Role::Member)?;
@@ -1506,8 +1606,6 @@ impl World {
         )
     }
 
-    /// Whether `character` may join `faction` now, and every reason they can't (DESIGN.md
-    /// §9.1). `None` if either is unknown.
     /// Whether `character` may be promoted in `faction` now, and every requirement of the
     /// next rank with whether it holds (DESIGN.md §7.2). `None` if either is unknown or the
     /// character isn't a member.
@@ -1552,6 +1650,9 @@ impl World {
         })
     }
 
+    /// Whether `character` may join `faction` now, and every reason they can't, with how the
+    /// rule tables decided for each faction they're in that's its enemy (DESIGN.md §9.1,
+    /// §9.2). `None` if either is unknown.
     pub fn assess_join(
         &self,
         character: &CharacterId,
@@ -1571,16 +1672,15 @@ impl World {
             });
         }
         let current = self.state.memberships.get(character).into_iter().flatten();
-        for (member_of, _) in current.filter(|(member_of, _)| *member_of != faction) {
-            let relation = hostility(&self.state.relations, member_of, faction);
-            if relation <= self.content.balance.conflict_threshold {
-                blocks.push(JoinBlock::EnemyMembership {
-                    faction: member_of.clone(),
-                    faction_name: self.content.factions[member_of].name.clone(),
-                    relation,
-                });
-            }
-        }
+        let defections = current
+            .filter(|(member_of, _)| *member_of != faction)
+            .filter_map(|(member_of, membership)| {
+                let relation = hostility(&self.state.relations, member_of, faction);
+                (relation <= self.content.balance.conflict_threshold).then(|| {
+                    self.defection(character, membership, member_of, found, relation, &distance)
+                })
+            })
+            .collect();
         Some(JoinAssessment {
             character: character.clone(),
             faction: faction.clone(),
@@ -1588,7 +1688,58 @@ impl World {
             distance,
             tolerance,
             blocks,
+            defections,
         })
+    }
+
+    /// Whether `from`'s deserters table lets `character` go and `target`'s defectors table
+    /// takes them (DESIGN.md §9.2). `to_target` is their distance to the target.
+    fn defection(
+        &self,
+        character: &CharacterId,
+        membership: &Membership,
+        from: &FactionId,
+        target: &Faction,
+        relation: Fixed,
+        to_target: &Distance,
+    ) -> Defection {
+        let current = &self.content.factions[from];
+        let position = current
+            .rank_position(&membership.rank)
+            .expect("a member's rank is on their faction's ladder");
+        let rank_tolerance = current.ranks[position].tolerance;
+        let member_tolerance = current.tolerances.member();
+        let situation = Situation {
+            rank: membership.rank.clone(),
+            rung: position + 1,
+            standing_with_current: self.standing_now(character, &Party::Faction(from.clone())),
+            standing_with_target: self.standing_now(character, &Party::Faction(target.id.clone())),
+            distance_to_target: to_target.value,
+            distance_to_current: self
+                .distance(&Observer::Faction(from.clone()), character)
+                .expect("both exist")
+                .value,
+            member_tolerance: rank_tolerance
+                .map_or(member_tolerance, |rank| rank.min(member_tolerance)),
+        };
+        let table = |kind: TableKind, owner: &Faction| {
+            let (rules, source) = match (
+                owner.rule_tables.get(&kind),
+                self.content.balance.rule_tables.get(&kind),
+            ) {
+                (Some(own), _) => (own.clone(), TableSource::Faction),
+                (None, Some(world)) => (world.clone(), TableSource::World),
+                (None, None) => (kind.built_in(), TableSource::BuiltIn),
+            };
+            defection::decide(kind, &rules, source, owner, &situation)
+        };
+        Defection {
+            from: from.clone(),
+            from_name: current.name.clone(),
+            relation,
+            deserters: table(TableKind::Deserters, current),
+            defectors: table(TableKind::Defectors, target),
+        }
     }
 
     /// How `observer` regards `subject`: the score, its band and the working (DESIGN.md §8).
@@ -1751,9 +1902,9 @@ where
 mod tests {
     use super::*;
     use crate::{
-        AXIS_LIMIT, ActionStanding, AlignmentDelta, Band, Effects, JoinBlock, LeaveReason, Part,
-        Rank, RankCheck, RelationEnds, Role, StandingEffects, StartingMembership, Tolerances,
-        Witnesses,
+        AXIS_LIMIT, ActionStanding, AlignmentDelta, Band, Condition, ConditionCheck, Effects,
+        JoinBlock, LeaveReason, Observed, Part, Rank, RankCheck, RankRef, RelationEnds, Role,
+        StandingEffects, StartingMembership, Tolerances, Verdict, Witnesses,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -1798,6 +1949,7 @@ mod tests {
             tolerances: Tolerances::new(h(tolerance), Some(h(member))).expect("valid"),
             leave_standing_change: Fixed::ZERO,
             ranks: ladder(id),
+            rule_tables: BTreeMap::new(),
         }
     }
 
@@ -1985,6 +2137,7 @@ mod tests {
                 ..DispositionWeights::default()
             },
             same_faction: h(40_00),
+            rule_tables: [(TableKind::Defectors, sample_defectors())].into(),
         };
         let world = World::new(Content {
             balance: balance.clone(),
@@ -3261,18 +3414,29 @@ mod tests {
                     distance: h(90_35),
                     tolerance: h(40_00)
                 },
-                JoinBlock::EnemyMembership {
-                    faction: faction_id("lantern_guild"),
-                    faction_name: "The Lantern Guild".to_owned(),
-                    relation: h(-80_00),
-                },
             ]
+        );
+        // With no tables in content, the built-in ones decide: D-4, enemies exclude each other.
+        let [defection] = &assessment.defections[..] else {
+            panic!("one enemy membership: {:?}", assessment.defections);
+        };
+        assert_eq!(
+            (&defection.from, defection.relation),
+            (&faction_id("lantern_guild"), h(-80_00))
+        );
+        assert_eq!(
+            (defection.deserters.source, defection.deserters.allows()),
+            (TableSource::BuiltIn, true)
+        );
+        assert_eq!(
+            (defection.defectors.source, defection.defectors.allows()),
+            (TableSource::BuiltIn, false)
         );
         assert_eq!(
             assessment.reasons(),
             [
                 "90.35 from The City Watch, tolerance is 40.00",
-                "player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)",
+                "player belongs to The Lantern Guild, in conflict with The City Watch (-80.00): refused by the built-in defectors rule",
             ]
         );
     }
@@ -3295,14 +3459,13 @@ mod tests {
         let assessment = world
             .assess_join(&id("ava"), &faction_id("city_watch"))
             .expect("both exist");
-        assert_eq!(
-            assessment.blocks,
-            [JoinBlock::EnemyMembership {
-                faction: faction_id("free_company"),
-                faction_name: "The Free Company".to_owned(),
-                relation: h(-60_00),
-            }]
-        );
+        let enemies: Vec<(&FactionId, Fixed)> = assessment
+            .defections
+            .iter()
+            .map(|defection| (&defection.from, defection.relation))
+            .collect();
+        assert_eq!(enemies, [(&faction_id("free_company"), h(-60_00))]);
+        assert!(!assessment.allowed());
     }
 
     #[test]
@@ -4911,6 +5074,532 @@ mod tests {
         );
     }
 
+    // Joining an enemy: defectors and deserters (DESIGN.md §9.2)
+
+    fn accept(standing_change: i64) -> Verdict {
+        Verdict::Allow {
+            standing_change: h(standing_change),
+        }
+    }
+
+    fn refuse(reason: &str) -> Verdict {
+        Verdict::Refuse {
+            reason: Some(reason.to_owned()),
+        }
+    }
+
+    fn when(conditions: Vec<Condition>, then: Verdict) -> Rule {
+        Rule {
+            when: conditions,
+            then,
+        }
+    }
+
+    /// The sample `membership.defectors` table (DESIGN.md §9.2).
+    fn sample_defectors() -> Vec<Rule> {
+        vec![
+            when(
+                vec![Condition::StandingWithTargetAtLeast(h(50_00))],
+                accept(0),
+            ),
+            when(vec![Condition::CloserToTarget(true)], accept(-10_00)),
+            when(Vec::new(), refuse("You serve our enemies.")),
+        ]
+    }
+
+    /// The sample `membership.deserters` table.
+    fn sample_deserters() -> Vec<Rule> {
+        vec![
+            when(
+                vec![Condition::RankAtLeast(RankRef::Rung(3))],
+                refuse("Officers don't walk away."),
+            ),
+            when(vec![Condition::OutsideMemberTolerance(true)], accept(0)),
+            when(Vec::new(), accept(-40_00)),
+        ]
+    }
+
+    /// The Ashen Circle, whose own deserters table lets no one go.
+    fn ashen_circle() -> Faction {
+        let mut circle = faction("ashen_circle", 20_00, -80_00, Some((25, 1_00)));
+        circle.name = "The Ashen Circle".to_owned();
+        circle.tolerances = Tolerances::new(h(30_00), Some(h(40_00))).expect("valid");
+        circle.ranks = vec![
+            rung("initiate", None, None),
+            rung("adept", Some(40_00), None),
+        ];
+        circle.rule_tables = [(
+            TableKind::Deserters,
+            vec![when(Vec::new(), refuse("No one leaves the Circle."))],
+        )]
+        .into();
+        circle
+    }
+
+    /// Riverhold with the sample tables and the Ashen Circle, the Temple's enemy.
+    fn defectors_content(characters: impl IntoIterator<Item = Character>) -> Content {
+        let mut factions = factions();
+        factions.insert(faction_id("ashen_circle"), ashen_circle());
+        let mut relations = relations();
+        relations.push(between("temple", "ashen_circle", -90_00));
+        Content {
+            balance: Balance {
+                rule_tables: [
+                    (TableKind::Defectors, sample_defectors()),
+                    (TableKind::Deserters, sample_deserters()),
+                ]
+                .into(),
+                ..Balance::default()
+            },
+            characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),
+            factions,
+            actions: actions(),
+            relations,
+            ..Content::default()
+        }
+    }
+
+    fn defectors_world(characters: impl IntoIterator<Item = Character>) -> World {
+        World::new(defectors_content(characters)).expect("valid content")
+    }
+
+    fn standing_with(mut character: Character, faction: &str, value: i64) -> Character {
+        character
+            .standing
+            .factions
+            .insert(faction_id(faction), h(value));
+        character
+    }
+
+    /// Vex, reformed to 35 / 10 but still in the Lantern Guild, at `rank` (DESIGN.md §9.2).
+    fn reformed_vex(rank: &str) -> Character {
+        standing_with(
+            ranked(character("Vex", 35_00, 10_00), "lantern_guild", rank),
+            "lantern_guild",
+            30_00,
+        )
+    }
+
+    fn payloads(events: &[Event]) -> Vec<Change> {
+        events.iter().map(|event| event.payload.clone()).collect()
+    }
+
+    fn left(character: &str, faction: &str) -> Change {
+        Change::LeftFaction {
+            character: id(character),
+            faction: faction_id(faction),
+            reason: LeaveReason::Defected,
+        }
+    }
+
+    fn joined(character: &str, faction: &str, rank: &str) -> Change {
+        Change::JoinedFaction {
+            character: id(character),
+            faction: faction_id(faction),
+            rank: rank_id(rank),
+        }
+    }
+
+    fn standing_moved(character: &str, faction: &str, before: i64, after: i64) -> Change {
+        Change::StandingChanged {
+            subject: id(character),
+            party: Party::Faction(faction_id(faction)),
+            before: h(before),
+            after: h(after),
+        }
+    }
+
+    fn refusal(world: &mut World, character: &str, faction: &str) -> Vec<String> {
+        match world.execute(join(character, faction)) {
+            Err(CommandError::JoinRefused(assessment)) => assessment.reasons(),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_reformed_fence_defects_from_the_guild_to_the_watch() {
+        let mut world = defectors_world([reformed_vex("fence")]);
+        let assessment = world
+            .assess_join(&id("vex"), &faction_id("city_watch"))
+            .expect("both exist");
+        // 35.09 from the Watch, within its 40; 95.52 from the Guild, past its 60.
+        assert_eq!(assessment.distance.value, h(35_09));
+        assert!(assessment.allowed(), "{:?}", assessment.reasons());
+        let [defection] = &assessment.defections[..] else {
+            panic!("one enemy membership: {:?}", assessment.defections);
+        };
+        // The Guild releases him on outside_member_tolerance (rule 2)...
+        let deserters = &defection.deserters;
+        assert_eq!(
+            (deserters.source, deserters.fired(), &deserters.verdict),
+            (TableSource::World, 1, &accept(0))
+        );
+        assert_eq!(
+            deserters.tried[1].checks[0].observed,
+            Observed::Tolerance {
+                distance: h(95_52),
+                tolerance: h(60_00)
+            }
+        );
+        // ...and the Watch takes him on closer_to_target (rule 2), at a cost of 10.
+        let defectors = &defection.defectors;
+        assert_eq!(
+            (&defectors.faction, defectors.fired(), &defectors.verdict),
+            (&faction_id("city_watch"), 1, &accept(-10_00))
+        );
+        assert_eq!(
+            defectors.tried[1].checks[0].observed,
+            Observed::Distances {
+                target: h(35_09),
+                current: h(95_52)
+            }
+        );
+        let events = world
+            .execute(join("vex", "city_watch"))
+            .expect("he defects");
+        assert_eq!(
+            payloads(&events),
+            [
+                left("vex", "lantern_guild"),
+                joined("vex", "city_watch", "recruit"),
+                standing_moved("vex", "city_watch", 0, -10_00),
+            ]
+        );
+        assert_eq!(
+            factions_of(&world, "vex"),
+            [("city_watch".to_owned(), Tick(0))]
+        );
+    }
+
+    #[test]
+    fn a_shadow_of_the_guild_is_refused_because_officers_dont_walk_away() {
+        let mut world = defectors_world([reformed_vex("shadow")]);
+        assert_eq!(
+            refusal(&mut world, "vex", "city_watch"),
+            [
+                "vex belongs to The Lantern Guild, in conflict with The City Watch (-80.00): refused by The Lantern Guild's deserters rule 1, \"Officers don't walk away.\""
+            ]
+        );
+        assert!(world.events().is_empty());
+        assert_eq!(
+            factions_of(&world, "vex"),
+            [("lantern_guild".to_owned(), Tick(0))]
+        );
+    }
+
+    #[test]
+    fn a_factions_own_table_replaces_the_worlds() {
+        // Ash has turned toward the light: 20.00 from the Temple, within its 35.
+        let ash = member_of(character("Ash", 30_00, 60_00), &["ashen_circle"]);
+        let mut world = defectors_world([ash]);
+        let assessment = world
+            .assess_join(&id("ash"), &faction_id("temple"))
+            .expect("both exist");
+        assert_eq!(
+            assessment.defections[0].deserters.source,
+            TableSource::Faction
+        );
+        assert_eq!(
+            refusal(&mut world, "ash", "temple"),
+            [
+                "ash belongs to The Ashen Circle, in conflict with Temple of the Dawn (-90.00): refused by The Ashen Circle's deserters rule 1, \"No one leaves the Circle.\""
+            ]
+        );
+    }
+
+    #[test]
+    fn standing_with_the_target_is_tried_first_and_costs_nothing() {
+        let nell = standing_with(
+            member_of(character("Nell", 35_00, 10_00), &["lantern_guild"]),
+            "city_watch",
+            50_00,
+        );
+        let mut world = defectors_world([nell]);
+        let assessment = world
+            .assess_join(&id("nell"), &faction_id("city_watch"))
+            .expect("both exist");
+        assert_eq!(assessment.defections[0].defectors.fired(), 0);
+        let events = world
+            .execute(join("nell", "city_watch"))
+            .expect("she defects");
+        assert_eq!(
+            payloads(&events),
+            [
+                left("nell", "lantern_guild"),
+                joined("nell", "city_watch", "recruit"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_released_deserter_pays_the_tables_standing_change_after_leaving() {
+        // A Watch that would take almost anyone, so a loyal-looking thief can apply.
+        let mut content = defectors_content([standing_with(
+            member_of(character("Mole", -60_00, -10_00), &["lantern_guild"]),
+            "city_watch",
+            50_00,
+        )]);
+        let watch = content
+            .factions
+            .get_mut(&faction_id("city_watch"))
+            .expect("the Watch");
+        // The mole is 130.22 away: gaps 130 and 30, weighted 130 and 7.5.
+        watch.tolerances = Tolerances::new(h(150_00), Some(h(150_00))).expect("valid");
+        let mut world = World::new(content).expect("valid content");
+        let events = world
+            .execute(join("mole", "city_watch"))
+            .expect("the Guild lets the mole go, at a price");
+        assert_eq!(
+            payloads(&events),
+            [
+                left("mole", "lantern_guild"),
+                standing_moved("mole", "lantern_guild", 0, -40_00),
+                joined("mole", "city_watch", "recruit"),
+            ]
+        );
+    }
+
+    #[test]
+    fn defecting_leaves_every_enemy_faction_and_adds_up_the_defectors_costs() {
+        let mut content = defectors_content([member_of(
+            character("Vex", 35_00, 10_00),
+            &["lantern_guild", "free_company"],
+        )]);
+        content.relations = vec![
+            between("city_watch", "lantern_guild", -80_00),
+            between("city_watch", "free_company", -60_00),
+            between("lantern_guild", "free_company", 20_00),
+        ];
+        content.balance.rule_tables =
+            [(TableKind::Defectors, vec![when(Vec::new(), accept(-10_00))])].into();
+        let mut world = World::new(content).expect("valid content");
+        let events = world
+            .execute(join("vex", "city_watch"))
+            .expect("both let him go");
+        assert_eq!(
+            payloads(&events),
+            [
+                left("vex", "free_company"),
+                left("vex", "lantern_guild"),
+                joined("vex", "city_watch", "recruit"),
+                standing_moved("vex", "city_watch", 0, -20_00),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_members_tolerance_is_the_stricter_of_their_ranks_and_their_factions() {
+        let mut content = defectors_content([
+            // 30.00 from the Watch: past a captain's 25, within the Watch's 50.
+            ranked(character("Hale", 40_00, 20_00), "city_watch", "captain"),
+            ranked(character("Sarge", 40_00, 20_00), "city_watch", "sergeant"),
+        ]);
+        content.balance.rule_tables = [(
+            TableKind::Deserters,
+            vec![
+                when(vec![Condition::OutsideMemberTolerance(true)], accept(0)),
+                when(Vec::new(), refuse("Stay.")),
+            ],
+        )]
+        .into();
+        // A sergeant's tolerance looser than the Watch's changes nothing.
+        let watch = content
+            .factions
+            .get_mut(&faction_id("city_watch"))
+            .expect("the Watch");
+        watch.ranks[1].tolerance = Some(h(70_00));
+        let world = World::new(content).expect("valid content");
+        let observed = |who: &str| {
+            world
+                .assess_join(&id(who), &faction_id("lantern_guild"))
+                .expect("both exist")
+                .defections[0]
+                .deserters
+                .tried[0]
+                .checks[0]
+                .clone()
+        };
+        let tolerance = |tolerance: i64, held: bool| ConditionCheck {
+            condition: Condition::OutsideMemberTolerance(true),
+            observed: Observed::Tolerance {
+                distance: h(30_00),
+                tolerance: h(tolerance),
+            },
+            held,
+        };
+        assert_eq!(observed("hale"), tolerance(25_00, true));
+        assert_eq!(observed("sarge"), tolerance(50_00, false));
+    }
+
+    #[test]
+    fn rule_tables_are_checked_when_content_loads() {
+        let mut content = defectors_content([]);
+        content.balance.rule_tables = [
+            (
+                TableKind::Defectors,
+                vec![
+                    when(vec![Condition::RankAtLeast(RankRef::Rung(0))], accept(0)),
+                    when(
+                        vec![Condition::RankBelow(RankRef::Id(rank_id("shadow")))],
+                        accept(0),
+                    ),
+                    when(
+                        vec![Condition::StandingWithTargetAtLeast(h(120_00))],
+                        accept(-150_00),
+                    ),
+                    when(vec![Condition::CloserToTarget(true)], refuse("No.")),
+                ],
+            ),
+            (TableKind::Deserters, Vec::new()),
+        ]
+        .into();
+        let guild = content
+            .factions
+            .get_mut(&faction_id("lantern_guild"))
+            .expect("the Guild");
+        guild.rule_tables = [(
+            TableKind::Deserters,
+            vec![
+                when(
+                    vec![Condition::RankAtLeast(RankRef::Id(rank_id("captain")))],
+                    refuse("No."),
+                ),
+                when(
+                    vec![Condition::RankAtLeast(RankRef::Id(rank_id("shadw")))],
+                    refuse("No."),
+                ),
+                when(
+                    vec![Condition::RankAtLeast(RankRef::Id(rank_id("shadow")))],
+                    refuse("No."),
+                ),
+                when(Vec::new(), accept(0)),
+            ],
+        )]
+        .into();
+        let problem =
+            |owner: TableOwner, kind: TableKind, problem: TableProblem| ContentProblem::RuleTable {
+                owner,
+                kind,
+                problem,
+            };
+        let world = |found: TableProblem| problem(TableOwner::World, TableKind::Defectors, found);
+        let guild = TableOwner::Faction(faction_id("lantern_guild"));
+        assert_eq!(
+            content.problems(),
+            [
+                world(TableProblem::RungBelowOne {
+                    rule: 0,
+                    condition: "rank_at_least",
+                    rung: 0
+                }),
+                world(TableProblem::RankInWorldTable {
+                    rule: 1,
+                    condition: "rank_below",
+                    rank: rank_id("shadow")
+                }),
+                world(TableProblem::ValueOutOfRange {
+                    rule: 2,
+                    key: "standing_with_target_at_least",
+                    value: h(120_00)
+                }),
+                world(TableProblem::ValueOutOfRange {
+                    rule: 2,
+                    key: "standing_change",
+                    value: h(-150_00)
+                }),
+                world(TableProblem::MightNotDecide { rules: 4 }),
+                problem(
+                    TableOwner::World,
+                    TableKind::Deserters,
+                    TableProblem::MightNotDecide { rules: 0 }
+                ),
+                problem(
+                    guild.clone(),
+                    TableKind::Deserters,
+                    TableProblem::UnknownRank {
+                        rule: 0,
+                        condition: "rank_at_least",
+                        rank: rank_id("captain"),
+                        suggestion: None
+                    }
+                ),
+                problem(
+                    guild,
+                    TableKind::Deserters,
+                    TableProblem::UnknownRank {
+                        rule: 1,
+                        condition: "rank_at_least",
+                        rank: rank_id("shadw"),
+                        suggestion: Some(rank_id("shadow"))
+                    }
+                ),
+            ]
+        );
+        let messages: Vec<String> = content.problems().iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "0 isn't a rung: rungs count from 1, the lowest",
+                "'shadow' is a rank id, but the world's tables can't name ranks: use a rung number, 1 for the lowest",
+                "120.00 is outside -100.00..100.00",
+                "-150.00 is outside -100.00..100.00",
+                "the last rule must have no conditions, so the table always decides",
+                "a table needs at least one rule, and its last must have no conditions",
+                "unknown rank 'captain' for lantern_guild",
+                "unknown rank 'shadw' for lantern_guild (did you mean 'shadow'?)",
+            ]
+        );
+    }
+
+    #[test]
+    fn every_kind_of_condition_is_range_checked_where_it_has_a_number() {
+        let mut content = defectors_content([]);
+        let out = h(100_01);
+        content.balance.rule_tables = [(
+            TableKind::Deserters,
+            vec![
+                when(
+                    vec![
+                        // Rung 1, the lowest, is fine.
+                        Condition::RankAtLeast(RankRef::Rung(1)),
+                        Condition::RankBelow(RankRef::Rung(-1)),
+                        Condition::StandingWithCurrentAtLeast(out),
+                        Condition::StandingWithCurrentBelow(-out),
+                        Condition::StandingWithTargetBelow(out),
+                        Condition::StandingWithTargetAtLeast(h(100_00)),
+                    ],
+                    refuse("No."),
+                ),
+                when(Vec::new(), accept(100_00)),
+            ],
+        )]
+        .into();
+        let keys: Vec<String> = content
+            .problems()
+            .into_iter()
+            .map(|problem| match problem {
+                ContentProblem::RuleTable {
+                    problem: TableProblem::RungBelowOne { condition, .. },
+                    ..
+                }
+                | ContentProblem::RuleTable {
+                    problem: TableProblem::ValueOutOfRange { key: condition, .. },
+                    ..
+                } => condition.to_owned(),
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "rank_below",
+                "standing_with_current_at_least",
+                "standing_with_current_below",
+                "standing_with_target_below",
+            ]
+        );
+    }
+
     // Properties (DESIGN.md §14, invariants 1–4)
 
     use proptest::prelude::*;
@@ -4918,7 +5607,15 @@ mod tests {
     /// Some commands, refused ones included: zero ticks, unknown characters or actions,
     /// self-targets and scales of 0.
     fn commands() -> impl Strategy<Value = Vec<Command>> {
-        let who = || prop_oneof![Just("player"), Just("vex"), Just("ava"), Just("ghost")];
+        let who = || {
+            prop_oneof![
+                Just("player"),
+                Just("vex"),
+                Just("ava"),
+                Just("nell"),
+                Just("ghost")
+            ]
+        };
         let action = (
             who(),
             prop_oneof![Just("steal"), Just("help_stranger"), Just("dance")],
@@ -4931,6 +5628,7 @@ mod tests {
                 Just("lantern_guild"),
                 Just("free_company"),
                 Just("temple"),
+                Just("city_watch"),
                 Just("nowhere")
             ]
         };
@@ -4978,8 +5676,15 @@ mod tests {
         proptest::collection::vec(command, 0..30)
     }
 
+    /// Riverhold with the sample rule tables, and Nell, a reformed Guild member who can defect
+    /// to the Watch.
     fn run(commands: &[Command]) -> World {
-        let mut world = riverhold();
+        let mut world = defectors_world([
+            character("Vex", -55_00, -20_00),
+            character("Ava", 20_00, 10_00),
+            character("Player", 0, 0),
+            member_of(character("Nell", 35_00, 10_00), &["lantern_guild"]),
+        ]);
         for command in commands {
             let _ = world.execute(command.clone());
         }

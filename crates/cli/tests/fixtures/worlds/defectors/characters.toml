@@ -1,0 +1,25 @@
+# The worked example (DESIGN.md §9.2): Vex has reformed to 35 / 10, far from the Guild.
+# Loading warns that he and the others start outside the member tolerance of their faction.
+[vex]
+name = "Vex"
+alignment = { law = 35.0, good = 10.0 }
+memberships = [{ faction = "lantern_guild", rank = "fence" }]
+
+# Reformed just as far, but a shadow: an officer.
+[kestrel]
+name = "Kestrel"
+alignment = { law = 35.0, good = 10.0 }
+memberships = [{ faction = "lantern_guild", rank = "shadow" }]
+
+# An informant the Watch already trusts.
+[nell]
+name = "Nell"
+alignment = { law = 35.0, good = 10.0 }
+memberships = [{ faction = "lantern_guild" }]
+standing = { factions = { city_watch = 50.0 } }
+
+# Turned toward the light, but the Circle lets no one go.
+[brother_ash]
+name = "Brother Ash"
+alignment = { law = 30.0, good = 60.0 }
+memberships = [{ faction = "ashen_circle" }]

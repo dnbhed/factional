@@ -389,10 +389,33 @@ fn a_guild_thief_is_turned_away_by_the_watch_on_both_counts() {
             faction: faction_id("city_watch"),
         })
         .expect_err("too far, and an enemy");
+    // The Guild would let a cutpurse go, but the Watch's last defectors rule refuses: the
+    // player has no standing with it, and is nearer the Guild (40.01) than the Watch.
     assert_eq!(
         refusal.to_string(),
         "player can't join city_watch: 90.35 from The City Watch, tolerance is 40.00; \
-         player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)"
+         player belongs to The Lantern Guild, in conflict with The City Watch (-80.00): \
+         refused by The City Watch's defectors rule 3, \"You serve our enemies.\""
+    );
+}
+
+#[test]
+fn the_ashen_circle_lets_no_one_go() {
+    let world = riverhold();
+    let assessment = world
+        .assess_join(&character("brother_ash"), &faction_id("temple"))
+        .expect("both exist");
+    // 150.02 from the Temple: gaps 5 and 150, weighted 2.5 and 150. 10.08 from the Circle:
+    // gaps 5 and 10, weighted 1.25 and 10, so not closer to the Temple either.
+    assert_eq!(
+        assessment.reasons(),
+        [
+            "150.02 from Temple of the Dawn, tolerance is 35.00",
+            "brother_ash belongs to The Ashen Circle, in conflict with Temple of the Dawn (-90.00): \
+             refused by The Ashen Circle's deserters rule 1, \"No one leaves the Circle.\"",
+            "brother_ash belongs to The Ashen Circle, in conflict with Temple of the Dawn (-90.00): \
+             refused by Temple of the Dawn's defectors rule 3, \"You serve our enemies.\"",
+        ]
     );
 }
 

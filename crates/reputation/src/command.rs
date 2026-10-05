@@ -22,7 +22,9 @@ pub enum Command {
         scale: Fixed,
         witnesses: Witnesses,
     },
-    /// `character` asks to join `faction`; refused unless they may (DESIGN.md §9.1).
+    /// `character` asks to join `faction`; refused unless they may (DESIGN.md §9.1). If
+    /// they're in an enemy of `faction`, joining means defecting: they leave it, if the
+    /// defectors and deserters tables allow (§9.2).
     JoinFaction {
         character: CharacterId,
         faction: FactionId,

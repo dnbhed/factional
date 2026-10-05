@@ -10,6 +10,7 @@ mod action;
 mod alignment;
 mod character;
 mod command;
+mod defection;
 mod disposition;
 mod distance;
 mod faction;
@@ -23,6 +24,10 @@ pub use action::{Action, Witnesses};
 pub use alignment::{AXIS_LIMIT, Alignment, AlignmentDelta, Axis, AxisOutOfRange};
 pub use character::Character;
 pub use command::{Change, Command, CommandError, Event, JournalEntry, Role};
+pub use defection::{
+    Condition, ConditionCheck, Defection, Observed, RankRef, Rule, RuleTried, TableDecision,
+    TableKind, TableOwner, TableProblem, TableSource, Verdict,
+};
 pub use disposition::{
     Band, BandProblem, Bands, Component, ComponentKind, Disposition, DispositionWeights, Part,
 };
