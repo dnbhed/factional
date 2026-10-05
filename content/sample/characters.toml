@@ -8,6 +8,8 @@
 #
 # weights (optional): how much a character cares about each axis when judging how far away
 # someone is, 0 to 1. Without it, balance.toml's default_weights apply.
+# memberships (optional): the factions they start in, from factions.toml. Loading warns if
+# someone starts further from a faction than its member_tolerance.
 
 [player]
 name = "The Player"
@@ -18,14 +20,17 @@ name = "Captain Hale"
 alignment = { law = 75.0, good = 30.0 }
 # Like the Watch he serves, Hale judges people by their respect for the law.
 weights = { law = 1.0, good = 0.25 }
+memberships = [{ faction = "city_watch" }]
 
 [sister_mira]
 name = "Sister Mira"
 alignment = { law = 35.0, good = 85.0 }
+memberships = [{ faction = "temple" }]
 
 [vex]
 name = "Vex"
 alignment = { law = -55.0, good = -20.0 }
+memberships = [{ faction = "lantern_guild" }]
 
 [merchant_ava]
 name = "Merchant Ava"
@@ -34,3 +39,4 @@ alignment = { law = 20.0, good = 10.0 }
 [brother_ash]
 name = "Brother Ash"
 alignment = { law = 25.0, good = -70.0 }
+memberships = [{ faction = "ashen_circle" }]

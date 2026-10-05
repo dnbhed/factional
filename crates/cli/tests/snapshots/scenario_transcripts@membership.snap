@@ -1,0 +1,49 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/membership.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> show faction lantern_guild
+lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex
+> can-join player lantern_guild --explain
+player → lantern_guild: no
+distance 60.21 (euclidean), tolerance 45.00
+law: -60.00 vs 0.00, gap 60.00, weight 1.00
+good: -10.00 vs 0.00, gap 10.00, weight 0.50
+weights: lantern_guild's own
+refused: 60.21 from The Lantern Guild, tolerance is 45.00
+> assert join player lantern_guild == error: player can't join lantern_guild: 60.21 from The Lantern Guild, tolerance is 45.00
+> act player steal --scale 2
+#1 at tick 0: player did steal, at scale 2.00
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -10.00, good -6.00
+> assert can-join player lantern_guild == no: 50.04 from The Lantern Guild, tolerance is 45.00
+> act player steal --scale 2
+#3 at tick 0: player did steal, at scale 2.00
+#4 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -20.00, good -12.00
+> advance 3
+#5 at tick 0: time advanced from 0 to 3
+> assert can-join player lantern_guild == yes: 40.01 from The Lantern Guild, tolerance is 45.00
+> join player lantern_guild
+#6 at tick 3: player joined lantern_guild
+> show character player
+player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild since tick 3
+> assert join player lantern_guild == error: player can't join lantern_guild: player is already a member of lantern_guild
+> leave player lantern_guild
+#7 at tick 3: player left lantern_guild (voluntary)
+> assert leave player lantern_guild == error: player isn't a member of lantern_guild
+> assert join player tempel == error: unknown faction 'tempel' (did you mean 'temple'?)
+> journal
+1. join player lantern_guild — refused: player can't join lantern_guild: 60.21 from The Lantern Guild, tolerance is 45.00
+2. act player steal --scale 2.00 — accepted
+3. act player steal --scale 2.00 — accepted
+4. advance 3 — accepted
+5. join player lantern_guild — accepted
+6. join player lantern_guild — refused: player can't join lantern_guild: player is already a member of lantern_guild
+7. leave player lantern_guild — accepted
+8. leave player lantern_guild — refused: player isn't a member of lantern_guild
+9. join player tempel — refused: unknown faction 'tempel' (did you mean 'temple'?)
+> load crates/cli/tests/fixtures/worlds/reformed
+loaded 1 character from crates/cli/tests/fixtures/worlds/reformed
+warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00

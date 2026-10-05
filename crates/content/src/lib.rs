@@ -10,8 +10,8 @@ use std::{fmt, fs, io};
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, Alignment, AlignmentDelta, Balance, Band, BandProblem, Bands, Character,
-    CharacterId, Content, ContentProblem, Faction, FactionId, InvalidId, Metric, WeightProblem,
-    Weights,
+    CharacterId, Content, ContentProblem, ContentWarning, Faction, FactionId, InvalidId, Metric,
+    ToleranceProblem, Tolerances, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -129,6 +129,15 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         let (file, key) = match problem {
             ContentProblem::SharedId(id) => (FACTIONS_FILE, id.to_string()),
             ContentProblem::AffinityOutOfRange(_) => (BALANCE_FILE, "disposition.affinity".into()),
+            ContentProblem::UnknownMembershipFaction {
+                character, index, ..
+            }
+            | ContentProblem::DuplicateMembership {
+                character, index, ..
+            } => (
+                CHARACTERS_FILE,
+                format!("{character}.memberships[{index}].faction"),
+            ),
         };
         Diagnostic {
             file: file.to_owned(),
@@ -141,6 +150,24 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
     } else {
         Err(ContentError { diagnostics })
     }
+}
+
+/// Content's warnings: things allowed but probably not meant, each with the file and key
+/// it's about. Loading succeeds regardless; show them to the designer.
+pub fn warnings(content: &Content) -> Vec<Diagnostic> {
+    content
+        .warnings()
+        .iter()
+        .map(|warning| match warning {
+            ContentWarning::OutsideMemberTolerance {
+                character, index, ..
+            } => Diagnostic {
+                file: CHARACTERS_FILE.to_owned(),
+                key: Some(format!("{character}.memberships[{index}]")),
+                message: warning.to_string(),
+            },
+        })
+        .collect()
 }
 
 /// Reads one file, if it's there, keeping its report; `None` for a missing file.
@@ -296,13 +323,46 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
     let name = section.text("name", report);
     let alignment = read_alignment(&mut section, report);
     let weights = read_weights(&mut section, "weights", report);
+    let memberships = read_memberships(&mut section, report);
     section.finish(report);
     Some(Character {
         id,
         name: name?,
         alignment: alignment?,
         weights,
+        memberships: memberships?,
     })
+}
+
+/// A character's optional `memberships = [{ faction = "lantern_guild" }]`, as listed. Whether
+/// each faction exists is the world's check (P-32), reported at its `faction` key.
+fn read_memberships(section: &mut Section<'_>, report: &mut Report) -> Option<Vec<FactionId>> {
+    const MEMBERSHIP: &str = "{ faction = \"lantern_guild\" }";
+    let Some(items) = section.optional_list("memberships", &format!("[{MEMBERSHIP}]"), report)
+    else {
+        return Some(Vec::new());
+    };
+    let path = section.path_to("memberships");
+    let mut factions = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let at = format!("{path}[{index}]");
+        let Value::Table(fields) = item else {
+            report.error(&at, format!("expected a table, like {MEMBERSHIP}"));
+            factions.push(None);
+            continue;
+        };
+        let mut membership = Section::new(fields, at);
+        let faction = membership.text("faction", report).and_then(|text| {
+            FactionId::new(&text)
+                .map_err(|invalid| {
+                    report.error(&membership.path_to("faction"), invalid.to_string())
+                })
+                .ok()
+        });
+        membership.finish(report);
+        factions.push(faction);
+    }
+    factions.into_iter().collect()
 }
 
 /// One faction in `factions.toml`.
@@ -311,12 +371,26 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
     let name = section.text("name", report);
     let alignment = read_alignment(&mut section, report);
     let weights = read_weights(&mut section, "weights", report);
+    let tolerance = section.fixed("tolerance", report);
+    let member = section.optional_fixed("member_tolerance", report);
+    let tolerances = tolerance.and_then(|tolerance| match Tolerances::new(tolerance, member) {
+        Ok(tolerances) => Some(tolerances),
+        Err(problem) => {
+            let key = match problem {
+                ToleranceProblem::Negative(_) => "tolerance",
+                ToleranceProblem::MemberBelowTolerance { .. } => "member_tolerance",
+            };
+            report.error(&section.path_to(key), problem.to_string());
+            None
+        }
+    });
     section.finish(report);
     Some(Faction {
         id,
         name: name?,
         alignment: alignment?,
         weights,
+        tolerances: tolerances?,
     })
 }
 
@@ -772,12 +846,23 @@ mod tests {
         name = "The City Watch"
         alignment = { law = 70.0, good = 20.0 }
         weights = { law = 1.0, good = 0.25 }
+        tolerance = 40.0
+        member_tolerance = 50.0
+    "#;
+
+    const GUILD: &str = r#"
+        [lantern_guild]
+        name = "The Lantern Guild"
+        alignment = { law = -60.0, good = -10.0 }
+        weights = { law = 1.0, good = 0.5 }
+        tolerance = 45.0
+        member_tolerance = 60.0
     "#;
 
     #[test]
     fn reads_factions_with_their_weights() {
         let text = format!(
-            "{WATCH}\n[free_company]\nname = \"The Free Company\"\nalignment = {{ law = -10.0, good = 0.0 }}"
+            "{WATCH}\n[free_company]\nname = \"The Free Company\"\nalignment = {{ law = -10.0, good = 0.0 }}\ntolerance = 60.0"
         );
         let content = factions(&text).expect("valid content");
         let watch = &content.factions[&FactionId::new("city_watch").expect("valid id")];
@@ -790,8 +875,17 @@ mod tests {
             watch.weights,
             Some(Weights::new(h(1_00), h(25)).expect("valid"))
         );
+        assert_eq!(
+            (watch.tolerances.tolerance(), watch.tolerances.member()),
+            (h(40_00), h(50_00))
+        );
         let company = &content.factions[&FactionId::new("free_company").expect("valid id")];
         assert_eq!(company.weights, None, "no weights of its own");
+        assert_eq!(
+            company.tolerances.member(),
+            h(60_00),
+            "member tolerance defaults to the tolerance"
+        );
     }
 
     #[test]
@@ -810,6 +904,7 @@ mod tests {
             name = "The Watch"
             alignment = { law = 70.0, good = 20.0 }
             weights = { law = 1.5, good = 0.25 }
+            drift = "flag"
         "#;
         assert_eq!(
             problems(factions(text)),
@@ -818,8 +913,9 @@ mod tests {
                 "factions.toml: guild: expected a table of faction fields, like [guild]",
                 "factions.toml: temple: missing 'name'",
                 "factions.toml: temple.alignment.good: 180.00 is outside -100.00..100.00",
-                "factions.toml: temple: unknown key 'tolerance'",
                 "factions.toml: watch.weights.law: 1.50 must be between 0.00 and 1.00",
+                "factions.toml: watch: missing 'tolerance'",
+                "factions.toml: watch: unknown key 'drift'",
             ]
         );
     }
@@ -842,6 +938,117 @@ mod tests {
             problems(factions(&WATCH.replace("weights = {", "weights = 1 #"))),
             ["factions.toml: city_watch.weights: expected a table, like { law = 1.0, good = 1.0 }"]
         );
+    }
+
+    #[test]
+    fn reports_tolerances_that_are_negative_or_inverted() {
+        assert_eq!(
+            problems(factions(
+                &WATCH.replace("tolerance = 40.0", "tolerance = -5.0")
+            )),
+            ["factions.toml: city_watch.tolerance: -5.00 must be at least 0.00"]
+        );
+        assert_eq!(
+            problems(factions(
+                &WATCH.replace("member_tolerance = 50.0", "member_tolerance = 30.0")
+            )),
+            [
+                "factions.toml: city_watch.member_tolerance: 30.00 must be at least the faction's tolerance, 40.00"
+            ]
+        );
+        assert_eq!(
+            problems(factions(
+                &WATCH.replace("tolerance = 40.0", "tolerance = \"far\"")
+            )),
+            ["factions.toml: city_watch.tolerance: expected a number, like 25.0"]
+        );
+    }
+
+    fn world(factions: &str, characters: &str) -> Result<Content, ContentError> {
+        parse_content(Sources {
+            factions: Some(factions),
+            characters: Some(characters),
+            ..Sources::default()
+        })
+    }
+
+    #[test]
+    fn reads_starting_memberships() {
+        let text = format!(
+            "{VEX}memberships = [{{ faction = \"lantern_guild\" }}, {{ faction = \"city_watch\" }}]"
+        );
+        let content = world(&format!("{WATCH}{GUILD}"), &text).expect("valid content");
+        let vex = &content.characters[&CharacterId::new("vex").expect("valid id")];
+        let factions: Vec<&str> = vex.memberships.iter().map(FactionId::as_str).collect();
+        assert_eq!(factions, ["lantern_guild", "city_watch"], "as listed");
+        let plain = characters(VEX).expect("valid content");
+        assert!(
+            plain.characters[&CharacterId::new("vex").expect("valid id")]
+                .memberships
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_membership_must_name_a_faction_that_exists_once() {
+        let text = format!(
+            "{VEX}memberships = [{{ faction = \"lantern_gild\" }}, {{ faction = \"lantern_guild\" }}, {{ faction = \"lantern_guild\" }}]"
+        );
+        assert_eq!(
+            problems(world(GUILD, &text)),
+            [
+                "characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)",
+                "characters.toml: vex.memberships[2].faction: vex already belongs to lantern_guild",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_mistakes_in_a_membership() {
+        let text = format!(
+            "{VEX}memberships = [{{ faction = \"Lantern Guild\" }}, {{}}, {{ faction = \"lantern_guild\", rank = \"fence\" }}, 3]"
+        );
+        assert_eq!(
+            problems(world(GUILD, &text)),
+            [
+                "characters.toml: vex.memberships[0].faction: 'Lantern Guild' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "characters.toml: vex.memberships[1]: missing 'faction'",
+                "characters.toml: vex.memberships[2]: unknown key 'rank'",
+                "characters.toml: vex.memberships[3]: expected a table, like { faction = \"lantern_guild\" }",
+            ]
+        );
+        assert_eq!(
+            problems(world(
+                GUILD,
+                &format!("{VEX}memberships = \"lantern_guild\"")
+            )),
+            [
+                "characters.toml: vex.memberships: expected a list, like [{ faction = \"lantern_guild\" }]"
+            ]
+        );
+    }
+
+    #[test]
+    fn warns_of_a_starting_member_outside_member_tolerance() {
+        let reformed = VEX.replace("law = -55.0, good = -20.0", "law = 35.0, good = 10.0");
+        let text = format!("{reformed}memberships = [{{ faction = \"lantern_guild\" }}]");
+        let content = world(GUILD, &text).expect("a warning doesn't stop loading");
+        let found: Vec<String> = warnings(&content)
+            .iter()
+            .map(Diagnostic::to_string)
+            .collect();
+        assert_eq!(
+            found,
+            [
+                "characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00"
+            ]
+        );
+        let faithful = world(
+            GUILD,
+            &format!("{VEX}memberships = [{{ faction = \"lantern_guild\" }}]"),
+        )
+        .expect("valid content");
+        assert!(warnings(&faithful).is_empty());
     }
 
     #[test]
@@ -1020,6 +1227,7 @@ mod tests {
             [
                 "balance.toml: alignment.label_threshold: 0.00 must be between 0.01 and 100.00",
                 "factions.toml: watch: missing 'alignment'",
+                "factions.toml: watch: missing 'tolerance'",
                 "characters.toml: abe.name: expected text in quotes",
                 "characters.toml: zed: missing 'name'",
                 "actions.toml: steal.alignment: unknown key 'evil'",

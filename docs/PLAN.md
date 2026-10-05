@@ -41,6 +41,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - A3 — actions move alignment: `actions.toml` (alignment deltas), `PerformAction` with scale and witnesses, `ActionPerformed` and `AlignmentChanged`, clamping at the ends of each axis, refusals with "did you mean"; `actions`, `act`; done 2026-10-04 (#8)
 - D1 — weights and distance: `factions.toml` (name, alignment, weights), character weights, `alignment.metric` and `alignment.default_weights`; an exact `distance(observer, subject)` query with its working; one id namespace for factions and characters, checked by `World::new` (P-32's mechanism, arriving early); `factions`, `show faction`, `distance [--explain]`; done 2026-10-05 (#9)
 - D2 — disposition from affinity: `disposition.affinity` (a curve, checked within ±100 by `World::new`) and `disposition.bands` (validated: valid unique names, increasing `up_to`, only the last open-ended); a `disposition(observer, subject)` query with score, band and working; `disposition [--explain]`; plain "expected a number" errors; done 2026-10-05 (#10)
+- M1 — factions' `tolerance` and `member_tolerance`, starting `memberships`; `JoinFaction` (refused with every failing check) and `LeaveFaction`; `assess_join` and membership queries; load warnings, starting with members outside member tolerance; `can-join [--explain]`, `join`, `leave`, memberships in `show`; done 2026-10-05 (#11)
 
 ---
 
@@ -64,63 +65,48 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M1 · Factions: tolerance, joining and leaving — P0 · Next
+### M2 · Relations and enemy exclusion — P0 · Next
 
-**Why:** the brief's "characters can join factions, but only if their alignments are similar enough" (DESIGN.md §9.1).
+**Why:** the brief's "joining certain factions will mean not being able to join factions with which they are enemies" (DESIGN.md §9.4, D-4).
 
 **Scope**
 
 - **Content.**
-  - Each faction gains `tolerance` (required) and `member_tolerance` (optional, defaulting to `tolerance`).
-  - Characters gain `memberships = [{ faction = "lantern_guild" }]`. Ranks are added in M5.
-  - `leave_standing_change` moves to M3, where standing first exists.
-- **State.** Each character's memberships, with the tick when they joined.
-- **Commands.**
-  - `JoinFaction { character, faction }` emits `JoinedFaction`.
-  - `LeaveFaction { character, faction }` emits `LeftFaction { reason: Voluntary }`.
-- **Query.** `assess_join(character, faction)` returns whether they may join, and every check that fails, with its numbers.
-  - The checks are: already a member, and outside `tolerance`.
-  - Conflicts with enemy factions join the checks in M2.
-- **Warnings.** Load gains warnings, which are printed after its summary but don't stop it (P-32). The first one: a starting member outside their faction's `member_tolerance`.
+  - `relations.toml`: `[[relation]]` entries, each either `between = [a, b]` (both directions) or `from = a` with `to = b` (one direction), plus a `value` in −100…100. Pairs left out are 0.
+  - `balance.toml [relations]`: `conflict_threshold` (default −50) and `bands` (default enemy ≤ −50 < rival ≤ −15 < neutral ≤ 15 < friendly ≤ 50 < allied), with the same rules as D2's bands.
+- **State and queries.**
+  - Relations live in state, because they change in play.
+  - `relation(from, to)` returns the value and its band.
+  - `in_conflict(a, b)` is true when either regards the other at or below the threshold.
+- **Commands.** Each changed direction emits `RelationChanged { from, to, before, after }`.
+  - `SetRelation { from, to, value, mutual }`. A value outside ±100 is refused.
+  - `ShiftRelation { from, to, by, mutual }`. Shifts clamp at ±100.
+- **Enemy exclusion.** `assess_join` gains a block when the joiner belongs to a faction in conflict with the target. Until M7 that's a plain refusal; M7 replaces it with rule tables.
+- **Interim rule, until M9 (proposed).** A relation change that would put two of one character's factions in conflict is refused, so invariant 6 always holds. M9 replaces the refusal with `MembershipConflict`.
 - **CLI.**
-  - `join <character> <faction>` and `leave <character> <faction>`.
-  - `can-join <character> <faction> [--explain]`.
-  - `show character` lists memberships; `show faction` gives tolerances and members.
+  - `relations [<faction>]` lists each authored or changed direction with its band.
+  - `relate <from> <to> <value> [--one-way]` sets a relation.
+  - `relate <from> <to> --by <n> [--one-way]` shifts one.
 
-**Acceptance** (Riverhold; distances from D1, tolerances from DESIGN.md §13)
+**Acceptance** (Riverhold, from `docs/examples/riverhold/relations.toml`)
 
-1. At 0 / 0, `can-join player lantern_guild` → `no: 60.21 from The Lantern Guild, tolerance is 45.00`, and `join` is refused with the same reason.
-2. After two thefts (−10 / −6): refused, 50.04.
-3. After four thefts (−20 / −12): 40.01 ≤ 45.00, so `join player lantern_guild` emits `JoinedFaction`. `show character player` then lists the Lantern Guild, joined at the current tick.
-4. Joining again → `player is already a member of lantern_guild`.
-5. `leave player lantern_guild` emits `LeftFaction (voluntary)`. Leaving again → `player isn't a member of lantern_guild`.
-6. Vex starts in the Lantern Guild (7.07 away, member tolerance 60.00): `show faction lantern_guild` lists vex as a member.
-7. Unknown character or faction ids get a "did you mean", as in `act`.
-8. Load:
-   - Error: `characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`
-   - Error: a character listing the same faction twice.
-   - Error: `tolerance` < 0, or `member_tolerance` < `tolerance`.
-   - Warning: in a fixture world where vex starts at 35 / 10 in the Guild, `load` succeeds and prints `warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00`.
-
-**Validates** (DESIGN.md §12.2): a membership names a faction that exists, at most once per character; 0 ≤ `tolerance` ≤ `member_tolerance`. Warning: a starting member outside their member tolerance.
-
-### M2 · Relations and enemy exclusion — P0 · Outline
-
-**Covers:** DESIGN.md §9.4.
-
-**Scope**
-
-- `relations.toml`, with symmetric `between` entries and directional `from`/`to` entries.
-- Relation bands and the conflict threshold.
-- `SetRelation` and `ShiftRelation`.
-- A join is refused when the joiner belongs to a faction in conflict with the target. That stays the rule until M7 replaces it with rule tables.
-- CLI: `relations`, `relate`.
-
-**Anchors**
-
-- `city_watch` and `lantern_guild` are in conflict.
-- `city_watch` → `free_company` is −30 (rival) and `free_company` → `city_watch` is −10 (neutral), so they're not in conflict.
-- The player, in the guild at −20 / −12, applies to the Watch. The refusal gives both reasons: distance (90.35 > 40.00) and enemy membership.
+1. `city_watch` and `lantern_guild` are in conflict at −80 (enemy). `city_watch` ↔ `ashen_circle` at −40 is rival, not conflict.
+2. `city_watch` → `free_company` is −30 (rival) and `free_company` → `city_watch` is −10 (neutral), so they're not in conflict.
+3. The player, in the Guild at −20 / −12, applies to the Watch. The refusal gives both reasons:
+   - `90.35 from The City Watch, tolerance is 40.00`. That's √(90² + 8²) = √8164 = 90.35.
+   - `player belongs to The Lantern Guild, in conflict with The City Watch (-80.00)`.
+4. `relate city_watch free_company -60 --one-way` emits one `RelationChanged` (−30 → −60), and the two are now in conflict.
+5. `relate temple ashen_circle --by 50` emits two events, −90 → −40 each way: rival, no longer in conflict. Shifting −90 by −50 stops at −100.
+6. The interim rule: the player, in both the Guild and the Free Company (friendly at 20), sees `relate lantern_guild free_company -60` refused, because it would put two of the player's factions in conflict.
+7. Load errors at their keys:
+   - an unknown faction, with a "did you mean";
+   - a faction related to itself;
+   - a direction set twice: `city_watch → lantern_guild is already set by relation[0]`;
+   - an entry with both `between` and `from`/`to`, or neither;
+   - a value outside ±100;
+   - a `conflict_threshold` outside ±100;
+   - bad bands;
+   - a character starting in two factions in conflict (invariant 6), reported at the second membership.
 
 **Validates** (DESIGN.md §12.2): a relation names two different factions that exist, and sets each direction at most once; relation bands follow the D2 band rules; `conflict_threshold` is within ±100; no character starts in two factions that are in conflict (invariant 6).
 

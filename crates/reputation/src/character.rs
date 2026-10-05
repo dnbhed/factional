@@ -1,4 +1,4 @@
-use crate::{Alignment, CharacterId, Weights};
+use crate::{Alignment, CharacterId, FactionId, Weights};
 
 /// Someone in the world, as content describes them. The player is an ordinary character
 /// (P-17).
@@ -11,4 +11,7 @@ pub struct Character {
     /// How much they care about each axis when judging others; `None` means the balance
     /// default. Characters never inherit weights from their factions (P-21).
     pub weights: Option<Weights>,
+    /// The factions they start in, as content lists them. Their memberships now are
+    /// [`World::memberships`](crate::World::memberships).
+    pub memberships: Vec<FactionId>,
 }

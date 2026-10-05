@@ -14,6 +14,7 @@ mod disposition;
 mod distance;
 mod faction;
 mod id;
+mod membership;
 mod world;
 
 pub use action::{Action, Witnesses};
@@ -24,4 +25,9 @@ pub use disposition::{Band, BandProblem, Bands, Disposition};
 pub use distance::{Metric, WeightProblem, Weights, measure};
 pub use faction::Faction;
 pub use id::{ActionId, CharacterId, FactionId, InvalidId};
-pub use world::{Balance, Content, ContentProblem, Distance, Observer, WeightsFrom, World};
+pub use membership::{
+    JoinAssessment, JoinBlock, LeaveReason, Membership, ToleranceProblem, Tolerances,
+};
+pub use world::{
+    Balance, Content, ContentProblem, ContentWarning, Distance, Observer, WeightsFrom, World,
+};

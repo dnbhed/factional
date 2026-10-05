@@ -6,12 +6,12 @@ input_file: scenarios/distance.scenario
 > load content/sample
 loaded 6 characters from content/sample
 > factions
-ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil
-city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral
-free_company — The Free Company — law -10.00, good 0.00 — True Neutral
-lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral
-temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good
-> assert show faction temple == temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good
+ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00 — members: brother_ash
+city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00 — members: captain_hale
+free_company — The Free Company — law -10.00, good 0.00 — True Neutral — tolerance 60.00, member tolerance 80.00 — no members
+lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex
+temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira
+> assert show faction temple == temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira
 > distance city_watch player --explain
 city_watch → player: 70.18 (euclidean)
 law: 70.00 vs 0.00, gap 70.00, weight 1.00

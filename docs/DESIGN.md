@@ -331,7 +331,9 @@ A refusal lists every failing check with its numbers:
 
 > refused: 50.04 from the Lantern Guild's ideals, tolerance is 45.00
 
-`LeaveFaction` always succeeds. It applies the faction's `leave_standing_change`, which defaults to 0.
+`LeaveFaction` always succeeds for a member; leaving a faction you're not in is refused. From M3 it applies the faction's `leave_standing_change`, which defaults to 0.
+
+A character's starting factions are listed in `characters.toml` as `memberships = [{ faction = "lantern_guild" }]`. They're members from tick 0. Loading warns about a starting member who is already outside their faction's `member_tolerance`, but loads anyway (P-37).
 
 ### 9.2 Joining an enemy of a faction you're in (D-10, P-10)
 
@@ -579,9 +581,9 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Bands: at least one; unique names that are ids; increasing `up_to`; only the last open-ended | error | D2 (done, disposition), M2 (relations) |
 | `disposition.affinity` stays within ±100 | error | D2 (done) |
 | `hysteresis` ≥ 0 | error | D3 |
-| A membership names a faction that exists, at most once per character | error | M1 |
-| 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 |
-| A starting member outside their member tolerance | warning | M1 |
+| A membership names a faction that exists, at most once per character | error | M1 (done) |
+| 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 (done) |
+| A starting member outside their member tolerance | warning | M1 (done) |
 | A relation names two different factions that exist; each direction is set at most once | error | M2 |
 | No character starts in two factions that are in conflict (invariant 6) | error | M2 |
 | Standing names factions and characters that exist; values within ±100 | error | M3 |
