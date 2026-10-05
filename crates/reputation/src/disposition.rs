@@ -2,7 +2,7 @@ use std::fmt;
 
 use factional_core::{Fixed, is_valid_id};
 
-use crate::{Distance, InvalidId};
+use crate::{Distance, FactionId, InvalidId};
 
 /// A named range of disposition scores, such as `neutral` (DESIGN.md §8.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,16 +164,120 @@ impl fmt::Display for BandProblem {
     }
 }
 
-/// How an observer regards a subject, with its working (DESIGN.md §8, P-24). Until M4 the
-/// score is the affinity alone.
+/// How an observer regards a subject, with its working (DESIGN.md §8, P-24).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Disposition {
+    /// The weighted components added up, clamped to ±100.
     pub score: Fixed,
     /// The name of the band the score falls in.
     pub band: String,
-    /// `disposition.affinity` at `distance`: how close the two alignments make them.
-    pub affinity: Fixed,
+    /// The distance behind the affinity.
     pub distance: Distance,
+    /// All five components, in [`ComponentKind::ALL`] order.
+    pub components: Vec<Component>,
+}
+
+impl Disposition {
+    pub fn component(&self, kind: ComponentKind) -> &Component {
+        self.components
+            .iter()
+            .find(|component| component.kind == kind)
+            .expect("every disposition has all five components")
+    }
+}
+
+/// The parts of a disposition (DESIGN.md §8.1, P-6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComponentKind {
+    /// How close the two alignments are: `disposition.affinity` at their distance.
+    Affinity,
+    /// How the observer regards the subject from what has passed between them.
+    Standing,
+    /// How the two sides' factions regard each other.
+    Kinship,
+    /// A character observer adopting their factions' view of the subject.
+    FactionOpinion,
+    /// From other modules (M10).
+    Modifiers,
+}
+
+impl ComponentKind {
+    pub const ALL: [ComponentKind; 5] = [
+        ComponentKind::Affinity,
+        ComponentKind::Standing,
+        ComponentKind::Kinship,
+        ComponentKind::FactionOpinion,
+        ComponentKind::Modifiers,
+    ];
+
+    /// The component's name in `disposition.weights`.
+    pub fn key(self) -> &'static str {
+        match self {
+            ComponentKind::Affinity => "affinity",
+            ComponentKind::Standing => "standing",
+            ComponentKind::Kinship => "kinship",
+            ComponentKind::FactionOpinion => "faction_opinion",
+            ComponentKind::Modifiers => "modifiers",
+        }
+    }
+}
+
+/// One component of a disposition: its value (clamped to ±100, P-7), its weight, and the
+/// weighted value that goes into the score, rounded once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Component {
+    pub kind: ComponentKind,
+    pub value: Fixed,
+    pub weight: Fixed,
+    pub weighted: Fixed,
+    /// What made up the value, for kinship and faction opinion; empty for the others.
+    pub parts: Vec<Part>,
+}
+
+/// One contribution to kinship or faction opinion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Part {
+    /// Kinship: the observer's faction. Faction opinion: the faction whose view it is.
+    pub from: FactionId,
+    /// Kinship: the subject's faction (the same as `from` when they share it). Faction
+    /// opinion: `None`.
+    pub to: Option<FactionId>,
+    pub value: Fixed,
+}
+
+/// How much each component counts toward the score: `disposition.weights` (DESIGN.md §8.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DispositionWeights {
+    pub affinity: Fixed,
+    pub standing: Fixed,
+    pub kinship: Fixed,
+    pub faction_opinion: Fixed,
+    pub modifiers: Fixed,
+}
+
+impl DispositionWeights {
+    pub fn get(self, kind: ComponentKind) -> Fixed {
+        match kind {
+            ComponentKind::Affinity => self.affinity,
+            ComponentKind::Standing => self.standing,
+            ComponentKind::Kinship => self.kinship,
+            ComponentKind::FactionOpinion => self.faction_opinion,
+            ComponentKind::Modifiers => self.modifiers,
+        }
+    }
+}
+
+impl Default for DispositionWeights {
+    /// affinity 1.00, standing 1.00, kinship 0.50, faction opinion 0.50, modifiers 1.00.
+    fn default() -> DispositionWeights {
+        DispositionWeights {
+            affinity: Fixed::ONE,
+            standing: Fixed::ONE,
+            kinship: Fixed::from_hundredths(50),
+            faction_opinion: Fixed::from_hundredths(50),
+            modifiers: Fixed::ONE,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -273,7 +273,7 @@ tolerance = 25.0          # captains are held to a stricter standard
 | **faction opinion** | the sum of the subject's standing with each of the observer's factions: the NPC partly adopts their factions' view | not used |
 | **modifiers** | the sum of active modifiers from other modules (§11) | the same |
 
-Each component is clamped to ±100. Until M4 the score is the affinity alone, which `World::new`'s check keeps within ±100, so nothing needs clamping yet (P-36). The score is the weighted sum of the components, and its band is the first one whose `up_to` is at or above the score:
+Each component is clamped to ±100 (P-7). Kinship sums one part per pair of the observer's and subject's factions: a faction they share counts as `same_faction`, and any other pair as how the observer's faction regards the subject's. Faction opinion sums the subject's standing with each of a character observer's factions; a faction observer has none. Each weighted component is rounded once (P-40). The score is the weighted sum of the components, and its band is the first one whose `up_to` is at or above the score:
 
 ```
 score = clamp( Σ round(weight_c × component_c), −100, +100 )
@@ -591,6 +591,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Weights 0–1 with at least one above 0; `metric` is a known metric | error | D1 (done) |
 | Bands: at least one; unique names that are ids; increasing `up_to`; only the last open-ended | error | D2 (done, disposition), M2 (done, relations) |
 | `disposition.affinity` stays within ±100 | error | D2 (done) |
+| `disposition.weights` names only the five components, each ≥ 0; `same_faction` within ±100 | error | M4 (done) |
 | `hysteresis` ≥ 0 | error | D3 |
 | A membership names a faction that exists, at most once per character | error | M1 (done) |
 | 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 (done) |

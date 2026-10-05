@@ -6,9 +6,10 @@ use factional_core::{Curve, CurveError, Fixed, Tick, suggest};
 use crate::distance::gap;
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, Axis, Bands, Change, Character, CharacterId, Command,
-    CommandError, Disposition, Effects, Event, Faction, FactionId, JoinAssessment, JoinBlock,
-    JournalEntry, LeaveReason, Membership, Metric, Outcome, OutcomeId, Party, Regard, Relation,
-    RelationSide, Role, StandingEffects, StandingKey, StandingOwner, Weights, Witnesses, measure,
+    CommandError, Component, ComponentKind, Disposition, DispositionWeights, Effects, Event,
+    Faction, FactionId, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric,
+    Outcome, OutcomeId, Part, Party, Regard, Relation, RelationSide, Role, StandingEffects,
+    StandingKey, StandingOwner, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -24,6 +25,10 @@ pub struct Balance {
     pub affinity: Curve,
     /// The named bands a disposition score falls into (DESIGN.md §8.1).
     pub bands: Bands,
+    /// How much each disposition component counts (DESIGN.md §8.1).
+    pub disposition_weights: DispositionWeights,
+    /// What sharing a faction counts for, in kinship.
+    pub same_faction: Fixed,
     /// The named bands a relation between factions falls into (DESIGN.md §9.4).
     pub relation_bands: Bands,
     /// Two factions are in conflict when either regards the other at or below this.
@@ -31,6 +36,9 @@ pub struct Balance {
 }
 
 impl Balance {
+    /// `disposition.same_faction`'s default: 50.00.
+    pub const DEFAULT_SAME_FACTION: Fixed = Fixed::from_hundredths(50_00);
+
     /// `relations.conflict_threshold`'s default: −50.00.
     pub const DEFAULT_CONFLICT_THRESHOLD: Fixed = Fixed::from_hundredths(-50_00);
 
@@ -57,6 +65,8 @@ impl Default for Balance {
             metric: Metric::default(),
             affinity: Balance::default_affinity(),
             bands: Bands::standard(),
+            disposition_weights: DispositionWeights::default(),
+            same_faction: Balance::DEFAULT_SAME_FACTION,
             relation_bands: Bands::relations(),
             conflict_threshold: Balance::DEFAULT_CONFLICT_THRESHOLD,
         }
@@ -145,6 +155,13 @@ pub enum ContentProblem {
     },
     /// A faction's `leave_standing_change` outside −100…100.
     LeaveStandingOutOfRange { faction: FactionId, value: Fixed },
+    /// A `disposition.weights` entry below 0.
+    NegativeDispositionWeight {
+        component: ComponentKind,
+        value: Fixed,
+    },
+    /// `disposition.same_faction` outside −100…100.
+    SameFactionOutOfRange(Fixed),
 }
 
 /// Something in content that's allowed but probably not meant: it's reported, and the world
@@ -276,7 +293,27 @@ impl Content {
             .chain(relations)
             .chain(starts_in_conflict)
             .chain(self.standing_problems())
+            .chain(self.disposition_problems())
             .collect()
+    }
+
+    /// `disposition.weights` must each be at least 0, and `same_faction` within ±100.
+    fn disposition_problems(&self) -> Vec<ContentProblem> {
+        let weights = self.balance.disposition_weights;
+        let mut problems: Vec<ContentProblem> = ComponentKind::ALL
+            .into_iter()
+            .filter(|kind| weights.get(*kind) < Fixed::ZERO)
+            .map(|component| ContentProblem::NegativeDispositionWeight {
+                component,
+                value: weights.get(component),
+            })
+            .collect();
+        if !within_range(self.balance.same_faction) {
+            problems.push(ContentProblem::SameFactionOutOfRange(
+                self.balance.same_faction,
+            ));
+        }
+        problems
     }
 
     /// Problems with `leave_standing_change` and every `standing` block: each party must
@@ -462,8 +499,12 @@ impl fmt::Display for ContentProblem {
                     None => Ok(()),
                 }
             }
+            ContentProblem::NegativeDispositionWeight { value, .. } => {
+                write!(f, "{value} must be at least {}", Fixed::ZERO)
+            }
             ContentProblem::StandingOutOfRange { value, .. }
-            | ContentProblem::LeaveStandingOutOfRange { value, .. } => {
+            | ContentProblem::LeaveStandingOutOfRange { value, .. }
+            | ContentProblem::SameFactionOutOfRange(value) => {
                 write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
             }
         }
@@ -871,6 +912,17 @@ impl World {
         Fixed::ONE
     }
 
+    /// A character's factions now, in id order.
+    fn factions_of(&self, character: &CharacterId) -> Vec<FactionId> {
+        self.state
+            .memberships
+            .get(character)
+            .into_iter()
+            .flat_map(BTreeMap::keys)
+            .cloned()
+            .collect()
+    }
+
     fn standing_now(&self, subject: &CharacterId, party: &Party) -> Fixed {
         self.state
             .standings
@@ -1231,14 +1283,74 @@ impl World {
     pub fn disposition(&self, observer: &Observer, subject: &CharacterId) -> Option<Disposition> {
         let distance = self.distance(observer, subject)?;
         let balance = &self.content.balance;
-        // Content checks keep the affinity within ±100 (P-32), so it needs no clamp until M4
-        // adds the other components to it.
+        // Content checks keep the affinity within ±100 (P-32), and standing stays within ±100
+        // by construction, so only the sums (kinship, faction opinion, the score) need clamping.
         let affinity = balance.affinity.at(distance.value);
+        let (standing, observer_factions) = match observer {
+            Observer::Character(id) => (
+                self.standing_now(subject, &Party::Character(id.clone())),
+                self.factions_of(id),
+            ),
+            Observer::Faction(id) => (
+                self.standing_now(subject, &Party::Faction(id.clone())),
+                vec![id.clone()],
+            ),
+        };
+        let subject_factions = self.factions_of(subject);
+        let kinship: Vec<Part> = observer_factions
+            .iter()
+            .flat_map(|from| {
+                subject_factions.iter().map(move |to| Part {
+                    from: from.clone(),
+                    to: Some(to.clone()),
+                    value: if from == to {
+                        balance.same_faction
+                    } else {
+                        relation_value(&self.state.relations, from, to)
+                    },
+                })
+            })
+            .collect();
+        let opinion: Vec<Part> = match observer {
+            Observer::Character(_) => observer_factions
+                .iter()
+                .map(|faction| Part {
+                    from: faction.clone(),
+                    to: None,
+                    value: self.standing_now(subject, &Party::Faction(faction.clone())),
+                })
+                .collect(),
+            Observer::Faction(_) => Vec::new(),
+        };
+        let components: Vec<Component> = ComponentKind::ALL
+            .into_iter()
+            .map(|kind| {
+                let (value, parts) = match kind {
+                    ComponentKind::Affinity => (affinity, Vec::new()),
+                    ComponentKind::Standing => (standing, Vec::new()),
+                    ComponentKind::Kinship => (sum(&kinship), kinship.clone()),
+                    ComponentKind::FactionOpinion => (sum(&opinion), opinion.clone()),
+                    ComponentKind::Modifiers => (Fixed::ZERO, Vec::new()),
+                };
+                let weight = balance.disposition_weights.get(kind);
+                Component {
+                    kind,
+                    value,
+                    weight,
+                    weighted: weight * value,
+                    parts,
+                }
+            })
+            .collect();
+        let score = components
+            .iter()
+            .fold(Fixed::ZERO, |score, component| score + component.weighted)
+            .clamp(-AXIS_LIMIT, AXIS_LIMIT);
         Some(Disposition {
-            score: affinity,
-            band: balance.bands.band_for(affinity).name.clone(),
-            affinity,
+            score,
+            band: balance.bands.band_for(score).name.clone(),
             distance,
+            components,
         })
     }
 
@@ -1283,19 +1395,34 @@ fn add(deltas: &mut Deltas, party: Party, change: Fixed) {
     *due = *due + change;
 }
 
+/// How `from` regards `to`; any direction not set is 0.
+fn relation_value(
+    relations: &BTreeMap<(FactionId, FactionId), Fixed>,
+    from: &FactionId,
+    to: &FactionId,
+) -> Fixed {
+    relations
+        .get(&(from.clone(), to.clone()))
+        .copied()
+        .unwrap_or_default()
+}
+
+/// Parts added up and clamped to ±100, so a component never outweighs its range (P-7).
+fn sum(parts: &[Part]) -> Fixed {
+    // Every part is within ±100, so even many can't overflow before the clamp.
+    parts
+        .iter()
+        .fold(Fixed::ZERO, |total, part| total + part.value)
+        .clamp(-AXIS_LIMIT, AXIS_LIMIT)
+}
+
 /// The more hostile of the two directions between `a` and `b`; any direction not set is 0.
 fn hostility(
     relations: &BTreeMap<(FactionId, FactionId), Fixed>,
     a: &FactionId,
     b: &FactionId,
 ) -> Fixed {
-    let value = |from: &FactionId, to: &FactionId| {
-        relations
-            .get(&(from.clone(), to.clone()))
-            .copied()
-            .unwrap_or_default()
-    };
-    value(a, b).min(value(b, a))
+    relation_value(relations, a, b).min(relation_value(relations, b, a))
 }
 
 /// The id among `ids` closest to a misspelt `word`, if one is close enough to suggest.
@@ -1311,7 +1438,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        AXIS_LIMIT, ActionStanding, AlignmentDelta, Band, Effects, JoinBlock, LeaveReason,
+        AXIS_LIMIT, ActionStanding, AlignmentDelta, Band, Effects, JoinBlock, LeaveReason, Part,
         RelationEnds, Role, StandingEffects, Tolerances, Witnesses,
     };
 
@@ -1505,6 +1632,11 @@ mod tests {
             .expect("valid bands"),
             relation_bands: Bands::standard(),
             conflict_threshold: h(-60_00),
+            disposition_weights: DispositionWeights {
+                modifiers: h(0),
+                ..DispositionWeights::default()
+            },
+            same_faction: h(40_00),
         };
         let world = World::new(Content {
             balance: balance.clone(),
@@ -1750,17 +1882,307 @@ mod tests {
             .disposition(&as_faction("city_watch"), &id("player"))
             .expect("both exist");
         // Distance 70.18 is on the 60 → 200 segment: −50 × 10.18 / 140 = −3.636…
+        // −3.64, written ungrouped: clippy reads `_64` as an `i64` suffix.
         assert_eq!(
-            disposition,
-            Disposition {
-                // −3.64, written ungrouped: clippy reads `_64` as an `i64` suffix.
-                score: h(-364),
-                band: "neutral".to_owned(),
-                affinity: h(-364),
-                distance: world
-                    .distance(&as_faction("city_watch"), &id("player"))
-                    .expect("both exist"),
-            }
+            (disposition.score, disposition.band.as_str()),
+            (h(-364), "neutral")
+        );
+        assert_eq!(
+            disposition.component(ComponentKind::Affinity).value,
+            h(-364)
+        );
+        assert_eq!(
+            disposition.distance,
+            world
+                .distance(&as_faction("city_watch"), &id("player"))
+                .expect("both exist")
+        );
+    }
+
+    // The full disposition (DESIGN.md §8.1, §8.2)
+
+    fn component(
+        world: &World,
+        observer: &Observer,
+        subject: &str,
+        kind: ComponentKind,
+    ) -> Component {
+        world
+            .disposition(observer, &id(subject))
+            .expect("both exist")
+            .component(kind)
+            .clone()
+    }
+
+    fn weighted(
+        kind: ComponentKind,
+        value: i64,
+        weight: i64,
+        weighted: i64,
+        parts: Vec<Part>,
+    ) -> Component {
+        Component {
+            kind,
+            value: h(value),
+            weight: h(weight),
+            weighted: h(weighted),
+            parts,
+        }
+    }
+
+    fn part(from: &str, to: Option<&str>, value: i64) -> Part {
+        Part {
+            from: faction_id(from),
+            to: to.map(faction_id),
+            value: h(value),
+        }
+    }
+
+    #[test]
+    fn hale_thinks_ill_of_a_fined_thief() {
+        // DESIGN.md §8.2: two thefts from a merchant, then a fine from the Watch.
+        let mut world = with_outcomes();
+        for _ in 0..2 {
+            world
+                .execute(act("player", "steal", Some("ava"), 1_00))
+                .expect("accepted");
+        }
+        world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        let disposition = world
+            .disposition(&as_character("captain_hale"), &id("player"))
+            .expect("both exist");
+        assert_eq!(disposition.distance.value, h(85_48));
+        assert_eq!(
+            disposition.components,
+            [
+                // Distance 85.48: −50 × 25.48 / 140 = −9.10
+                weighted(ComponentKind::Affinity, -9_10, 1_00, -9_10, vec![]),
+                weighted(ComponentKind::Standing, -10_00, 1_00, -10_00, vec![]),
+                weighted(ComponentKind::Kinship, 0, 50, 0, vec![]),
+                weighted(
+                    ComponentKind::FactionOpinion,
+                    -20_00,
+                    50,
+                    -10_00,
+                    vec![part("city_watch", None, -20_00)]
+                ),
+                weighted(ComponentKind::Modifiers, 0, 1_00, 0, vec![]),
+            ]
+        );
+        assert_eq!(
+            (disposition.score, disposition.band.as_str()),
+            (h(-29_10), "unfriendly")
+        );
+    }
+
+    #[test]
+    fn the_watch_distrusts_a_member_of_its_enemy() {
+        let world = world_of(riverhold_people_in_factions());
+        let disposition = world
+            .disposition(&as_faction("city_watch"), &id("vex"))
+            .expect("both exist");
+        assert_eq!(
+            disposition.component(ComponentKind::Kinship),
+            &weighted(
+                ComponentKind::Kinship,
+                -80_00,
+                50,
+                -40_00,
+                vec![part("city_watch", Some("lantern_guild"), -80_00)]
+            )
+        );
+        assert_eq!(
+            disposition.component(ComponentKind::FactionOpinion),
+            &weighted(ComponentKind::FactionOpinion, 0, 50, 0, vec![]),
+            "a faction has no faction opinion"
+        );
+        assert_eq!(
+            (disposition.score, disposition.band.as_str()),
+            (h(-63_36), "unfriendly")
+        );
+    }
+
+    /// Riverhold's people in their factions, with Hale's own weights.
+    fn riverhold_people_in_factions() -> Vec<Character> {
+        let mut hale = member_of(character("Captain_hale", 75_00, 30_00), &["city_watch"]);
+        hale.weights = Some(weights(1_00, 25));
+        vec![
+            hale,
+            character("Player", 0, 0),
+            member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+            member_of(character("Sister_mira", 35_00, 85_00), &["temple"]),
+            member_of(character("Recruit", 70_00, 20_00), &["city_watch"]),
+        ]
+    }
+
+    #[test]
+    fn hale_warms_to_a_priestess_of_an_allied_faith() {
+        let world = world_of(riverhold_people_in_factions());
+        let observer = as_character("captain_hale");
+        // Gaps 40 and 55, weighted 40 and 13.75: sqrt(1789.0625) = 42.297…; 50 − 50 × 42.30 / 60
+        assert_eq!(
+            component(&world, &observer, "sister_mira", ComponentKind::Affinity).value,
+            h(14_75)
+        );
+        assert_eq!(
+            component(&world, &observer, "sister_mira", ComponentKind::Kinship),
+            weighted(
+                ComponentKind::Kinship,
+                60_00,
+                50,
+                30_00,
+                vec![part("city_watch", Some("temple"), 60_00)]
+            )
+        );
+        let disposition = world
+            .disposition(&observer, &id("sister_mira"))
+            .expect("both exist");
+        assert_eq!(
+            (disposition.score, disposition.band.as_str()),
+            (h(44_75), "friendly")
+        );
+    }
+
+    #[test]
+    fn members_of_the_same_faction_count_it_as_kin() {
+        let world = world_of(riverhold_people_in_factions());
+        assert_eq!(
+            component(
+                &world,
+                &as_character("captain_hale"),
+                "recruit",
+                ComponentKind::Kinship
+            ),
+            weighted(
+                ComponentKind::Kinship,
+                50_00,
+                50,
+                25_00,
+                vec![part("city_watch", Some("city_watch"), 50_00)]
+            )
+        );
+        assert_eq!(
+            component(
+                &world,
+                &as_faction("city_watch"),
+                "recruit",
+                ComponentKind::Kinship
+            )
+            .value,
+            h(50_00),
+            "a faction is kin to its own members"
+        );
+    }
+
+    #[test]
+    fn components_and_the_score_are_clamped() {
+        let mut ash = member_of(
+            character("Ash", 100_00, -100_00),
+            &["lantern_guild", "free_company"],
+        );
+        ash.standing = named(&[("temple", -100_00)], &[]);
+        let content = Content {
+            characters: [(ash.id.clone(), ash)].into(),
+            factions: factions(),
+            relations: vec![
+                between("temple", "lantern_guild", -80_00),
+                between("temple", "free_company", -80_00),
+            ],
+            ..Content::default()
+        };
+        let world = World::new(content).expect("valid content");
+        let disposition = world
+            .disposition(&as_faction("temple"), &id("ash"))
+            .expect("both exist");
+        let kinship = disposition.component(ComponentKind::Kinship);
+        assert_eq!(
+            (kinship.value, kinship.weighted),
+            (h(-100_00), h(-50_00)),
+            "-160 clamps"
+        );
+        assert_eq!(kinship.parts.len(), 2);
+        assert_eq!(disposition.score, h(-100_00));
+    }
+
+    #[test]
+    fn the_component_weights_and_same_faction_are_settings() {
+        let content = |weights: DispositionWeights, same_faction: i64| Content {
+            balance: Balance {
+                disposition_weights: weights,
+                same_faction: h(same_faction),
+                ..Balance::default()
+            },
+            characters: riverhold_people_in_factions()
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .collect(),
+            factions: factions(),
+            relations: relations(),
+            ..Content::default()
+        };
+        let no_kinship = DispositionWeights {
+            kinship: h(0),
+            ..DispositionWeights::default()
+        };
+        let world = World::new(content(no_kinship, 50_00)).expect("valid content");
+        assert_eq!(
+            world
+                .disposition(&as_faction("city_watch"), &id("vex"))
+                .expect("both exist")
+                .score,
+            h(-23_36)
+        );
+        let world =
+            World::new(content(DispositionWeights::default(), 20_00)).expect("valid content");
+        assert_eq!(
+            component(
+                &world,
+                &as_faction("city_watch"),
+                "recruit",
+                ComponentKind::Kinship
+            )
+            .value,
+            h(20_00)
+        );
+    }
+
+    #[test]
+    fn disposition_weights_cannot_be_negative() {
+        let content = Content {
+            balance: Balance {
+                disposition_weights: DispositionWeights {
+                    kinship: h(-1),
+                    ..DispositionWeights::default()
+                },
+                same_faction: h(100_01),
+                ..Balance::default()
+            },
+            ..Content::default()
+        };
+        let problems = content.problems();
+        assert_eq!(
+            problems,
+            [
+                ContentProblem::NegativeDispositionWeight {
+                    component: ComponentKind::Kinship,
+                    value: h(-1),
+                },
+                ContentProblem::SameFactionOutOfRange(h(100_01)),
+            ]
+        );
+        assert_eq!(problems[0].to_string(), "-0.01 must be at least 0.00");
+        assert_eq!(problems[1].to_string(), "100.01 is outside -100.00..100.00");
+        assert_eq!(
+            ComponentKind::ALL.map(ComponentKind::key),
+            [
+                "affinity",
+                "standing",
+                "kinship",
+                "faction_opinion",
+                "modifiers"
+            ]
         );
     }
 
@@ -2869,6 +3291,7 @@ mod tests {
     /// Riverhold's people, with Hale's starting standing, and its two outcomes.
     fn with_outcomes() -> World {
         let mut hale = member_of(character("Captain_hale", 75_00, 30_00), &["city_watch"]);
+        hale.weights = Some(weights(1_00, 25));
         hale.standing = named(&[("city_watch", 75_00)], &[]);
         let outcomes = [
             Outcome {

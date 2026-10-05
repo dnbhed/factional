@@ -1,17 +1,22 @@
-# Disposition from affinity (DESIGN.md §8.1): how an observer regards a character, from how
-# close their alignments are. Until M4 the score is the affinity alone: the affinity curve
-# applied to the distance.
+# Disposition (DESIGN.md §8): how an observer, a faction or a character, regards a character.
+# Five components, each within -100..100, are weighted and added up: affinity (how close the
+# alignments are), standing, kinship, faction opinion and modifiers.
 load content/sample
 disposition city_watch player --explain
-assert disposition temple sister_mira == 45.34 (friendly)
-assert disposition temple brother_ash == -32.15 (unfriendly)
-assert disposition city_watch vex == -23.36 (neutral)
+# The Temple loves its own priestess: affinity 45.34, standing 40, kinship 50 × 0.5, clamped.
+assert disposition temple sister_mira == 100.00 (friendly)
+# Ash belongs to the Temple's enemy: affinity -32.15, kinship -90 × 0.5.
+assert disposition temple brother_ash == -77.15 (unfriendly)
+disposition city_watch vex --explain
+# Hale's Watch is allied with the Temple: affinity 14.75, kinship 60 × 0.5.
+assert disposition captain_hale sister_mira == 44.75 (friendly)
 # A character judges by their own lights: Vex sees the neutral player as barely neutral.
 assert disposition vex player == 1.23 (neutral)
-# Thieving brings the player closer to the Lantern Guild, and it warms to them.
-assert disposition lantern_guild player == -0.08 (neutral)
-act player steal --scale 4
-assert disposition lantern_guild player == 16.66 (neutral)
+# The worked example (DESIGN.md §8.2): two thefts from a merchant, then a fine.
+act player steal --target merchant_ava
+act player steal --target merchant_ava
+outcome fined_by_watch player
+disposition captain_hale player --explain
 assert disposition player temple == error: a disposition's subject must be a character
 
 # Bands are content: this world adds hostile below unfriendly.

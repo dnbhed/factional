@@ -44,6 +44,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M1 — factions' `tolerance` and `member_tolerance`, starting `memberships`; `JoinFaction` (refused with every failing check) and `LeaveFaction`; `assess_join` and membership queries; load warnings, starting with members outside member tolerance; `can-join [--explain]`, `join`, `leave`, memberships in `show`; done 2026-10-05 (#11)
 - M2 — relations between factions: `relations.toml` (`between` and `from`/`to`), relation bands and `conflict_threshold`; `SetRelation` and `ShiftRelation` with `RelationChanged`; enemy exclusion in `assess_join`; invariant 6 kept by refusing a war between a character's own factions until M9; `relations`, `relate`; done 2026-10-05 (#12)
 - M3 — standing: a store of how factions and characters regard each character; starting standing, action `standing` effects (target, target factions, named), `outcomes.toml`, `ApplyOutcome`, `ApplyEffects` and `StandingChanged`; the `awareness` seam (1.00); `leave_standing_change`; `standing`, `outcomes`, `outcome`; done 2026-10-05 (#13)
+- M4 — the full disposition: affinity, standing, kinship (with `same_faction`), faction opinion and modifiers (0 until M10), each clamped to ±100, weighted by `disposition.weights` and summed; `disposition --explain` shows DESIGN.md §8.2's table, with where kinship and faction opinion came from; done 2026-10-05 (#14)
 
 ---
 
@@ -67,57 +68,38 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M4 · Disposition from standing, kinship and faction opinion — P0 · Next
+### M5 · Rank ladders and promotion — P0 · Next
 
-**Why:** with alignment alone, a completed quest could never change how someone sees you. P-6 adds history and allegiance (DESIGN.md §8.1 in full, and §8.2).
-
-**Scope**
-
-- **Components**, each clamped to ±100 (P-7):
-  - **affinity**, from D2;
-  - **standing:** how the observer, a character or a faction, regards the subject (M3);
-  - **kinship:** the sum of relation(F → G) over the observer's factions F (or the faction itself) and the subject's factions G. A faction both share counts as `disposition.same_faction`.
-  - **faction opinion:** for a character observer, the sum of the subject's standing with each of the observer's factions;
-  - **modifiers:** always 0 until M10.
-- **Score.** `score = clamp(Σ round(weight × component), −100, 100)`, with `disposition.weights` (default affinity 1, standing 1, kinship 0.5, faction opinion 0.5, modifiers 1).
-- **Explain.** `disposition --explain` shows the table in §8.2: each component, its weight, its weighted value, and a note saying where it came from.
-
-**Acceptance** (Riverhold; worked by hand from §6 and §8)
-
-1. **§8.2's worked example.** The player steals twice from `merchant_ava` (−10 / −6) and is `fined_by_watch`. Then `disposition captain_hale player` → `-29.10 (unfriendly)`, made of:
-   - affinity −9.10 × 1.00: the distance is 85.48;
-   - standing −10.00 × 1.00;
-   - kinship 0.00 × 0.50: the player belongs to no factions;
-   - faction opinion −20.00 × 0.50 = −10.00: `city_watch` is at −20.00;
-   - modifiers 0.00.
-2. `disposition city_watch vex` → `-63.36 (unfriendly)`: affinity −23.36, plus kinship −80.00 × 0.50 (the Watch regards the Guild at −80).
-3. `disposition captain_hale sister_mira` → `44.75 (friendly)`:
-   - affinity 14.75: the distance is √(40² + 13.75²) = 42.30, and 50 − 50 × 42.30 / 60 = 14.75;
-   - kinship 60.00 × 0.50 = 30.00 (the Watch regards the Temple at 60).
-4. **Same faction.** Two Watch members see kinship at `same_faction` (50) × 0.50 = 25.00.
-5. **Clamping.** A component beyond ±100 is clamped before weighting, and so is the final score.
-6. **Settings.** With `disposition.weights.kinship = 0`, `disposition city_watch vex` is −23.36.
-
-**Validates** (DESIGN.md §12.2): `disposition.weights` names only the five components, each ≥ 0; `same_faction` within ±100.
-
-### M5 · Rank ladders and promotion — P0 · Outline
-
-**Covers:** DESIGN.md §7.2.
+**Why:** the brief's rank in a faction, tracked separately from standing (D-11), and changed only when something asks (D-17). DESIGN.md §7.2.
 
 **Scope**
 
-- Rank content; new members join on the lowest rung.
-- `Promote` and `Demote` with requirement checks; `RankChanged`.
-- Promotion only ever happens on request. Meeting the requirements never promotes anyone automatically (D-17).
-- CLI: `ranks`, `promote`, `demote`.
+- **Content.**
+  - Each faction gains `[[<faction>.ranks]]`, lowest first. Each rung has an `id`, and optionally `requires = { standing = … }` and a stricter `tolerance`.
+  - Starting memberships gain an optional `rank`, which defaults to the lowest rung.
+- **State.** Each membership holds its rank. A new member joins on the lowest rung.
+- **Commands.** Both emit `RankChanged { character, faction, from, to }`.
+  - `Promote { character, faction }` moves a member up one rung if the next rank's requirements hold: standing at or above its minimum, and distance within its `tolerance` if it sets one. A refusal lists every failing requirement with its numbers.
+  - `Demote { character, faction }` moves a member down one rung.
+- **No automatic promotion (D-17).** Meeting the requirements only makes a promotion possible.
+- **Query.** `assess_promotion(character, faction)`: the next rank, and every requirement with whether it holds.
+- **CLI.**
+  - `ranks <faction>`;
+  - `promote <character> <faction> [--explain]` and `demote <character> <faction>`;
+  - memberships in `show character` and `show faction` include the rank.
 
-**Anchors**
+**Acceptance** (Riverhold; ladders from DESIGN.md §13)
 
-- vex (fence, standing 30) → promote is refused: needs 60.00, has 30.00. With 30 more standing, vex becomes a shadow.
-- `captain_hale` is already at the highest rank.
-- `sister_mira` → high_priest is refused on standing (40.00 < 80.00), even though `sister_mira` is within the rank's tolerance (5.59 ≤ 20.00).
+1. `promote vex lantern_guild` is refused: `shadow needs standing 60.00, vex has 30.00`. After +30.00 standing with the Guild, it succeeds: `RankChanged fence → shadow`.
+2. `promote captain_hale city_watch` → `captain_hale is already a captain, the highest rank of city_watch`.
+3. `promote sister_mira temple` is refused on standing alone: `high_priest needs standing 80.00, sister_mira has 40.00`. Her distance is within the rank's tolerance (5.59 ≤ 20.00), and `--explain` shows both checks.
+4. The player joins the Guild after four thefts and starts as a `cutpurse`.
+5. `demote vex lantern_guild` → `RankChanged fence → cutpurse`. Demoting a cutpurse → `vex is already a cutpurse, the lowest rank of lantern_guild`.
+6. Promoting or demoting a non-member is refused: `player isn't a member of temple`.
+7. **Load errors.** A membership naming a rank that isn't on the faction's ladder (with a "did you mean"); duplicate rank ids in a faction; a faction with no rungs.
+8. **Load warnings.** A starting member below their rank's standing requirement; a rank `tolerance` looser than the faction's `member_tolerance`.
 
-**Validates** (DESIGN.md §12.2): a membership's rank exists on that faction's ladder; rank ids are unique within a faction; every ladder has at least one rung. Warnings: a starting member below their rank's standing requirement; a rank tolerance looser than the faction's member tolerance.
+**Validates** (DESIGN.md §12.2): a membership's rank exists on that faction's ladder; rank ids are unique within a faction; every ladder has at least one rung; rank standing requirements and tolerances are within range. Warnings: a starting member below their rank's standing requirement; a rank tolerance looser than the faction's member tolerance.
 
 ### M6 · Standing spillover between factions — P1 · Outline
 

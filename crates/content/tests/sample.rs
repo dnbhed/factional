@@ -231,17 +231,47 @@ fn riverholds_factions_regard_people_by_how_close_they_are() {
         disposition(&world, &faction("city_watch"), "player"),
         "-3.64 (neutral)"
     );
+    // Affinity 45.34, standing 40.00, kinship 50.00 × 0.50 (Mira is in the Temple): 110.34,
+    // clamped.
     assert_eq!(
         disposition(&world, &faction("temple"), "sister_mira"),
-        "45.34 (friendly)"
+        "100.00 (friendly)"
     );
+    // Affinity −32.15, kinship −90.00 × 0.50 (the Temple regards the Circle at −90).
     assert_eq!(
         disposition(&world, &faction("temple"), "brother_ash"),
-        "-32.15 (unfriendly)"
+        "-77.15 (unfriendly)"
     );
+    // Affinity −23.36, kinship −80.00 × 0.50.
     assert_eq!(
         disposition(&world, &faction("city_watch"), "vex"),
-        "-23.36 (neutral)"
+        "-63.36 (unfriendly)"
+    );
+}
+
+#[test]
+fn hale_thinks_ill_of_a_fined_thief() {
+    // DESIGN.md §8.2: two thefts from a merchant, then a fine from the Watch.
+    let mut world = riverhold();
+    act(&mut world, "steal", Some("merchant_ava"));
+    act(&mut world, "steal", Some("merchant_ava"));
+    world
+        .execute(Command::ApplyOutcome {
+            outcome: OutcomeId::new("fined_by_watch").expect("valid id"),
+            character: character("player"),
+        })
+        .expect("accepted");
+    let hale = Observer::Character(character("captain_hale"));
+    assert_eq!(disposition(&world, &hale, "player"), "-29.10 (unfriendly)");
+}
+
+#[test]
+fn hale_warms_to_a_priestess_of_an_allied_faith() {
+    let world = riverhold();
+    let hale = Observer::Character(character("captain_hale"));
+    assert_eq!(
+        disposition(&world, &hale, "sister_mira"),
+        "44.75 (friendly)"
     );
 }
 

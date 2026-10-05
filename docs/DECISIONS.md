@@ -221,6 +221,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`ApplyEffects` checks its effects** like content (parties exist, values within ±100), but at run time, refusing rather than failing to load. Outcomes are checked at load.
   - **Every number field reads ids as keys** in `factions = { … }` and `characters = { … }`. An invalid id is reported at the table, and an unknown one at its own key, with a "did you mean".
   - *Why:* events stay one per real change, designers write effects naturally, and nothing a host or content sends can push standing out of range.
+- **P-40 · How the disposition score is put together** (made in M4, 2026-10-05).
+  - **One part per pair.** Kinship has a part for every pair of an observer faction (or the faction itself) and a subject faction. A shared faction counts as `same_faction` and is shown as "both in". Each part is how the observer's faction regards the subject's, one direction only, because this is the observer's view.
+  - **Faction opinion belongs to characters.** A faction's own view is its standing, so counting it twice as faction opinion would double it.
+  - **Rounding.** Each weighted component is `weight × component`, rounded once. The score is their sum, clamped to ±100, so `--explain`'s numbers always add up to the score shown.
+  - **Weights left out keep their defaults,** so a designer can change just `kinship`.
+  - **`--explain` says where every number came from,** naming the relations and standings behind kinship and faction opinion. It says so when a side belongs to no factions.
+  - *Why:* every number a designer sees adds up, and can be traced to content they can edit.
 
 ## Open
 
