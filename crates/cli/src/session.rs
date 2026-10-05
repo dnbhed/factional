@@ -2,7 +2,9 @@ use std::fmt;
 use std::path::PathBuf;
 
 use factional_core::{Fixed, ParseFixedError, suggest};
-use factional_reputation::{Change, Character, Command, Event, World};
+use factional_reputation::{
+    ActionId, Alignment, Change, Character, CharacterId, Command, Event, Witnesses, World,
+};
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
 const COMMANDS: &[(&str, &str)] = &[
@@ -16,6 +18,14 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "show character <id>",
         "a character's alignment and its label",
+    ),
+    (
+        "actions",
+        "list the action catalogue and how each act moves alignment",
+    ),
+    (
+        "act <actor> <action> [--target <id>] [--scale <n>]",
+        "<actor> does <action>; --scale says how big this instance was (default 1.00)",
     ),
     ("advance <ticks>", "move time forward"),
     ("time", "the current tick"),
@@ -121,6 +131,8 @@ impl Session {
             "load" => Ok(self.load(rest)),
             "characters" => Ok(self.characters()),
             "show" => Ok(self.show(rest)),
+            "actions" => Ok(self.actions()),
+            "act" => Ok(self.act(rest)),
             "advance" => Ok(self.advance(rest)),
             "time" => Ok(self.time()),
             "events" => Ok(self.events(rest)),
@@ -210,6 +222,33 @@ impl Session {
 }
 
 impl Session {
+    /// `actions`: the action catalogue, in id order.
+    fn actions(&self) -> Outcome {
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        Outcome::Output(lines(world.actions().map(|action| {
+            let delta = action.alignment;
+            format!("{} — law {}, good {}", action.id, delta.law, delta.good)
+        })))
+    }
+
+    /// `act <actor> <action> [--target <id>] [--scale <n>]`: performs an action and shows the
+    /// events it caused.
+    fn act(&mut self, args: &str) -> Outcome {
+        let command = match parse_act(args) {
+            Ok(command) => command,
+            Err(message) => return Outcome::Error(message),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(command) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
     /// `advance <ticks>`: moves time forward and shows the events it caused.
     fn advance(&mut self, args: &str) -> Outcome {
         let [ticks] = args.split_whitespace().collect::<Vec<_>>()[..] else {
@@ -286,6 +325,39 @@ impl Session {
 fn describe_event(event: &Event) -> String {
     let what = match &event.payload {
         Change::TimeAdvanced { from, to } => format!("time advanced from {from} to {to}"),
+        Change::ActionPerformed {
+            actor,
+            action,
+            target,
+            scale,
+            witnesses,
+        } => {
+            let mut what = format!("{actor} did {action}");
+            if let Some(target) = target {
+                what += &format!(", targeting {target}");
+            }
+            if *scale != Fixed::ONE {
+                what += &format!(", at scale {scale}");
+            }
+            match witnesses {
+                Witnesses::Everyone => {}
+                Witnesses::Nobody => what += ", witnessed by nobody",
+                Witnesses::These(ids) => {
+                    let ids: Vec<&str> = ids.iter().map(CharacterId::as_str).collect();
+                    what += &format!(", witnessed by {}", ids.join(", "));
+                }
+            }
+            what
+        }
+        Change::AlignmentChanged {
+            character,
+            from,
+            to,
+        } => format!(
+            "{character}'s alignment moved from {} to {}",
+            axes(*from),
+            axes(*to)
+        ),
     };
     format!("#{} at tick {}: {what}", event.seq, event.tick)
 }
@@ -294,7 +366,61 @@ fn describe_event(event: &Event) -> String {
 fn describe_command(command: &Command) -> String {
     match command {
         Command::AdvanceTime { ticks } => format!("advance {ticks}"),
+        Command::PerformAction {
+            actor,
+            action,
+            target,
+            scale,
+            ..
+        } => {
+            let mut typed = format!("act {actor} {action}");
+            if let Some(target) = target {
+                typed += &format!(" --target {target}");
+            }
+            if *scale != Fixed::ONE {
+                typed += &format!(" --scale {scale}");
+            }
+            typed
+        }
     }
+}
+
+/// `act`'s arguments as a command. Everyone witnesses an act done from the CLI.
+fn parse_act(args: &str) -> Result<Command, String> {
+    const USAGE: &str = "act needs the form: act <actor> <action> [--target <id>] [--scale <n>]";
+    let words: Vec<&str> = args.split_whitespace().collect();
+    let [actor, action, options @ ..] = &words[..] else {
+        return Err(USAGE.to_owned());
+    };
+    let (mut target, mut scale) = (None, None);
+    for pair in options.chunks(2) {
+        let (slot, value) = match *pair {
+            ["--target", id] => (&mut target, id),
+            ["--scale", n] => (&mut scale, n),
+            _ => return Err(USAGE.to_owned()),
+        };
+        if slot.replace(value).is_some() {
+            return Err(USAGE.to_owned());
+        }
+    }
+    let character = |id: &str| CharacterId::new(id).map_err(|invalid| invalid.to_string());
+    Ok(Command::PerformAction {
+        actor: character(actor)?,
+        action: ActionId::new(action).map_err(|invalid| invalid.to_string())?,
+        target: target.map(character).transpose()?,
+        scale: match scale {
+            Some(n) => n
+                .parse()
+                .map_err(|error: ParseFixedError| error.to_string())?,
+            None => Fixed::ONE,
+        },
+        witnesses: Witnesses::Everyone,
+    })
+}
+
+/// `law -5.00, good -3.00`.
+fn axes(alignment: Alignment) -> String {
+    format!("law {}, good {}", alignment.law(), alignment.good())
 }
 
 fn lines(items: impl Iterator<Item = String>) -> String {
@@ -305,15 +431,17 @@ fn no_world() -> Outcome {
     Outcome::Error("no world is loaded yet: use load <dir> first".to_owned())
 }
 
-/// One line about a character: `vex — Vex — law -55.00, good -20.00 — Chaotic Neutral`.
+/// One line about a character as they are now:
+/// `vex — Vex — law -55.00, good -20.00 — Chaotic Neutral`.
 fn describe(world: &World, character: &Character) -> String {
-    let alignment = character.alignment;
+    let alignment = world
+        .alignment(&character.id)
+        .expect("every character in the world has an alignment");
     format!(
-        "{} — {} — law {}, good {} — {}",
+        "{} — {} — {} — {}",
         character.id,
         character.name,
-        alignment.law(),
-        alignment.good(),
+        axes(alignment),
         alignment.label(world.balance().label_threshold)
     )
 }
@@ -406,6 +534,8 @@ pub fn help_text() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use factional_core::Tick;
+    use factional_reputation::{ActionId, CharacterId, Witnesses};
 
     fn run(line: &str) -> Result<Outcome, ScriptError> {
         Session::default().execute(line)
@@ -706,6 +836,190 @@ mod tests {
         }
     }
 
+    // Actions
+
+    #[test]
+    fn actions_lists_the_catalogue_with_each_acts_alignment_effect() {
+        assert_eq!(
+            riverhold().execute("actions"),
+            output(
+                "donate_to_temple — law 0.00, good 3.00\n\
+                 extort — law -2.00, good -6.00\n\
+                 help_stranger — law 0.00, good 4.00\n\
+                 murder — law -10.00, good -15.00\n\
+                 report_crime — law 4.00, good 1.00\n\
+                 steal — law -5.00, good -3.00"
+            )
+        );
+    }
+
+    #[test]
+    fn act_moves_the_actors_alignment_and_shows_the_events() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("act player steal --target merchant_ava"),
+            output(
+                "#1 at tick 0: player did steal, targeting merchant_ava\n\
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00"
+            )
+        );
+        assert_eq!(
+            session.execute("show character player"),
+            output("player — The Player — law -5.00, good -3.00 — True Neutral")
+        );
+    }
+
+    #[test]
+    fn act_takes_a_scale_and_needs_no_target() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("act player steal --scale 2"),
+            output(
+                "#1 at tick 0: player did steal, at scale 2.00\n\
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -10.00, good -6.00"
+            )
+        );
+        assert_eq!(
+            session.execute("act player steal --scale 0.5 --target vex"),
+            output(
+                "#3 at tick 0: player did steal, targeting vex, at scale 0.50\n\
+                 #4 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -12.50, good -7.50"
+            )
+        );
+    }
+
+    #[test]
+    fn act_reports_the_worlds_refusals() {
+        let mut session = riverhold();
+        for (line, message) in [
+            (
+                "act player stael",
+                "unknown action 'stael' (did you mean 'steal'?)",
+            ),
+            (
+                "act plyer steal",
+                "unknown actor 'plyer' (did you mean 'player'?)",
+            ),
+            (
+                "act player steal --target nobody",
+                "unknown target 'nobody'",
+            ),
+            (
+                "act player steal --target player",
+                "an action's target must be another character",
+            ),
+            (
+                "act player steal --scale 0",
+                "scale must be greater than 0.00",
+            ),
+            (
+                "act player steal --scale -1",
+                "scale must be greater than 0.00",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(message), "{line}");
+        }
+        assert_eq!(
+            session.execute("show character player"),
+            output("player — The Player — law 0.00, good 0.00 — True Neutral")
+        );
+        assert_eq!(session.execute("events"), output("no events yet"));
+    }
+
+    #[test]
+    fn act_reports_bad_input() {
+        let mut session = riverhold();
+        let usage =
+            command_error("act needs the form: act <actor> <action> [--target <id>] [--scale <n>]");
+        for line in [
+            "act",
+            "act player",
+            "act player steal vex",
+            "act player steal --target",
+            "act player steal --scale",
+            "act player steal --target vex --target ava",
+            "act player steal --scale 1 --scale 2",
+            "act player steal --witnesses nobody",
+        ] {
+            assert_eq!(session.execute(line), usage, "{line}");
+        }
+        assert_eq!(
+            session.execute("act player steal --scale 1.234"),
+            command_error("1.234 has more than 2 decimal places")
+        );
+        assert_eq!(
+            session.execute("act Player steal"),
+            command_error(
+                "'Player' isn't a valid id: use lowercase letters, digits and _, starting with a letter"
+            )
+        );
+        assert_eq!(
+            session.execute("act player Steal"),
+            command_error(
+                "'Steal' isn't a valid id: use lowercase letters, digits and _, starting with a letter"
+            )
+        );
+        assert_eq!(
+            session.execute("act player steal --target Vex"),
+            command_error(
+                "'Vex' isn't a valid id: use lowercase letters, digits and _, starting with a letter"
+            )
+        );
+    }
+
+    #[test]
+    fn the_journal_shows_acts_as_they_were_typed() {
+        let mut session = riverhold();
+        for line in [
+            "act player steal --target merchant_ava",
+            "act player steal --scale 2.5",
+            "act player stael",
+        ] {
+            session.execute(line).expect("valid");
+        }
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. act player steal --target merchant_ava — accepted\n\
+                 2. act player steal --scale 2.50 — accepted\n\
+                 3. act player stael — refused: unknown action 'stael' (did you mean 'steal'?)"
+            )
+        );
+    }
+
+    #[test]
+    fn describes_who_witnessed_an_act_unless_everyone_did() {
+        let id = |text| CharacterId::new(text).expect("valid id");
+        let event = |witnesses| Event {
+            seq: 4,
+            tick: Tick(2),
+            payload: Change::ActionPerformed {
+                actor: id("vex"),
+                action: ActionId::new("steal").expect("valid id"),
+                target: None,
+                scale: Fixed::ONE,
+                witnesses,
+            },
+        };
+        assert_eq!(
+            describe_event(&event(Witnesses::Nobody)),
+            "#4 at tick 2: vex did steal, witnessed by nobody"
+        );
+        assert_eq!(
+            describe_event(&event(Witnesses::These(
+                [id("player"), id("captain_hale")].into()
+            ))),
+            "#4 at tick 2: vex did steal, witnessed by captain_hale, player"
+        );
+    }
+
+    #[test]
+    fn action_commands_need_a_loaded_world() {
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        assert_eq!(run("actions"), none);
+        assert_eq!(run("act player steal"), none);
+    }
+
     #[test]
     fn curve_gives_a_curves_value_at_a_point() {
         assert_eq!(
@@ -760,6 +1074,8 @@ mod tests {
             "load <dir>",
             "characters",
             "show character <id>",
+            "actions",
+            "act <actor> <action> [--target <id>] [--scale <n>]",
             "advance <ticks>",
             "time",
             "events [--since <seq>]",

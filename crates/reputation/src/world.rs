@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
-use factional_core::{Fixed, Tick};
+use factional_core::{Fixed, Tick, suggest};
 
 use crate::{
-    Alignment, Change, Character, CharacterId, Command, CommandError, Event, JournalEntry,
+    Action, ActionId, Alignment, Change, Character, CharacterId, Command, CommandError, Event,
+    JournalEntry, Role, Witnesses,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -32,6 +33,8 @@ impl Default for Balance {
 pub struct Content {
     pub balance: Balance,
     pub characters: BTreeMap<CharacterId, Character>,
+    /// The action catalogue.
+    pub actions: BTreeMap<ActionId, Action>,
 }
 
 /// The reputation module's world: the content it started from, plus everything that has
@@ -49,17 +52,33 @@ pub struct World {
 }
 
 /// Everything that changes during play. Events are the only thing that changes it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct State {
     now: Tick,
+    /// Every character's alignment now.
+    alignments: BTreeMap<CharacterId, Alignment>,
+}
+
+impl State {
+    /// The state before anything has happened.
+    fn initial(content: &Content) -> State {
+        State {
+            now: Tick::default(),
+            alignments: content
+                .characters
+                .values()
+                .map(|character| (character.id.clone(), character.alignment))
+                .collect(),
+        }
+    }
 }
 
 impl World {
     /// A world at tick 0, with nothing yet happened.
     pub fn new(content: Content) -> World {
         World {
+            state: State::initial(&content),
             content,
-            state: State::default(),
             events: Vec::new(),
             journal: Vec::new(),
         }
@@ -99,8 +118,8 @@ impl World {
     /// Works out what a command would change, without changing anything: the rules live
     /// here, and only here.
     fn decide(&self, command: &Command) -> Result<Vec<Change>, CommandError> {
-        match *command {
-            Command::AdvanceTime { ticks } => {
+        match command {
+            &Command::AdvanceTime { ticks } => {
                 if ticks == 0 {
                     return Err(CommandError::NoTicks);
                 }
@@ -114,7 +133,65 @@ impl World {
                     to: Tick(to),
                 }])
             }
+            Command::PerformAction {
+                actor,
+                action,
+                target,
+                scale,
+                witnesses,
+            } => {
+                let from = self.existing(actor, Role::Actor)?;
+                let catalogued = self.content.actions.get(action).ok_or_else(|| {
+                    CommandError::UnknownAction {
+                        action: action.clone(),
+                        suggestion: closest(action.as_str(), self.content.actions.keys()),
+                    }
+                })?;
+                if let Some(target) = target {
+                    self.existing(target, Role::Target)?;
+                    if target == actor {
+                        return Err(CommandError::TargetIsActor);
+                    }
+                }
+                if *scale <= Fixed::ZERO {
+                    return Err(CommandError::ScaleNotPositive { scale: *scale });
+                }
+                if let Witnesses::These(witnesses) = witnesses {
+                    for witness in witnesses {
+                        self.existing(witness, Role::Witness)?;
+                    }
+                }
+                let mut changes = vec![Change::ActionPerformed {
+                    actor: actor.clone(),
+                    action: action.clone(),
+                    target: target.clone(),
+                    scale: *scale,
+                    witnesses: witnesses.clone(),
+                }];
+                let to = from.shifted(catalogued.alignment, *scale);
+                if to != from {
+                    changes.push(Change::AlignmentChanged {
+                        character: actor.clone(),
+                        from,
+                        to,
+                    });
+                }
+                Ok(changes)
+            }
         }
+    }
+
+    /// A character's alignment now, or a refusal naming them in their `role`.
+    fn existing(&self, id: &CharacterId, role: Role) -> Result<Alignment, CommandError> {
+        self.state
+            .alignments
+            .get(id)
+            .copied()
+            .ok_or_else(|| CommandError::UnknownCharacter {
+                role,
+                id: id.clone(),
+                suggestion: closest(id.as_str(), self.state.alignments.keys()),
+            })
     }
 
     /// Records an event and makes its change: the only place state changes. No rules run
@@ -122,6 +199,12 @@ impl World {
     fn apply(&mut self, event: Event) {
         match event.payload {
             Change::TimeAdvanced { to, .. } => self.state.now = to,
+            Change::ActionPerformed { .. } => {}
+            Change::AlignmentChanged {
+                ref character, to, ..
+            } => {
+                self.state.alignments.insert(character.clone(), to);
+            }
         }
         self.events.push(event);
     }
@@ -162,14 +245,30 @@ impl World {
         self.content.characters.get(id)
     }
 
+    /// A character's alignment now.
     pub fn alignment(&self, id: &CharacterId) -> Option<Alignment> {
-        self.character(id).map(|character| character.alignment)
+        self.state.alignments.get(id).copied()
     }
+
+    /// The action catalogue, in id order.
+    pub fn actions(&self) -> impl Iterator<Item = &Action> {
+        self.content.actions.values()
+    }
+}
+
+/// The id among `ids` closest to a misspelt `word`, if one is close enough to suggest.
+fn closest<'a, Id>(word: &str, mut ids: impl Iterator<Item = &'a Id> + Clone) -> Option<Id>
+where
+    Id: Clone + AsRef<str> + 'a,
+{
+    let close = suggest(word, ids.clone().map(AsRef::as_ref))?;
+    ids.find(|id| id.as_ref() == close).cloned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AXIS_LIMIT, AlignmentDelta, Role, Witnesses};
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
@@ -187,15 +286,39 @@ mod tests {
         }
     }
 
-    fn riverhold() -> World {
-        let characters = [
-            character("Vex", -55_00, -20_00),
-            character("Ava", 20_00, 10_00),
+    fn action_id(text: &str) -> ActionId {
+        ActionId::new(text).expect("a valid id")
+    }
+
+    fn action(id: &str, law: i64, good: i64) -> Action {
+        Action {
+            id: action_id(id),
+            alignment: AlignmentDelta {
+                law: h(law),
+                good: h(good),
+            },
+        }
+    }
+
+    /// A world with these characters and Riverhold's `steal` and `help_stranger`.
+    fn world_of(characters: impl IntoIterator<Item = Character>) -> World {
+        let actions = [
+            action("steal", -5_00, -3_00),
+            action("help_stranger", 0, 4_00),
         ];
         World::new(Content {
             balance: Balance::default(),
             characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),
+            actions: actions.into_iter().map(|a| (a.id.clone(), a)).collect(),
         })
+    }
+
+    fn riverhold() -> World {
+        world_of([
+            character("Vex", -55_00, -20_00),
+            character("Ava", 20_00, 10_00),
+            character("Player", 0, 0),
+        ])
     }
 
     #[test]
@@ -221,7 +344,7 @@ mod tests {
     fn lists_characters_in_id_order() {
         let world = riverhold();
         let ids: Vec<&str> = world.characters().map(|c| c.id.as_str()).collect();
-        assert_eq!(ids, ["ava", "vex"]);
+        assert_eq!(ids, ["ava", "player", "vex"]);
     }
 
     #[test]
@@ -354,13 +477,277 @@ mod tests {
         assert!(replayed.journal().is_empty());
     }
 
-    // Properties (DESIGN.md §14, invariants 2–4)
+    // Actions (DESIGN.md §5.2)
+
+    fn aligned(law: i64, good: i64) -> Alignment {
+        Alignment::new(h(law), h(good)).expect("in range")
+    }
+
+    fn act(actor: &str, action: &str, target: Option<&str>, scale: i64) -> Command {
+        Command::PerformAction {
+            actor: id(actor),
+            action: action_id(action),
+            target: target.map(id),
+            scale: h(scale),
+            witnesses: Witnesses::Everyone,
+        }
+    }
+
+    fn performed(seq: u64, actor: &str, action: &str, target: Option<&str>, scale: i64) -> Event {
+        Event {
+            seq,
+            tick: Tick(0),
+            payload: Change::ActionPerformed {
+                actor: id(actor),
+                action: action_id(action),
+                target: target.map(id),
+                scale: h(scale),
+                witnesses: Witnesses::Everyone,
+            },
+        }
+    }
+
+    fn alignment_changed(seq: u64, character: &str, from: Alignment, to: Alignment) -> Event {
+        Event {
+            seq,
+            tick: Tick(0),
+            payload: Change::AlignmentChanged {
+                character: id(character),
+                from,
+                to,
+            },
+        }
+    }
+
+    #[test]
+    fn stealing_moves_the_thief_toward_chaotic_evil() {
+        let mut world = riverhold();
+        let steal = act("player", "steal", Some("ava"), 1_00);
+        assert_eq!(
+            world.execute(steal),
+            Ok(vec![
+                performed(1, "player", "steal", Some("ava"), 1_00),
+                alignment_changed(2, "player", aligned(0, 0), aligned(-5_00, -3_00)),
+            ])
+        );
+        assert_eq!(world.alignment(&id("player")), Some(aligned(-5_00, -3_00)));
+        assert_eq!(world.alignment(&id("ava")), Some(aligned(20_00, 10_00)));
+    }
+
+    #[test]
+    fn a_characters_starting_alignment_stays_as_content_gave_it() {
+        let mut world = riverhold();
+        world
+            .execute(act("player", "steal", None, 1_00))
+            .expect("accepted");
+        let player = world.character(&id("player")).expect("exists");
+        assert_eq!(player.alignment, aligned(0, 0));
+    }
+
+    #[test]
+    fn scale_says_how_big_the_act_was() {
+        let mut world = riverhold();
+        let events = world
+            .execute(act("player", "steal", Some("ava"), 2_00))
+            .expect("accepted");
+        assert_eq!(
+            events[1],
+            alignment_changed(2, "player", aligned(0, 0), aligned(-10_00, -6_00))
+        );
+    }
+
+    #[test]
+    fn an_action_needs_no_target() {
+        let mut world = riverhold();
+        assert_eq!(
+            world.execute(act("vex", "help_stranger", None, 1_00)),
+            Ok(vec![
+                performed(1, "vex", "help_stranger", None, 1_00),
+                alignment_changed(2, "vex", aligned(-55_00, -20_00), aligned(-55_00, -16_00)),
+            ])
+        );
+    }
+
+    #[test]
+    fn alignment_clamps_at_the_end_of_an_axis() {
+        let mut world = world_of([character("Player", -98_00, 0)]);
+        let events = world
+            .execute(act("player", "steal", None, 1_00))
+            .expect("accepted");
+        assert_eq!(
+            events[1],
+            alignment_changed(2, "player", aligned(-98_00, 0), aligned(-100_00, -3_00))
+        );
+    }
+
+    #[test]
+    fn an_act_that_cannot_move_alignment_emits_no_alignment_change() {
+        let mut world = world_of([character("Player", -100_00, -100_00)]);
+        assert_eq!(
+            world.execute(act("player", "steal", None, 1_00)),
+            Ok(vec![performed(1, "player", "steal", None, 1_00)])
+        );
+    }
+
+    #[test]
+    fn action_events_are_stamped_with_the_current_tick() {
+        let mut world = riverhold();
+        world.execute(advance(7)).expect("accepted");
+        let events = world
+            .execute(act("player", "steal", None, 1_00))
+            .expect("accepted");
+        let stamps: Vec<(u64, Tick)> = events.iter().map(|e| (e.seq, e.tick)).collect();
+        assert_eq!(stamps, [(2, Tick(7)), (3, Tick(7))]);
+    }
+
+    #[test]
+    fn the_act_records_who_witnessed_it() {
+        let mut world = riverhold();
+        let witnesses = Witnesses::These([id("vex")].into());
+        let command = Command::PerformAction {
+            actor: id("player"),
+            action: action_id("steal"),
+            target: None,
+            scale: h(1_00),
+            witnesses: witnesses.clone(),
+        };
+        let events = world.execute(command).expect("accepted");
+        let Change::ActionPerformed {
+            witnesses: seen, ..
+        } = &events[0].payload
+        else {
+            panic!("expected ActionPerformed first, got {:?}", events[0]);
+        };
+        assert_eq!(seen, &witnesses);
+    }
+
+    /// Runs a command that must be refused and checks that nothing changed but the journal.
+    fn refused(world: &mut World, command: Command) -> CommandError {
+        let (state, events) = (world.state.clone(), world.events.clone());
+        let error = world.execute(command).expect_err("refused");
+        assert_eq!(world.state, state);
+        assert_eq!(world.events, events);
+        assert_eq!(
+            world.journal().last().map(|entry| entry.result.clone()),
+            Some(Err(error.clone()))
+        );
+        error
+    }
+
+    #[test]
+    fn an_unknown_action_is_refused_with_a_suggestion() {
+        let mut world = riverhold();
+        assert_eq!(
+            refused(&mut world, act("player", "stael", None, 1_00)),
+            CommandError::UnknownAction {
+                action: action_id("stael"),
+                suggestion: Some(action_id("steal")),
+            }
+        );
+        assert_eq!(
+            refused(&mut world, act("player", "dance", None, 1_00)),
+            CommandError::UnknownAction {
+                action: action_id("dance"),
+                suggestion: None,
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_characters_are_refused_by_role() {
+        let mut world = riverhold();
+        assert_eq!(
+            refused(&mut world, act("plyer", "steal", None, 1_00)),
+            CommandError::UnknownCharacter {
+                role: Role::Actor,
+                id: id("plyer"),
+                suggestion: Some(id("player")),
+            }
+        );
+        assert_eq!(
+            refused(&mut world, act("player", "steal", Some("merchant"), 1_00)),
+            CommandError::UnknownCharacter {
+                role: Role::Target,
+                id: id("merchant"),
+                suggestion: None,
+            }
+        );
+        let command = Command::PerformAction {
+            actor: id("player"),
+            action: action_id("steal"),
+            target: None,
+            scale: h(1_00),
+            witnesses: Witnesses::These([id("vex"), id("vx_ghost"), id("avx")].into()),
+        };
+        assert_eq!(
+            refused(&mut world, command),
+            CommandError::UnknownCharacter {
+                role: Role::Witness,
+                id: id("avx"),
+                suggestion: Some(id("ava")),
+            },
+            "the first unknown witness, in id order"
+        );
+    }
+
+    #[test]
+    fn a_scale_of_zero_or_less_is_refused() {
+        let mut world = riverhold();
+        for scale in [0, -1_00] {
+            assert_eq!(
+                refused(&mut world, act("player", "steal", None, scale)),
+                CommandError::ScaleNotPositive { scale: h(scale) }
+            );
+        }
+        assert!(world.execute(act("player", "steal", None, 1)).is_ok());
+    }
+
+    #[test]
+    fn an_actor_cannot_target_themselves() {
+        let mut world = riverhold();
+        assert_eq!(
+            refused(&mut world, act("player", "steal", Some("player"), 1_00)),
+            CommandError::TargetIsActor
+        );
+    }
+
+    #[test]
+    fn lists_the_action_catalogue_in_id_order() {
+        let world = riverhold();
+        let ids: Vec<&str> = world.actions().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["help_stranger", "steal"]);
+    }
+
+    #[test]
+    fn replaying_rebuilds_alignments() {
+        let mut world = riverhold();
+        world
+            .execute(act("player", "steal", Some("ava"), 3_00))
+            .expect("accepted");
+        let replayed = World::replay(world.content.clone(), world.events());
+        assert_eq!(
+            replayed.alignment(&id("player")),
+            Some(aligned(-15_00, -9_00))
+        );
+    }
+
+    // Properties (DESIGN.md §14, invariants 1–4)
 
     use proptest::prelude::*;
 
-    /// Some commands, refused ones (zero ticks) included.
+    /// Some commands, refused ones included: zero ticks, unknown characters or actions,
+    /// self-targets and scales of 0.
     fn commands() -> impl Strategy<Value = Vec<Command>> {
-        proptest::collection::vec((0_u64..=1_000).prop_map(advance), 0..20)
+        let who = || prop_oneof![Just("player"), Just("vex"), Just("ava"), Just("ghost")];
+        let action = (
+            who(),
+            prop_oneof![Just("steal"), Just("help_stranger"), Just("dance")],
+            proptest::option::of(who()),
+            prop_oneof![0_i64..=500, Just(i64::MAX)],
+        )
+            .prop_map(|(actor, action, target, scale)| act(actor, action, target, scale));
+        let command = prop_oneof![(0_u64..=1_000).prop_map(advance), action];
+        proptest::collection::vec(command, 0..30)
     }
 
     fn run(commands: &[Command]) -> World {
@@ -413,9 +800,37 @@ mod tests {
             }
             let total: u64 = commands
                 .iter()
-                .map(|Command::AdvanceTime { ticks }| *ticks)
+                .filter_map(|command| match command {
+                    Command::AdvanceTime { ticks } => Some(*ticks),
+                    Command::PerformAction { .. } => None,
+                })
                 .sum();
             prop_assert_eq!(world.now(), Tick(total));
+        }
+
+        #[test]
+        fn alignments_always_stay_within_the_axes(commands in commands()) {
+            let world = run(&commands);
+            for character in world.characters() {
+                let alignment = world.alignment(&character.id).expect("every character has one");
+                for value in [alignment.law(), alignment.good()] {
+                    prop_assert!((-AXIS_LIMIT..=AXIS_LIMIT).contains(&value));
+                }
+            }
+        }
+
+        #[test]
+        fn every_alignment_change_follows_the_act_that_caused_it(commands in commands()) {
+            let world = run(&commands);
+            for pair in world.events().windows(2) {
+                if let Change::AlignmentChanged { character, from, to } = &pair[1].payload {
+                    prop_assert_ne!(from, to);
+                    let Change::ActionPerformed { actor, .. } = &pair[0].payload else {
+                        return Err(TestCaseError::fail("an alignment change without an act"));
+                    };
+                    prop_assert_eq!(actor, character);
+                }
+            }
         }
     }
 }

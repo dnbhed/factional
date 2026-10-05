@@ -175,6 +175,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **What goes in the journal.** Every command issued to the world, refused ones included. Read-only queries (`time`, `events`, `show`) aren't commands and aren't journalled.
   - **`load` starts a new world.** Time, events and journal all start afresh.
   - *Why:* gapless numbers make "what's new since n" trivial for listeners. Stamping before the change means an event's tick never depends on its own effect.
+- **P-34 · How actions are written and refused** (made in A3, 2026-10-04).
+  - **Content.** An action's `alignment`, and each axis in it, may be left out; what's left out isn't moved. `help_stranger = { good = 4.0 }` touches only good. That's an absent effect, not a default, so P-31 still holds.
+  - **Witnesses** are carried on `PerformAction` and `ActionPerformed`, and named witnesses must exist, but they change nothing until K1 (D-7). The CLI's `act` always means everyone.
+  - **Refusals** come one at a time, checked in this order: actor, action, target, target ≠ actor, scale > 0, witnesses. An unknown character or action gets a "did you mean", like content errors do, and names its role: `unknown target 'merchnt_ava' (did you mean 'merchant_ava'?)`.
+  - **Huge scales saturate.** `base × scale` is computed exactly and, beyond `Fixed`'s range, held at its end, so any scale lands at the end of the axis rather than panicking. The host sends scale, so it isn't validated content (P-30).
+  - **Current versus starting alignment.** `World::alignment` is where a character is now. `Character::alignment` stays as content gave it, the starting point that replay begins from.
+  - *Why:* designers write only what an act does; hosts get a plain reason for every refusal; and no input a host can send crashes the engine.
 
 ## Open
 

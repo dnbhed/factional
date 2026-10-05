@@ -8,7 +8,9 @@ use std::path::Path;
 use std::{fmt, fs, io};
 
 use factional_core::{Curve, Fixed};
-use factional_reputation::{Alignment, Balance, Character, CharacterId, Content};
+use factional_reputation::{
+    Action, ActionId, Alignment, AlignmentDelta, Balance, Character, CharacterId, Content,
+};
 use reader::{Report, Section};
 use serde::Deserialize;
 use toml::Value;
@@ -30,15 +32,17 @@ pub struct ContentError {
 }
 
 /// The text of each content file; `None` for a file that isn't there. A missing file means
-/// the defaults (for `balance.toml`) or nothing of that kind (for `characters.toml`).
+/// the defaults (for `balance.toml`) or nothing of that kind (for the others).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Sources<'a> {
     pub balance: Option<&'a str>,
     pub characters: Option<&'a str>,
+    pub actions: Option<&'a str>,
 }
 
 const BALANCE_FILE: &str = "balance.toml";
 const CHARACTERS_FILE: &str = "characters.toml";
+const ACTIONS_FILE: &str = "actions.toml";
 
 /// Reads and validates the content files in `dir`.
 pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
@@ -65,9 +69,11 @@ pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
     };
     let balance = read(BALANCE_FILE)?;
     let characters = read(CHARACTERS_FILE)?;
+    let actions = read(ACTIONS_FILE)?;
     parse_content(Sources {
         balance: balance.as_deref(),
         characters: characters.as_deref(),
+        actions: actions.as_deref(),
     })
 }
 
@@ -84,7 +90,13 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         .map(|text| read_characters(text, &mut characters_report))
         .unwrap_or_default();
 
-    let diagnostics: Vec<Diagnostic> = [balance_report, characters_report]
+    let mut actions_report = Report::new(ACTIONS_FILE);
+    let actions = sources
+        .actions
+        .map(|text| read_actions(text, &mut actions_report))
+        .unwrap_or_default();
+
+    let diagnostics: Vec<Diagnostic> = [balance_report, characters_report, actions_report]
         .into_iter()
         .flat_map(|report| report.diagnostics)
         .collect();
@@ -92,6 +104,7 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         Ok(Content {
             balance,
             characters,
+            actions,
         })
     } else {
         Err(ContentError { diagnostics })
@@ -182,6 +195,47 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
     })
 }
 
+/// `actions.toml`: the action catalogue, one table per action, keyed by id.
+fn read_actions(text: &str, report: &mut Report) -> BTreeMap<ActionId, Action> {
+    let mut actions = BTreeMap::new();
+    let Some(table) = report.parse(text) else {
+        return actions;
+    };
+    for (key, value) in &table {
+        let id = match ActionId::new(key) {
+            Ok(id) => id,
+            Err(invalid) => {
+                report.error(key, invalid.to_string());
+                continue;
+            }
+        };
+        let Value::Table(fields) = value else {
+            report.error(
+                key,
+                format!("expected a table of action fields, like [{key}]"),
+            );
+            continue;
+        };
+        actions.insert(id.clone(), read_action(id, fields, report));
+    }
+    actions
+}
+
+/// One action. Its `alignment` and each axis in it may be left out: an act needn't touch
+/// both axes, or alignment at all. Any problem is reported, and fails the whole load.
+fn read_action(id: ActionId, fields: &toml::Table, report: &mut Report) -> Action {
+    let mut section = Section::new(fields, id.to_string());
+    let mut alignment = AlignmentDelta::default();
+    if let Some(mut axes) = section.optional_table("alignment", "{ law = 0.0, good = 0.0 }", report)
+    {
+        alignment.law = axes.optional_fixed("law", report).unwrap_or_default();
+        alignment.good = axes.optional_fixed("good", report).unwrap_or_default();
+        axes.finish(report);
+    }
+    section.finish(report);
+    Action { id, alignment }
+}
+
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.key {
@@ -229,6 +283,13 @@ mod tests {
         })
     }
 
+    fn actions(text: &str) -> Result<Content, ContentError> {
+        parse_content(Sources {
+            actions: Some(text),
+            ..Sources::default()
+        })
+    }
+
     fn balance(text: &str) -> Result<Content, ContentError> {
         parse_content(Sources {
             balance: Some(text),
@@ -267,10 +328,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_files_mean_defaults_and_no_characters() {
+    fn missing_files_mean_defaults_and_no_characters_or_actions() {
         let content = parse_content(Sources::default()).expect("valid content");
         assert_eq!(content.balance.label_threshold, h(33_00));
         assert!(content.characters.is_empty());
+        assert!(content.actions.is_empty());
     }
 
     #[test]
@@ -380,6 +442,85 @@ mod tests {
         );
     }
 
+    // actions.toml
+
+    const STEAL: &str = r#"
+        [steal]
+        alignment = { law = -5.0, good = -3.0 }
+    "#;
+
+    fn delta(content: &Content, action: &str) -> AlignmentDelta {
+        content.actions[&ActionId::new(action).expect("valid id")].alignment
+    }
+
+    #[test]
+    fn reads_actions_and_their_alignment_effects() {
+        let text = format!("{STEAL}\n[help_stranger]\nalignment = {{ good = 4.0 }}");
+        let content = actions(&text).expect("valid content");
+        assert_eq!(
+            delta(&content, "steal"),
+            AlignmentDelta {
+                law: h(-5_00),
+                good: h(-3_00)
+            }
+        );
+        assert_eq!(
+            delta(&content, "help_stranger"),
+            AlignmentDelta {
+                law: h(0),
+                good: h(4_00)
+            },
+            "an axis left out isn't moved"
+        );
+        let ids: Vec<&str> = content.actions.keys().map(ActionId::as_str).collect();
+        assert_eq!(ids, ["help_stranger", "steal"]);
+    }
+
+    #[test]
+    fn an_action_without_an_alignment_effect_moves_nothing() {
+        let content = actions("[wave]").expect("valid content");
+        assert_eq!(delta(&content, "wave"), AlignmentDelta::default());
+    }
+
+    #[test]
+    fn an_actions_alignment_names_only_law_and_good() {
+        assert_eq!(
+            problems(actions(&STEAL.replace("good =", "goood ="))),
+            ["actions.toml: steal.alignment: unknown key 'goood' (did you mean 'good'?)"]
+        );
+        assert_eq!(
+            problems(actions(&STEAL.replace("good =", "chaos ="))),
+            ["actions.toml: steal.alignment: unknown key 'chaos'"]
+        );
+    }
+
+    #[test]
+    fn reports_mistakes_in_an_action() {
+        let text = r#"
+            bow = 3
+
+            ["Steal"]
+            alignment = { law = -5.0 }
+
+            [extort]
+            alignment = "evil"
+
+            [murder]
+            alignment = { law = -10.005 }
+            standing = { target = -100.0 }
+        "#;
+        assert_eq!(
+            problems(actions(text)),
+            [
+                "actions.toml: Steal: 'Steal' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "actions.toml: bow: expected a table of action fields, like [bow]",
+                "actions.toml: extort.alignment: expected a table, like { law = 0.0, good = 0.0 }",
+                "actions.toml: murder.alignment.law: -10.005 has more than 2 decimal places",
+                "actions.toml: murder: unknown key 'standing'",
+            ]
+        );
+    }
+
     // Mistakes in balance.toml
 
     #[test]
@@ -432,6 +573,7 @@ mod tests {
             characters: Some(
                 "[zed]\nalignment = { law = 0.0, good = 0.0 }\n[abe]\nname = 1\nalignment = { law = 0.0, good = 0.0 }",
             ),
+            actions: Some("[steal]\nalignment = { evil = 3.0 }"),
         }));
         assert_eq!(
             found,
@@ -439,6 +581,7 @@ mod tests {
                 "balance.toml: alignment.label_threshold: 0.00 must be between 0.01 and 100.00",
                 "characters.toml: abe.name: expected text in quotes",
                 "characters.toml: zed: missing 'name'",
+                "actions.toml: steal.alignment: unknown key 'evil'",
             ]
         );
     }

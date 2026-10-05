@@ -49,6 +49,15 @@ impl Fixed {
         narrow(div_round(exact, i128::from(HUNDREDTHS_PER_UNIT)))
     }
 
+    /// Computes the exact product and rounds it once, like `checked_mul`, but a result beyond
+    /// the range a `Fixed` can hold becomes the nearest value it can.
+    pub fn saturating_mul(self, rhs: Fixed) -> Fixed {
+        let exact = i128::from(self.0) * i128::from(rhs.0);
+        let rounded = div_round(exact, i128::from(HUNDREDTHS_PER_UNIT));
+        let limited = rounded.clamp(i128::from(i64::MIN), i128::from(i64::MAX));
+        Fixed(i64::try_from(limited).expect("clamped into i64's range"))
+    }
+
     /// Computes the exact quotient, then rounds it once, half away from zero. `None` if
     /// `divisor` is zero, or if the result is beyond the range a `Fixed` can hold.
     pub fn checked_div(self, divisor: Fixed) -> Option<Fixed> {
@@ -360,6 +369,16 @@ mod tests {
         assert_eq!(h(100).checked_add(h(5)), Some(h(105)));
         assert_eq!(h(100).checked_sub(h(5)), Some(h(95)));
         assert_eq!(h(250).checked_mul(h(200)), Some(h(500)));
+    }
+
+    #[test]
+    fn saturating_multiplication_stops_at_the_ends_of_the_range() {
+        assert_eq!(h(250).saturating_mul(h(-200)), h(-500));
+        assert_eq!(h(5).saturating_mul(h(5)), h(0));
+        assert_eq!(h(15).saturating_mul(h(5)), h(1));
+        assert_eq!(h(i64::MAX).saturating_mul(h(200)), h(i64::MAX));
+        assert_eq!(h(i64::MAX).saturating_mul(h(-200)), h(i64::MIN));
+        assert_eq!(h(i64::MIN).saturating_mul(h(-200)), h(i64::MAX));
     }
 
     #[test]

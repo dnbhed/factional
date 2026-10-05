@@ -38,59 +38,44 @@ The order below is the source of truth. Sections further down are grouped by pha
 - F2 — `Curve`, the piecewise-linear shape of most tuning knobs: validation, evaluation rounded once, a bounds check, TOML input; plus the `curve <curve> at <x>` CLI command; done 2026-10-04 (#3)
 - A1 — characters with a two-axis alignment and its nine-box label; loading `balance.toml` and `characters.toml` with every problem reported at once, by file and key path, with "did you mean" hints; Riverhold's sample characters; `load`, `characters`, `show character`; done 2026-10-04 (#4)
 - A2 — the command-and-event core: `World::execute` (refused commands change nothing), numbered and time-stamped events, `World::replay`, the journal, `AdvanceTime`; `advance`, `time`, `events`, `journal`; done 2026-10-04 (#7)
+- A3 — actions move alignment: `actions.toml` (alignment deltas), `PerformAction` with scale and witnesses, `ActionPerformed` and `AlignmentChanged`, clamping at the ends of each axis, refusals with "did you mean"; `actions`, `act`; done 2026-10-04 (#8)
 
 ---
 
 ## Phase 1 — Characters and alignment
 
-### A3 · Actions move alignment — P0 · Next
-
-**Why:** this is the brief's core mechanic: what you do determines who you are (DESIGN.md §5.2).
-
-**Scope**
-
-- **Content.** `actions.toml`, with alignment deltas only; standing effects arrive in M3.
-- **Command.** `PerformAction { actor, action, target?, scale = 1.00, witnesses = everyone }`.
-  - It emits `ActionPerformed`.
-  - It then emits `AlignmentChanged { from, to }` if the alignment moved.
-- **Inertia.** 1.00 everywhere until A4.
-- **CLI.** `actions`, `act <actor> <action> [--target <id>] [--scale <n>]`.
-
-**Acceptance** (Riverhold, with the player starting at 0 / 0)
-
-1. `act player steal --target merchant_ava` moves the player to −5.00 / −3.00. Events: `ActionPerformed`, then `AlignmentChanged 0.00/0.00 → -5.00/-3.00`.
-2. With `--scale 2`, the player moves to −10.00 / −6.00.
-3. From −98.00 / 0.00, stealing gives −100.00 / −3.00 (clamped).
-4. From −100.00 / −100.00, stealing emits `ActionPerformed` only, with no `AlignmentChanged`.
-5. `act player stael` → `unknown action 'stael' (did you mean 'steal'?)`, and nothing changes.
-6. Other errors:
-   - `--scale 0` → `scale must be greater than 0.00`
-   - `--target player` → `an action's target must be another character`
-   - An unknown actor or target gives an error that names it.
-
-**Validates** (DESIGN.md §12.2): action ids; each action's alignment names only `law` and `good`.
-
 ## Phase 2 — Perception
 
-### D1 · Weights and distance — P0 · Outline
+### D1 · Weights and distance — P0 · Next
 
-**Covers:** DESIGN.md §6.
+**Why:** every perception rule (disposition, joining, drift) starts from how far apart two alignments are, as the observer sees them (DESIGN.md §6).
 
 **Scope**
 
-- Factions arrive here (id, name, alignment, weights), without membership.
-- Global `alignment.default_weights` and `alignment.metric`.
-- Query `distance(observer, subject)`; CLI `distance <observer> <subject>`.
+- **Content.**
+  - `factions.toml`: each faction's id, `name`, `alignment` and optional `weights`. No membership, tolerance or ranks yet (M1, M5).
+  - An optional `weights` on characters (P-21).
+  - `balance.toml` gains `alignment.default_weights` (1.00 / 1.00) and `alignment.metric` (`euclidean`).
+- **One id namespace.** Factions and characters share one set of ids, so `distance` can name an observer by id alone. A clash is a load error.
+- **Query.** `distance(observer, subject)`: the observer is a faction or a character, and the subject a character. It uses the observer's weights, and returns the distance with its working: each axis's gap, weight and weighted term, and the metric.
+- **Exactness.** Euclidean distance takes an exact integer square root of the weighted sum, rounded once, half away from zero.
+- **CLI.** `factions`, `show faction <id>`, and `distance <observer> <subject> [--explain]`.
 
-**Anchors**
+**Acceptance** (Riverhold; worked by hand from §6)
 
-- `city_watch` → player at 0 / 0: 70.18 (Manhattan 75.00, Chebyshev 70.00)
-- `lantern_guild` → player at −10 / −6: 50.04; at −20 / −12: 40.01
-- `city_watch` → vex at 35 / 10: 35.09
-- `lantern_guild` → vex at 35 / 10: 95.52
-- `temple` → `sister_mira`: 5.59
+1. `distance city_watch player` → `70.18`. With `metric = "manhattan"`, `75.00`; with `"chebyshev"`, `70.00`.
+2. After the player steals twice (−10 / −6), `distance lantern_guild player` → `50.04`. After four times (−20 / −12), `40.01`.
+3. In a fixture world with vex at 35 / 10: `distance city_watch vex` → `35.09`, and `distance lantern_guild vex` → `95.52`.
+4. `distance temple sister_mira` → `5.59`.
+5. A character uses their own weights, or else the default:
+   - `distance captain_hale player` (1.00 / 0.25): gaps 75 and 30, weighted 75 and 7.5 → `75.37`.
+   - `distance merchant_ava player` (1.00 / 1.00): gaps 20 and 10 → `22.36`.
+6. Errors:
+   - `distance city_wach player` → `unknown observer 'city_wach' (did you mean 'city_watch'?)`
+   - `distance player city_watch` → `a distance's subject must be a character`
+   - `--explain` lists the gaps, weights and terms that make up the number.
 
-**Validates** (DESIGN.md §12.2): faction ids; weights are 0–1 with at least one above 0, for factions and characters; `metric` is one of the three.
+**Validates** (DESIGN.md §12.2): faction ids, unique across factions and characters; each faction's `name` and `alignment`, with axes in range; weights 0–1 with at least one above 0, for factions and characters; `metric` is one of the three.
 
 ### D2 · Disposition from affinity — P0 · Outline
 

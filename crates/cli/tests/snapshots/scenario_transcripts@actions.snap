@@ -1,0 +1,48 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/actions.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> actions
+donate_to_temple — law 0.00, good 3.00
+extort — law -2.00, good -6.00
+help_stranger — law 0.00, good 4.00
+murder — law -10.00, good -15.00
+report_crime — law 4.00, good 1.00
+steal — law -5.00, good -3.00
+> act player steal --target merchant_ava
+#1 at tick 0: player did steal, targeting merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+> assert show character player == player — The Player — law -5.00, good -3.00 — True Neutral
+> act player steal --target merchant_ava --scale 2
+#3 at tick 0: player did steal, targeting merchant_ava, at scale 2.00
+#4 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -15.00, good -9.00
+> assert show character player == player — The Player — law -15.00, good -9.00 — True Neutral
+> assert act player stael == error: unknown action 'stael' (did you mean 'steal'?)
+> assert act player steal --scale 0 == error: scale must be greater than 0.00
+> assert act player steal --target player == error: an action's target must be another character
+> assert act plyer steal == error: unknown actor 'plyer' (did you mean 'player'?)
+> assert act player steal --target merchnt_ava == error: unknown target 'merchnt_ava' (did you mean 'merchant_ava'?)
+> assert show character player == player — The Player — law -15.00, good -9.00 — True Neutral
+> events
+#1 at tick 0: player did steal, targeting merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player did steal, targeting merchant_ava, at scale 2.00
+#4 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -15.00, good -9.00
+> journal
+1. act player steal --target merchant_ava — accepted
+2. act player steal --target merchant_ava --scale 2.00 — accepted
+3. act player stael — refused: unknown action 'stael' (did you mean 'steal'?)
+4. act player steal --scale 0.00 — refused: scale must be greater than 0.00
+5. act player steal --target player — refused: an action's target must be another character
+6. act plyer steal — refused: unknown actor 'plyer' (did you mean 'player'?)
+7. act player steal --target merchnt_ava — refused: unknown target 'merchnt_ava' (did you mean 'merchant_ava'?)
+> load crates/cli/tests/fixtures/worlds/outlaws
+loaded 2 characters from crates/cli/tests/fixtures/worlds/outlaws
+> act cutpurse steal
+#1 at tick 0: cutpurse did steal
+#2 at tick 0: cutpurse's alignment moved from law -98.00, good 0.00 to law -100.00, good -3.00
+> assert show character cutpurse == cutpurse — Cutpurse — law -100.00, good -3.00 — Chaotic Neutral
+> assert act warlord steal == #3 at tick 0: warlord did steal

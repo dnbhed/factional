@@ -79,6 +79,33 @@ impl Alignment {
     }
 }
 
+/// How far an act moves each axis before anything scales it, such as stealing's law −5.00,
+/// good −3.00 (DESIGN.md §5.2). An axis the act doesn't touch is 0.00.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AlignmentDelta {
+    pub law: Fixed,
+    pub good: Fixed,
+}
+
+impl Alignment {
+    /// This alignment moved by `delta` × `scale`: each axis's shift is rounded once, then the
+    /// axis is clamped to −100.00…100.00 (DESIGN.md §5.2).
+    pub fn shifted(self, delta: AlignmentDelta, scale: Fixed) -> Alignment {
+        Alignment {
+            law: moved(self.law, delta.law, scale),
+            good: moved(self.good, delta.good, scale),
+        }
+    }
+}
+
+/// One axis's new position after a shift of `base` × `scale`.
+fn moved(position: Fixed, base: Fixed, scale: Fixed) -> Fixed {
+    let shift = base.saturating_mul(scale);
+    // A sum too big to hold means a shift so large it reaches the end of the axis by itself.
+    let unclamped = position.checked_add(shift).unwrap_or(shift);
+    unclamped.clamp(-AXIS_LIMIT, AXIS_LIMIT)
+}
+
 /// Which way one axis leans, for labels.
 enum Lean {
     Positive,
@@ -215,7 +242,121 @@ mod tests {
         assert_eq!((Axis::Law.key(), Axis::Good.key()), ("law", "good"));
     }
 
+    // Shifting (DESIGN.md §5.2)
+
+    const STEAL: AlignmentDelta = AlignmentDelta {
+        law: h(-5_00),
+        good: h(-3_00),
+    };
+
+    #[test]
+    fn stealing_moves_toward_chaotic_evil() {
+        assert_eq!(aligned(0, 0).shifted(STEAL, h(1_00)), aligned(-5_00, -3_00));
+    }
+
+    #[test]
+    fn scale_multiplies_the_shift() {
+        assert_eq!(
+            aligned(0, 0).shifted(STEAL, h(2_00)),
+            aligned(-10_00, -6_00)
+        );
+        assert_eq!(aligned(0, 0).shifted(STEAL, h(50)), aligned(-2_50, -1_50));
+    }
+
+    #[test]
+    fn each_shift_is_rounded_once_half_away_from_zero() {
+        let help = AlignmentDelta {
+            law: h(5),
+            good: h(4_00),
+        };
+        // × 0.43: law 0.05 × 0.43 = 0.0215 → 0.02; good 4.00 × 0.43 = 1.72
+        assert_eq!(
+            aligned(20_00, 20_00).shifted(help, h(43)),
+            aligned(20_02, 21_72)
+        );
+        // × 0.50: law 0.05 × 0.50 = 0.025 → 0.03; good 4.00 × 0.50 = 2.00
+        assert_eq!(
+            aligned(10_00, 10_00).shifted(help, h(50)),
+            aligned(10_03, 12_00)
+        );
+        assert_eq!(
+            aligned(0, 0).shifted(STEAL, h(1)),
+            aligned(-5, -3),
+            "−5.00 × 0.01 = −0.05"
+        );
+    }
+
+    #[test]
+    fn shifts_clamp_at_the_ends_of_each_axis() {
+        assert_eq!(
+            aligned(-98_00, 0).shifted(STEAL, h(1_00)),
+            aligned(-100_00, -3_00)
+        );
+        assert_eq!(
+            aligned(-100_00, -100_00).shifted(STEAL, h(1_00)),
+            aligned(-100_00, -100_00)
+        );
+        let redeem = AlignmentDelta {
+            law: h(4_00),
+            good: h(3_00),
+        };
+        assert_eq!(
+            aligned(99_00, 98_00).shifted(redeem, h(1_00)),
+            aligned(100_00, 100_00)
+        );
+    }
+
+    #[test]
+    fn an_axis_the_act_does_not_touch_stays_put() {
+        let help = AlignmentDelta {
+            law: h(0),
+            good: h(4_00),
+        };
+        assert_eq!(
+            aligned(-55_00, -20_00).shifted(help, h(3_00)),
+            aligned(-55_00, -8_00)
+        );
+    }
+
+    #[test]
+    fn a_scale_too_big_to_compute_still_lands_at_the_end() {
+        let huge = h(i64::MAX);
+        assert_eq!(
+            aligned(50_00, -50_00).shifted(STEAL, huge),
+            aligned(-100_00, -100_00)
+        );
+        let redeem = AlignmentDelta {
+            law: h(1),
+            good: h(1),
+        };
+        assert_eq!(
+            aligned(-50_00, 50_00).shifted(redeem, huge),
+            aligned(100_00, 100_00)
+        );
+    }
+
     proptest! {
+        #[test]
+        fn shifting_never_leaves_the_range_or_reverses_the_act(
+            law in -100_00_i64..=100_00,
+            good in -100_00_i64..=100_00,
+            delta_law in -200_00_i64..=200_00,
+            delta_good in -200_00_i64..=200_00,
+            scale in prop_oneof![1_i64..=1_000, Just(i64::MAX)],
+        ) {
+            let before = aligned(law, good);
+            let delta = AlignmentDelta { law: h(delta_law), good: h(delta_good) };
+            let after = before.shifted(delta, h(scale));
+            for (from, to, base) in [
+                (before.law(), after.law(), delta_law),
+                (before.good(), after.good(), delta_good),
+            ] {
+                prop_assert!((-AXIS_LIMIT..=AXIS_LIMIT).contains(&to));
+                let moved = to.hundredths() - from.hundredths();
+                prop_assert!(moved == 0 || moved.signum() == base.signum());
+            }
+        }
+
         #[test]
         fn accepts_exactly_the_values_within_the_range(
             law in -150_00_i64..=150_00,
