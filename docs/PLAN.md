@@ -39,6 +39,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - A1 — characters with a two-axis alignment and its nine-box label; loading `balance.toml` and `characters.toml` with every problem reported at once, by file and key path, with "did you mean" hints; Riverhold's sample characters; `load`, `characters`, `show character`; done 2026-10-04 (#4)
 - A2 — the command-and-event core: `World::execute` (refused commands change nothing), numbered and time-stamped events, `World::replay`, the journal, `AdvanceTime`; `advance`, `time`, `events`, `journal`; done 2026-10-04 (#7)
 - A3 — actions move alignment: `actions.toml` (alignment deltas), `PerformAction` with scale and witnesses, `ActionPerformed` and `AlignmentChanged`, clamping at the ends of each axis, refusals with "did you mean"; `actions`, `act`; done 2026-10-04 (#8)
+- D1 — weights and distance: `factions.toml` (name, alignment, weights), character weights, `alignment.metric` and `alignment.default_weights`; an exact `distance(observer, subject)` query with its working; one id namespace for factions and characters, checked by `World::new` (P-32's mechanism, arriving early); `factions`, `show faction`, `distance [--explain]`; done 2026-10-05 (#9)
 
 ---
 
@@ -46,51 +47,47 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 2 — Perception
 
-### D1 · Weights and distance — P0 · Next
+### D2 · Disposition from affinity — P0 · Next
 
-**Why:** every perception rule (disposition, joining, drift) starts from how far apart two alignments are, as the observer sees them (DESIGN.md §6).
+**Why:** this is the brief's friendly, neutral or unfriendly view: how an observer regards a character, starting from how close their alignments are (DESIGN.md §8.1).
 
 **Scope**
 
-- **Content.**
-  - `factions.toml`: each faction's id, `name`, `alignment` and optional `weights`. No membership, tolerance or ranks yet (M1, M5).
-  - An optional `weights` on characters (P-21).
-  - `balance.toml` gains `alignment.default_weights` (1.00 / 1.00) and `alignment.metric` (`euclidean`).
-- **One id namespace.** Factions and characters share one set of ids, so `distance` can name an observer by id alone. A clash is a load error.
-- **Query.** `distance(observer, subject)`: the observer is a faction or a character, and the subject a character. It uses the observer's weights, and returns the distance with its working: each axis's gap, weight and weighted term, and the metric.
-- **Exactness.** Euclidean distance takes an exact integer square root of the weighted sum, rounded once, half away from zero.
-- **CLI.** `factions`, `show faction <id>`, and `distance <observer> <subject> [--explain]`.
+- **Content.** In `balance.toml`:
+  - `disposition.affinity`, a curve from distance to liking (default `[[0, 50], [60, 0], [200, -50]]`);
+  - `disposition.bands`, the named bands, lowest first (default unfriendly ≤ −25 < neutral ≤ 25 < friendly).
+- **Query.** `disposition(observer, subject)` returns the score, its band and the breakdown.
+  - D2 has the affinity component only, so the score is the affinity, clamped to ±100.
+  - The other components, and their weights, arrive in M4.
+  - The affinity is the curve applied to D1's distance, which is already rounded, so the curve's own rounding is the only other one.
+- **CLI.** `disposition <observer> <subject> [--explain]`.
+  - Without `--explain`, it prints the score and band: `-3.64 (neutral)`.
+  - With `--explain`, it prints the breakdown from DESIGN.md §8.2, cut down to affinity: the distance and its working, then the bands.
 
-**Acceptance** (Riverhold; worked by hand from §6)
+**Acceptance** (Riverhold; worked by hand from §6 and §8.1)
 
-1. `distance city_watch player` → `70.18`. With `metric = "manhattan"`, `75.00`; with `"chebyshev"`, `70.00`.
-2. After the player steals twice (−10 / −6), `distance lantern_guild player` → `50.04`. After four times (−20 / −12), `40.01`.
-3. In a fixture world with vex at 35 / 10: `distance city_watch vex` → `35.09`, and `distance lantern_guild vex` → `95.52`.
-4. `distance temple sister_mira` → `5.59`.
-5. A character uses their own weights, or else the default:
-   - `distance captain_hale player` (1.00 / 0.25): gaps 75 and 30, weighted 75 and 7.5 → `75.37`.
-   - `distance merchant_ava player` (1.00 / 1.00): gaps 20 and 10 → `22.36`.
-6. Errors:
-   - `distance city_wach player` → `unknown observer 'city_wach' (did you mean 'city_watch'?)`
-   - `distance player city_watch` → `a distance's subject must be a character`
-   - `--explain` lists the gaps, weights and terms that make up the number.
+1. `disposition city_watch player` → `-3.64 (neutral)`.
+   - The distance is 70.18, on the curve's 60 → 200 segment: −50 × 10.18 / 140 = −3.636…
+2. `disposition temple sister_mira` → `45.34 (friendly)`.
+   - The distance is 5.59: 50 − 50 × 5.59 / 60 = 45.341…
+3. `disposition temple brother_ash` → `-32.15 (unfriendly)`.
+   - The gaps are 5 and 150, weighted 2.5 and 150: the distance is √22506.25 = 150.02.
+   - −50 × 90.02 / 140 = −32.15.
+4. `disposition city_watch vex` → `-23.36 (neutral)`.
+   - The gaps are 125 and 40, weighted 125 and 10: the distance is √15725 = 125.40.
+   - −50 × 65.40 / 140 = −23.357…
+5. **Bands.**
+   - Band edges are inclusive: a score of exactly −25.00 is unfriendly, and exactly 25.00 is neutral.
+   - Designers can add bands. With `hostile` up to −30 placed before `unfriendly`, `disposition temple brother_ash` reads `-32.15 (hostile)`.
+6. **Errors.**
+   - The same unknown-observer and unknown-subject errors as `distance`.
+   - Bad band content is a load error that names the key, such as `balance.toml: disposition.bands[1].up_to: -30.00 must be above the previous band's -25.00`.
 
-**Validates** (DESIGN.md §12.2): faction ids, unique across factions and characters; each faction's `name` and `alignment`, with axes in range; weights 0–1 with at least one above 0, for factions and characters; `metric` is one of the three.
+**Validates** (DESIGN.md §12.2):
 
-### D2 · Disposition from affinity — P0 · Outline
-
-**Covers:** DESIGN.md §8.1, the affinity component only.
-
-**Scope:** bands, and `--explain`. Query `disposition(observer, subject)` returns the score, the band and the breakdown.
-
-**Anchors**
-
-- `city_watch` → player: −3.64, neutral
-- `temple` → `sister_mira`: 45.34, friendly
-- `temple` → `brother_ash`: −32.15, unfriendly
-- `city_watch` → vex: −23.36, neutral
-
-**Validates** (DESIGN.md §12.2): disposition bands have unique names, increasing `up_to`, and only the last band open-ended.
+- the affinity curve's points are valid, with its values within ±100;
+- bands have unique names and increasing `up_to`, and only the last is open-ended;
+- there is at least one band.
 
 ### D3 · Watched subjects and band-change events — P1 · Outline
 

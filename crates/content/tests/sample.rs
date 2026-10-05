@@ -4,15 +4,113 @@ use std::path::{Path, PathBuf};
 
 use factional_content::load_dir;
 use factional_core::Fixed;
-use factional_reputation::{ActionId, CharacterId, Command, Witnesses, World};
+use factional_reputation::{
+    ActionId, CharacterId, Command, FactionId, Metric, Observer, WeightsFrom, Witnesses, World,
+};
 
 fn sample_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/sample")
 }
 
+fn riverhold() -> World {
+    World::new(load_dir(&sample_dir()).expect("the sample content is valid"))
+        .expect("the sample content makes a world")
+}
+
+fn character(id: &str) -> CharacterId {
+    CharacterId::new(id).expect("valid id")
+}
+
+fn faction(id: &str) -> Observer {
+    Observer::Faction(FactionId::new(id).expect("valid id"))
+}
+
+/// A distance as the CLI shows it.
+fn distance(world: &World, observer: &Observer, subject: &str) -> String {
+    world
+        .distance(observer, &character(subject))
+        .expect("both exist")
+        .value
+        .to_string()
+}
+
+#[test]
+fn loads_riverholds_factions() {
+    let world = riverhold();
+    let factions: Vec<(&str, &str)> = world
+        .factions()
+        .map(|faction| (faction.id.as_str(), faction.name.as_str()))
+        .collect();
+    assert_eq!(
+        factions,
+        [
+            ("ashen_circle", "The Ashen Circle"),
+            ("city_watch", "The City Watch"),
+            ("free_company", "The Free Company"),
+            ("lantern_guild", "The Lantern Guild"),
+            ("temple", "Temple of the Dawn"),
+        ]
+    );
+    assert_eq!(world.balance().metric, Metric::Euclidean);
+}
+
+#[test]
+fn riverholds_factions_measure_distance_with_their_weights() {
+    let world = riverhold();
+    assert_eq!(distance(&world, &faction("city_watch"), "player"), "70.18");
+    assert_eq!(distance(&world, &faction("temple"), "sister_mira"), "5.59");
+}
+
+#[test]
+fn a_thief_comes_closer_to_the_lantern_guild() {
+    let mut world = riverhold();
+    let steal = || Command::PerformAction {
+        actor: character("player"),
+        action: ActionId::new("steal").expect("valid id"),
+        target: None,
+        scale: Fixed::ONE,
+        witnesses: Witnesses::Everyone,
+    };
+    for _ in 0..2 {
+        world.execute(steal()).expect("accepted");
+    }
+    assert_eq!(
+        distance(&world, &faction("lantern_guild"), "player"),
+        "50.04"
+    );
+    for _ in 0..2 {
+        world.execute(steal()).expect("accepted");
+    }
+    assert_eq!(
+        distance(&world, &faction("lantern_guild"), "player"),
+        "40.01"
+    );
+}
+
+#[test]
+fn characters_use_their_own_weights_or_the_default() {
+    let world = riverhold();
+    let hale = Observer::Character(character("captain_hale"));
+    let measured = world
+        .distance(&hale, &character("player"))
+        .expect("both exist");
+    assert_eq!(
+        (measured.value.to_string(), measured.weights_from),
+        ("75.37".to_owned(), WeightsFrom::Own)
+    );
+    let ava = Observer::Character(character("merchant_ava"));
+    let measured = world
+        .distance(&ava, &character("player"))
+        .expect("both exist");
+    assert_eq!(
+        (measured.value.to_string(), measured.weights_from),
+        ("22.36".to_owned(), WeightsFrom::Default)
+    );
+}
+
 #[test]
 fn loads_riverholds_characters_with_their_labels() {
-    let world = World::new(load_dir(&sample_dir()).expect("the sample content is valid"));
+    let world = riverhold();
     let threshold = world.balance().label_threshold;
     let labels: Vec<(&str, &str)> = world
         .characters()
@@ -99,7 +197,7 @@ fn loads_riverholds_action_catalogue() {
 
 #[test]
 fn the_player_stealing_from_ava_moves_toward_chaotic_evil() {
-    let mut world = World::new(load_dir(&sample_dir()).expect("the sample content is valid"));
+    let mut world = riverhold();
     let player = CharacterId::new("player").expect("valid id");
     world
         .execute(Command::PerformAction {

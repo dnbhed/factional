@@ -65,6 +65,11 @@ impl<'t> Section<'t> {
         }
     }
 
+    /// Where this section is, such as `vex.alignment`.
+    pub(crate) fn path(&self) -> &str {
+        &self.path
+    }
+
     /// The path to `key` inside this section, such as `vex.alignment`.
     pub(crate) fn path_to(&self, key: &str) -> String {
         if self.path.is_empty() {
@@ -90,6 +95,21 @@ impl<'t> Section<'t> {
     /// A required string.
     pub(crate) fn text(&mut self, key: &'static str, report: &mut Report) -> Option<String> {
         match self.required(key, report)? {
+            Value::String(text) => Some(text.clone()),
+            _ => {
+                report.error(&self.path_to(key), "expected text in quotes");
+                None
+            }
+        }
+    }
+
+    /// A string that may be left out; `None` if it's absent or not a string (that's reported).
+    pub(crate) fn optional_text(
+        &mut self,
+        key: &'static str,
+        report: &mut Report,
+    ) -> Option<String> {
+        match self.get(key)? {
             Value::String(text) => Some(text.clone()),
             _ => {
                 report.error(&self.path_to(key), "expected text in quotes");

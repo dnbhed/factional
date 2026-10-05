@@ -7,9 +7,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::{fmt, fs, io};
 
-use factional_core::{Curve, Fixed};
+use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, Alignment, AlignmentDelta, Balance, Character, CharacterId, Content,
+    ContentProblem, Faction, FactionId, InvalidId, Metric, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -36,11 +37,13 @@ pub struct ContentError {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Sources<'a> {
     pub balance: Option<&'a str>,
+    pub factions: Option<&'a str>,
     pub characters: Option<&'a str>,
     pub actions: Option<&'a str>,
 }
 
 const BALANCE_FILE: &str = "balance.toml";
+const FACTIONS_FILE: &str = "factions.toml";
 const CHARACTERS_FILE: &str = "characters.toml";
 const ACTIONS_FILE: &str = "actions.toml";
 
@@ -68,47 +71,84 @@ pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
         }),
     };
     let balance = read(BALANCE_FILE)?;
+    let factions = read(FACTIONS_FILE)?;
     let characters = read(CHARACTERS_FILE)?;
     let actions = read(ACTIONS_FILE)?;
     parse_content(Sources {
         balance: balance.as_deref(),
+        factions: factions.as_deref(),
         characters: characters.as_deref(),
         actions: actions.as_deref(),
     })
 }
 
-/// Validates content from the text of its files, reporting every problem at once.
+/// Validates content from the text of its files, reporting every problem at once: each
+/// file's own, in file order, then problems across files (P-32).
 pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
-    let mut balance_report = Report::new(BALANCE_FILE);
-    let balance = sources
-        .balance
-        .map(|text| read_balance(text, &mut balance_report))
-        .unwrap_or_default();
-    let mut characters_report = Report::new(CHARACTERS_FILE);
-    let characters = sources
-        .characters
-        .map(|text| read_characters(text, &mut characters_report))
-        .unwrap_or_default();
+    let mut reports = Vec::new();
+    let balance = read_file(BALANCE_FILE, sources.balance, &mut reports, read_balance);
+    let factions = read_file(
+        FACTIONS_FILE,
+        sources.factions,
+        &mut reports,
+        |text, report| read_tables(text, report, "faction", FactionId::new, read_faction),
+    );
+    let characters = read_file(
+        CHARACTERS_FILE,
+        sources.characters,
+        &mut reports,
+        |text, report| read_tables(text, report, "character", CharacterId::new, read_character),
+    );
+    let actions = read_file(
+        ACTIONS_FILE,
+        sources.actions,
+        &mut reports,
+        |text, report| {
+            read_tables(
+                text,
+                report,
+                "action",
+                ActionId::new,
+                |id, fields, report| Some(read_action(id, fields, report)),
+            )
+        },
+    );
+    let content = Content {
+        balance: balance.unwrap_or_default(),
+        factions: factions.unwrap_or_default(),
+        characters: characters.unwrap_or_default(),
+        actions: actions.unwrap_or_default(),
+    };
 
-    let mut actions_report = Report::new(ACTIONS_FILE);
-    let actions = sources
-        .actions
-        .map(|text| read_actions(text, &mut actions_report))
-        .unwrap_or_default();
-
-    let diagnostics: Vec<Diagnostic> = [balance_report, characters_report, actions_report]
+    let mut diagnostics: Vec<Diagnostic> = reports
         .into_iter()
         .flat_map(|report| report.diagnostics)
         .collect();
+    diagnostics.extend(content.problems().iter().map(|problem| match problem {
+        ContentProblem::SharedId(id) => Diagnostic {
+            file: FACTIONS_FILE.to_owned(),
+            key: Some(id.to_string()),
+            message: problem.to_string(),
+        },
+    }));
     if diagnostics.is_empty() {
-        Ok(Content {
-            balance,
-            characters,
-            actions,
-        })
+        Ok(content)
     } else {
         Err(ContentError { diagnostics })
     }
+}
+
+/// Reads one file, if it's there, keeping its report; `None` for a missing file.
+fn read_file<T>(
+    file: &'static str,
+    text: Option<&str>,
+    reports: &mut Vec<Report>,
+    reader: impl FnOnce(&str, &mut Report) -> T,
+) -> Option<T> {
+    let mut report = Report::new(file);
+    let read = reader(text?, &mut report);
+    reports.push(report);
+    Some(read)
 }
 
 /// `balance.toml`: world-wide rules and defaults; anything left out keeps its default.
@@ -130,20 +170,46 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
                 );
             }
         }
+        if let Some(key) = alignment.optional_text("metric", report) {
+            match Metric::from_key(&key) {
+                Some(metric) => balance.metric = metric,
+                None => {
+                    let keys = Metric::ALL.map(Metric::key);
+                    let message = match suggest(&key, keys) {
+                        Some(close) => format!("unknown metric '{key}' (did you mean '{close}'?)"),
+                        None => format!(
+                            "unknown metric '{key}': use {}, {} or {}",
+                            keys[0], keys[1], keys[2]
+                        ),
+                    };
+                    report.error(&alignment.path_to("metric"), message);
+                }
+            }
+        }
+        if let Some(weights) = read_weights(&mut alignment, "default_weights", report) {
+            balance.default_weights = weights;
+        }
         alignment.finish(report);
     }
     file.finish(report);
     balance
 }
 
-/// `characters.toml`: one table per character, keyed by id.
-fn read_characters(text: &str, report: &mut Report) -> BTreeMap<CharacterId, Character> {
-    let mut characters = BTreeMap::new();
+/// A file of tables keyed by id, such as `characters.toml`: each entry's id is checked, and
+/// its fields are read by `read`. An entry with problems is reported and left out.
+fn read_tables<Id: Ord + Clone, T>(
+    text: &str,
+    report: &mut Report,
+    kind: &str,
+    new_id: impl Fn(&str) -> Result<Id, InvalidId>,
+    read: impl Fn(Id, &toml::Table, &mut Report) -> Option<T>,
+) -> BTreeMap<Id, T> {
+    let mut entries = BTreeMap::new();
     let Some(table) = report.parse(text) else {
-        return characters;
+        return entries;
     };
     for (key, value) in &table {
-        let id = match CharacterId::new(key) {
+        let id = match new_id(key) {
             Ok(id) => id,
             Err(invalid) => {
                 report.error(key, invalid.to_string());
@@ -153,72 +219,91 @@ fn read_characters(text: &str, report: &mut Report) -> BTreeMap<CharacterId, Cha
         let Value::Table(fields) = value else {
             report.error(
                 key,
-                format!("expected a table of character fields, like [{key}]"),
+                format!("expected a table of {kind} fields, like [{key}]"),
             );
             continue;
         };
-        if let Some(character) = read_character(id, fields, report) {
-            characters.insert(character.id.clone(), character);
+        if let Some(entry) = read(id.clone(), fields, report) {
+            entries.insert(id, entry);
         }
     }
-    characters
+    entries
 }
 
+/// One character in `characters.toml`.
 fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) -> Option<Character> {
     let mut section = Section::new(fields, id.to_string());
     let name = section.text("name", report);
-    let alignment = section
-        .table("alignment", "{ law = 0.0, good = 0.0 }", report)
-        .and_then(|mut axes| {
-            let law = axes.fixed("law", report);
-            let good = axes.fixed("good", report);
-            let alignment = match (law, good) {
-                (Some(law), Some(good)) => match Alignment::new(law, good) {
-                    Ok(alignment) => Some(alignment),
-                    Err(out_of_range) => {
-                        for problem in out_of_range {
-                            report.error(&axes.path_to(problem.axis.key()), problem.to_string());
-                        }
-                        None
-                    }
-                },
-                _ => None,
-            };
-            axes.finish(report);
-            alignment
-        });
+    let alignment = read_alignment(&mut section, report);
+    let weights = read_weights(&mut section, "weights", report);
     section.finish(report);
     Some(Character {
         id,
         name: name?,
         alignment: alignment?,
+        weights,
     })
 }
 
-/// `actions.toml`: the action catalogue, one table per action, keyed by id.
-fn read_actions(text: &str, report: &mut Report) -> BTreeMap<ActionId, Action> {
-    let mut actions = BTreeMap::new();
-    let Some(table) = report.parse(text) else {
-        return actions;
-    };
-    for (key, value) in &table {
-        let id = match ActionId::new(key) {
-            Ok(id) => id,
-            Err(invalid) => {
-                report.error(key, invalid.to_string());
-                continue;
+/// One faction in `factions.toml`.
+fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Option<Faction> {
+    let mut section = Section::new(fields, id.to_string());
+    let name = section.text("name", report);
+    let alignment = read_alignment(&mut section, report);
+    let weights = read_weights(&mut section, "weights", report);
+    section.finish(report);
+    Some(Faction {
+        id,
+        name: name?,
+        alignment: alignment?,
+        weights,
+    })
+}
+
+/// A required `alignment = { law = …, good = … }`, with both axes in range.
+fn read_alignment(section: &mut Section<'_>, report: &mut Report) -> Option<Alignment> {
+    let mut axes = section.table("alignment", "{ law = 0.0, good = 0.0 }", report)?;
+    let law = axes.fixed("law", report);
+    let good = axes.fixed("good", report);
+    let alignment = match Alignment::new(law?, good?) {
+        Ok(alignment) => Some(alignment),
+        Err(out_of_range) => {
+            for problem in out_of_range {
+                report.error(&axes.path_to(problem.axis.key()), problem.to_string());
             }
-        };
-        let Value::Table(fields) = value else {
-            report.error(
-                key,
-                format!("expected a table of action fields, like [{key}]"),
-            );
-            continue;
-        };
-        actions.insert(id.clone(), read_action(id, fields, report));
-    }
-    actions
+            None
+        }
+    };
+    axes.finish(report);
+    alignment
+}
+
+/// Optional weights under `key`, such as `weights = { law = 1.0, good = 0.25 }`: both axes,
+/// each 0.00–1.00, at least one above 0. `None` when they're left out, or wrong; anything
+/// wrong is reported, which fails the whole load.
+fn read_weights(
+    section: &mut Section<'_>,
+    key: &'static str,
+    report: &mut Report,
+) -> Option<Weights> {
+    let mut axes = section.optional_table(key, "{ law = 1.0, good = 1.0 }", report)?;
+    let law = axes.fixed("law", report);
+    let good = axes.fixed("good", report);
+    let weights = match Weights::new(law?, good?) {
+        Ok(weights) => Some(weights),
+        Err(problems) => {
+            for problem in problems {
+                let path = match problem {
+                    WeightProblem::OutOfRange { axis, .. } => axes.path_to(axis.key()),
+                    WeightProblem::AllZero => axes.path().to_owned(),
+                };
+                report.error(&path, problem.to_string());
+            }
+            None
+        }
+    };
+    axes.finish(report);
+    weights
 }
 
 /// One action. Its `alignment` and each axis in it may be left out: an act needn't touch
@@ -270,7 +355,7 @@ pub fn parse_curve(text: &str) -> Result<Curve, String> {
 mod tests {
     use super::*;
     use factional_core::Fixed;
-    use factional_reputation::CharacterId;
+    use factional_reputation::{CharacterId, FactionId, Metric, Weights};
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
@@ -286,6 +371,13 @@ mod tests {
     fn actions(text: &str) -> Result<Content, ContentError> {
         parse_content(Sources {
             actions: Some(text),
+            ..Sources::default()
+        })
+    }
+
+    fn factions(text: &str) -> Result<Content, ContentError> {
+        parse_content(Sources {
+            factions: Some(text),
             ..Sources::default()
         })
     }
@@ -332,6 +424,7 @@ mod tests {
         let content = parse_content(Sources::default()).expect("valid content");
         assert_eq!(content.balance.label_threshold, h(33_00));
         assert!(content.characters.is_empty());
+        assert!(content.factions.is_empty());
         assert!(content.actions.is_empty());
     }
 
@@ -342,9 +435,53 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_metric_and_default_weights() {
+        let content = balance(
+            "[alignment]\nmetric = \"manhattan\"\ndefault_weights = { law = 0.5, good = 1.0 }",
+        )
+        .expect("valid content");
+        assert_eq!(content.balance.metric, Metric::Manhattan);
+        assert_eq!(
+            content.balance.default_weights,
+            Weights::new(h(50), h(1_00)).expect("valid")
+        );
+        for metric in ["euclidean", "chebyshev"] {
+            let content =
+                balance(&format!("[alignment]\nmetric = \"{metric}\"")).expect("valid content");
+            assert_eq!(content.balance.metric.key(), metric);
+        }
+    }
+
+    #[test]
+    fn reports_an_unknown_metric() {
+        assert_eq!(
+            problems(balance("[alignment]\nmetric = \"euclidian\"")),
+            [
+                "balance.toml: alignment.metric: unknown metric 'euclidian' (did you mean 'euclidean'?)"
+            ]
+        );
+        assert_eq!(
+            problems(balance("[alignment]\nmetric = \"cosine\"")),
+            [
+                "balance.toml: alignment.metric: unknown metric 'cosine': use euclidean, manhattan or chebyshev"
+            ]
+        );
+        assert_eq!(
+            problems(balance("[alignment]\nmetric = 2")),
+            ["balance.toml: alignment.metric: expected text in quotes"]
+        );
+        assert_eq!(
+            problems(balance(
+                "[alignment]\ndefault_weights = { law = 0.0, good = 0.0 }"
+            )),
+            ["balance.toml: alignment.default_weights: at least one weight must be above 0.00"]
+        );
+    }
+
+    #[test]
     fn an_empty_alignment_section_keeps_the_default_threshold() {
         let content = balance("[alignment]").expect("valid content");
-        assert_eq!(content.balance.label_threshold, h(33_00));
+        assert_eq!(content.balance, Balance::default());
     }
 
     // Mistakes in characters.toml
@@ -439,6 +576,122 @@ mod tests {
         assert!(
             found[0].starts_with("characters.toml: line 2: "),
             "{found:?}"
+        );
+    }
+
+    // factions.toml
+
+    const WATCH: &str = r#"
+        [city_watch]
+        name = "The City Watch"
+        alignment = { law = 70.0, good = 20.0 }
+        weights = { law = 1.0, good = 0.25 }
+    "#;
+
+    #[test]
+    fn reads_factions_with_their_weights() {
+        let text = format!(
+            "{WATCH}\n[free_company]\nname = \"The Free Company\"\nalignment = {{ law = -10.0, good = 0.0 }}"
+        );
+        let content = factions(&text).expect("valid content");
+        let watch = &content.factions[&FactionId::new("city_watch").expect("valid id")];
+        assert_eq!(watch.name, "The City Watch");
+        assert_eq!(
+            (watch.alignment.law(), watch.alignment.good()),
+            (h(70_00), h(20_00))
+        );
+        assert_eq!(
+            watch.weights,
+            Some(Weights::new(h(1_00), h(25)).expect("valid"))
+        );
+        let company = &content.factions[&FactionId::new("free_company").expect("valid id")];
+        assert_eq!(company.weights, None, "no weights of its own");
+    }
+
+    #[test]
+    fn reports_mistakes_in_a_faction() {
+        let text = r#"
+            guild = 3
+
+            ["Lantern Guild"]
+            name = "The Lantern Guild"
+
+            [temple]
+            alignment = { law = 30.0, good = 180.0 }
+            tolerance = 35.0
+
+            [watch]
+            name = "The Watch"
+            alignment = { law = 70.0, good = 20.0 }
+            weights = { law = 1.5, good = 0.25 }
+        "#;
+        assert_eq!(
+            problems(factions(text)),
+            [
+                "factions.toml: Lantern Guild: 'Lantern Guild' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "factions.toml: guild: expected a table of faction fields, like [guild]",
+                "factions.toml: temple: missing 'name'",
+                "factions.toml: temple.alignment.good: 180.00 is outside -100.00..100.00",
+                "factions.toml: temple: unknown key 'tolerance'",
+                "factions.toml: watch.weights.law: 1.50 must be between 0.00 and 1.00",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_weights_that_count_for_nothing_or_miss_an_axis() {
+        assert_eq!(
+            problems(factions(
+                &WATCH.replace("law = 1.0, good = 0.25", "law = 0, good = 0.0")
+            )),
+            ["factions.toml: city_watch.weights: at least one weight must be above 0.00"]
+        );
+        assert_eq!(
+            problems(factions(
+                &WATCH.replace("law = 1.0, good = 0.25", "law = 1.0")
+            )),
+            ["factions.toml: city_watch.weights: missing 'good'"]
+        );
+        assert_eq!(
+            problems(factions(&WATCH.replace("weights = {", "weights = 1 #"))),
+            ["factions.toml: city_watch.weights: expected a table, like { law = 1.0, good = 1.0 }"]
+        );
+    }
+
+    #[test]
+    fn reads_a_characters_own_weights() {
+        let text = format!("{VEX}weights = {{ law = 0.5, good = 1.0 }}");
+        let content = characters(&text).expect("valid content");
+        let vex = &content.characters[&CharacterId::new("vex").expect("valid id")];
+        assert_eq!(
+            vex.weights,
+            Some(Weights::new(h(50), h(1_00)).expect("valid"))
+        );
+        let plain = characters(VEX).expect("valid content");
+        assert_eq!(
+            plain.characters[&CharacterId::new("vex").expect("valid id")].weights,
+            None
+        );
+        assert_eq!(
+            problems(characters(&format!(
+                "{VEX}weights = {{ law = -0.5, good = 1.0 }}"
+            ))),
+            ["characters.toml: vex.weights.law: -0.50 must be between 0.00 and 1.00"]
+        );
+    }
+
+    #[test]
+    fn a_faction_and_a_character_cannot_share_an_id() {
+        let found = problems(parse_content(Sources {
+            factions: Some(&WATCH.replace("[city_watch]", "[vex]")),
+            characters: Some(VEX),
+            ..Sources::default()
+        }));
+        assert_eq!(
+            found,
+            [
+                "factions.toml: vex: 'vex' is also a character's id: factions and characters need different ids"
+            ]
         );
     }
 
@@ -574,11 +827,13 @@ mod tests {
                 "[zed]\nalignment = { law = 0.0, good = 0.0 }\n[abe]\nname = 1\nalignment = { law = 0.0, good = 0.0 }",
             ),
             actions: Some("[steal]\nalignment = { evil = 3.0 }"),
+            factions: Some("[watch]\nname = \"The Watch\""),
         }));
         assert_eq!(
             found,
             [
                 "balance.toml: alignment.label_threshold: 0.00 must be between 0.01 and 100.00",
+                "factions.toml: watch: missing 'alignment'",
                 "characters.toml: abe.name: expected text in quotes",
                 "characters.toml: zed: missing 'name'",
                 "actions.toml: steal.alignment: unknown key 'evil'",

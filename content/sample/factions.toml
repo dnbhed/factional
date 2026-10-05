@@ -1,0 +1,36 @@
+# Riverhold's factions (DESIGN.md §9, §13).
+#
+# Each [table] is one faction; its name is the id you type in the CLI. Factions and
+# characters share one set of ids, so no faction may have a character's id.
+#
+# alignment: where the faction stands, on the same axes as characters (-100 to 100).
+# weights:   how much the faction cares about each axis when judging how far away someone
+#            is, 0 to 1, with at least one above 0. Leave it out to use balance.toml's
+#            default_weights.
+
+[city_watch]
+name = "The City Watch"
+alignment = { law = 70.0, good = 20.0 }
+# Cares about order far more than kindness.
+weights = { law = 1.0, good = 0.25 }
+
+[temple]
+name = "Temple of the Dawn"
+alignment = { law = 30.0, good = 80.0 }
+weights = { law = 0.5, good = 1.0 }
+
+[lantern_guild]
+name = "The Lantern Guild"
+alignment = { law = -60.0, good = -10.0 }
+weights = { law = 1.0, good = 0.5 }
+
+[free_company]
+name = "The Free Company"
+alignment = { law = -10.0, good = 0.0 }
+# Mercenaries barely care about either axis, so almost anyone seems close.
+weights = { law = 0.25, good = 0.25 }
+
+[ashen_circle]
+name = "The Ashen Circle"
+alignment = { law = 20.0, good = -80.0 }
+weights = { law = 0.25, good = 1.0 }

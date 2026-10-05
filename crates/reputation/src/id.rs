@@ -62,6 +62,11 @@ id_type!(
     ActionId
 );
 
+id_type!(
+    /// A faction's id, such as `city_watch`. Factions and characters share one set of ids.
+    FactionId
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;

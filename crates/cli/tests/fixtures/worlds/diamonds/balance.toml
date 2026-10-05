@@ -1,0 +1,4 @@
+# A world that measures distance by adding the two weighted gaps: tolerance regions are
+# diamonds.
+[alignment]
+metric = "manhattan"

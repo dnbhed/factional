@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use factional_core::{Fixed, ParseFixedError, suggest};
 use factional_reputation::{
-    ActionId, Alignment, Change, Character, CharacterId, Command, Event, Witnesses, World,
+    ActionId, Alignment, Axis, Change, Character, CharacterId, Command, Event, Faction, Observer,
+    WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -18,6 +19,12 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "show character <id>",
         "a character's alignment and its label",
+    ),
+    ("factions", "list the factions"),
+    ("show faction <id>", "a faction's alignment and its label"),
+    (
+        "distance <observer> <subject> [--explain]",
+        "how far <subject> is from <observer>, a faction or character, as the observer sees it",
     ),
     (
         "actions",
@@ -131,6 +138,8 @@ impl Session {
             "load" => Ok(self.load(rest)),
             "characters" => Ok(self.characters()),
             "show" => Ok(self.show(rest)),
+            "factions" => Ok(self.factions()),
+            "distance" => Ok(self.distance(rest)),
             "actions" => Ok(self.actions()),
             "act" => Ok(self.act(rest)),
             "advance" => Ok(self.advance(rest)),
@@ -176,8 +185,17 @@ impl Session {
                 } else {
                     "characters"
                 };
-                self.world = Some(World::new(content));
-                Outcome::Output(format!("loaded {count} {noun} from {dir}"))
+                match World::new(content) {
+                    Ok(world) => {
+                        self.world = Some(world);
+                        Outcome::Output(format!("loaded {count} {noun} from {dir}"))
+                    }
+                    // The loader reports every problem a world would refuse, so this means
+                    // the two disagree: show it rather than hide it.
+                    Err(problems) => {
+                        Outcome::Error(lines(problems.iter().map(ToString::to_string)))
+                    }
+                }
             }
             Err(error) => Outcome::Error(error.to_string()),
         }
@@ -199,29 +217,126 @@ impl Session {
 
     /// `show character <id>`.
     fn show(&self, args: &str) -> Outcome {
-        let ["character", id] = args.split_whitespace().collect::<Vec<_>>()[..] else {
-            return Outcome::Error("show needs the form: show character <id>".to_owned());
+        let (kind, id) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [kind @ ("character" | "faction"), id] => (kind, id),
+            _ => {
+                return Outcome::Error(
+                    "show needs the form: show character <id>, or show faction <id>".to_owned(),
+                );
+            }
         };
         let Some(world) = &self.world else {
             return no_world();
         };
-        match world
-            .characters()
-            .find(|character| character.id.as_str() == id)
-        {
-            Some(character) => Outcome::Output(describe(world, character)),
+        let found = if kind == "character" {
+            world
+                .characters()
+                .find(|character| character.id.as_str() == id)
+                .map(|character| describe(world, character))
+        } else {
+            world
+                .factions()
+                .find(|faction| faction.id.as_str() == id)
+                .map(|faction| describe_faction(world, faction))
+        };
+        match found {
+            Some(line) => Outcome::Output(line),
             None => {
-                let ids = world.characters().map(|character| character.id.as_str());
-                let hint = suggest(id, ids)
-                    .map(|close| format!(" (did you mean '{close}'?)"))
-                    .unwrap_or_default();
-                Outcome::Error(format!("unknown character '{id}'{hint}"))
+                let ids: Vec<&str> = if kind == "character" {
+                    world.characters().map(|c| c.id.as_str()).collect()
+                } else {
+                    world.factions().map(|f| f.id.as_str()).collect()
+                };
+                Outcome::Error(format!("unknown {kind} '{id}'{}", hint(id, ids)))
             }
         }
     }
 }
 
 impl Session {
+    /// `factions`: every faction, one per line, in id order.
+    fn factions(&self) -> Outcome {
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        Outcome::Output(lines(
+            world
+                .factions()
+                .map(|faction| describe_faction(world, faction)),
+        ))
+    }
+
+    /// `distance <observer> <subject> [--explain]`: how far the subject is from the observer,
+    /// and with `--explain`, the working the engine returned.
+    fn distance(&self, args: &str) -> Outcome {
+        let (observer, subject, explain) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [observer, subject] => (observer, subject, false),
+            [observer, subject, "--explain"] => (observer, subject, true),
+            _ => {
+                return Outcome::Error(
+                    "distance needs the form: distance <observer> <subject> [--explain]".to_owned(),
+                );
+            }
+        };
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let faction_ids = || world.factions().map(|faction| faction.id.as_str());
+        let character_ids = || world.characters().map(|character| character.id.as_str());
+        let as_observer =
+            if let Some(faction) = world.factions().find(|f| f.id.as_str() == observer) {
+                Observer::Faction(faction.id.clone())
+            } else if let Some(character) = world.characters().find(|c| c.id.as_str() == observer) {
+                Observer::Character(character.id.clone())
+            } else {
+                let ids: Vec<&str> = faction_ids().chain(character_ids()).collect();
+                return Outcome::Error(format!(
+                    "unknown observer '{observer}'{}",
+                    hint(observer, ids)
+                ));
+            };
+        let Some(as_subject) = world.characters().find(|c| c.id.as_str() == subject) else {
+            if faction_ids().any(|id| id == subject) {
+                return Outcome::Error("a distance's subject must be a character".to_owned());
+            }
+            let ids: Vec<&str> = character_ids().collect();
+            return Outcome::Error(format!("unknown subject '{subject}'{}", hint(subject, ids)));
+        };
+        let measured = world
+            .distance(&as_observer, &as_subject.id)
+            .expect("both were found above");
+        if !explain {
+            return Outcome::Output(measured.value.to_string());
+        }
+        let axis_line = |axis: Axis| {
+            format!(
+                "{}: {} vs {}, gap {}, weight {}",
+                axis.key(),
+                measured.observer.on(axis),
+                measured.subject.on(axis),
+                measured.gap(axis),
+                measured.weights.on(axis)
+            )
+        };
+        let weights = match measured.weights_from {
+            WeightsFrom::Own => format!("{observer}'s own"),
+            WeightsFrom::Default => "the default (alignment.default_weights)".to_owned(),
+        };
+        Outcome::Output(
+            [
+                format!(
+                    "{observer} → {subject}: {} ({})",
+                    measured.value,
+                    measured.metric.key()
+                ),
+                axis_line(Axis::Law),
+                axis_line(Axis::Good),
+                format!("weights: {weights}"),
+            ]
+            .join("\n"),
+        )
+    }
+
     /// `actions`: the action catalogue, in id order.
     fn actions(&self) -> Outcome {
         let Some(world) = &self.world else {
@@ -429,6 +544,24 @@ fn lines(items: impl Iterator<Item = String>) -> String {
 
 fn no_world() -> Outcome {
     Outcome::Error("no world is loaded yet: use load <dir> first".to_owned())
+}
+
+/// One line about a faction: `temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good`.
+fn describe_faction(world: &World, faction: &Faction) -> String {
+    format!(
+        "{} — {} — {} — {}",
+        faction.id,
+        faction.name,
+        axes(faction.alignment),
+        faction.alignment.label(world.balance().label_threshold)
+    )
+}
+
+/// ` (did you mean 'x'?)` when one of `ids` is close to `word`; otherwise nothing.
+fn hint(word: &str, ids: Vec<&str>) -> String {
+    suggest(word, ids)
+        .map(|close| format!(" (did you mean '{close}'?)"))
+        .unwrap_or_default()
 }
 
 /// One line about a character as they are now:
@@ -719,11 +852,12 @@ mod tests {
     #[test]
     fn show_needs_a_kind_and_an_id() {
         let mut session = riverhold();
-        let usage = command_error("show needs the form: show character <id>");
+        let usage = command_error("show needs the form: show character <id>, or show faction <id>");
         for line in [
             "show",
             "show character",
-            "show faction vex",
+            "show faction",
+            "show rank vex",
             "show character vex hale",
         ] {
             assert_eq!(session.execute(line), usage, "{line}");
@@ -1020,6 +1154,138 @@ mod tests {
         assert_eq!(run("act player steal"), none);
     }
 
+    // Factions and distance
+
+    #[test]
+    fn factions_lists_every_faction_in_id_order() {
+        assert_eq!(
+            riverhold().execute("factions"),
+            output(
+                "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil\n\
+                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral\n\
+                 free_company — The Free Company — law -10.00, good 0.00 — True Neutral\n\
+                 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral\n\
+                 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good"
+            )
+        );
+    }
+
+    #[test]
+    fn show_faction_gives_its_alignment_and_label() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("show faction temple"),
+            output("temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good")
+        );
+        assert_eq!(
+            session.execute("show faction city_wach"),
+            command_error("unknown faction 'city_wach' (did you mean 'city_watch'?)")
+        );
+    }
+
+    #[test]
+    fn distance_is_measured_with_the_observers_weights() {
+        let mut session = riverhold();
+        for (line, expected) in [
+            ("distance city_watch player", "70.18"),
+            ("distance temple sister_mira", "5.59"),
+            ("distance captain_hale player", "75.37"),
+            ("distance merchant_ava player", "22.36"),
+        ] {
+            assert_eq!(session.execute(line), output(expected), "{line}");
+        }
+    }
+
+    #[test]
+    fn distance_follows_the_subject_as_they_move() {
+        let mut session = riverhold();
+        session
+            .execute("act player steal --scale 2")
+            .expect("valid");
+        assert_eq!(
+            session.execute("distance lantern_guild player"),
+            output("50.04")
+        );
+        session
+            .execute("act player steal --scale 2")
+            .expect("valid");
+        assert_eq!(
+            session.execute("distance lantern_guild player"),
+            output("40.01")
+        );
+    }
+
+    #[test]
+    fn distance_explains_its_working() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("distance city_watch player --explain"),
+            output(
+                "city_watch → player: 70.18 (euclidean)\n\
+                 law: 70.00 vs 0.00, gap 70.00, weight 1.00\n\
+                 good: 20.00 vs 0.00, gap 20.00, weight 0.25\n\
+                 weights: city_watch's own"
+            )
+        );
+        assert_eq!(
+            session.execute("distance merchant_ava vex --explain"),
+            output(
+                "merchant_ava → vex: 80.78 (euclidean)\n\
+                 law: 20.00 vs -55.00, gap 75.00, weight 1.00\n\
+                 good: 10.00 vs -20.00, gap 30.00, weight 1.00\n\
+                 weights: the default (alignment.default_weights)"
+            )
+        );
+    }
+
+    #[test]
+    fn distance_reports_unknown_or_wrong_ids_and_bad_input() {
+        let mut session = riverhold();
+        for (line, message) in [
+            (
+                "distance city_wach player",
+                "unknown observer 'city_wach' (did you mean 'city_watch'?)",
+            ),
+            (
+                "distance captian_hale player",
+                "unknown observer 'captian_hale' (did you mean 'captain_hale'?)",
+            ),
+            (
+                "distance city_watch plyer",
+                "unknown subject 'plyer' (did you mean 'player'?)",
+            ),
+            ("distance city_watch nobody", "unknown subject 'nobody'"),
+            (
+                "distance player city_watch",
+                "a distance's subject must be a character",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(message), "{line}");
+        }
+        let usage =
+            command_error("distance needs the form: distance <observer> <subject> [--explain]");
+        for line in [
+            "distance",
+            "distance city_watch",
+            "distance city_watch player vex",
+            "distance city_watch player --explian",
+        ] {
+            assert_eq!(session.execute(line), usage, "{line}");
+        }
+    }
+
+    #[test]
+    fn faction_commands_need_a_loaded_world() {
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        for line in [
+            "factions",
+            "show faction temple",
+            "distance city_watch player",
+        ] {
+            assert_eq!(run(line), none, "{line}");
+        }
+    }
+
     #[test]
     fn curve_gives_a_curves_value_at_a_point() {
         assert_eq!(
@@ -1074,6 +1340,9 @@ mod tests {
             "load <dir>",
             "characters",
             "show character <id>",
+            "factions",
+            "show faction <id>",
+            "distance <observer> <subject> [--explain]",
             "actions",
             "act <actor> <action> [--target <id>] [--scale <n>]",
             "advance <ticks>",

@@ -1,0 +1,44 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/distance.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> factions
+ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil
+city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral
+free_company — The Free Company — law -10.00, good 0.00 — True Neutral
+lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral
+temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good
+> assert show faction temple == temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good
+> distance city_watch player --explain
+city_watch → player: 70.18 (euclidean)
+law: 70.00 vs 0.00, gap 70.00, weight 1.00
+good: 20.00 vs 0.00, gap 20.00, weight 0.25
+weights: city_watch's own
+> assert distance temple sister_mira == 5.59
+> assert distance captain_hale player == 75.37
+> distance merchant_ava player --explain
+merchant_ava → player: 22.36 (euclidean)
+law: 20.00 vs 0.00, gap 20.00, weight 1.00
+good: 10.00 vs 0.00, gap 10.00, weight 1.00
+weights: the default (alignment.default_weights)
+> act player steal --scale 2
+#1 at tick 0: player did steal, at scale 2.00
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -10.00, good -6.00
+> assert distance lantern_guild player == 50.04
+> act player steal --scale 2
+#3 at tick 0: player did steal, at scale 2.00
+#4 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -20.00, good -12.00
+> assert distance lantern_guild player == 40.01
+> assert distance city_wach player == error: unknown observer 'city_wach' (did you mean 'city_watch'?)
+> assert distance city_watch plyer == error: unknown subject 'plyer' (did you mean 'player'?)
+> assert distance player city_watch == error: a distance's subject must be a character
+> load crates/cli/tests/fixtures/worlds/diamonds
+loaded 1 character from crates/cli/tests/fixtures/worlds/diamonds
+> distance city_watch player --explain
+city_watch → player: 75.00 (manhattan)
+law: 70.00 vs 0.00, gap 70.00, weight 1.00
+good: 20.00 vs 0.00, gap 20.00, weight 0.25
+weights: city_watch's own
