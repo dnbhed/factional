@@ -1,0 +1,714 @@
+{
+  "$defs": {
+    "bands": {
+      "description": "Names for ranges of values, lowest first: a value lands in the first band whose up_to it doesn't exceed.",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "The band's name, an id such as neutral.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "up_to": {
+            "description": "The highest value in the band; the last band has none.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "conditions": {
+      "additionalProperties": false,
+      "description": "The conditions, all of which must hold; left out, the rule always applies.",
+      "properties": {
+        "closer_to_target": {
+          "description": "Whether you're nearer the faction you're joining than the one you're leaving.",
+          "type": "boolean"
+        },
+        "outside_member_tolerance": {
+          "description": "Whether you've drifted past your tolerance in the faction you're leaving.",
+          "type": "boolean"
+        },
+        "rank_at_least": {
+          "description": "Your rung in the faction you're leaving is at least this: 1 the lowest, or in a faction's own tables, one of its rank ids.",
+          "oneOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            }
+          ]
+        },
+        "rank_below": {
+          "description": "Your rung in the faction you're leaving is below this: 1 the lowest, or in a faction's own tables, one of its rank ids.",
+          "oneOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            }
+          ]
+        },
+        "standing_with_current_at_least": {
+          "description": "Your standing with the faction you're leaving is at least this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "standing_with_current_below": {
+          "description": "Your standing with the faction you're leaving is below this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "standing_with_target_at_least": {
+          "description": "Your standing with the faction you're joining is at least this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "standing_with_target_below": {
+          "description": "Your standing with the faction you're joining is below this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "drift": {
+      "additionalProperties": false,
+      "description": "What a faction does when a member's alignment moves them past their member tolerance (DESIGN.md §9.3).",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "grace_ticks"
+              ]
+            },
+            {
+              "required": [
+                "then"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "policy": {
+            "const": "probation"
+          }
+        }
+      },
+      "properties": {
+        "grace_ticks": {
+          "description": "For probation: how long they have to come back.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "policy": {
+          "description": "What happens when a member drifts past their tolerance.",
+          "enum": [
+            "ignore",
+            "flag",
+            "demote",
+            "expel",
+            "probation"
+          ],
+          "type": "string"
+        },
+        "then": {
+          "description": "For probation: what happens if they're still out once the grace has passed.",
+          "enum": [
+            "demote",
+            "expel"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy"
+      ],
+      "then": {
+        "required": [
+          "grace_ticks",
+          "then"
+        ]
+      },
+      "type": "object"
+    },
+    "rule_tables": {
+      "properties": {
+        "defectors": {
+          "additionalProperties": false,
+          "description": "Does the faction joined take a member of its enemies? The last rule must have no conditions.",
+          "properties": {
+            "rules": {
+              "description": "Tried top to bottom until one whose conditions all hold.",
+              "items": {
+                "additionalProperties": false,
+                "else": {
+                  "not": {
+                    "required": [
+                      "reason"
+                    ]
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "then": {
+                      "const": "refuse"
+                    }
+                  }
+                },
+                "properties": {
+                  "reason": {
+                    "description": "When refusing: why.",
+                    "type": "string"
+                  },
+                  "standing_change": {
+                    "description": "When letting someone through: the standing it costs, -100 to 100.",
+                    "maximum": 100.0,
+                    "minimum": -100.0,
+                    "type": "number"
+                  },
+                  "then": {
+                    "description": "What the rule decides.",
+                    "enum": [
+                      "accept",
+                      "refuse"
+                    ],
+                    "type": "string"
+                  },
+                  "when": {
+                    "$ref": "#/$defs/conditions"
+                  }
+                },
+                "required": [
+                  "then"
+                ],
+                "then": {
+                  "not": {
+                    "required": [
+                      "standing_change"
+                    ]
+                  },
+                  "required": [
+                    "reason"
+                  ]
+                },
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "rules"
+          ],
+          "type": "object"
+        },
+        "deserters": {
+          "additionalProperties": false,
+          "description": "Does each enemy faction someone is in let them go? The last rule must have no conditions.",
+          "properties": {
+            "rules": {
+              "description": "Tried top to bottom until one whose conditions all hold.",
+              "items": {
+                "additionalProperties": false,
+                "else": {
+                  "not": {
+                    "required": [
+                      "reason"
+                    ]
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "then": {
+                      "const": "refuse"
+                    }
+                  }
+                },
+                "properties": {
+                  "reason": {
+                    "description": "When refusing: why.",
+                    "type": "string"
+                  },
+                  "standing_change": {
+                    "description": "When letting someone through: the standing it costs, -100 to 100.",
+                    "maximum": 100.0,
+                    "minimum": -100.0,
+                    "type": "number"
+                  },
+                  "then": {
+                    "description": "What the rule decides.",
+                    "enum": [
+                      "release",
+                      "refuse"
+                    ],
+                    "type": "string"
+                  },
+                  "when": {
+                    "$ref": "#/$defs/conditions"
+                  }
+                },
+                "required": [
+                  "then"
+                ],
+                "then": {
+                  "not": {
+                    "required": [
+                      "standing_change"
+                    ]
+                  },
+                  "required": [
+                    "reason"
+                  ]
+                },
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "rules"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "weights": {
+      "additionalProperties": false,
+      "description": "How much each axis counts when judging distance, 0 to 1, at least one above 0.",
+      "properties": {
+        "good": {
+          "description": "0 to 1.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "law": {
+          "description": "0 to 1.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "law",
+        "good"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "World-wide rules and defaults (DESIGN.md §12). Anything left out uses its default.",
+  "properties": {
+    "alignment": {
+      "additionalProperties": false,
+      "description": "Labels and distance.",
+      "properties": {
+        "default_weights": {
+          "$ref": "#/$defs/weights"
+        },
+        "label_threshold": {
+          "default": 33.0,
+          "description": "An axis at or beyond ± this reads as lawful or chaotic, good or evil. For display only.",
+          "maximum": 100.0,
+          "minimum": 0.01,
+          "type": "number"
+        },
+        "metric": {
+          "default": "euclidean",
+          "description": "How the weighted gaps on the two axes combine into one distance (DESIGN.md §6).",
+          "enum": [
+            "euclidean",
+            "manhattan",
+            "chebyshev"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "disposition": {
+      "additionalProperties": false,
+      "description": "How characters regard each other (DESIGN.md §8).",
+      "properties": {
+        "affinity": {
+          "description": "How alignment distance turns into liking, within -100 to 100 (DESIGN.md §8.1). A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+          "oneOf": [
+            {
+              "description": "y",
+              "maximum": 100.0,
+              "minimum": -100.0,
+              "type": "number"
+            },
+            {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "description": "x",
+                    "type": "number"
+                  },
+                  {
+                    "description": "y",
+                    "maximum": 100.0,
+                    "minimum": -100.0,
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ]
+        },
+        "bands": {
+          "$ref": "#/$defs/bands"
+        },
+        "hysteresis": {
+          "default": 0.0,
+          "description": "How far past a band's edge a watched score must go to leave the band.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "same_faction": {
+          "default": 50.0,
+          "description": "What sharing a faction counts for, in kinship.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "weights": {
+          "additionalProperties": false,
+          "description": "The weight of each part of a disposition.",
+          "properties": {
+            "affinity": {
+              "default": 1.0,
+              "description": "How much this part of a disposition counts.",
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "faction_opinion": {
+              "default": 0.5,
+              "description": "How much this part of a disposition counts.",
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "kinship": {
+              "default": 0.5,
+              "description": "How much this part of a disposition counts.",
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "modifiers": {
+              "default": 1.0,
+              "description": "How much this part of a disposition counts.",
+              "minimum": 0.0,
+              "type": "number"
+            },
+            "standing": {
+              "default": 1.0,
+              "description": "How much this part of a disposition counts.",
+              "minimum": 0.0,
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "inertia": {
+      "additionalProperties": false,
+      "description": "How hard alignment is to move (DESIGN.md §5.3).",
+      "properties": {
+        "default_profile": {
+          "default": "steady",
+          "description": "The profile of a character without their own.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "profiles": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "good": {
+                "additionalProperties": false,
+                "properties": {
+                  "toward_evil": {
+                    "description": "A multiplier read at the character's position before the act, at least 0; left out, 1. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+                    "oneOf": [
+                      {
+                        "description": "y",
+                        "minimum": 0.0,
+                        "type": "number"
+                      },
+                      {
+                        "items": {
+                          "maxItems": 2,
+                          "minItems": 2,
+                          "prefixItems": [
+                            {
+                              "description": "x",
+                              "type": "number"
+                            },
+                            {
+                              "description": "y",
+                              "minimum": 0.0,
+                              "type": "number"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "toward_good": {
+                    "description": "A multiplier read at the character's position before the act, at least 0; left out, 1. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+                    "oneOf": [
+                      {
+                        "description": "y",
+                        "minimum": 0.0,
+                        "type": "number"
+                      },
+                      {
+                        "items": {
+                          "maxItems": 2,
+                          "minItems": 2,
+                          "prefixItems": [
+                            {
+                              "description": "x",
+                              "type": "number"
+                            },
+                            {
+                              "description": "y",
+                              "minimum": 0.0,
+                              "type": "number"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              "law": {
+                "additionalProperties": false,
+                "properties": {
+                  "toward_chaotic": {
+                    "description": "A multiplier read at the character's position before the act, at least 0; left out, 1. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+                    "oneOf": [
+                      {
+                        "description": "y",
+                        "minimum": 0.0,
+                        "type": "number"
+                      },
+                      {
+                        "items": {
+                          "maxItems": 2,
+                          "minItems": 2,
+                          "prefixItems": [
+                            {
+                              "description": "x",
+                              "type": "number"
+                            },
+                            {
+                              "description": "y",
+                              "minimum": 0.0,
+                              "type": "number"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "toward_lawful": {
+                    "description": "A multiplier read at the character's position before the act, at least 0; left out, 1. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+                    "oneOf": [
+                      {
+                        "description": "y",
+                        "minimum": 0.0,
+                        "type": "number"
+                      },
+                      {
+                        "items": {
+                          "maxItems": 2,
+                          "minItems": 2,
+                          "prefixItems": [
+                            {
+                              "description": "x",
+                              "type": "number"
+                            },
+                            {
+                              "description": "y",
+                              "minimum": 0.0,
+                              "type": "number"
+                            }
+                          ],
+                          "type": "array"
+                        },
+                        "minItems": 1,
+                        "type": "array"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "description": "The profiles, by id; steady, where every act counts in full, is always there.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "membership": {
+      "additionalProperties": false,
+      "description": "Joining, leaving and drifting (DESIGN.md §9).",
+      "properties": {
+        "conflict": {
+          "additionalProperties": false,
+          "description": "How a war between two of someone's own factions is settled (DESIGN.md §9.4).",
+          "if": {
+            "properties": {
+              "resolve": {
+                "const": "auto"
+              }
+            }
+          },
+          "properties": {
+            "auto_after_ticks": {
+              "description": "With ask: settle automatically if nobody has within this many ticks.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "resolve": {
+              "description": "ask waits for the game to choose; auto settles straight away.",
+              "enum": [
+                "ask",
+                "auto"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "resolve"
+          ],
+          "then": {
+            "not": {
+              "required": [
+                "auto_after_ticks"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "default_drift": {
+          "$ref": "#/$defs/drift"
+        },
+        "defectors": {
+          "$ref": "#/$defs/rule_tables/properties/defectors"
+        },
+        "deserters": {
+          "$ref": "#/$defs/rule_tables/properties/deserters"
+        }
+      },
+      "type": "object"
+    },
+    "relations": {
+      "additionalProperties": false,
+      "description": "How factions regard each other (DESIGN.md §9.4).",
+      "properties": {
+        "bands": {
+          "$ref": "#/$defs/bands"
+        },
+        "conflict_threshold": {
+          "default": -50.0,
+          "description": "Two factions are in conflict when either regards the other at or below this.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "standing": {
+      "additionalProperties": false,
+      "description": "Standing.",
+      "properties": {
+        "spillover": {
+          "description": "How much of a standing change with one faction spills to another, by how that one regards the first, within -1 to 1 (DESIGN.md §7.1). A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+          "oneOf": [
+            {
+              "description": "y",
+              "maximum": 1.0,
+              "minimum": -1.0,
+              "type": "number"
+            },
+            {
+              "items": {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "description": "x",
+                    "type": "number"
+                  },
+                  {
+                    "description": "y",
+                    "maximum": 1.0,
+                    "minimum": -1.0,
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "title": "balance.toml",
+  "type": "object"
+}

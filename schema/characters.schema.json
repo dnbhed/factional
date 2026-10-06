@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "alignment": {
+      "additionalProperties": false,
+      "description": "Where they stand on the two axes.",
+      "properties": {
+        "good": {
+          "description": "Evil (-100) to good (100).",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "law": {
+          "description": "Chaotic (-100) to lawful (100).",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "law",
+        "good"
+      ],
+      "type": "object"
+    },
+    "character": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "$ref": "#/$defs/alignment"
+        },
+        "inertia": {
+          "description": "Their inertia profile, from balance.toml; left out, the default.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "memberships": {
+          "description": "The factions they start in.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "faction": {
+                "description": "The faction's id.",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "rank": {
+                "description": "A rank on its ladder; left out, the lowest.",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "faction"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "The character's name, as shown.",
+          "type": "string"
+        },
+        "standing": {
+          "$ref": "#/$defs/standing"
+        },
+        "weights": {
+          "$ref": "#/$defs/weights"
+        }
+      },
+      "required": [
+        "name",
+        "alignment"
+      ],
+      "type": "object"
+    },
+    "standing": {
+      "additionalProperties": false,
+      "description": "Standing, by faction or character id, -100 to 100.",
+      "properties": {
+        "characters": {
+          "additionalProperties": {
+            "description": "-100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "By character id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "factions": {
+          "additionalProperties": {
+            "description": "-100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "By faction id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "weights": {
+      "additionalProperties": false,
+      "description": "How much each axis counts when judging distance, 0 to 1, at least one above 0.",
+      "properties": {
+        "good": {
+          "description": "0 to 1.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "law": {
+          "description": "0 to 1.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "law",
+        "good"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "$ref": "#/$defs/character"
+  },
+  "description": "Everyone in the world, the player included, each a table keyed by their id (DESIGN.md §13).",
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "title": "characters.toml",
+  "type": "object"
+}

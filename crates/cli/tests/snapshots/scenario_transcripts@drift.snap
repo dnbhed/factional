@@ -5,6 +5,9 @@ input_file: scenarios/drift.scenario
 ---
 > load crates/cli/tests/fixtures/worlds/drift
 loaded 5 characters from crates/cli/tests/fixtures/worlds/drift
+warning: factions.toml: ashen_circle.tolerance: no one starts within The Ashen Circle's tolerance of 30.00: the nearest is ash, 40.00 away
+warning: factions.toml: city_watch.tolerance: no one starts within The City Watch's tolerance of 40.00: the nearest is oren, 40.20 away
+warning: factions.toml: lantern_guild.tolerance: no one starts within The Lantern Guild's tolerance of 45.00: the nearest is brann, 50.25 away
 > act nell report_crime
 #1 at tick 0: nell did report_crime
 #2 at tick 0: nell's alignment moved from law 0.00, good -10.00 to law 4.00, good -9.00

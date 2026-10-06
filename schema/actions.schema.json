@@ -1,0 +1,180 @@
+{
+  "$defs": {
+    "action": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "$ref": "#/$defs/delta"
+        },
+        "by_target": {
+          "additionalProperties": false,
+          "description": "How the act's alignment change depends on its target (DESIGN.md §5.4).",
+          "properties": {
+            "good": {
+              "description": "A multiplier read at the target's good, at least 0. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+              "oneOf": [
+                {
+                  "description": "y",
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "items": {
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "description": "x",
+                        "type": "number"
+                      },
+                      {
+                        "description": "y",
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              ]
+            },
+            "law": {
+              "description": "A multiplier read at the target's law, at least 0. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+              "oneOf": [
+                {
+                  "description": "y",
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "items": {
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "description": "x",
+                        "type": "number"
+                      },
+                      {
+                        "description": "y",
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              ]
+            },
+            "relation": {
+              "description": "A multiplier read at the most hostile relation from the actor's factions toward the target's, at least 0. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
+              "oneOf": [
+                {
+                  "description": "y",
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "items": {
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "description": "x",
+                        "type": "number"
+                      },
+                      {
+                        "description": "y",
+                        "minimum": 0.0,
+                        "type": "number"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "standing": {
+          "additionalProperties": false,
+          "description": "How the act changes others' regard for the actor.",
+          "properties": {
+            "characters": {
+              "additionalProperties": {
+                "description": "-100 to 100.",
+                "maximum": 100.0,
+                "minimum": -100.0,
+                "type": "number"
+              },
+              "description": "By character id.",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "type": "object"
+            },
+            "factions": {
+              "additionalProperties": {
+                "description": "-100 to 100.",
+                "maximum": 100.0,
+                "minimum": -100.0,
+                "type": "number"
+              },
+              "description": "By faction id.",
+              "propertyNames": {
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "type": "object"
+            },
+            "target": {
+              "description": "The change in the target's regard for the actor.",
+              "maximum": 100.0,
+              "minimum": -100.0,
+              "type": "number"
+            },
+            "target_factions": {
+              "description": "The change in the regard of each of the target's factions.",
+              "maximum": 100.0,
+              "minimum": -100.0,
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "delta": {
+      "additionalProperties": false,
+      "description": "The change to alignment.",
+      "properties": {
+        "good": {
+          "description": "How far it moves this axis; left out, it doesn't.",
+          "type": "number"
+        },
+        "law": {
+          "description": "How far it moves this axis; left out, it doesn't.",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "$ref": "#/$defs/action"
+  },
+  "description": "What characters can do, each a table keyed by its id: the act's effect on alignment and standing (DESIGN.md §5, §7).",
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "title": "actions.toml",
+  "type": "object"
+}

@@ -31,6 +31,15 @@ fn repl(input: &str) -> Output {
         .expect("the factional binary finishes")
 }
 
+/// Runs the binary from the repository's root, so paths are as a designer would type them.
+fn factional_in_repo(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_factional"))
+        .args(args)
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .output()
+        .expect("the factional binary runs")
+}
+
 fn fixture(name: &str) -> String {
     format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))
 }
@@ -140,4 +149,125 @@ fn repl_help_lists_the_commands() {
     let output = repl("help\n");
     assert!(output.status.success());
     assert!(text(&output.stdout).contains("assert <command> == <expected>"));
+}
+
+#[test]
+fn validate_summarises_a_world_that_loads_and_exits_zero() {
+    let output = factional_in_repo(&["validate", "content/sample"]);
+    assert!(output.status.success(), "stdout: {}", text(&output.stdout));
+    assert_eq!(
+        text(&output.stdout),
+        "content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 3 outcomes\n"
+    );
+    assert_eq!(text(&output.stderr), "");
+}
+
+#[test]
+fn validate_lists_every_problem_as_load_does_and_exits_one() {
+    let dir = "crates/cli/tests/fixtures/worlds/broken";
+    let output = factional_in_repo(&["validate", dir]);
+    assert_eq!(output.status.code(), Some(1));
+    let mut session = factional_cli::Session::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let Ok(factional_cli::Outcome::Error(problems)) = session.execute(&format!("load {dir}"))
+    else {
+        panic!("the broken world doesn't load");
+    };
+    let mut expected: String = problems
+        .lines()
+        .map(|problem| format!("error: {problem}\n"))
+        .collect();
+    expected.push_str(&format!("{dir} doesn't load: 3 problems\n"));
+    assert_eq!(text(&output.stdout), expected);
+    assert!(
+        expected.contains(
+            "error: characters.toml: vex.alignment.law: 120.00 is outside -100.00..100.00\n"
+        ),
+        "{expected}"
+    );
+}
+
+#[test]
+fn validate_reports_a_directory_it_cannot_read() {
+    let output = factional_in_repo(&["validate", "no/such/world"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = text(&output.stdout);
+    assert!(
+        stdout.starts_with("error: no/such/world: cannot read the directory: "),
+        "{stdout}"
+    );
+    assert!(
+        stdout.ends_with("\nno/such/world doesn't load: 1 problem\n"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn validate_prints_warnings_but_still_exits_zero() {
+    let dir = "crates/cli/tests/fixtures/worlds/reformed";
+    let output = factional_in_repo(&["validate", dir]);
+    assert!(output.status.success(), "stdout: {}", text(&output.stdout));
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00\n\
+             warning: factions.toml: lantern_guild.tolerance: no one starts within The Lantern Guild's tolerance of 45.00: the nearest is vex, 95.52 away\n\
+             {dir} loads, with 2 warnings: 1 character, 1 faction, 0 actions, 0 relations and 0 outcomes\n"
+        )
+    );
+}
+
+#[test]
+fn validate_warns_of_a_faction_no_one_starts_within_tolerance_of() {
+    let dir = "crates/cli/tests/fixtures/worlds/lonely";
+    let output = factional_in_repo(&["validate", dir]);
+    assert!(output.status.success(), "stdout: {}", text(&output.stdout));
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "warning: factions.toml: ashen_circle.tolerance: no one starts within The Ashen Circle's tolerance of 30.00: the nearest is vex, 50.00 away\n\
+             {dir} loads, with 1 warning: 3 characters, 2 factions, 0 actions, 0 relations and 0 outcomes\n"
+        )
+    );
+}
+
+#[test]
+fn schema_prints_a_files_json_schema() {
+    let output = factional(&["schema", "factions"]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    assert_eq!(
+        Some(stdout.clone()),
+        factional_content::schema_text("factions")
+    );
+    let schema: serde_json::Value = serde_json::from_str(&stdout).expect("JSON");
+    assert!(jsonschema::meta::is_valid(&schema), "valid JSON Schema");
+    assert_eq!(
+        schema.pointer("/$defs/drift/properties/policy/enum"),
+        Some(&serde_json::json!([
+            "ignore",
+            "flag",
+            "demote",
+            "expel",
+            "probation"
+        ]))
+    );
+}
+
+#[test]
+fn schema_without_a_file_lists_the_files() {
+    let output = factional(&["schema"]);
+    assert!(output.status.success());
+    assert_eq!(
+        text(&output.stdout),
+        "balance\nfactions\ncharacters\nactions\nrelations\noutcomes\n"
+    );
+}
+
+#[test]
+fn schema_refuses_a_file_that_isnt_content() {
+    let output = factional(&["schema", "factionz"]);
+    assert!(!output.status.success());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("invalid value 'factionz'"), "{stderr}");
+    assert!(stderr.contains("factions"), "{stderr}");
 }

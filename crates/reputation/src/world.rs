@@ -306,6 +306,15 @@ pub enum ContentWarning {
         tolerance: Fixed,
         member_tolerance: Fixed,
     },
+    /// A faction no starting character is within joining tolerance of, so no one could join
+    /// it at the start. `nearest` is the closest character and their distance; `None` if
+    /// there are no characters.
+    NoOneWithinTolerance {
+        faction: FactionId,
+        faction_name: String,
+        tolerance: Fixed,
+        nearest: Option<(CharacterId, Fixed)>,
+    },
 }
 
 impl Content {
@@ -683,7 +692,8 @@ impl Content {
     }
 
     /// Everything probably not meant, for content with no problems: each character's
-    /// memberships, then each faction's ranks.
+    /// memberships, then each faction: whether anyone starts within its tolerance, then its
+    /// ranks.
     pub fn warnings(&self) -> Vec<ContentWarning> {
         let balance = &self.balance;
         let mut warnings = Vec::new();
@@ -734,6 +744,34 @@ impl Content {
             }
         }
         for faction in self.factions.values() {
+            let weights = faction.weights.unwrap_or(balance.default_weights);
+            let tolerance = faction.tolerances.tolerance();
+            let mut nearest: Option<(CharacterId, Fixed)> = None;
+            for character in self.characters.values() {
+                let distance = measure(
+                    faction.alignment,
+                    character.alignment,
+                    weights,
+                    balance.metric,
+                );
+                if nearest
+                    .as_ref()
+                    .is_none_or(|(_, closest)| distance < *closest)
+                {
+                    nearest = Some((character.id.clone(), distance));
+                }
+            }
+            if nearest
+                .as_ref()
+                .is_none_or(|(_, distance)| *distance > tolerance)
+            {
+                warnings.push(ContentWarning::NoOneWithinTolerance {
+                    faction: faction.id.clone(),
+                    faction_name: faction.name.clone(),
+                    tolerance,
+                    nearest,
+                });
+            }
             let member_tolerance = faction.tolerances.member();
             for (index, rank) in faction.ranks.iter().enumerate() {
                 if let Some(tolerance) = rank.tolerance.filter(|t| *t > member_tolerance) {
@@ -942,6 +980,23 @@ impl fmt::Display for ContentWarning {
                 f,
                 "{rank}'s tolerance {tolerance} is looser than the faction's member tolerance, {member_tolerance}, so it changes nothing"
             ),
+            ContentWarning::NoOneWithinTolerance {
+                faction_name,
+                tolerance,
+                nearest,
+                ..
+            } => {
+                write!(
+                    f,
+                    "no one starts within {faction_name}'s tolerance of {tolerance}: "
+                )?;
+                match nearest {
+                    Some((character, distance)) => {
+                        write!(f, "the nearest is {character}, {distance} away")
+                    }
+                    None => f.write_str("there are no characters"),
+                }
+            }
         }
     }
 }
@@ -4260,9 +4315,17 @@ mod tests {
             factions: factions(),
             ..Content::default()
         };
+        // Vex is alone, so some factions have no one within tolerance; that's another warning.
+        let outside = |content: &Content| -> Vec<ContentWarning> {
+            content
+                .warnings()
+                .into_iter()
+                .filter(|warning| matches!(warning, ContentWarning::OutsideMemberTolerance { .. }))
+                .collect()
+        };
         // A reformed Vex at 35 / 10 is 95.52 from the guild, beyond its 60.00.
         let reformed = content(35_00, 10_00);
-        let warnings = reformed.warnings();
+        let warnings = outside(&reformed);
         assert_eq!(
             warnings,
             [ContentWarning::OutsideMemberTolerance {
@@ -4281,10 +4344,10 @@ mod tests {
             World::new(reformed).is_ok(),
             "a warning doesn't stop the world"
         );
-        assert_eq!(content(-55_00, -20_00).warnings(), [], "7.07 away");
+        assert_eq!(outside(&content(-55_00, -20_00)), [], "7.07 away");
         // Exactly 60.00 away on the law axis is still within.
-        assert_eq!(content(0, -10_00).warnings(), []);
-        assert_eq!(content(1, -10_00).warnings().len(), 1);
+        assert_eq!(outside(&content(0, -10_00)), []);
+        assert_eq!(outside(&content(1, -10_00)).len(), 1);
     }
 
     // Relations (DESIGN.md §9.4)
@@ -5782,6 +5845,62 @@ mod tests {
             ]
         );
         assert!(World::new(content).is_ok());
+    }
+
+    #[test]
+    fn a_faction_no_one_starts_within_tolerance_of_is_a_warning() {
+        // The Temple, at 30 / 80, weighs law by half and good in full; its tolerance is 35.00.
+        let content = |characters: Vec<Character>| Content {
+            characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),
+            factions: [faction("temple", 30_00, 80_00, Some((50, 1_00)))]
+                .into_iter()
+                .map(|f| (f.id.clone(), f))
+                .collect(),
+            ..Content::default()
+        };
+        // Ava at 20 / 10 is √(5² + 70²) = 70.18 away; Vex at -55 / -20 is √(42.5² + 100²) =
+        // 108.66.
+        let far = content(vec![
+            character("Vex", -55_00, -20_00),
+            character("Ava", 20_00, 10_00),
+        ]);
+        let warnings = far.warnings();
+        assert_eq!(
+            warnings,
+            [ContentWarning::NoOneWithinTolerance {
+                faction: faction_id("temple"),
+                faction_name: "Temple of the Dawn".to_owned(),
+                tolerance: h(35_00),
+                nearest: Some((id("ava"), h(70_18))),
+            }]
+        );
+        assert_eq!(
+            warnings[0].to_string(),
+            "no one starts within Temple of the Dawn's tolerance of 35.00: the nearest is ava, 70.18 away"
+        );
+        assert!(World::new(far).is_ok(), "a warning doesn't stop the world");
+        // Exactly 35.00 away is within; 35.01 isn't.
+        assert_eq!(content(vec![character("Ava", 30_00, 45_00)]).warnings(), []);
+        assert_eq!(
+            content(vec![character("Ava", 30_00, 44_99)])
+                .warnings()
+                .len(),
+            1
+        );
+        // Of two as near, the lower id.
+        let tied = content(vec![
+            character("Bea", 40_00, 10_00),
+            character("Ava", 20_00, 10_00),
+        ]);
+        assert!(matches!(
+            &tied.warnings()[..],
+            [ContentWarning::NoOneWithinTolerance { nearest: Some((ava, _)), .. }] if *ava == id("ava")
+        ));
+        let empty = content(Vec::new()).warnings();
+        assert_eq!(
+            empty[0].to_string(),
+            "no one starts within Temple of the Dawn's tolerance of 35.00: there are no characters"
+        );
     }
 
     #[test]

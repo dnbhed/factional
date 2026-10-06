@@ -7,6 +7,7 @@ input_file: scenarios/help.scenario
 help                                                                 list these commands
 quit                                                                 leave the REPL, or end a script early
 load <dir>                                                           load the content files in <dir>, such as content/sample, as a new world
+validate <dir>                                                       check the content files in <dir> as load would, without loading them
 characters                                                           list the loaded characters
 show character <id>                                                  a character's alignment and its label
 factions                                                             list the factions, with their tolerances and members

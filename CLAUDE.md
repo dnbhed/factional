@@ -33,7 +33,7 @@ Before starting any increment, read:
    - Compress the increment to one line under **Done** in PLAN.md: id, what shipped, date, PR.
    - Update DESIGN.md if the model, a formula or the tuning table changed.
    - Add to DECISIONS.md any decision you had to make, as Proposed.
-   - Extend `content/sample/` and the JSON Schema for any new content.
+   - Extend `content/sample/` and the JSON Schema for any new content. The schema is built in `crates/content/src/schema.rs`; regenerate `schema/<file>.schema.json` with `cargo run -q -p factional-cli -- schema <file>`. Its tests say what's missing.
 8. **Commit and PR.** Commit as `Increment <id>: <what it does>`, push, and open a PR against `main`. **Never merge without the user's explicit go-ahead**, even when CI is green.
 
 Keep increments small: one concept, reviewable in one sitting. If an increment grows, split it in PLAN.md rather than shipping it big.

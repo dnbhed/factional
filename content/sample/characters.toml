@@ -1,3 +1,4 @@
+#:schema ../../schema/characters.schema.json
 # Riverhold's characters (DESIGN.md §13).
 #
 # Each [table] is one character; its name is the id you type in the CLI.

@@ -55,6 +55,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M11 — probation and runtime faction alignment: the `probation` policy (`grace_ticks`, then `demote` or `expel`) with `ProbationStarted`, `ProbationCleared` and `ProbationExpired`, checked when time advances; `SetFactionAlignment` and `ShiftFactionAlignment` with `FactionAlignmentChanged`, reviewing every member; faction alignment is now state, used by distance, disposition and joining; `faction-align`, `faction-shift`; property tests for probation; done 2026-10-06 (#24)
 - M9 — war between your own factions: a relation change that puts two of a character's factions in conflict is accepted and opens a `MembershipConflict` (ending with `MembershipConflictEnded` if they make peace first), replacing M2's refusal; `ResolveConflict` leaves the other side at its `leave_standing_change`, which spills; `membership.conflict` (`ask`, `ask` with `auto_after_ticks`, or `auto`) keeps the higher rung, then standing, then service, then the lower id; invariant 6 allows open conflicts; `resolve`, wars in `show character`; done 2026-10-06 (#25)
 - M10 — disposition modifiers: `AddModifier` (for everyone, a faction and its members, or one character; within ±100; with an optional expiry) and `RemoveModifier`, with `ModifierAdded`, `ModifierRemoved` and `ModifierExpired`; expiry checked after every command; the modifiers component adds up those that apply, clamped to ±100, and `--explain` names each; `modify`, `unmodify`, `modifiers`; done 2026-10-06 (#26)
+- T1 — `factional validate <dir>` (every problem and warning as `load` gives them, a summary line, exit 1 if it wouldn't load) and `validate <dir>` in the REPL; the warning for a faction no one starts within tolerance of, naming the nearest; "a rank no one can reach" dropped (P-51); `factional schema [<file>]`, a JSON Schema per content file built from the engine's own keys, enumerations, ranges and defaults, checked in under `schema/` and tested both ways against the sample, the complete example and the fixtures; `content/README.md`; done 2026-10-06 (#27)
 
 ---
 
@@ -66,37 +67,29 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 4 — Designer tooling and persistence
 
-### T1 · Validation sweep and JSON Schema — P1 · Next
+### T2 · What-if: compare and reload — P1 · Next
 
-**Why:** P-32 and the designer workflow (DESIGN.md §12.3). A designer should be able to check a world, and get help writing one, without starting the REPL.
+**Why:** DESIGN.md §12.3. A designer tuning a number wants to see what it changes in play, without reading two transcripts side by side.
 
 **Scope**
 
-- **`factional validate <dir>`** reads and checks a content directory without starting a session:
-  - every error and warning, each with its file and key, as `load` gives them;
-  - then a one-line summary: how many characters, factions, actions, relations and outcomes;
-  - exit status 0 if it would load, 1 if not. Warnings alone don't fail it.
-- **Whole-world warnings:**
-  - a faction no starting character is within joining tolerance of, so nobody could join it at the start;
-  - **settle here** what "a rank no one can reach" means. Under the current rules every rank is reachable in principle: standing is capped at 100 and rank tolerances are at least 0. Either find a real case (such as a rank tolerance stricter than any starting member could meet) or drop it, with a note in DECISIONS.
-- **`factional schema [<file>]`** prints a JSON Schema for each content file (`balance`, `factions`, `characters`, `actions`, `relations`, `outcomes`), for editor autocomplete. It describes every key the readers accept, with types, ranges and enumerations such as the drift policies, rule outcomes and metrics. Keep it in step with the readers: a test checks that every key in `content/sample` and `docs/examples/riverhold` is in the schema, and that the schema names no key the readers would reject.
-- **`content/README.md`** for designers: what each file is for, how to validate, how to use the schema in an editor, and a pointer to DESIGN.md §12.
+- **`factional compare <scenario> --content A --against B`** runs the scenario twice, once with each content directory in place of the directory its `load` line names, and prints:
+  - the differences in the final state: alignments, standings, memberships and ranks, and each watcher's disposition toward the subjects they watch, each as `A → B`;
+  - the first event where the two runs diverge, with the event from each side;
+  - `no differences` if there are none.
+  - Exit status 0 either way; 1 if either side fails to load or the scenario stops early, saying which side and why.
+- **`reload` in the REPL** re-reads the directory last loaded, replays the journal's accepted commands on the new world, and reports what changed, in the same form as `compare`.
+- **Settle here** (with the user, before starting):
+  - a scenario that loads more than once, or not at all: refuse it, or compare every load;
+  - a replayed command the new content refuses: stop and keep the old world, or skip it and say so.
 
 **Acceptance**
 
-1. `factional validate content/sample` prints its summary and exits 0.
-2. `factional validate crates/cli/tests/fixtures/worlds/broken` lists every problem, exactly as `load` does, and exits 1.
-3. `factional validate crates/cli/tests/fixtures/worlds/reformed` prints Vex's member-tolerance warning and exits 0.
-4. A fixture with a faction that no starting character is within tolerance of warns, naming the faction and its nearest character with the distance.
-5. `factional schema factions` is valid JSON Schema, whose `drift.policy` enumerates `ignore`, `flag`, `demote`, `expel` and `probation`.
-6. Every key in `content/sample` and `docs/examples/riverhold` appears in the schema. Keys for settings the engine doesn't read yet are reported as such, not silently allowed.
-
-### T2 · What-if: compare and reload — P1 · Outline
-
-- `factional compare <scenario> --content A --against B` shows:
-  - a diff of the final state: alignments, standings, memberships, ranks, and dispositions toward watched subjects;
-  - the first event where the two runs diverge.
-- In the REPL, `reload` re-reads the content, replays the journal, and reports what changed.
+1. `compare` of a scenario that has the player steal twice, against a copy of `content/sample` whose `steal` moves law by −10.00 instead of −5.00, reports the player's law as `-10.00 → -20.00` and names the first `AlignmentChanged` as where the runs diverge.
+2. `compare` of any scenario with the same directory on both sides prints `no differences`.
+3. `compare` with a broken directory on one side lists its problems, says which side, and exits 1.
+4. After `load`, two thefts and editing `steal` in the loaded directory, `reload` reports the player's new law, and `journal` still lists the same commands.
+5. `reload` of content that no longer loads reports every problem and keeps the world it had.
 
 ### T3 · Map, matrix and curves — P2 · Outline
 

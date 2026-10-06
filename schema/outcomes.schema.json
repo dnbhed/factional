@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "delta": {
+      "additionalProperties": false,
+      "description": "The change to alignment.",
+      "properties": {
+        "good": {
+          "description": "How far it moves this axis; left out, it doesn't.",
+          "type": "number"
+        },
+        "law": {
+          "description": "How far it moves this axis; left out, it doesn't.",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "outcome": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "$ref": "#/$defs/delta"
+        },
+        "standing": {
+          "$ref": "#/$defs/standing"
+        }
+      },
+      "type": "object"
+    },
+    "standing": {
+      "additionalProperties": false,
+      "description": "Standing, by faction or character id, -100 to 100.",
+      "properties": {
+        "characters": {
+          "additionalProperties": {
+            "description": "-100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "By character id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "factions": {
+          "additionalProperties": {
+            "description": "-100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "By faction id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "$ref": "#/$defs/outcome"
+  },
+  "description": "Named bundles of effects, such as a quest's result, each a table keyed by its id (P-26).",
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "title": "outcomes.toml",
+  "type": "object"
+}

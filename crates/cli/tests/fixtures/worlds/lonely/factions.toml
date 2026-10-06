@@ -1,0 +1,17 @@
+# The Ashen Circle stands where no one starts: validating warns, naming the nearest.
+
+[city_watch]
+name = "The City Watch"
+alignment = { law = 70.0, good = 20.0 }
+tolerance = 40.0
+
+[[city_watch.ranks]]
+id = "recruit"
+
+[ashen_circle]
+name = "The Ashen Circle"
+alignment = { law = 20.0, good = -80.0 }
+tolerance = 30.0
+
+[[ashen_circle.ranks]]
+id = "initiate"

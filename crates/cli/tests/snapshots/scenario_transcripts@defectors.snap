@@ -9,6 +9,8 @@ warning: characters.toml: brother_ash.memberships[0]: brother_ash starts 140.02 
 warning: characters.toml: kestrel.memberships[0]: kestrel starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00
 warning: characters.toml: nell.memberships[0]: nell starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00
 warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00
+warning: factions.toml: ashen_circle.tolerance: no one starts within The Ashen Circle's tolerance of 30.00: the nearest is kestrel, 90.08 away
+warning: factions.toml: lantern_guild.tolerance: no one starts within The Lantern Guild's tolerance of 45.00: the nearest is kestrel, 95.52 away
 > can-join vex city_watch --explain
 vex → city_watch: yes
 distance 35.09 (euclidean), tolerance 40.00

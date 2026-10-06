@@ -1,3 +1,4 @@
+#:schema ../../schema/actions.schema.json
 # Riverhold's action catalogue (DESIGN.md §5.2, §13).
 #
 # Each [table] is one action; its name is the id you type in the CLI, as in

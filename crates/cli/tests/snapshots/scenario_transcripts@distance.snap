@@ -37,6 +37,7 @@ weights: the default (alignment.default_weights)
 > assert distance player city_watch == error: a distance's subject must be a character
 > load crates/cli/tests/fixtures/worlds/diamonds
 loaded 1 character from crates/cli/tests/fixtures/worlds/diamonds
+warning: factions.toml: city_watch.tolerance: no one starts within The City Watch's tolerance of 40.00: the nearest is player, 75.00 away
 > distance city_watch player --explain
 city_watch → player: 75.00 (manhattan)
 law: 70.00 vs 0.00, gap 70.00, weight 1.00

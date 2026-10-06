@@ -1,3 +1,4 @@
+#:schema ../../schema/balance.schema.json
 # World-wide rules and defaults (DESIGN.md §12). Anything left out uses its default.
 
 [alignment]

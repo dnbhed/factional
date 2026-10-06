@@ -1,0 +1,13 @@
+# Checking a world without loading it (T1). From the shell, `factional validate <dir>` does
+# the same and exits 1 if the world wouldn't load; `factional schema <file>` prints a content
+# file's JSON Schema for editors.
+
+# Every problem and warning, as load gives them, then a summary.
+assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 3 outcomes
+
+# No one starts within the Ashen Circle's tolerance: the nearest is Vex, √(30² + 40²) away.
+validate crates/cli/tests/fixtures/worlds/lonely
+
+# A broken world lists every problem; nothing is loaded either way.
+validate crates/cli/tests/fixtures/worlds/broken
+assert characters == error: no world is loaded yet: use load <dir> first

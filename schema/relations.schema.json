@@ -1,0 +1,86 @@
+{
+  "$defs": {
+    "relation": {
+      "additionalProperties": false,
+      "description": "Either between = [a, b], or from and to.",
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "from"
+                ]
+              },
+              {
+                "required": [
+                  "to"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "between"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "between"
+            ]
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        }
+      ],
+      "properties": {
+        "between": {
+          "description": "Two factions that regard each other the same way.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "from": {
+          "description": "The faction doing the regarding.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "to": {
+          "description": "The faction regarded.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "value": {
+          "description": "-100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "How factions regard each other, as [[relation]] tables; any direction left out is 0 (DESIGN.md §9.4).",
+  "properties": {
+    "relation": {
+      "description": "The relations.",
+      "items": {
+        "$ref": "#/$defs/relation"
+      },
+      "type": "array"
+    }
+  },
+  "title": "relations.toml",
+  "type": "object"
+}

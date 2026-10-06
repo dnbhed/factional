@@ -1,12 +1,15 @@
-//! The `factional` binary: `factional repl` for an interactive session, and
-//! `factional run <script>` to replay a scenario (DECISIONS.md P-27).
+//! The `factional` binary: `factional repl` for an interactive session, `factional run
+//! <script>` to replay a scenario (DECISIONS.md P-27), and for designers, `factional validate
+//! <dir>` and `factional schema [<file>]`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
-use factional_cli::{run_repl, run_script};
+use factional_cli::{run_repl, run_script, validate};
+use factional_content::{SCHEMA_FILES, schema_text};
 
 #[derive(Parser)]
 #[command(
@@ -28,12 +31,39 @@ enum Command {
         /// The `.scenario` file to run
         script: PathBuf,
     },
+    /// Check a content directory without starting a session
+    Validate {
+        /// The content directory, such as content/sample
+        dir: String,
+    },
+    /// Print a content file's JSON Schema, for editors; without a file, list the files
+    Schema {
+        /// The content file, such as factions
+        #[arg(value_parser = PossibleValuesParser::new(SCHEMA_FILES))]
+        file: Option<String>,
+    },
 }
 
 fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Repl => run_repl(),
         Command::Run { script } => run(&script),
+        Command::Validate { dir } => {
+            let (report, loads) = validate(Path::new(""), &dir);
+            print!("{report}");
+            if loads {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Command::Schema { file } => {
+            match file.as_deref().and_then(schema_text) {
+                Some(schema) => print!("{schema}"),
+                None => SCHEMA_FILES.iter().for_each(|file| println!("{file}")),
+            }
+            ExitCode::SUCCESS
+        }
     }
 }
 

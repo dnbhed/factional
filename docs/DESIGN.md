@@ -574,7 +574,7 @@ let d = world.disposition(Observer::Character(hale), player);    // d.score, d.b
 
 ## 12. Tuning surface (D-12)
 
-This table lists every knob: where it lives, its default, and the increment that adds it. An increment that adds a knob also adds a row here, an entry in the JSON Schema, and a value in the sample content.
+This table lists every knob: where it lives, its default, and the increment that adds it. An increment that adds a knob also adds a row here, an entry in the JSON Schema (`crates/content/src/schema.rs`, written out to `schema/`), and a value in the sample content.
 
 | Knob | Where | Default | Added in |
 | --- | --- | --- | --- |
@@ -619,17 +619,17 @@ content/<world>/
 
 - **Missing files are fine.** A missing file means the defaults, or none of that kind (P-31).
 - **Errors stop loading.** Unknown keys are errors, with a "did you mean". References are checked across files, and values are range-checked. Each error names the file and the key path, for example: `characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`.
-- **Warnings don't stop loading.** For example: a starting member outside member tolerance, a rank whose requirements can never be met, or a faction no starting character could ever join.
-- **Editor support.** `factional schema` writes a JSON Schema, so an editor (VS Code with Even Better TOML) autocompletes and underlines mistakes as the designer types (T1).
+- **Warnings don't stop loading.** For example: a starting member outside member tolerance or below their rank's standing, or a faction no one starts within tolerance of.
+- **Editor support.** `factional schema <file>` prints a JSON Schema for each file, also kept in `schema/`, so an editor (VS Code with Even Better TOML) autocompletes and underlines mistakes as the designer types (T1, P-51). It's built from the engine's own keys, enumerations, ranges and defaults, and a test keeps it in step with the readers. `content/README.md` explains how to use it.
 
 ### 12.2 Validation (P-32)
 
 Content is data, so its equivalent of a compile step is loading. **A world is only ever built from content that passed every check.** A running world never holds a reference to a faction, rank, profile or character that doesn't exist.
 
 - **Errors stop loading.** Nothing is half-loaded, and the CLI keeps the world it already had.
-- **Warnings don't stop loading.** `load` prints them after its summary, and `factional validate` (T1) lists them too.
+- **Warnings don't stop loading.** `load` prints them after its summary. `factional validate <dir>` (T1) gives the same problems and warnings without starting a session, then a summary, and exits 1 if the world wouldn't load.
 - **The rules live in `factional-reputation`.** `World::new` runs the checks and refuses invalid content, so a host that builds content in code, not from TOML, gets the same protection. `factional-content` turns each problem's location into `file: key.path`.
-- **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. Once every setting is implemented, `docs/examples/riverhold` is loaded too.
+- **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. `docs/examples/riverhold` is loaded too, without the settings the engine doesn't read yet, which a test names (T1).
 - **Each check arrives with the increment that adds the content it checks**, never later.
 
 | Check | Kind | Added in |
@@ -660,11 +660,13 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 (done) |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is a whole number ≥ 0, and only with `ask` | error | M9 (done) |
 | `knowledge.model` is a known model | error | K1 |
-| A faction no starting character could join; a rank no one can reach | warning | T1 |
+| A faction no starting character is within joining tolerance of, naming the nearest and their distance (P-51) | warning | T1 (done) |
 
 ### 12.3 Designer workflow
 
-- `factional repl content/sample` to poke at a world.
+- `factional validate <dir>` to check a world without starting a session (T1).
+- `factional schema <file>` for a content file's JSON Schema, to get completion and checking in an editor (T1).
+- `factional repl`, then `load content/sample`, to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
 - `curve [[0, 1.0], [100, 0.5]] at 25` in the REPL to try a curve's shape before using it.
 - `factional run scenarios/<name>.scenario` to replay a scripted playthrough.
