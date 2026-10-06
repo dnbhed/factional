@@ -81,6 +81,18 @@ const COMMANDS: &[(&str, &str)] = &[
         "how far <subject> is from <observer>, a faction or character, as the observer sees it",
     ),
     (
+        "watch <character>",
+        "report whenever anyone's disposition toward <character> changes band",
+    ),
+    (
+        "unwatch <character>",
+        "stop reporting <character>'s band changes",
+    ),
+    (
+        "watching",
+        "the watched characters, and the band each observer puts them in",
+    ),
+    (
         "actions",
         "list the action catalogue and how each act moves alignment",
     ),
@@ -195,6 +207,9 @@ impl Session {
             "factions" => Ok(self.factions()),
             "distance" => Ok(self.distance(rest)),
             "disposition" => Ok(self.disposition(rest)),
+            "watch" => Ok(self.watch(rest, true)),
+            "unwatch" => Ok(self.watch(rest, false)),
+            "watching" => Ok(self.watching()),
             "can-join" => Ok(self.can_join(rest)),
             "relations" => Ok(self.relations(rest)),
             "ranks" => Ok(self.ranks(rest)),
@@ -940,6 +955,64 @@ impl Session {
         }
     }
 
+    /// `watch <character>` or `unwatch <character>`: the engine decides, and the events or
+    /// its refusal are shown.
+    fn watch(&mut self, args: &str, watching: bool) -> Outcome {
+        let name = if watching { "watch" } else { "unwatch" };
+        let [subject] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error(format!("{name} needs the form: {name} <character>"));
+        };
+        let subject = match CharacterId::new(subject) {
+            Ok(id) => id,
+            Err(invalid) => return Outcome::Error(invalid.to_string()),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        let command = if watching {
+            Command::Watch { subject }
+        } else {
+            Command::Unwatch { subject }
+        };
+        match world.execute(command) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
+    /// `watching`: each watched character, with the observers in each band, lowest band
+    /// first.
+    fn watching(&self) -> Outcome {
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let watched: Vec<String> = world
+            .watched()
+            .map(|(subject, remembered)| {
+                let groups: Vec<String> = world
+                    .balance()
+                    .bands
+                    .iter()
+                    .filter_map(|band| {
+                        let observers: Vec<String> = remembered
+                            .iter()
+                            .filter(|(_, name)| **name == band.name)
+                            .map(|(observer, _)| observer.to_string())
+                            .collect();
+                        (!observers.is_empty())
+                            .then(|| format!("{}: {}", band.name, observers.join(", ")))
+                    })
+                    .collect();
+                format!("{subject} — {}", groups.join("; "))
+            })
+            .collect();
+        if watched.is_empty() {
+            Outcome::Output("no one is watched yet".to_owned())
+        } else {
+            Outcome::Output(watched.join("\n"))
+        }
+    }
+
     /// `time`: the current tick.
     fn time(&self) -> Outcome {
         match &self.world {
@@ -1208,6 +1281,17 @@ fn describe_event(event: &Event) -> String {
         Change::EffectsApplied { source, character } => {
             format!("effects from {source} applied to {character}")
         }
+        Change::Watched { subject, bands } => {
+            format!("now watching {subject} ({} observers)", bands.len())
+        }
+        Change::Unwatched { subject } => format!("no longer watching {subject}"),
+        Change::DispositionBandChanged {
+            observer,
+            subject,
+            from,
+            to,
+            score,
+        } => format!("{observer} now regards {subject} as {to} (was {from}), at {score}"),
         Change::AlignmentChanged {
             character,
             from,
@@ -1233,6 +1317,8 @@ fn describe_command(command: &Command) -> String {
         Command::ApplyEffects {
             source, character, ..
         } => format!("effects from {source} on {character}"),
+        Command::Watch { subject } => format!("watch {subject}"),
+        Command::Unwatch { subject } => format!("unwatch {subject}"),
         Command::SetRelation {
             from,
             to,
@@ -2590,6 +2676,91 @@ mod tests {
                 "good: -15.00 × 1.00 × 0.44 (by_target.good at brother_ash's -70.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -6.60, from 0.00 to -6.60",
             ]
         );
+    }
+
+    #[test]
+    fn watching_lists_each_observers_band_lowest_first() {
+        let mut session = riverhold();
+        assert_eq!(session.execute("watching"), output("no one is watched yet"));
+        assert_eq!(
+            session.execute("watch player"),
+            output("#1 at tick 0: now watching player (10 observers)")
+        );
+        // The Free Company (2.50 away) and Ava (22.36 away) are friendly; everyone else is
+        // neutral toward a neutral player.
+        assert_eq!(
+            session.execute("watching"),
+            output(
+                "player — neutral: ashen_circle, city_watch, lantern_guild, temple, brother_ash, \
+                 captain_hale, sister_mira, vex; friendly: free_company, merchant_ava"
+            )
+        );
+    }
+
+    #[test]
+    fn a_watched_thief_hears_when_the_watch_turns_unfriendly() {
+        let mut session = riverhold();
+        for line in [
+            "act player steal --target merchant_ava",
+            "act player steal --target merchant_ava",
+            "watch player",
+        ] {
+            session.execute(line).expect("valid");
+        }
+        assert_eq!(
+            session.execute("outcome fined_by_watch player"),
+            output(
+                "#8 at tick 0: outcome fined_by_watch applied to player\n\
+                 #9 at tick 0: player's standing with city_watch moved from 0.00 to -20.00\n\
+                 #10 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00\n\
+                 #11 at tick 0: city_watch now regards player as unfriendly (was neutral), at -27.24\n\
+                 #12 at tick 0: captain_hale now regards player as unfriendly (was neutral), at -29.10"
+            )
+        );
+        assert_eq!(
+            session.execute("unwatch player"),
+            output("#13 at tick 0: no longer watching player")
+        );
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. act player steal --target merchant_ava — accepted\n\
+                 2. act player steal --target merchant_ava — accepted\n\
+                 3. watch player — accepted\n\
+                 4. outcome fined_by_watch player — accepted\n\
+                 5. unwatch player — accepted"
+            )
+        );
+    }
+
+    #[test]
+    fn watch_and_unwatch_report_mistakes() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("watch"),
+            command_error("watch needs the form: watch <character>")
+        );
+        assert_eq!(
+            session.execute("unwatch player vex"),
+            command_error("unwatch needs the form: unwatch <character>")
+        );
+        assert_eq!(
+            session.execute("watch plyer"),
+            command_error("unknown character 'plyer' (did you mean 'player'?)")
+        );
+        assert_eq!(
+            session.execute("unwatch player"),
+            command_error("player isn't watched")
+        );
+        assert_eq!(
+            session.execute("watch Player"),
+            command_error(
+                "'Player' isn't a valid id: use lowercase letters, digits and _, starting with a letter"
+            )
+        );
+        let none = command_error("no world is loaded yet: use load <dir> first");
+        assert_eq!(run("watch player"), none);
+        assert_eq!(run("watching"), none);
     }
 
     #[test]

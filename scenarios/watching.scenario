@@ -1,0 +1,17 @@
+# Band changes for watched characters (DESIGN.md §8.3): other modules hear when someone's
+# view of a watched character crosses into another band, not every 0.01 of movement.
+load content/sample
+act player steal --target merchant_ava
+act player steal --target merchant_ava
+watch player
+watching
+# The fine of DESIGN.md §8.2: the Watch (affinity -7.24, standing -20.00) and Captain Hale
+# (-29.10) both turn unfriendly. No one else's view of the player changes.
+outcome fined_by_watch player
+assert disposition city_watch player == -27.24 (unfriendly)
+watching
+# A small good deed moves scores within their bands, so nothing is reported.
+act player help_stranger --target merchant_ava
+assert unwatch vex == error: vex isn't watched
+unwatch player
+assert watching == no one is watched yet

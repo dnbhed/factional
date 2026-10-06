@@ -43,6 +43,9 @@ pub struct Balance {
     pub rule_tables: BTreeMap<TableKind, Vec<Rule>>,
     /// The inertia profiles, and the default (DESIGN.md §5.3).
     pub inertia: Inertia,
+    /// `disposition.hysteresis`: how far past a band's edge a watched score must go to
+    /// leave the band (DESIGN.md §8.3).
+    pub hysteresis: Fixed,
 }
 
 impl Balance {
@@ -81,6 +84,7 @@ impl Default for Balance {
             conflict_threshold: Balance::DEFAULT_CONFLICT_THRESHOLD,
             rule_tables: BTreeMap::new(),
             inertia: Inertia::default(),
+            hysteresis: Fixed::ZERO,
         }
     }
 }
@@ -174,6 +178,8 @@ pub enum ContentProblem {
     },
     /// `disposition.same_faction` outside −100…100.
     SameFactionOutOfRange(Fixed),
+    /// `disposition.hysteresis` below 0.
+    NegativeHysteresis(Fixed),
     /// A faction with no ranks: every faction needs a rung for new members.
     NoRanks(FactionId),
     /// Two ranks in one faction share an id; `index` is the second.
@@ -524,7 +530,8 @@ impl Content {
             .collect()
     }
 
-    /// `disposition.weights` must each be at least 0, and `same_faction` within ±100.
+    /// `disposition.weights` must each be at least 0, `same_faction` within ±100, and
+    /// `hysteresis` at least 0.
     fn disposition_problems(&self) -> Vec<ContentProblem> {
         let weights = self.balance.disposition_weights;
         let mut problems: Vec<ContentProblem> = ComponentKind::ALL
@@ -539,6 +546,9 @@ impl Content {
             problems.push(ContentProblem::SameFactionOutOfRange(
                 self.balance.same_faction,
             ));
+        }
+        if self.balance.hysteresis < Fixed::ZERO {
+            problems.push(ContentProblem::NegativeHysteresis(self.balance.hysteresis));
         }
         problems
     }
@@ -837,7 +847,8 @@ impl fmt::Display for ContentProblem {
                     "the last rule must have no conditions, so the table always decides",
                 ),
             },
-            ContentProblem::NegativeDispositionWeight { value, .. } => {
+            ContentProblem::NegativeDispositionWeight { value, .. }
+            | ContentProblem::NegativeHysteresis(value) => {
                 write!(f, "{value} must be at least {}", Fixed::ZERO)
             }
             ContentProblem::StandingOutOfRange { value, .. }
@@ -886,11 +897,22 @@ impl fmt::Display for ContentWarning {
     }
 }
 
-/// Who is doing the judging: a faction, or a character.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Who is doing the judging: a faction, or a character. Factions come before characters,
+/// each in id order.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Observer {
     Faction(FactionId),
     Character(CharacterId),
+}
+
+impl fmt::Display for Observer {
+    /// The observer's id, such as `city_watch` or `captain_hale`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Observer::Faction(id) => id.fmt(f),
+            Observer::Character(id) => id.fmt(f),
+        }
+    }
 }
 
 /// Whose weights a measurement used.
@@ -947,6 +969,8 @@ struct State {
     /// Every standing set so far, `(subject, party)` → how `party` regards `subject`; any
     /// other is 0.
     standings: BTreeMap<(CharacterId, Party), Fixed>,
+    /// Every watched subject, with the band each observer last put them in (DESIGN.md §8.3).
+    watched: BTreeMap<CharacterId, BTreeMap<Observer, String>>,
 }
 
 impl State {
@@ -993,6 +1017,7 @@ impl State {
                         .map(|(party, value)| ((character.id.clone(), party), value))
                 })
                 .collect(),
+            watched: BTreeMap::new(),
         }
     }
 }
@@ -1032,20 +1057,31 @@ impl World {
             result: decided.as_ref().map(|_| ()).map_err(Clone::clone),
         });
         let mut emitted = Vec::new();
-        for change in decided? {
-            let event = Event {
-                seq: self.events.len() as u64 + 1,
-                tick: self.state.now,
-                payload: change,
-            };
-            self.apply(event.clone());
-            emitted.push(event);
+        let decided = decided?;
+        // The command's own changes first; then, from the state they leave, any band changes
+        // watched subjects are owed (DESIGN.md §8.3).
+        for change in decided {
+            emitted.push(self.record(change));
+        }
+        for change in self.band_changes() {
+            emitted.push(self.record(change));
         }
         Ok(emitted)
     }
 
+    /// Numbers and stamps a change as the next event, and applies it.
+    fn record(&mut self, change: Change) -> Event {
+        let event = Event {
+            seq: self.events.len() as u64 + 1,
+            tick: self.state.now,
+            payload: change,
+        };
+        self.apply(event.clone());
+        event
+    }
+
     /// Works out what a command would change, without changing anything: the rules live
-    /// here, and only here.
+    /// here, and in `band_changes`, which reacts to what an accepted command changed.
     fn decide(&self, command: &Command) -> Result<Vec<Change>, CommandError> {
         match command {
             &Command::AdvanceTime { ticks } => {
@@ -1288,6 +1324,40 @@ impl World {
                 changes.extend(self.effect_changes(character, &found.effects));
                 Ok(changes)
             }
+            Command::Watch { subject } => {
+                self.existing(subject, Role::Subject)?;
+                if self.state.watched.contains_key(subject) {
+                    return Err(CommandError::AlreadyWatched {
+                        subject: subject.clone(),
+                    });
+                }
+                let bands = self
+                    .observers_of(subject)
+                    .into_iter()
+                    .map(|observer| {
+                        let band = self
+                            .disposition(&observer, subject)
+                            .expect("both exist")
+                            .band;
+                        (observer, band)
+                    })
+                    .collect();
+                Ok(vec![Change::Watched {
+                    subject: subject.clone(),
+                    bands,
+                }])
+            }
+            Command::Unwatch { subject } => {
+                self.existing(subject, Role::Subject)?;
+                if !self.state.watched.contains_key(subject) {
+                    return Err(CommandError::NotWatched {
+                        subject: subject.clone(),
+                    });
+                }
+                Ok(vec![Change::Unwatched {
+                    subject: subject.clone(),
+                }])
+            }
             Command::ApplyEffects {
                 source,
                 character,
@@ -1378,6 +1448,50 @@ impl World {
             .as_ref()
             .unwrap_or(&inertia.default_profile);
         (id, &inertia.profiles[id])
+    }
+
+    /// Everyone who has a view of `subject`: every faction, then every other character,
+    /// each in id order.
+    fn observers_of(&self, subject: &CharacterId) -> Vec<Observer> {
+        let factions = self.content.factions.keys().cloned().map(Observer::Faction);
+        let characters = self
+            .content
+            .characters
+            .keys()
+            .filter(|character| *character != subject)
+            .cloned()
+            .map(Observer::Character);
+        factions.chain(characters).collect()
+    }
+
+    /// The band changes the world now owes watched subjects: for each, in id order, every
+    /// observer whose disposition has left the band they last put the subject in (DESIGN.md
+    /// §8.3).
+    fn band_changes(&self) -> Vec<Change> {
+        let balance = &self.content.balance;
+        let mut changes = Vec::new();
+        for (subject, remembered) in &self.state.watched {
+            for (observer, current) in remembered {
+                let score = self
+                    .disposition(observer, subject)
+                    .expect("watched subjects and their observers exist")
+                    .score;
+                let to = &balance
+                    .bands
+                    .band_after(current, score, balance.hysteresis)
+                    .name;
+                if to != current {
+                    changes.push(Change::DispositionBandChanged {
+                        observer: observer.clone(),
+                        subject: subject.clone(),
+                        from: current.clone(),
+                        to: to.clone(),
+                        score,
+                    });
+                }
+            }
+        }
+        changes
     }
 
     /// A character's factions now, in id order.
@@ -1564,6 +1678,27 @@ impl World {
                     .insert((subject.clone(), party.clone()), after);
             }
             Change::OutcomeApplied { .. } | Change::EffectsApplied { .. } => {}
+            Change::Watched {
+                ref subject,
+                ref bands,
+            } => {
+                self.state
+                    .watched
+                    .insert(subject.clone(), bands.iter().cloned().collect());
+            }
+            Change::Unwatched { ref subject } => {
+                self.state.watched.remove(subject);
+            }
+            Change::DispositionBandChanged {
+                ref observer,
+                ref subject,
+                ref to,
+                ..
+            } => {
+                if let Some(bands) = self.state.watched.get_mut(subject) {
+                    bands.insert(observer.clone(), to.clone());
+                }
+            }
         }
         self.events.push(event);
     }
@@ -1740,6 +1875,11 @@ impl World {
             profile: profile.clone(),
             axes: shifts(from, delta, scale, None, inertia),
         })
+    }
+
+    /// Every watched subject, in id order, with the band each observer last put them in.
+    pub fn watched(&self) -> impl Iterator<Item = (&CharacterId, &BTreeMap<Observer, String>)> {
+        self.state.watched.iter()
     }
 
     /// The outcomes, in id order.
@@ -2340,6 +2480,7 @@ mod tests {
             },
             same_faction: h(40_00),
             rule_tables: [(TableKind::Defectors, sample_defectors())].into(),
+            hysteresis: h(5_00),
             inertia: Inertia {
                 default_profile: profile_id("hardening"),
                 profiles: [(profile_id("hardening"), hardening())].into(),
@@ -4027,6 +4168,10 @@ mod tests {
 
     /// Riverhold's people, with Hale's starting standing, and its two outcomes.
     fn with_outcomes() -> World {
+        World::new(outcomes_content()).expect("valid content")
+    }
+
+    fn outcomes_content() -> Content {
         let mut hale = member_of(character("Captain_hale", 75_00, 30_00), &["city_watch"]);
         hale.weights = Some(weights(1_00, 25));
         hale.standing = named(&[("city_watch", 75_00)], &[]);
@@ -4049,7 +4194,7 @@ mod tests {
                 },
             },
         ];
-        World::new(Content {
+        Content {
             characters: [
                 hale,
                 character("Player", 0, 0),
@@ -4064,8 +4209,7 @@ mod tests {
             relations: relations(),
             outcomes: outcomes.into_iter().map(|o| (o.id.clone(), o)).collect(),
             ..Content::default()
-        })
-        .expect("valid content")
+        }
     }
 
     /// The test actions, and `slander`, which names vex, so its effects on him add up.
@@ -5280,6 +5424,273 @@ mod tests {
         );
     }
 
+    // Watched subjects and band changes (DESIGN.md §8.3)
+
+    fn watch(subject: &str) -> Command {
+        Command::Watch {
+            subject: id(subject),
+        }
+    }
+
+    fn faction_observer(text: &str) -> Observer {
+        Observer::Faction(faction_id(text))
+    }
+
+    fn character_observer(text: &str) -> Observer {
+        Observer::Character(id(text))
+    }
+
+    fn band_change(observer: Observer, from: &str, to: &str, score: i64) -> Change {
+        Change::DispositionBandChanged {
+            observer,
+            subject: id("player"),
+            from: from.to_owned(),
+            to: to.to_owned(),
+            score: h(score),
+        }
+    }
+
+    /// The band changes among `events`.
+    fn band_changes(events: &[Event]) -> Vec<Change> {
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, Change::DispositionBandChanged { .. }))
+            .map(|event| event.payload.clone())
+            .collect()
+    }
+
+    fn steal_from_ava(world: &mut World) -> Vec<Event> {
+        world
+            .execute(act("player", "steal", Some("ava"), 1_00))
+            .expect("accepted")
+    }
+
+    /// DESIGN.md §8.2's player: two thefts from Ava, leaving them at −10.00 / −6.00, then
+    /// watched.
+    fn watched_thief(hysteresis: i64) -> World {
+        let mut content = outcomes_content();
+        content.balance.hysteresis = h(hysteresis);
+        let mut world = World::new(content).expect("valid content");
+        steal_from_ava(&mut world);
+        steal_from_ava(&mut world);
+        world.execute(watch("player")).expect("accepted");
+        world
+    }
+
+    #[test]
+    fn watching_records_every_observers_band_factions_first() {
+        let world = watched_thief(0);
+        let Change::Watched { subject, bands } = &world.events().last().expect("an event").payload
+        else {
+            panic!("expected Watched");
+        };
+        // The Free Company, with even weights, is 6.00 away: affinity 45.00, friendly. Ava
+        // has lost 40 standing, but 34.00 away her affinity is 21.67: −18.33, neutral.
+        let expected = [
+            (faction_observer("city_watch"), "neutral"),
+            (faction_observer("free_company"), "friendly"),
+            (faction_observer("lantern_guild"), "neutral"),
+            (faction_observer("temple"), "neutral"),
+            (character_observer("ava"), "neutral"),
+            (character_observer("captain_hale"), "neutral"),
+            (character_observer("vex"), "neutral"),
+        ]
+        .map(|(observer, band)| (observer, band.to_owned()));
+        assert_eq!((subject, &bands[..]), (&id("player"), &expected[..]));
+        let watched: Vec<(&CharacterId, usize)> = world
+            .watched()
+            .map(|(subject, bands)| (subject, bands.len()))
+            .collect();
+        assert_eq!(watched, [(&id("player"), 7)]);
+    }
+
+    #[test]
+    fn a_fine_turns_the_watch_and_its_captain_unfriendly() {
+        let mut world = watched_thief(0);
+        let events = world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        // The Watch: affinity −7.24 at 80.26, standing −20.00. Hale: DESIGN.md §8.2.
+        assert_eq!(
+            band_changes(&events),
+            [
+                band_change(
+                    faction_observer("city_watch"),
+                    "neutral",
+                    "unfriendly",
+                    -27_24
+                ),
+                band_change(
+                    character_observer("captain_hale"),
+                    "neutral",
+                    "unfriendly",
+                    -29_10
+                ),
+            ]
+        );
+        // They follow the command's own events, numbered on from them: each theft made 3
+        // events and watching 1, so the fine's start at 8.
+        assert_eq!(
+            events.iter().map(|event| event.seq).collect::<Vec<_>>(),
+            [8, 9, 10, 11, 12]
+        );
+        let watched: BTreeMap<Observer, String> = world.watched().next().expect("player").1.clone();
+        assert_eq!(watched[&faction_observer("city_watch")], "unfriendly");
+    }
+
+    #[test]
+    fn hysteresis_holds_a_band_until_the_score_is_well_past_its_edge() {
+        let mut world = watched_thief(5_00);
+        let fined = world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        assert_eq!(
+            band_changes(&fined),
+            [],
+            "−27.24 and −29.10 are within 5 of −25.00"
+        );
+        // A third theft: Ava at −43.18 (affinity 16.82 at 39.82, standing −60.00), Hale at
+        // −30.90 (affinity −10.90 at 90.53, standing −10.00, faction opinion −10.00). The
+        // Watch, at −29.04, stays neutral.
+        assert_eq!(
+            band_changes(&steal_from_ava(&mut world)),
+            [
+                band_change(character_observer("ava"), "neutral", "unfriendly", -43_18),
+                band_change(
+                    character_observer("captain_hale"),
+                    "neutral",
+                    "unfriendly",
+                    -30_90
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_watched_subjects_have_band_changes() {
+        let mut world = with_outcomes();
+        steal_from_ava(&mut world);
+        steal_from_ava(&mut world);
+        let fined = world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        assert_eq!(band_changes(&fined), []);
+        let mut world = watched_thief(0);
+        let events = world
+            .execute(Command::Unwatch {
+                subject: id("player"),
+            })
+            .expect("accepted");
+        assert_eq!(
+            payloads(&events),
+            [Change::Unwatched {
+                subject: id("player")
+            }]
+        );
+        let fined = world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        assert_eq!(band_changes(&fined), []);
+        assert_eq!(world.watched().count(), 0);
+    }
+
+    #[test]
+    fn a_move_within_a_band_changes_nothing() {
+        let mut world = watched_thief(0);
+        let events = world.execute(advance(5)).expect("accepted");
+        assert_eq!(band_changes(&events), []);
+        // A small act moves several scores, but none across an edge.
+        let events = world
+            .execute(act("player", "help_stranger", None, 1_00))
+            .expect("accepted");
+        assert_eq!(band_changes(&events), []);
+    }
+
+    #[test]
+    fn watching_needs_a_character_and_says_when_it_is_already_settled() {
+        let mut world = with_outcomes();
+        assert_eq!(
+            world.execute(watch("ghost")),
+            Err(CommandError::UnknownCharacter {
+                role: Role::Subject,
+                id: id("ghost"),
+                suggestion: None,
+            })
+        );
+        world.execute(watch("player")).expect("accepted");
+        assert_eq!(
+            world.execute(watch("player")),
+            Err(CommandError::AlreadyWatched {
+                subject: id("player")
+            })
+        );
+        assert_eq!(
+            world.execute(Command::Unwatch { subject: id("vex") }),
+            Err(CommandError::NotWatched { subject: id("vex") })
+        );
+        assert_eq!(
+            [
+                CommandError::AlreadyWatched {
+                    subject: id("player")
+                }
+                .to_string(),
+                CommandError::NotWatched { subject: id("vex") }.to_string(),
+                world.execute(watch("plyer")).unwrap_err().to_string(),
+            ],
+            [
+                "player is already watched",
+                "vex isn't watched",
+                "unknown character 'plyer' (did you mean 'player'?)",
+            ]
+        );
+    }
+
+    #[test]
+    fn replaying_the_events_restores_who_is_watched_and_their_bands() {
+        let mut world = watched_thief(0);
+        world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
+        assert_eq!(replayed.state.watched, world.state.watched);
+        assert_eq!(
+            replayed.state.watched[&id("player")][&character_observer("captain_hale")],
+            "unfriendly"
+        );
+    }
+
+    #[test]
+    fn hysteresis_cannot_be_negative() {
+        let mut content = outcomes_content();
+        content.balance.hysteresis = h(-1);
+        assert_eq!(
+            content.problems(),
+            [ContentProblem::NegativeHysteresis(h(-1))]
+        );
+        assert_eq!(
+            content.problems()[0].to_string(),
+            "-0.01 must be at least 0.00"
+        );
+        content.balance.hysteresis = Fixed::ZERO;
+        assert_eq!(content.problems(), []);
+    }
+
+    #[test]
+    fn observers_show_as_their_ids() {
+        assert_eq!(
+            [
+                faction_observer("city_watch"),
+                character_observer("captain_hale")
+            ]
+            .map(|observer| observer.to_string()),
+            ["city_watch", "captain_hale"]
+        );
+        assert!(
+            faction_observer("temple") < character_observer("ava"),
+            "factions first"
+        );
+    }
+
     // Inertia (DESIGN.md §5.3)
 
     fn profile_id(text: &str) -> ProfileId {
@@ -6253,12 +6664,20 @@ mod tests {
                     standing: named(&[(faction, value)], &[("vex", value)]),
                 },
             });
+        let watching = (any::<bool>(), who()).prop_map(|(watching, who)| {
+            if watching {
+                watch(who)
+            } else {
+                Command::Unwatch { subject: id(who) }
+            }
+        });
         let command = prop_oneof![
             (0_u64..=1_000).prop_map(advance),
             action,
             membership,
             relate,
-            effects
+            effects,
+            watching
         ];
         proptest::collection::vec(command, 0..30)
     }
@@ -6342,6 +6761,21 @@ mod tests {
                     for b in &factions[i + 1..] {
                         prop_assert!(!world.in_conflict(a, b).expect("both exist"));
                     }
+                }
+            }
+        }
+
+        /// DESIGN.md §8.3: with no hysteresis, the band remembered for a watched subject is
+        /// always the band their disposition is in now.
+        #[test]
+        fn with_no_hysteresis_a_remembered_band_is_always_the_current_one(
+            commands in commands()
+        ) {
+            let world = run(&commands);
+            for (subject, bands) in world.watched() {
+                for (observer, band) in bands {
+                    let now = world.disposition(observer, subject).expect("both exist").band;
+                    prop_assert_eq!(band, &now);
                 }
             }
         }

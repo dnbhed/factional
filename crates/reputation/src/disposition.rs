@@ -141,6 +141,32 @@ impl Bands {
     pub fn iter(&self) -> impl Iterator<Item = &Band> {
         self.0.iter()
     }
+
+    /// The band `score` puts someone in who was in `current`, with a `margin` of hysteresis
+    /// (DESIGN.md §8.3): they leave `current` only once the score is past its upper edge by
+    /// more than the margin, or at or below its lower edge less the margin, and then land in
+    /// the score's own band. With no margin, that's always the score's own band.
+    pub fn band_after(&self, current: &str, score: Fixed, margin: Fixed) -> &Band {
+        let index = self
+            .0
+            .iter()
+            .position(|band| band.name == current)
+            .expect("the current band is one of these bands");
+        let lower = index.checked_sub(1).and_then(|below| self.0[below].up_to);
+        let upper = self.0[index].up_to;
+        // An edge too far to compute with can't be crossed.
+        let fell = lower
+            .and_then(|edge| edge.checked_sub(margin))
+            .is_some_and(|edge| score <= edge);
+        let rose = upper
+            .and_then(|edge| edge.checked_add(margin))
+            .is_some_and(|edge| score > edge);
+        if fell || rose {
+            self.band_for(score)
+        } else {
+            &self.0[index]
+        }
+    }
 }
 
 impl fmt::Display for BandProblem {
@@ -284,6 +310,58 @@ impl Default for DispositionWeights {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn hysteresis_holds_a_band_until_the_score_is_past_its_edge_by_the_margin() {
+        let bands = Bands::standard();
+        let after =
+            |current: &str, score: i64| bands.band_after(current, h(score), h(5_00)).name.clone();
+        // Leaving neutral downward: at or below −25.00 − 5.00.
+        assert_eq!(after("neutral", -29_10), "neutral");
+        assert_eq!(after("neutral", -29_99), "neutral");
+        assert_eq!(after("neutral", -30_00), "unfriendly");
+        assert_eq!(after("neutral", -30_90), "unfriendly");
+        // Leaving neutral upward: above 25.00 + 5.00.
+        assert_eq!(after("neutral", 30_00), "neutral");
+        assert_eq!(after("neutral", 30_01), "friendly");
+        // Leaving unfriendly upward: above −25.00 + 5.00; the last band has no upper edge,
+        // the first no lower one.
+        assert_eq!(after("unfriendly", -20_00), "unfriendly");
+        assert_eq!(after("unfriendly", -19_99), "neutral");
+        assert_eq!(after("unfriendly", -100_00), "unfriendly");
+        assert_eq!(after("friendly", 100_00), "friendly");
+        assert_eq!(after("friendly", 20_00), "neutral");
+        // Within its own band, nothing changes.
+        assert_eq!(after("neutral", 0), "neutral");
+    }
+
+    #[test]
+    fn leaving_a_band_lands_in_the_scores_own_band_however_far_it_went() {
+        let bands = with_hostile();
+        assert_eq!(
+            bands.band_after("neutral", h(-40_00), h(5_00)).name,
+            "hostile"
+        );
+        assert_eq!(
+            bands.band_after("hostile", h(40_00), h(5_00)).name,
+            "friendly"
+        );
+    }
+
+    #[test]
+    fn with_no_margin_the_band_is_always_the_scores_own() {
+        let bands = Bands::standard();
+        for (current, score) in [
+            ("neutral", -25_00),
+            ("unfriendly", -24_99),
+            ("neutral", 25_01),
+        ] {
+            assert_eq!(
+                bands.band_after(current, h(score), Fixed::ZERO),
+                bands.band_for(h(score))
+            );
+        }
+    }
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
