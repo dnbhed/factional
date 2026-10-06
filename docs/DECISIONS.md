@@ -273,6 +273,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Events carry their spills.** `StandingChanged.spilled` names the source faction, its change, the relation and the multiplier, so the event reads without context (P-15) and the CLI can say where a change came from.
   - **No awareness is applied to spills yet.** Under the omniscient model it's 1.00 either way; K1 decides how a faction learns of a spill.
   - *Why:* standing with one faction colours how its allies and enemies see you, in a way designers can trace event by event.
+- **P-47 · How drift is reviewed** (made in M8, 2026-10-06).
+  - **On change, after the command.** Members whose alignment a command moved are reviewed against each of their factions, in id order, once the command's own events are applied. Each review sees the state the last one left. Band changes (P-45) come after, so they see the result. A member who starts outside their tolerance isn't reviewed until something moves them; loading only warns (P-37).
+  - **`flag` remembers who is out,** so it reports crossing out, and back, once each. The memory ends when they leave the faction.
+  - **`demote` goes straight to the highest rung that allows them,** reporting each step, and expels if none does. The design said "down one rank, then checked again", and this is that, repeated.
+  - **Expulsion uses the standing step every other change uses,** so its cost spills (P-46).
+  - **Probation and faction alignment changes are M11,** split out to keep M8 small. Until then `probation` is an unknown policy, so no world can name a rule the engine can't run (D-20).
+  - *Why:* drift reacts to what actually moved, reports each real change once, and leaves events that read without context.
 
 ## Open
 

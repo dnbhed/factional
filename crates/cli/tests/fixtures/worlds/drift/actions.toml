@@ -1,0 +1,53 @@
+# Riverhold's action catalogue (DESIGN.md §5.2, §13).
+#
+# Each [table] is one action; its name is the id you type in the CLI, as in
+# `act player steal --target merchant_ava`.
+#
+# alignment: how far doing it moves the actor on each axis, before anything scales it.
+#   law:  toward lawful (+) or chaotic (-)
+#   good: toward good (+) or evil (-)
+#   An axis left out isn't moved. The host can scale one instance with --scale, such as
+#   stealing a crown rather than a loaf. Shifts stop at -100 and 100.
+#
+# standing: how doing it changes the way others regard the actor, -100 to 100:
+#   target           the character the act was done to, if there is one
+#   target_factions  every faction the target belongs to
+#   factions         named factions, by id: factions = { temple = 10.0 }
+#   characters       named characters, by id
+#   Changes to the same party add up. --scale doesn't change standing effects.
+#
+# by_target (optional): curves that scale the alignment effect by who the act is done to,
+# each giving a multiplier of at least 0, so a target can soften an act but never reverse it:
+#   law, good  over the target's position on that axis, scaling that axis
+#   relation   over the most hostile relation from the actor's factions toward the
+#              target's (0 if no pair of different factions links them), scaling both
+# The shift is base × scale × target × the actor's inertia, rounded once. Try
+# `act <actor> <action> --target <id> --explain`.
+
+[help_stranger]
+alignment = { good = 4.0 }
+standing = { target = 10.0 }
+
+[steal]
+alignment = { law = -5.0, good = -3.0 }
+standing = { target = -20.0, target_factions = -10.0 }
+
+[report_crime]
+alignment = { law = 4.0, good = 1.0 }
+standing = { factions = { city_watch = 5.0 } }
+
+[donate_to_temple]
+alignment = { good = 3.0 }
+standing = { factions = { temple = 10.0 } }
+
+[extort]
+alignment = { law = -2.0, good = -6.0 }
+standing = { target = -30.0, target_factions = -15.0 }
+
+[murder]
+alignment = { law = -10.0, good = -15.0 }
+standing = { target = -100.0, target_factions = -40.0 }
+# Who the victim is changes how evil it is (DESIGN.md §5.4): killing the wicked, or a sworn
+# enemy, weighs less than killing a saint.
+by_target.good = [[-100.0, 0.2], [0.0, 1.0], [100.0, 1.5]]
+by_target.relation = [[-100.0, 0.5], [-50.0, 0.8], [0.0, 1.0]]

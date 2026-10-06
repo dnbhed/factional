@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use factional_core::{Curve, CurveError, Fixed, Ratio, Tick, article, suggest};
@@ -9,7 +9,7 @@ use crate::shift::{Target, shifts};
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, Axis, Bands, Change, Character,
     CharacterId, Command, CommandError, Component, ComponentKind, Defection, Disposition,
-    DispositionWeights, Effects, Event, Faction, FactionId, Inertia, InertiaProfile,
+    DispositionWeights, DriftPolicy, Effects, Event, Faction, FactionId, Inertia, InertiaProfile,
     JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric, Outcome, OutcomeId,
     Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide,
     Role, Rule, Shift, Spill, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner,
@@ -49,6 +49,9 @@ pub struct Balance {
     /// `standing.spillover`: the share of a standing change with one faction that another
     /// gets, by how it regards the first (DESIGN.md §7.1, P-13).
     pub spillover: Curve,
+    /// `membership.default_drift`: the drift policy of a faction that sets none (DESIGN.md
+    /// §9.3).
+    pub default_drift: DriftPolicy,
 }
 
 impl Balance {
@@ -102,6 +105,7 @@ impl Default for Balance {
             inertia: Inertia::default(),
             hysteresis: Fixed::ZERO,
             spillover: Balance::default_spillover(),
+            default_drift: DriftPolicy::Flag,
         }
     }
 }
@@ -188,6 +192,8 @@ pub enum ContentProblem {
     },
     /// A faction's `leave_standing_change` outside −100…100.
     LeaveStandingOutOfRange { faction: FactionId, value: Fixed },
+    /// A faction's `expel_standing_change` outside −100…100.
+    ExpelStandingOutOfRange { faction: FactionId, value: Fixed },
     /// A `disposition.weights` entry below 0.
     NegativeDispositionWeight {
         component: ComponentKind,
@@ -586,10 +592,20 @@ impl Content {
         let mut problems: Vec<ContentProblem> = self
             .factions
             .values()
-            .filter(|faction| !within_range(faction.leave_standing_change))
-            .map(|faction| ContentProblem::LeaveStandingOutOfRange {
-                faction: faction.id.clone(),
-                value: faction.leave_standing_change,
+            .flat_map(|faction| {
+                let leave = (!within_range(faction.leave_standing_change)).then(|| {
+                    ContentProblem::LeaveStandingOutOfRange {
+                        faction: faction.id.clone(),
+                        value: faction.leave_standing_change,
+                    }
+                });
+                let expel = (!within_range(faction.expel_standing_change)).then(|| {
+                    ContentProblem::ExpelStandingOutOfRange {
+                        faction: faction.id.clone(),
+                        value: faction.expel_standing_change,
+                    }
+                });
+                leave.into_iter().chain(expel)
             })
             .collect();
         for character in self.characters.values() {
@@ -880,6 +896,7 @@ impl fmt::Display for ContentProblem {
             }
             ContentProblem::StandingOutOfRange { value, .. }
             | ContentProblem::LeaveStandingOutOfRange { value, .. }
+            | ContentProblem::ExpelStandingOutOfRange { value, .. }
             | ContentProblem::SameFactionOutOfRange(value) => {
                 write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
             }
@@ -998,6 +1015,8 @@ struct State {
     standings: BTreeMap<(CharacterId, Party), Fixed>,
     /// Every watched subject, with the band each observer last put them in (DESIGN.md §8.3).
     watched: BTreeMap<CharacterId, BTreeMap<Observer, String>>,
+    /// Members flagged as out of tolerance, until they're back or leave (DESIGN.md §9.3).
+    out_of_tolerance: BTreeSet<(CharacterId, FactionId)>,
 }
 
 impl State {
@@ -1045,6 +1064,7 @@ impl State {
                 })
                 .collect(),
             watched: BTreeMap::new(),
+            out_of_tolerance: BTreeSet::new(),
         }
     }
 }
@@ -1087,8 +1107,24 @@ impl World {
         let decided = decided?;
         // The command's own changes first; then, from the state they leave, any band changes
         // watched subjects are owed (DESIGN.md §8.3).
+        let moved: BTreeSet<CharacterId> = decided
+            .iter()
+            .filter_map(|change| match change {
+                Change::AlignmentChanged { character, .. } => Some(character.clone()),
+                _ => None,
+            })
+            .collect();
         for change in decided {
             emitted.push(self.record(change));
+        }
+        // Members whose alignment moved are reviewed against each of their factions, one at
+        // a time from the state the last review left (DESIGN.md §9.3).
+        for character in &moved {
+            for faction in self.factions_of(character) {
+                for change in self.drift_review(character, &faction) {
+                    emitted.push(self.record(change));
+                }
+            }
         }
         for change in self.band_changes() {
             emitted.push(self.record(change));
@@ -1536,6 +1572,89 @@ impl World {
         factions.chain(characters).collect()
     }
 
+    /// What `faction`'s drift policy does now about `character`, a member whose alignment
+    /// just moved (DESIGN.md §9.3).
+    fn drift_review(&self, character: &CharacterId, faction: &FactionId) -> Vec<Change> {
+        let found = &self.content.factions[faction];
+        let membership = &self.state.memberships[character][faction];
+        let rung = found
+            .rank_position(&membership.rank)
+            .expect("a member's rank is on their faction's ladder");
+        let distance = self
+            .distance(&Observer::Faction(faction.clone()), character)
+            .expect("both exist")
+            .value;
+        let tolerance = found.member_tolerance(rung);
+        let flagged = self
+            .state
+            .out_of_tolerance
+            .contains(&(character.clone(), faction.clone()));
+        let policy = found.drift.unwrap_or(self.content.balance.default_drift);
+        let mut changes = Vec::new();
+        match policy {
+            DriftPolicy::Ignore => {}
+            DriftPolicy::Flag => {
+                if distance > tolerance && !flagged {
+                    changes.push(Change::MemberOutOfTolerance {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                        distance,
+                        tolerance,
+                    });
+                } else if distance <= tolerance && flagged {
+                    changes.push(Change::MemberBackInTolerance {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                        distance,
+                        tolerance,
+                    });
+                }
+            }
+            DriftPolicy::Demote => {
+                // Down a rung at a time to the highest whose tolerance allows them, or out if
+                // none does.
+                let allowed = (0..=rung)
+                    .rev()
+                    .find(|&lower| distance <= found.member_tolerance(lower));
+                for step in (allowed.unwrap_or(0)..rung).rev() {
+                    changes.push(Change::RankChanged {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                        from: found.ranks[step + 1].id.clone(),
+                        to: found.ranks[step].id.clone(),
+                    });
+                }
+                if allowed.is_none() {
+                    changes.extend(self.expulsion(character, found));
+                }
+            }
+            DriftPolicy::Expel => {
+                if distance > tolerance {
+                    changes.extend(self.expulsion(character, found));
+                }
+            }
+        }
+        changes
+    }
+
+    /// `character` thrown out of `faction`, at its `expel_standing_change`, which spills like
+    /// any standing change.
+    fn expulsion(&self, character: &CharacterId, faction: &Faction) -> Vec<Change> {
+        let mut changes = vec![Change::LeftFaction {
+            character: character.clone(),
+            faction: faction.id.clone(),
+            reason: LeaveReason::Expelled,
+        }];
+        let mut cost = Deltas::new();
+        add(
+            &mut cost,
+            Party::Faction(faction.id.clone()),
+            faction.expel_standing_change,
+        );
+        changes.extend(self.standing_changes(character, cost));
+        changes
+    }
+
     /// The band changes the world now owes watched subjects: for each, in id order, every
     /// observer whose disposition has left the band they last put the subject in (DESIGN.md
     /// §8.3).
@@ -1723,6 +1842,27 @@ impl World {
                         self.state.memberships.remove(character);
                     }
                 }
+                self.state
+                    .out_of_tolerance
+                    .remove(&(character.clone(), faction.clone()));
+            }
+            Change::MemberOutOfTolerance {
+                ref character,
+                ref faction,
+                ..
+            } => {
+                self.state
+                    .out_of_tolerance
+                    .insert((character.clone(), faction.clone()));
+            }
+            Change::MemberBackInTolerance {
+                ref character,
+                ref faction,
+                ..
+            } => {
+                self.state
+                    .out_of_tolerance
+                    .remove(&(character.clone(), faction.clone()));
             }
             Change::AlignmentChanged {
                 ref character, to, ..
@@ -1949,6 +2089,13 @@ impl World {
         })
     }
 
+    /// What `faction` does about members who drift (DESIGN.md §9.3): its own policy, or
+    /// the balance default. `None` for an unknown faction.
+    pub fn drift_policy(&self, faction: &FactionId) -> Option<DriftPolicy> {
+        let found = self.faction(faction)?;
+        Some(found.drift.unwrap_or(self.content.balance.default_drift))
+    }
+
     /// Every watched subject, in id order, with the band each observer last put them in.
     pub fn watched(&self) -> impl Iterator<Item = (&CharacterId, &BTreeMap<Observer, String>)> {
         self.state.watched.iter()
@@ -2118,8 +2265,6 @@ impl World {
         let position = current
             .rank_position(&membership.rank)
             .expect("a member's rank is on their faction's ladder");
-        let rank_tolerance = current.ranks[position].tolerance;
-        let member_tolerance = current.tolerances.member();
         let situation = Situation {
             rank: membership.rank.clone(),
             rung: position + 1,
@@ -2130,8 +2275,7 @@ impl World {
                 .distance(&Observer::Faction(from.clone()), character)
                 .expect("both exist")
                 .value,
-            member_tolerance: rank_tolerance
-                .map_or(member_tolerance, |rank| rank.min(member_tolerance)),
+            member_tolerance: current.member_tolerance(position),
         };
         let table = |kind: TableKind, owner: &Faction| {
             let (rules, source) = match (
@@ -2362,6 +2506,8 @@ mod tests {
             leave_standing_change: Fixed::ZERO,
             ranks: ladder(id),
             rule_tables: BTreeMap::new(),
+            drift: None,
+            expel_standing_change: Faction::DEFAULT_EXPEL_STANDING_CHANGE,
         }
     }
 
@@ -2553,6 +2699,7 @@ mod tests {
             rule_tables: [(TableKind::Defectors, sample_defectors())].into(),
             hysteresis: h(5_00),
             spillover: Curve::constant(h(25)),
+            default_drift: DriftPolicy::Demote,
             inertia: Inertia {
                 default_profile: profile_id("hardening"),
                 profiles: [(profile_id("hardening"), hardening())].into(),
@@ -6465,6 +6612,285 @@ mod tests {
         assert_eq!(content.problems(), []);
     }
 
+    // Drift (DESIGN.md §9.3)
+
+    /// The defection world's factions with the example world's drift policies: the Guild
+    /// flags (the default), the Circle expels, the Temple demotes, and the Free Company
+    /// ignores, with a tolerance of 1.00 so anyone drifts. `report_crime` and `extort` join
+    /// the actions.
+    fn drift_world(characters: impl IntoIterator<Item = Character>) -> World {
+        let mut content = defectors_content(characters);
+        let mut set = |faction: &str, policy: DriftPolicy| {
+            content
+                .factions
+                .get_mut(&faction_id(faction))
+                .expect("a faction")
+                .drift = Some(policy);
+        };
+        set("ashen_circle", DriftPolicy::Expel);
+        set("temple", DriftPolicy::Demote);
+        set("free_company", DriftPolicy::Ignore);
+        let free = content
+            .factions
+            .get_mut(&faction_id("free_company"))
+            .expect("the Free Company");
+        free.tolerances = Tolerances::new(h(1_00), Some(h(1_00))).expect("valid");
+        for act in [
+            action("report_crime", 4_00, 1_00),
+            action("extort", -2_00, -6_00),
+        ] {
+            content.actions.insert(act.id.clone(), act);
+        }
+        World::new(content).expect("valid content")
+    }
+
+    fn alone(actor: &str, action: &str) -> Command {
+        act(actor, action, None, 1_00)
+    }
+
+    /// Everything after an act's own two events (the act and the alignment change).
+    fn after_the_act(events: &[Event]) -> Vec<Change> {
+        payloads(&events[2..])
+    }
+
+    fn expelled(character: &str, faction: &str) -> Change {
+        Change::LeftFaction {
+            character: id(character),
+            faction: faction_id(faction),
+            reason: LeaveReason::Expelled,
+        }
+    }
+
+    fn rank_changed(character: &str, faction: &str, from: &str, to: &str) -> Change {
+        Change::RankChanged {
+            character: id(character),
+            faction: faction_id(faction),
+            from: rank_id(from),
+            to: rank_id(to),
+        }
+    }
+
+    #[test]
+    fn a_flagging_faction_reports_a_member_drifting_out_and_back() {
+        let mut world = drift_world([member_of(character("Nell", 0, -10_00), &["lantern_guild"])]);
+        // 4 / −9 is 64.00 from the Guild: gaps 64 and 1 × 0.5, past its 60.00.
+        let out = world
+            .execute(alone("nell", "report_crime"))
+            .expect("accepted");
+        assert_eq!(
+            after_the_act(&out),
+            [Change::MemberOutOfTolerance {
+                character: id("nell"),
+                faction: faction_id("lantern_guild"),
+                distance: h(64_00),
+                tolerance: h(60_00),
+            }]
+        );
+        // Still out: nothing more to report.
+        let still = world
+            .execute(alone("nell", "report_crime"))
+            .expect("accepted");
+        assert_eq!(after_the_act(&still), []);
+        // She's at 8 / −8 now. A theft takes her to 3 / −11: gaps 63 and 1 × 0.5, 63.00,
+        // still out. A second to −2 / −14: gaps 58 and 4 × 0.5, 58.03, back in.
+        let still = world.execute(alone("nell", "steal")).expect("accepted");
+        assert_eq!(after_the_act(&still), []);
+        let back = world.execute(alone("nell", "steal")).expect("accepted");
+        assert_eq!(
+            after_the_act(&back),
+            [Change::MemberBackInTolerance {
+                character: id("nell"),
+                faction: faction_id("lantern_guild"),
+                distance: h(58_03),
+                tolerance: h(60_00),
+            }]
+        );
+        assert_eq!(
+            factions_of(&world, "nell").len(),
+            1,
+            "flagging never removes anyone"
+        );
+    }
+
+    #[test]
+    fn an_expelling_faction_throws_a_drifter_out_at_a_cost_that_spills() {
+        let mut world = drift_world([member_of(
+            character("Ash", 20_00, -40_00),
+            &["ashen_circle"],
+        )]);
+        // 20 / −36 is 44.00 from the Circle, past its 40.00.
+        let events = world
+            .execute(alone("ash", "help_stranger"))
+            .expect("accepted");
+        assert_eq!(
+            after_the_act(&events),
+            [
+                expelled("ash", "ashen_circle"),
+                standing_moved("ash", "ashen_circle", 0, -20_00),
+                // The Temple regards the Circle at −90: −0.24 × −20.00.
+                spilled(
+                    "ash",
+                    "temple",
+                    0,
+                    4_80,
+                    vec![spill("ashen_circle", -20_00, -90_00, -24, 4_80)]
+                ),
+            ]
+        );
+        assert!(factions_of(&world, "ash").is_empty());
+    }
+
+    #[test]
+    fn a_demoting_faction_moves_a_drifter_down_until_their_rank_allows_them() {
+        let ilse = ranked(character("Ilse", 30_00, 60_00), "temple", "high_priest");
+        let mut world = drift_world([ilse]);
+        // 28 / 54 is 26.02 from the Temple (gaps 2 × 0.5 and 26): past the high priest's
+        // 20.00, within the Temple's 45.00, which applies to the ordained.
+        let events = world.execute(alone("ilse", "extort")).expect("accepted");
+        assert_eq!(
+            after_the_act(&events),
+            [rank_changed("ilse", "temple", "high_priest", "ordained")]
+        );
+        assert_eq!(rank_of(&world, "ilse", "temple"), "ordained");
+    }
+
+    #[test]
+    fn a_demoted_drifter_still_out_on_the_lowest_rung_is_expelled() {
+        let oren = member_of(character("Oren", 30_00, 36_00), &["temple"]);
+        let fallen = ranked(character("Fallen", 30_00, 36_00), "temple", "high_priest");
+        let mut world = drift_world([oren, fallen]);
+        // 28 / 30 is 50.01 from the Temple, past even its 45.00.
+        let expected_cost = |who: &str| {
+            vec![
+                expelled(who, "temple"),
+                // The Circle regards the Temple at −90 (−0.24); the Watch at +60 (0.10).
+                spilled(
+                    who,
+                    "ashen_circle",
+                    0,
+                    4_80,
+                    vec![spill("temple", -20_00, -90_00, -24, 4_80)],
+                ),
+                spilled(
+                    who,
+                    "city_watch",
+                    0,
+                    -2_00,
+                    vec![spill("temple", -20_00, 60_00, 10, -2_00)],
+                ),
+                standing_moved(who, "temple", 0, -20_00),
+            ]
+        };
+        let events = world.execute(alone("oren", "extort")).expect("accepted");
+        assert_eq!(after_the_act(&events), expected_cost("oren"));
+        let events = world.execute(alone("fallen", "extort")).expect("accepted");
+        let mut expected = vec![
+            rank_changed("fallen", "temple", "high_priest", "ordained"),
+            rank_changed("fallen", "temple", "ordained", "acolyte"),
+        ];
+        expected.extend(expected_cost("fallen"));
+        assert_eq!(after_the_act(&events), expected);
+    }
+
+    #[test]
+    fn landing_exactly_on_a_tolerance_is_still_within_it() {
+        let mut world = drift_world([
+            // Each act lands them exactly on their tolerance.
+            member_of(character("Nell", -4_00, -11_00), &["lantern_guild"]),
+            ranked(character("Ilse", 32_00, 66_00), "temple", "high_priest"),
+            member_of(character("Oren", 32_00, 41_00), &["temple"]),
+            member_of(character("Ash", 20_00, -44_00), &["ashen_circle"]),
+        ]);
+        // Nell to 0 / −10: 60.00 from the Guild. Ilse to 30 / 60: 20.00 from the Temple, the
+        // high priest's tolerance. Oren to 30 / 35: 45.00, the Temple's. Ash to 20 / −40:
+        // 40.00, the Circle's.
+        for (who, action) in [
+            ("nell", "report_crime"),
+            ("ilse", "extort"),
+            ("oren", "extort"),
+            ("ash", "help_stranger"),
+        ] {
+            let events = world.execute(alone(who, action)).expect("accepted");
+            assert_eq!(after_the_act(&events), [], "{who}");
+        }
+        assert_eq!(rank_of(&world, "ilse", "temple"), "high_priest");
+    }
+
+    #[test]
+    fn an_ignoring_faction_lets_members_drift() {
+        let brann = member_of(character("Brann", -10_00, 0), &["free_company"]);
+        let mut world = drift_world([brann]);
+        let events = world.execute(alone("brann", "steal")).expect("accepted");
+        // −15 / −3 is 5.83 from the Company, far past its 1.00.
+        assert_eq!(
+            events.len(),
+            2,
+            "the act and the alignment change, nothing more"
+        );
+        assert_eq!(factions_of(&world, "brann").len(), 1);
+    }
+
+    #[test]
+    fn drift_is_reviewed_only_when_a_members_alignment_moves() {
+        // Vex starts reformed, 95.52 from the Guild: loading only warns.
+        let mut world = drift_world([member_of(
+            character("Vex", 35_00, 10_00),
+            &["lantern_guild"],
+        )]);
+        assert_eq!(
+            payloads(&world.execute(advance(5)).expect("accepted")).len(),
+            1
+        );
+        let events = world
+            .execute(alone("vex", "help_stranger"))
+            .expect("accepted");
+        assert!(matches!(
+            after_the_act(&events)[..],
+            [Change::MemberOutOfTolerance { .. }]
+        ));
+    }
+
+    #[test]
+    fn expel_standing_change_must_be_within_range() {
+        let mut content = defectors_content([]);
+        content
+            .factions
+            .get_mut(&faction_id("temple"))
+            .expect("the Temple")
+            .expel_standing_change = h(-120_00);
+        assert_eq!(
+            content.problems(),
+            [ContentProblem::ExpelStandingOutOfRange {
+                faction: faction_id("temple"),
+                value: h(-120_00),
+            }]
+        );
+        assert_eq!(
+            content.problems()[0].to_string(),
+            "-120.00 is outside -100.00..100.00"
+        );
+    }
+
+    #[test]
+    fn a_factions_drift_policy_is_its_own_or_the_default() {
+        let world = drift_world([]);
+        let policy = |faction: &str| world.drift_policy(&faction_id(faction));
+        assert_eq!(
+            [policy("temple"), policy("lantern_guild"), policy("nowhere")],
+            [Some(DriftPolicy::Demote), Some(DriftPolicy::Flag), None]
+        );
+    }
+
+    #[test]
+    fn a_members_tolerance_on_each_rung_is_the_stricter_of_the_two() {
+        let temple = &factions()[&faction_id("temple")];
+        // acolyte and ordained set none; high_priest sets 20.00, stricter than 45.00.
+        assert_eq!(
+            [0, 1, 2].map(|rung| temple.member_tolerance(rung)),
+            [h(45_00), h(45_00), h(20_00)]
+        );
+    }
+
     // Joining an enemy: defectors and deserters (DESIGN.md §9.2)
 
     fn accept(standing_change: i64) -> Verdict {
@@ -7219,6 +7645,23 @@ mod tests {
                     let now = world.disposition(observer, subject).expect("both exist").band;
                     prop_assert_eq!(band, &now);
                 }
+            }
+        }
+
+        /// DESIGN.md §9.3: a flagged member is still a member, and past their tolerance as
+        /// of the last time their alignment moved, which is their alignment now.
+        #[test]
+        fn a_flagged_member_is_a_member_out_of_tolerance(commands in commands()) {
+            let world = run(&commands);
+            for (character, faction) in &world.state.out_of_tolerance {
+                let membership = &world.state.memberships[character][faction];
+                let found = &world.content.factions[faction];
+                let rung = found.rank_position(&membership.rank).expect("on the ladder");
+                let distance = world
+                    .distance(&Observer::Faction(faction.clone()), character)
+                    .expect("both exist")
+                    .value;
+                prop_assert!(distance > found.member_tolerance(rung));
             }
         }
 

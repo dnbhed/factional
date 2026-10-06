@@ -2,7 +2,7 @@
 # it. Each observer, faction or character, weighs the axes its own way.
 load content/sample
 factions
-assert show faction temple == temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira (ordained)
+assert show faction temple == temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00, drift demote — members: sister_mira (ordained)
 # The Watch cares about law far more than goodness: gaps 70 and 20, weighted 70 and 5.
 distance city_watch player --explain
 assert distance temple sister_mira == 5.59

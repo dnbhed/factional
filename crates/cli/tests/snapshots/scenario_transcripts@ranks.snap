@@ -31,4 +31,4 @@ tolerance: within 20.00, is 5.59 — met
 > demote vex lantern_guild
 #8 at tick 0: vex's rank in lantern_guild changed from shadow to fence
 > show faction lantern_guild
-lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: player (cutpurse), vex (fence)
+lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00, drift flag — members: player (cutpurse), vex (fence)

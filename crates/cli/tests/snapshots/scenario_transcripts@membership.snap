@@ -6,7 +6,7 @@ input_file: scenarios/membership.scenario
 > load content/sample
 loaded 6 characters from content/sample
 > show faction lantern_guild
-lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex (fence)
+lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00, drift flag — members: vex (fence)
 > can-join player lantern_guild --explain
 player → lantern_guild: no
 distance 60.21 (euclidean), tolerance 45.00

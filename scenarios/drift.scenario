@@ -1,0 +1,20 @@
+# Drift (DESIGN.md §9.3): what a faction does when a member's own acts carry them past their
+# member tolerance (their rank's tolerance, if stricter).
+load crates/cli/tests/fixtures/worlds/drift
+# flag (the Guild): Nell is 60.00 away. Reporting a crime takes her to 4 / -9, 64.00 away.
+act nell report_crime
+# A theft brings her back to -1 / -12, 59.01 away.
+act nell steal
+# expel (the Ashen Circle): Ash is 40.00 away; a good deed takes him to 44.00. Out, at a
+# cost of -20.00 with the Circle that spills +4.80 to the Temple.
+act ash help_stranger
+assert show character ash == ash — Ash — law 20.00, good -36.00 — Neutral Evil
+# demote (the Temple): Ilse, a high priest 20.00 away, extorts and ends 26.02 away: past
+# the high priest's 20.00, within the Temple's 45.00, so she becomes ordained.
+act ilse extort
+assert show character ilse == ilse — Ilse — law 28.00, good 54.00 — Neutral Good — member of temple (ordained) since tick 0
+# Oren, an acolyte, ends 50.01 away: out on the lowest rung, so he's expelled.
+act oren extort
+# ignore (the Free Company): Brann drifts 1.46 from it, and nothing happens.
+act brann steal
+assert show character brann == brann — Brann — law -15.00, good -3.00 — True Neutral — member of free_company (sellsword) since tick 0

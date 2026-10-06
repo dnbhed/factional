@@ -1,0 +1,32 @@
+# Members placed at the edge of their faction's tolerance, to show each drift policy.
+
+# Exactly 60.00 from the Guild, which flags.
+[nell]
+name = "Nell"
+alignment = { law = 0.0, good = -10.0 }
+memberships = [{ faction = "lantern_guild" }]
+
+# Exactly 40.00 from the Ashen Circle, which expels.
+[ash]
+name = "Ash"
+alignment = { law = 20.0, good = -40.0 }
+memberships = [{ faction = "ashen_circle" }]
+
+# Exactly 20.00 from the Temple, a high priest's tolerance; the Temple demotes.
+[ilse]
+name = "Ilse"
+alignment = { law = 30.0, good = 60.0 }
+memberships = [{ faction = "temple", rank = "high_priest" }]
+standing = { factions = { temple = 80.0 } }
+
+# 44.00 from the Temple, within its 45.00, on the lowest rung.
+[oren]
+name = "Oren"
+alignment = { law = 30.0, good = 36.0 }
+memberships = [{ faction = "temple" }]
+
+# At the Free Company's own alignment; it ignores drift.
+[brann]
+name = "Brann"
+alignment = { law = -10.0, good = 0.0 }
+memberships = [{ faction = "free_company" }]

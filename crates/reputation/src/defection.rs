@@ -486,6 +486,8 @@ mod tests {
             leave_standing_change: Fixed::ZERO,
             ranks: vec![rung("cutpurse"), rung("fence"), rung("shadow")],
             rule_tables: BTreeMap::new(),
+            drift: None,
+            expel_standing_change: Faction::DEFAULT_EXPEL_STANDING_CHANGE,
         }
     }
 
