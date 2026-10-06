@@ -4,8 +4,8 @@ use factional_core::{Envelope, Fixed, Tick, article};
 
 use crate::{
     AXIS_LIMIT, ActionId, Alignment, AlignmentDelta, CharacterId, Effects, FactionId,
-    JoinAssessment, LeaveReason, Observer, OutcomeId, Party, PromotionAssessment, RankId, Spill,
-    Witnesses,
+    JoinAssessment, LeaveReason, ModifierId, ModifierObserver, Observer, OutcomeId, Party,
+    PromotionAssessment, RankId, Spill, Witnesses,
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
@@ -87,6 +87,20 @@ pub enum Command {
     ResolveConflict {
         character: CharacterId,
         keep: FactionId,
+    },
+    /// Puts a modifier on how `observer` regards `subject`, until `expires_at` if given
+    /// (DESIGN.md §8.1).
+    AddModifier {
+        id: ModifierId,
+        observer: ModifierObserver,
+        subject: CharacterId,
+        amount: Fixed,
+        expires_at: Option<Tick>,
+    },
+    /// Takes the modifier `id` off `subject`.
+    RemoveModifier {
+        subject: CharacterId,
+        id: ModifierId,
     },
     /// Starts reporting when anyone's disposition toward `subject` changes band (DESIGN.md
     /// §8.3, P-23).
@@ -204,6 +218,23 @@ pub enum Change {
         character: CharacterId,
         factions: (FactionId, FactionId),
     },
+    /// A modifier was put on how `observer` regards `subject`.
+    ModifierAdded {
+        subject: CharacterId,
+        id: ModifierId,
+        observer: ModifierObserver,
+        amount: Fixed,
+        expires_at: Option<Tick>,
+    },
+    ModifierRemoved {
+        subject: CharacterId,
+        id: ModifierId,
+    },
+    /// A modifier reached its `expires_at`.
+    ModifierExpired {
+        subject: CharacterId,
+        id: ModifierId,
+    },
     /// A faction's alignment changed at runtime.
     FactionAlignmentChanged {
         faction: FactionId,
@@ -240,8 +271,10 @@ pub enum Role {
     Witness,
     /// The character joining or leaving a faction.
     Member,
-    /// The character being watched.
+    /// The character being watched, or modified.
     Subject,
+    /// The character a modifier is for.
+    Observer,
 }
 
 /// Why a command was refused. A refused command changes nothing and emits nothing.
@@ -301,6 +334,18 @@ pub enum CommandError {
     },
     /// A relation or effect outside −100…100.
     ValueOutOfRange { value: Fixed },
+    /// `AddModifier` with an id the subject already has.
+    AlreadyModified {
+        subject: CharacterId,
+        id: ModifierId,
+    },
+    /// `RemoveModifier` for a modifier the subject doesn't have.
+    NoSuchModifier {
+        subject: CharacterId,
+        id: ModifierId,
+    },
+    /// `AddModifier` whose `expires_at` isn't after now.
+    ExpiryNotAfterNow { expires_at: Tick, now: Tick },
     /// `ResolveConflict` naming a faction that isn't in an open conflict of the character's.
     NoConflict {
         character: CharacterId,
@@ -325,7 +370,7 @@ impl fmt::Display for Role {
             Role::Actor => "actor",
             Role::Target => "target",
             Role::Witness => "witness",
-            Role::Member | Role::Subject => "character",
+            Role::Member | Role::Subject | Role::Observer => "character",
         })
     }
 }
@@ -420,6 +465,16 @@ impl fmt::Display for CommandError {
             CommandError::ValueOutOfRange { value } => {
                 write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
             }
+            CommandError::AlreadyModified { subject, id } => {
+                write!(f, "{subject} already has a modifier '{id}'")
+            }
+            CommandError::NoSuchModifier { subject, id } => {
+                write!(f, "{subject} has no modifier '{id}'")
+            }
+            CommandError::ExpiryNotAfterNow { expires_at, now } => write!(
+                f,
+                "a modifier must expire after now, tick {now}, not at tick {expires_at}"
+            ),
             CommandError::NoConflict { character, faction } => {
                 write!(f, "{character} has no open conflict involving {faction}")
             }

@@ -296,6 +296,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`ResolveConflict` settles every open conflict involving `keep`,** and is refused if there are none.
   - **Invariant 6** now allows two factions in conflict only while their conflict is open. Its property test runs with a character in two factions, so random relations can start wars and the rule settles them.
   - *Why:* the game decides who someone stands with, with a rule to fall back on, and every step shows in the events.
+- **P-50 · How disposition modifiers apply** (made in M10, 2026-10-06).
+  - **Who they're for.** Everyone; a faction, which counts for the faction itself and for every character in it; or one character. A faction observer doesn't get its members' character modifiers.
+  - **An id is unique per subject,** and adding one that's already there is refused rather than replaced. A module that wants to refresh one removes it first, so nothing changes silently.
+  - **Expiry is a tick in the future,** checked after every command (like probation, P-48). Exactly at `expires_at` it has expired.
+  - **They add up, then clamp to ±100,** like kinship. `--explain` names each modifier that counted, with its observer.
+  - **Commands, not content.** Modifiers come from other modules at runtime, so their checks are refusals, not load errors, as for `ApplyEffects` (P-39).
+  - *Why:* other modules can colour how someone is seen for a while, in a way that explains itself and expires on its own.
 
 ## Open
 

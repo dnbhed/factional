@@ -1,0 +1,20 @@
+# Disposition modifiers (DESIGN.md §8.1): other modules change how someone is seen for a
+# while, such as a bribe or a hero's welcome. They add up, for everyone, for a faction and
+# its members, or for one observer, and count as the fifth component of disposition.
+load content/sample
+act player steal --target merchant_ava
+act player steal --target merchant_ava
+outcome fined_by_watch player
+watch player
+# DESIGN.md §8.2: Hale regards the thief at -29.10. A bribe of 20 takes him to -9.10, and
+# the watched player hears that he's no longer unfriendly.
+modify captain_hale player bribed 20 --until 10
+disposition captain_hale player --explain
+# A hero's welcome from everyone: 30.00 in all for Hale, 0.90.
+modify everyone player hero_of_riverhold 10
+assert disposition captain_hale player == 0.90 (neutral)
+modifiers player
+# The bribe wears off at tick 10.
+advance 10
+assert disposition captain_hale player == -19.10 (neutral)
+assert modify everyone player hero_of_riverhold 5 == error: player already has a modifier 'hero_of_riverhold'

@@ -31,11 +31,14 @@ pub use defection::{
     TableKind, TableOwner, TableProblem, TableSource, Verdict,
 };
 pub use disposition::{
-    Band, BandProblem, Bands, Component, ComponentKind, Disposition, DispositionWeights, Part,
+    AppliedModifier, Band, BandProblem, Bands, Component, ComponentKind, Disposition,
+    DispositionWeights, ModifierObserver, Part,
 };
 pub use distance::{Metric, WeightProblem, Weights, measure};
 pub use faction::{Faction, Rank};
-pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId, ProfileId, RankId};
+pub use id::{
+    ActionId, CharacterId, FactionId, InvalidId, ModifierId, OutcomeId, ProfileId, RankId,
+};
 pub use inertia::{Inertia, InertiaProfile, Toward};
 pub use membership::{
     ConflictRule, Consequence, DriftPolicy, JoinAssessment, JoinBlock, LeaveReason, Membership,

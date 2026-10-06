@@ -8,14 +8,14 @@ use crate::defection::{self, Situation};
 use crate::distance::gap;
 use crate::shift::{Target, shifts};
 use crate::{
-    AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, Axis, Bands, Change, Character,
-    CharacterId, Command, CommandError, Component, ComponentKind, ConflictRule, Consequence,
-    Defection, Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction, FactionId,
-    Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership,
-    Metric, Outcome, OutcomeId, Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId,
-    Regard, Relation, RelationSide, Role, Rule, Shift, Spill, StandingEffects, StandingKey,
-    StandingOwner, TableKind, TableOwner, TableProblem, TableSource, TargetCurve, TargetRelation,
-    Toward, Verdict, Weights, Witnesses, measure,
+    AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, AppliedModifier, Axis, Bands, Change,
+    Character, CharacterId, Command, CommandError, Component, ComponentKind, ConflictRule,
+    Consequence, Defection, Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction,
+    FactionId, Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, LeaveReason,
+    Membership, Metric, ModifierId, ModifierObserver, Outcome, OutcomeId, Part, Party, ProfileId,
+    PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide, Role, Rule, Shift,
+    Spill, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner, TableProblem,
+    TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -1024,6 +1024,8 @@ struct State {
     out_of_tolerance: BTreeSet<(CharacterId, FactionId)>,
     /// Members on probation, and when it runs out.
     probation: BTreeMap<(CharacterId, FactionId), Tick>,
+    /// Every modifier on how a subject is seen, by subject and id (DESIGN.md §8.1).
+    modifiers: BTreeMap<(CharacterId, ModifierId), Modifier>,
     /// Open wars between two of a character's factions, the pair in id order, and when each
     /// opened (DESIGN.md §9.4).
     conflicts: BTreeMap<(CharacterId, FactionId, FactionId), Tick>,
@@ -1079,6 +1081,7 @@ impl State {
             out_of_tolerance: BTreeSet::new(),
             probation: BTreeMap::new(),
             conflicts: BTreeMap::new(),
+            modifiers: BTreeMap::new(),
             faction_alignments: content
                 .factions
                 .values()
@@ -1180,6 +1183,24 @@ impl World {
             for change in self.probation_expiry(&character, &faction) {
                 emitted.push(self.record(change));
             }
+        }
+        // Then any modifier that has run out (DESIGN.md §8.1).
+        let expired: Vec<Change> = self
+            .state
+            .modifiers
+            .iter()
+            .filter(|(_, modifier)| {
+                modifier
+                    .expires_at
+                    .is_some_and(|until| until <= self.state.now)
+            })
+            .map(|((subject, id), _)| Change::ModifierExpired {
+                subject: subject.clone(),
+                id: id.clone(),
+            })
+            .collect();
+        for change in expired {
+            emitted.push(self.record(change));
         }
         for change in self.band_changes() {
             emitted.push(self.record(change));
@@ -1485,6 +1506,68 @@ impl World {
                     });
                 }
                 Ok(self.resolution(character, &others))
+            }
+            Command::AddModifier {
+                id,
+                observer,
+                subject,
+                amount,
+                expires_at,
+            } => {
+                self.existing(subject, Role::Subject)?;
+                match observer {
+                    ModifierObserver::Everyone => {}
+                    ModifierObserver::Faction(faction) => {
+                        self.faction(faction)
+                            .ok_or_else(|| self.unknown_faction(faction))?;
+                    }
+                    ModifierObserver::Character(character) => {
+                        self.existing(character, Role::Observer)?;
+                    }
+                }
+                if !within_range(*amount) {
+                    return Err(CommandError::ValueOutOfRange { value: *amount });
+                }
+                if let Some(at) = expires_at.filter(|at| *at <= self.state.now) {
+                    return Err(CommandError::ExpiryNotAfterNow {
+                        expires_at: at,
+                        now: self.state.now,
+                    });
+                }
+                if self
+                    .state
+                    .modifiers
+                    .contains_key(&(subject.clone(), id.clone()))
+                {
+                    return Err(CommandError::AlreadyModified {
+                        subject: subject.clone(),
+                        id: id.clone(),
+                    });
+                }
+                Ok(vec![Change::ModifierAdded {
+                    subject: subject.clone(),
+                    id: id.clone(),
+                    observer: observer.clone(),
+                    amount: *amount,
+                    expires_at: *expires_at,
+                }])
+            }
+            Command::RemoveModifier { subject, id } => {
+                self.existing(subject, Role::Subject)?;
+                if !self
+                    .state
+                    .modifiers
+                    .contains_key(&(subject.clone(), id.clone()))
+                {
+                    return Err(CommandError::NoSuchModifier {
+                        subject: subject.clone(),
+                        id: id.clone(),
+                    });
+                }
+                Ok(vec![Change::ModifierRemoved {
+                    subject: subject.clone(),
+                    id: id.clone(),
+                }])
             }
             Command::Watch { subject } => {
                 self.existing(subject, Role::Subject)?;
@@ -2121,6 +2204,32 @@ impl World {
                     .conflicts
                     .remove(&(character.clone(), a.clone(), b.clone()));
             }
+            Change::ModifierAdded {
+                ref subject,
+                ref id,
+                ref observer,
+                amount,
+                expires_at,
+            } => {
+                self.state.modifiers.insert(
+                    (subject.clone(), id.clone()),
+                    Modifier {
+                        observer: observer.clone(),
+                        amount,
+                        expires_at,
+                    },
+                );
+            }
+            Change::ModifierRemoved {
+                ref subject,
+                ref id,
+            }
+            | Change::ModifierExpired {
+                ref subject,
+                ref id,
+            } => {
+                self.state.modifiers.remove(&(subject.clone(), id.clone()));
+            }
             Change::FactionAlignmentChanged {
                 ref faction, to, ..
             } => {
@@ -2367,6 +2476,29 @@ impl World {
             profile: profile.clone(),
             axes: shifts(from, delta, scale, None, inertia),
         })
+    }
+
+    /// The modifiers on how `subject` is seen, in id order, each with when it expires.
+    /// `None` for an unknown character.
+    pub fn modifiers(&self, subject: &CharacterId) -> Option<Vec<(AppliedModifier, Option<Tick>)>> {
+        self.character(subject)?;
+        Some(
+            self.state
+                .modifiers
+                .iter()
+                .filter(|((who, _), _)| who == subject)
+                .map(|((_, id), modifier)| {
+                    (
+                        AppliedModifier {
+                            id: id.clone(),
+                            observer: modifier.observer.clone(),
+                            amount: modifier.amount,
+                        },
+                        modifier.expires_at,
+                    )
+                })
+                .collect(),
+        )
     }
 
     /// `character`'s open wars between two of their factions, each pair in id order.
@@ -2641,6 +2773,36 @@ impl World {
                 .collect(),
             Observer::Faction(_) => Vec::new(),
         };
+        // The modifiers for everyone, for the observer itself, and for a character's factions.
+        let applies = |who: &ModifierObserver| match (who, observer) {
+            (ModifierObserver::Everyone, _) => true,
+            (ModifierObserver::Faction(faction), Observer::Faction(observer)) => {
+                faction == observer
+            }
+            (ModifierObserver::Faction(faction), Observer::Character(_)) => {
+                observer_factions.contains(faction)
+            }
+            (ModifierObserver::Character(character), Observer::Character(observer)) => {
+                character == observer
+            }
+            (ModifierObserver::Character(_), Observer::Faction(_)) => false,
+        };
+        let modifiers: Vec<AppliedModifier> = self
+            .state
+            .modifiers
+            .iter()
+            .filter(|((who, _), modifier)| who == subject && applies(&modifier.observer))
+            .map(|((_, id), modifier)| AppliedModifier {
+                id: id.clone(),
+                observer: modifier.observer.clone(),
+                amount: modifier.amount,
+            })
+            .collect();
+        // Every modifier is within ±100, so even many can't overflow before the clamp.
+        let modified = modifiers
+            .iter()
+            .fold(Fixed::ZERO, |total, modifier| total + modifier.amount)
+            .clamp(-AXIS_LIMIT, AXIS_LIMIT);
         let components: Vec<Component> = ComponentKind::ALL
             .into_iter()
             .map(|kind| {
@@ -2649,7 +2811,7 @@ impl World {
                     ComponentKind::Standing => (standing, Vec::new()),
                     ComponentKind::Kinship => (sum(&kinship), kinship.clone()),
                     ComponentKind::FactionOpinion => (sum(&opinion), opinion.clone()),
-                    ComponentKind::Modifiers => (Fixed::ZERO, Vec::new()),
+                    ComponentKind::Modifiers => (modified, Vec::new()),
                 };
                 let weight = balance.disposition_weights.get(kind);
                 Component {
@@ -2658,6 +2820,11 @@ impl World {
                     weight,
                     weighted: weight * value,
                     parts,
+                    modifiers: if kind == ComponentKind::Modifiers {
+                        modifiers.clone()
+                    } else {
+                        Vec::new()
+                    },
                 }
             })
             .collect();
@@ -2695,6 +2862,14 @@ impl World {
             weights_from,
         })
     }
+}
+
+/// A modifier as the world keeps it, under its subject and id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Modifier {
+    observer: ModifierObserver,
+    amount: Fixed,
+    expires_at: Option<Tick>,
 }
 
 /// The change a faction alignment command makes: none if it doesn't move.
@@ -2766,10 +2941,10 @@ where
 mod tests {
     use super::*;
     use crate::{
-        AXIS_LIMIT, ActionStanding, AlignmentDelta, AxisShift, Band, Condition, ConditionCheck,
-        Consequence, Effects, JoinBlock, LeaveReason, Observed, Part, Rank, RankCheck, RankRef,
-        RelationEnds, Role, Spill, StandingEffects, StartingMembership, Tolerances, Verdict,
-        Witnesses,
+        AXIS_LIMIT, ActionStanding, AlignmentDelta, AppliedModifier, AxisShift, Band, Condition,
+        ConditionCheck, Consequence, Effects, JoinBlock, LeaveReason, Observed, Part, Rank,
+        RankCheck, RankRef, RelationEnds, Role, Spill, StandingEffects, StartingMembership,
+        Tolerances, Verdict, Witnesses,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -3305,6 +3480,7 @@ mod tests {
             weight: h(weight),
             weighted: h(weighted),
             parts,
+            modifiers: Vec::new(),
         }
     }
 
@@ -7728,6 +7904,334 @@ mod tests {
         );
     }
 
+    // Disposition modifiers (DESIGN.md §8.1)
+
+    fn modifier_id(text: &str) -> ModifierId {
+        ModifierId::new(text).expect("a valid id")
+    }
+
+    fn modify(
+        name: &str,
+        observer: ModifierObserver,
+        amount: i64,
+        expires_at: Option<u64>,
+    ) -> Command {
+        Command::AddModifier {
+            id: modifier_id(name),
+            observer,
+            subject: id("player"),
+            amount: h(amount),
+            expires_at: expires_at.map(Tick),
+        }
+    }
+
+    fn by_character(text: &str) -> ModifierObserver {
+        ModifierObserver::Character(id(text))
+    }
+
+    /// DESIGN.md §8.2's thief: two thefts from Ava and a fine, so Hale regards them at
+    /// −29.10.
+    fn fined_thief() -> World {
+        let mut world = with_outcomes();
+        steal_from_ava(&mut world);
+        steal_from_ava(&mut world);
+        world
+            .execute(outcome("fined_by_watch", "player"))
+            .expect("accepted");
+        world
+    }
+
+    fn score(world: &World, observer: &Observer) -> (Fixed, String) {
+        let regard = world
+            .disposition(observer, &id("player"))
+            .expect("both exist");
+        (regard.score, regard.band)
+    }
+
+    #[test]
+    fn a_modifier_changes_how_one_observer_sees_the_subject() {
+        let mut world = fined_thief();
+        let hale = as_character("captain_hale");
+        assert_eq!(score(&world, &hale), scored(-29_10, "unfriendly"));
+        let events = world
+            .execute(modify("bribed", by_character("captain_hale"), 20_00, None))
+            .expect("accepted");
+        assert_eq!(
+            payloads(&events),
+            [Change::ModifierAdded {
+                subject: id("player"),
+                id: modifier_id("bribed"),
+                observer: by_character("captain_hale"),
+                amount: h(20_00),
+                expires_at: None,
+            }]
+        );
+        // The modifiers component is 20.00 × 1.00: −29.10 + 20.00 = −9.10.
+        assert_eq!(score(&world, &hale), scored(-9_10, "neutral"));
+        let modifiers = component(&world, &hale, "player", ComponentKind::Modifiers);
+        assert_eq!((modifiers.value, modifiers.weighted), (h(20_00), h(20_00)));
+        assert_eq!(
+            modifiers.modifiers,
+            [AppliedModifier {
+                id: modifier_id("bribed"),
+                observer: by_character("captain_hale"),
+                amount: h(20_00),
+            }]
+        );
+        // No one else's view changed.
+        assert_eq!(score(&world, &as_character("vex")).0, {
+            let mut plain = fined_thief();
+            plain.execute(advance(1)).expect("accepted");
+            score(&plain, &as_character("vex")).0
+        });
+    }
+
+    #[test]
+    fn modifiers_for_everyone_and_for_a_faction_add_up() {
+        let mut world = fined_thief();
+        world
+            .execute(modify("bribed", by_character("captain_hale"), 20_00, None))
+            .expect("accepted");
+        world
+            .execute(modify(
+                "hero_of_riverhold",
+                ModifierObserver::Everyone,
+                10_00,
+                None,
+            ))
+            .expect("accepted");
+        // 20.00 + 10.00: −29.10 + 30.00 = 0.90.
+        assert_eq!(
+            score(&world, &as_character("captain_hale")),
+            scored(90, "neutral")
+        );
+        world
+            .execute(modify(
+                "watch_favour",
+                ModifierObserver::Faction(faction_id("city_watch")),
+                15_00,
+                None,
+            ))
+            .expect("accepted");
+        // The Watch's favour counts for Hale, a member: 0.90 + 15.00.
+        assert_eq!(score(&world, &as_character("captain_hale")).0, h(15_90));
+        // And for the Watch itself: −27.24 + 10.00 + 15.00.
+        assert_eq!(score(&world, &as_faction("city_watch")).0, h(-2_24));
+        // Not for the Guild, which only gets everyone's 10.00.
+        let guild = component(
+            &world,
+            &as_faction("lantern_guild"),
+            "player",
+            ComponentKind::Modifiers,
+        );
+        assert_eq!(guild.value, h(10_00));
+    }
+
+    #[test]
+    fn modifiers_add_up_to_at_most_100() {
+        let mut world = with_outcomes();
+        for name in ["a", "b", "c"] {
+            world
+                .execute(modify(name, ModifierObserver::Everyone, 50_00, None))
+                .expect("accepted");
+        }
+        let modifiers = component(
+            &world,
+            &as_character("ava"),
+            "player",
+            ComponentKind::Modifiers,
+        );
+        assert_eq!((modifiers.value, modifiers.modifiers.len()), (h(100_00), 3));
+    }
+
+    #[test]
+    fn a_modifier_expires_when_time_reaches_it() {
+        let mut world = fined_thief();
+        world
+            .execute(modify(
+                "bribed",
+                by_character("captain_hale"),
+                20_00,
+                Some(10),
+            ))
+            .expect("accepted");
+        assert_eq!(world.execute(advance(9)).expect("accepted").len(), 1);
+        let events = world.execute(advance(1)).expect("accepted");
+        assert_eq!(
+            payloads(&events)[1..],
+            [Change::ModifierExpired {
+                subject: id("player"),
+                id: modifier_id("bribed"),
+            }]
+        );
+        assert_eq!(
+            score(&world, &as_character("captain_hale")),
+            scored(-29_10, "unfriendly")
+        );
+    }
+
+    #[test]
+    fn the_modifiers_on_a_subject_are_listed_in_id_order() {
+        let mut world = with_outcomes();
+        world
+            .execute(modify("zeal", ModifierObserver::Everyone, 5_00, Some(9)))
+            .expect("accepted");
+        world
+            .execute(modify("bribed", by_character("captain_hale"), 20_00, None))
+            .expect("accepted");
+        let mut on_vex = modify("other", ModifierObserver::Everyone, 1_00, None);
+        if let Command::AddModifier { subject, .. } = &mut on_vex {
+            *subject = id("vex");
+        }
+        world.execute(on_vex).expect("accepted");
+        assert_eq!(
+            world.modifiers(&id("player")),
+            Some(vec![
+                (
+                    AppliedModifier {
+                        id: modifier_id("bribed"),
+                        observer: by_character("captain_hale"),
+                        amount: h(20_00),
+                    },
+                    None
+                ),
+                (
+                    AppliedModifier {
+                        id: modifier_id("zeal"),
+                        observer: ModifierObserver::Everyone,
+                        amount: h(5_00),
+                    },
+                    Some(Tick(9))
+                ),
+            ])
+        );
+        assert_eq!(world.modifiers(&id("ghost")), None);
+    }
+
+    #[test]
+    fn a_modifier_can_be_removed() {
+        let mut world = fined_thief();
+        world
+            .execute(modify("bribed", by_character("captain_hale"), 20_00, None))
+            .expect("accepted");
+        let remove = Command::RemoveModifier {
+            subject: id("player"),
+            id: modifier_id("bribed"),
+        };
+        assert_eq!(
+            payloads(&world.execute(remove.clone()).expect("accepted")),
+            [Change::ModifierRemoved {
+                subject: id("player"),
+                id: modifier_id("bribed"),
+            }]
+        );
+        assert_eq!(
+            world.execute(remove),
+            Err(CommandError::NoSuchModifier {
+                subject: id("player"),
+                id: modifier_id("bribed"),
+            })
+        );
+    }
+
+    #[test]
+    fn a_watched_subject_hears_when_a_modifier_moves_a_band() {
+        let mut world = fined_thief();
+        world.execute(watch("player")).expect("accepted");
+        let events = world
+            .execute(modify("bribed", by_character("captain_hale"), 20_00, None))
+            .expect("accepted");
+        assert_eq!(
+            payloads(&events)[1..],
+            [band_change(
+                character_observer("captain_hale"),
+                "unfriendly",
+                "neutral",
+                -9_10
+            )]
+        );
+    }
+
+    #[test]
+    fn a_modifier_needs_things_that_exist_a_range_a_future_and_a_fresh_id() {
+        let mut world = with_outcomes();
+        world.execute(advance(5)).expect("accepted");
+        let mut ghost = modify("x", ModifierObserver::Everyone, 1_00, None);
+        if let Command::AddModifier { subject, .. } = &mut ghost {
+            *subject = id("ghost");
+        }
+        assert!(matches!(
+            world.execute(ghost),
+            Err(CommandError::UnknownCharacter {
+                role: Role::Subject,
+                ..
+            })
+        ));
+        assert!(matches!(
+            world.execute(modify("x", by_character("ghost"), 1_00, None)),
+            Err(CommandError::UnknownCharacter {
+                role: Role::Observer,
+                ..
+            })
+        ));
+        assert!(matches!(
+            world.execute(modify(
+                "x",
+                ModifierObserver::Faction(faction_id("nowhere")),
+                1_00,
+                None
+            )),
+            Err(CommandError::UnknownFaction { .. })
+        ));
+        assert_eq!(
+            world.execute(modify("x", ModifierObserver::Everyone, 100_01, None)),
+            Err(CommandError::ValueOutOfRange { value: h(100_01) })
+        );
+        assert_eq!(
+            world.execute(modify("x", ModifierObserver::Everyone, 1_00, Some(5))),
+            Err(CommandError::ExpiryNotAfterNow {
+                expires_at: Tick(5),
+                now: Tick(5),
+            })
+        );
+        world
+            .execute(modify("x", ModifierObserver::Everyone, -100_00, Some(6)))
+            .expect("the ends of the range, and the next tick, are fine");
+        assert_eq!(
+            world.execute(modify("x", ModifierObserver::Everyone, 1_00, None)),
+            Err(CommandError::AlreadyModified {
+                subject: id("player"),
+                id: modifier_id("x"),
+            })
+        );
+        assert_eq!(
+            [
+                CommandError::AlreadyModified {
+                    subject: id("player"),
+                    id: modifier_id("x")
+                }
+                .to_string(),
+                CommandError::NoSuchModifier {
+                    subject: id("player"),
+                    id: modifier_id("x")
+                }
+                .to_string(),
+                CommandError::ExpiryNotAfterNow {
+                    expires_at: Tick(5),
+                    now: Tick(5)
+                }
+                .to_string(),
+                ModifierObserver::Everyone.to_string(),
+            ],
+            [
+                "player already has a modifier 'x'",
+                "player has no modifier 'x'",
+                "a modifier must expire after now, tick 5, not at tick 5",
+                "everyone",
+            ]
+        );
+    }
+
     // Joining an enemy: defectors and deserters (DESIGN.md §9.2)
 
     fn accept(standing_change: i64) -> Verdict {
@@ -8379,6 +8883,34 @@ mod tests {
         });
         let faction_shift = (faction(), -60_00_i64..=60_00, -60_00_i64..=60_00)
             .prop_map(|(faction, law, good)| shift_faction(faction, law, good));
+        let modifying = (
+            any::<bool>(),
+            prop_oneof![Just("bribed"), Just("hero")],
+            prop_oneof![
+                Just(ModifierObserver::Everyone),
+                Just(ModifierObserver::Faction(faction_id("lantern_guild"))),
+                Just(ModifierObserver::Character(id("vex"))),
+            ],
+            who(),
+            -150_00_i64..=150_00,
+            proptest::option::of(0_u64..=2_000),
+        )
+            .prop_map(|(adding, name, observer, subject, amount, expires_at)| {
+                if adding {
+                    Command::AddModifier {
+                        id: modifier_id(name),
+                        observer,
+                        subject: id(subject),
+                        amount: h(amount),
+                        expires_at: expires_at.map(Tick),
+                    }
+                } else {
+                    Command::RemoveModifier {
+                        subject: id(subject),
+                        id: modifier_id(name),
+                    }
+                }
+            });
         let command = prop_oneof![
             (0_u64..=1_000).prop_map(advance),
             action,
@@ -8386,7 +8918,8 @@ mod tests {
             relate,
             effects,
             watching,
-            faction_shift
+            faction_shift,
+            modifying
         ];
         proptest::collection::vec(command, 0..30)
     }
@@ -8548,6 +9081,23 @@ mod tests {
                     .expect("both exist")
                     .value;
                 prop_assert!(distance > found.member_tolerance(rung));
+            }
+        }
+
+        /// DESIGN.md §8.1: no modifier outlives its expiry, and the modifiers component
+        /// stays within ±100 however many there are.
+        #[test]
+        fn modifiers_expire_on_time_and_stay_within_range(commands in commands()) {
+            let world = run(&commands);
+            for modifier in world.state.modifiers.values() {
+                prop_assert!(modifier.expires_at.is_none_or(|until| until > world.now()));
+            }
+            for character in world.characters() {
+                let regard = world
+                    .disposition(&Observer::Faction(faction_id("lantern_guild")), &character.id)
+                    .expect("both exist");
+                let value = regard.component(ComponentKind::Modifiers).value;
+                prop_assert!((-AXIS_LIMIT..=AXIS_LIMIT).contains(&value));
             }
         }
 

@@ -1,0 +1,49 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/modifiers.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --target merchant_ava
+#1 at tick 0: player did steal, targeting merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00
+> act player steal --target merchant_ava
+#4 at tick 0: player did steal, targeting merchant_ava
+#5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
+#6 at tick 0: player's standing with merchant_ava moved from -20.00 to -40.00
+> outcome fined_by_watch player
+#7 at tick 0: outcome fined_by_watch applied to player
+#8 at tick 0: player's standing with city_watch moved from 0.00 to -20.00
+#9 at tick 0: player's standing with lantern_guild moved from 0.00 to 3.60, with 3.60 spilled from city_watch (-20.00 × -0.18; lantern_guild regards it at -80.00)
+#10 at tick 0: player's standing with temple moved from 0.00 to -2.00, with -2.00 spilled from city_watch (-20.00 × 0.10; temple regards it at 60.00)
+#11 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
+> watch player
+#12 at tick 0: now watching player (10 observers)
+> modify captain_hale player bribed 20 --until 10
+#13 at tick 0: modifier bribed on player: 20.00 from captain_hale, until tick 10
+#14 at tick 0: captain_hale now regards player as neutral (was unfriendly), at -9.10
+> disposition captain_hale player --explain
+captain_hale → player: -9.10 (neutral)
+affinity: -9.10 × 1.00 = -9.10, at distance 85.48 (euclidean)
+  law: 75.00 vs -10.00, gap 85.00, weight 1.00
+  good: 30.00 vs -6.00, gap 36.00, weight 0.25
+  weights: captain_hale's own
+standing: -10.00 × 1.00 = -10.00
+kinship: 0.00 × 0.50 = 0.00 (player belongs to no factions)
+faction opinion: -20.00 × 0.50 = -10.00 (city_watch -20.00)
+modifiers: 20.00 × 1.00 = 20.00 (bribed 20.00 from captain_hale)
+bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly
+> modify everyone player hero_of_riverhold 10
+#15 at tick 0: modifier hero_of_riverhold on player: 10.00 from everyone
+#16 at tick 0: city_watch now regards player as neutral (was unfriendly), at -17.24
+> assert disposition captain_hale player == 0.90 (neutral)
+> modifiers player
+bribed: 20.00 from captain_hale, until tick 10
+hero_of_riverhold: 10.00 from everyone
+> advance 10
+#17 at tick 0: time advanced from 0 to 10
+#18 at tick 10: modifier bribed on player expired
+> assert disposition captain_hale player == -19.10 (neutral)
+> assert modify everyone player hero_of_riverhold 5 == error: player already has a modifier 'hero_of_riverhold'
