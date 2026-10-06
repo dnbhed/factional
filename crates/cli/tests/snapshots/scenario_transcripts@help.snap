@@ -25,6 +25,9 @@ relate <from> <to> <value> [--one-way]                          set how <from> a
 relate <from> <to> --by <n> [--one-way]                         shift a relation by <n>, stopping at -100 and 100
 disposition <observer> <subject> [--explain]                    how <observer>, a faction or character, regards <subject>: a score and its band
 distance <observer> <subject> [--explain]                       how far <subject> is from <observer>, a faction or character, as the observer sees it
+watch <character>                                               report whenever anyone's disposition toward <character> changes band
+unwatch <character>                                             stop reporting <character>'s band changes
+watching                                                        the watched characters, and the band each observer puts them in
 actions                                                         list the action catalogue and how each act moves alignment
 act <actor> <action> [--target <id>] [--scale <n>] [--explain]  <actor> does <action>; --scale says how big this instance was (default 1.00)
 advance <ticks>                                                 move time forward

@@ -246,6 +246,9 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             ContentProblem::SameFactionOutOfRange(_) => {
                 (BALANCE_FILE, "disposition.same_faction".to_owned())
             }
+            ContentProblem::NegativeHysteresis(_) => {
+                (BALANCE_FILE, "disposition.hysteresis".to_owned())
+            }
             ContentProblem::UnknownProfile {
                 user: ProfileUser::Default,
                 ..
@@ -422,6 +425,9 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         }
         if let Some(same_faction) = disposition.optional_fixed("same_faction", report) {
             balance.same_faction = same_faction;
+        }
+        if let Some(hysteresis) = disposition.optional_fixed("hysteresis", report) {
+            balance.hysteresis = hysteresis;
         }
         disposition.finish(report);
     }
@@ -1984,6 +1990,23 @@ mod tests {
             [
                 "factions.toml: vex: 'vex' is also a character's id: factions and characters need different ids"
             ]
+        );
+    }
+
+    // Hysteresis (D3)
+
+    #[test]
+    fn reads_and_checks_the_hysteresis_margin() {
+        let content = balance("[disposition]\nhysteresis = 5.0\n").expect("valid content");
+        assert_eq!(content.balance.hysteresis, h(5_00));
+        assert_eq!(balance("").expect("valid").balance.hysteresis, h(0));
+        assert_eq!(
+            problems(balance("[disposition]\nhysteresis = -1.0\n")),
+            ["balance.toml: disposition.hysteresis: -1.00 must be at least 0.00"]
+        );
+        assert_eq!(
+            problems(balance("[disposition]\nhysteresis = \"wide\"\n")),
+            ["balance.toml: disposition.hysteresis: expected a number, like 25.0"]
         );
     }
 

@@ -1,0 +1,36 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/watching.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --target merchant_ava
+#1 at tick 0: player did steal, targeting merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00
+> act player steal --target merchant_ava
+#4 at tick 0: player did steal, targeting merchant_ava
+#5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
+#6 at tick 0: player's standing with merchant_ava moved from -20.00 to -40.00
+> watch player
+#7 at tick 0: now watching player (10 observers)
+> watching
+player — neutral: ashen_circle, city_watch, lantern_guild, temple, brother_ash, captain_hale, merchant_ava, sister_mira, vex; friendly: free_company
+> outcome fined_by_watch player
+#8 at tick 0: outcome fined_by_watch applied to player
+#9 at tick 0: player's standing with city_watch moved from 0.00 to -20.00
+#10 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
+#11 at tick 0: city_watch now regards player as unfriendly (was neutral), at -27.24
+#12 at tick 0: captain_hale now regards player as unfriendly (was neutral), at -29.10
+> assert disposition city_watch player == -27.24 (unfriendly)
+> watching
+player — unfriendly: city_watch, captain_hale; neutral: ashen_circle, lantern_guild, temple, brother_ash, merchant_ava, sister_mira, vex; friendly: free_company
+> act player help_stranger --target merchant_ava
+#13 at tick 0: player did help_stranger, targeting merchant_ava
+#14 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -10.00, good -2.00
+#15 at tick 0: player's standing with merchant_ava moved from -40.00 to -30.00
+> assert unwatch vex == error: vex isn't watched
+> unwatch player
+#16 at tick 0: no longer watching player
+> assert watching == no one is watched yet

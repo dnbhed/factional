@@ -4,7 +4,7 @@ use factional_core::{Envelope, Fixed, Tick, article};
 
 use crate::{
     AXIS_LIMIT, ActionId, Alignment, CharacterId, Effects, FactionId, JoinAssessment, LeaveReason,
-    OutcomeId, Party, PromotionAssessment, RankId, Witnesses,
+    Observer, OutcomeId, Party, PromotionAssessment, RankId, Witnesses,
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
@@ -70,6 +70,11 @@ pub enum Command {
         character: CharacterId,
         effects: Effects,
     },
+    /// Starts reporting when anyone's disposition toward `subject` changes band (DESIGN.md
+    /// §8.3, P-23).
+    Watch { subject: CharacterId },
+    /// Stops reporting band changes for `subject`.
+    Unwatch { subject: CharacterId },
 }
 
 /// What changed, carried in an [`Event`]. Events hold absolute before-and-after values, so
@@ -134,6 +139,23 @@ pub enum Change {
         before: Fixed,
         after: Fixed,
     },
+    /// `subject` is now watched; `bands` is every observer's band toward them at that moment,
+    /// factions first, then characters, each in id order (DESIGN.md §8.3).
+    Watched {
+        subject: CharacterId,
+        bands: Vec<(Observer, String)>,
+    },
+    Unwatched {
+        subject: CharacterId,
+    },
+    /// How `observer` regards a watched `subject` moved into another band, at `score`.
+    DispositionBandChanged {
+        observer: Observer,
+        subject: CharacterId,
+        from: String,
+        to: String,
+        score: Fixed,
+    },
 }
 
 /// Something that happened in the world, numbered and stamped with when it happened.
@@ -147,6 +169,8 @@ pub enum Role {
     Witness,
     /// The character joining or leaving a faction.
     Member,
+    /// The character being watched.
+    Subject,
 }
 
 /// Why a command was refused. A refused command changes nothing and emits nothing.
@@ -212,6 +236,10 @@ pub enum CommandError {
         character: CharacterId,
         factions: (FactionId, FactionId),
     },
+    /// `Watch` for a subject already watched.
+    AlreadyWatched { subject: CharacterId },
+    /// `Unwatch` for a subject not watched.
+    NotWatched { subject: CharacterId },
 }
 
 /// One command as it was issued, and whether the world accepted it (P-16).
@@ -227,7 +255,7 @@ impl fmt::Display for Role {
             Role::Actor => "actor",
             Role::Target => "target",
             Role::Witness => "witness",
-            Role::Member => "character",
+            Role::Member | Role::Subject => "character",
         })
     }
 }
@@ -329,6 +357,10 @@ impl fmt::Display for CommandError {
                 f,
                 "that would put two of {character}'s factions in conflict: {a} and {b}"
             ),
+            CommandError::AlreadyWatched { subject } => {
+                write!(f, "{subject} is already watched")
+            }
+            CommandError::NotWatched { subject } => write!(f, "{subject} isn't watched"),
         }
     }
 }

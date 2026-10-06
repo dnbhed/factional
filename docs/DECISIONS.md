@@ -258,6 +258,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The target's position is read before the act,** like the actor's for inertia.
   - **`--explain` names the pair,** or says there was no relation, so a designer can find the number in `relations.toml`.
   - *Why:* one number per act, chosen the way D-18 describes, which a designer can trace to content.
+- **P-45 · How watched band changes are reported** (made in D3, 2026-10-06).
+  - **After the command, from its result.** Band changes are worked out once a command's own events are applied, and are appended to that command's events with the same tick. They're the only rule that runs after `decide`. A refused command reaches neither, so it still changes nothing.
+  - **The starting bands travel in the event.** `Watched` carries every observer's band at that moment, and each `DispositionBandChanged` updates it. Replay runs no rules (P-15), and the first command after `Watch` compares against bands everyone can see.
+  - **Every faction, then every other character,** in id order, observes. The subject doesn't observe themself.
+  - **Hysteresis edges.** A band is left above its upper edge plus the margin, or at its lower edge less the margin or below. That matches the bands themselves, where a score on an edge belongs to the lower band, so with no margin the band is always the score's own (a property test checks it). Leaving lands in the score's own band, however far it went.
+  - **Refusals.** Watching someone already watched, or unwatching someone who isn't, is refused rather than ignored, so a host's mistake shows.
+  - *Why:* other modules get one event per real change in how someone is seen, in a fixed order, and a save replays to the same remembered bands.
 
 ## Open
 

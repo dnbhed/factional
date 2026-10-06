@@ -321,8 +321,12 @@ Other modules care when a guard turns unfriendly, not about every 0.01 of moveme
 
 - The host marks some subjects as **watched**, typically the player and their companions.
 - After every command, the engine recomputes every observer's disposition toward each watched subject.
-- When a band changes, it emits `DispositionBandChanged`.
-- `disposition.hysteresis` (default 0) is a margin: leaving a band means crossing its edge by at least that much. It stops a score hovering on a boundary from flickering between bands.
+- When a band changes, it emits `DispositionBandChanged { observer, subject, from, to, score }`, after the command's own events.
+- The observers are every faction, then every other character, each in id order.
+- `disposition.hysteresis` (default 0) is a margin. Leaving a band means going above its upper edge by more than the margin, or to its lower edge less the margin or below. It stops a score hovering on a boundary from flickering between bands.
+- `Watch` records every observer's band in its `Watched` event, and each band change updates it, so replaying events restores the bands without running rules (P-15).
+
+Worked example: watch the player after the two thefts of §8.2. The fine then emits two band changes, after its own three events: the Watch turns unfriendly at −27.24 (affinity −7.24 at 80.26, standing −20.00), then Captain Hale at −29.10. With `hysteresis = 5.0` it emits neither. A third theft then turns Merchant Ava unfriendly at −43.18 and Hale at −30.90.
 
 ## 9. Factions
 
@@ -492,7 +496,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | Standing and membership | `StandingChanged`, `JoinedFaction`, `LeftFaction { Voluntary \| Defected \| Expelled \| ConflictResolved }`, `RankChanged` |
 | Drift | `ProbationStarted`, `ProbationCleared`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
 | Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict` |
-| Disposition | `DispositionBandChanged`, `ModifierAdded`, `ModifierExpired` |
+| Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierExpired` |
 
 ### 11.3 Queries (read)
 
@@ -609,7 +613,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Bands: at least one; unique names that are ids; increasing `up_to`; only the last open-ended | error | D2 (done, disposition), M2 (done, relations) |
 | `disposition.affinity` stays within ±100 | error | D2 (done) |
 | `disposition.weights` names only the five components, each ≥ 0; `same_faction` within ±100 | error | M4 (done) |
-| `hysteresis` ≥ 0 | error | D3 |
+| `hysteresis` ≥ 0 | error | D3 (done) |
 | A membership names a faction that exists, at most once per character | error | M1 (done) |
 | 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 (done) |
 | A starting member outside their member tolerance | warning | M1 (done) |

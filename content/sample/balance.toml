@@ -52,6 +52,11 @@ weights = { affinity = 1.0, standing = 1.0, kinship = 0.5, faction_opinion = 0.5
 # What sharing a faction counts for, in kinship.
 same_faction = 50.0
 
+# For watched characters (`watch <character>`), how far past a band's edge a score must go
+# to leave the band, at least 0. It stops a score hovering on an edge from flickering
+# between bands. With 0, the band is always the score's own.
+hysteresis = 0.0
+
 bands = [
   { name = "unfriendly", up_to = -25.0 },
   { name = "neutral", up_to = 25.0 },

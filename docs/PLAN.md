@@ -49,6 +49,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M7 — joining an enemy: `membership.defectors` and `membership.deserters` rule tables, and a faction's own, which may name its ranks; built in, defectors refuse everyone and deserters release everyone (D-4); load checks for conditions, outcomes, rungs, rank ids and a last rule that always decides; `assess_join` reports every rule tried in each table; defecting emits `LeftFaction(defected)` with the deserter cost, then `JoinedFaction` with the defector cost; `can-join --explain` shows each table; done 2026-10-05 (#18)
 - A4 — inertia: `[inertia]` profiles (up to four curves per profile, a curve left out is 1.0, `steady` always there) and `default_profile`, a character's `inertia`; each shift is base × scale × inertia, computed exactly and rounded once (`Ratio` in core, `Curve::exact_at`), for actions, outcomes and effects; load checks for unknown profiles and negative curves; a property test for invariant 8; a `shift` query; `act --explain`; done 2026-10-05 (#19)
 - A5 — target-aware effects: an action's `by_target.law`, `.good` and `.relation` curves (the most hostile relation from the actor's factions toward the target's), joining inertia in one exactly computed product rounded once; load check for negative curves; an `action_shift` query that `decide` uses; `act --explain` shows each target multiplier and where it came from; a property test for invariant 8 with every multiplier; done 2026-10-05 (#20)
+- D3 — watched subjects: `Watch` and `Unwatch` (the starting bands travel in `Watched`, so replay runs no rules); after every accepted command, `DispositionBandChanged` for each observer whose view of a watched subject left its band, with `disposition.hysteresis`; `Bands::band_after`; a property test that with no hysteresis the remembered band is always the current one; `watch`, `unwatch`, `watching`; done 2026-10-06 (#21)
 
 ---
 
@@ -56,43 +57,31 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 2 — Perception
 
-### D3 · Watched subjects and band-change events — P1 · Next
+## Phase 3 — Factions, standing and rank
 
-**Why:** P-23. Other modules care when a guard turns unfriendly, not about every 0.01 of movement (DESIGN.md §8.3).
+### M6 · Standing spillover between factions — P1 · Next
+
+**Why:** P-13. Standing with one faction colours how its allies and enemies regard you: helping the Temple pleases its allies and annoys its enemies (DESIGN.md §7.1).
 
 **Scope**
 
-- **Commands.** `Watch { subject }` and `Unwatch { subject }`, with events, so the watched set replays like any other state (P-15, P-16). Refused for an unknown character, a subject already watched, or one not watched.
-- **Band changes.** After every accepted command, the engine recomputes each observer's disposition toward each watched subject: factions, then characters, each in id order, leaving out the subject. For each band that changed, it appends `DispositionBandChanged { observer, subject, from, to, score }` to that command's events.
-- **The starting bands.** `Watch` records the bands at that moment, so the next command compares against them. Settle here how they're kept so that replay runs no rules.
-- **`disposition.hysteresis`** (default 0, at least 0): leaving a band means crossing its edge by at least the margin.
-- **CLI.** `watch <character>`, `unwatch <character>` and `watching`.
+- **Content.** `standing.spillover` in `balance.toml`: a curve over how another faction G regards the faction F whose standing changed, giving a multiplier from −1 to 1. Its default is `[[-100.0, -0.3], [-50.0, 0.0], [50.0, 0.0], [100.0, 0.5]]`.
+- **The rule.** When a command changes someone's standing with a faction F, their standing with every other faction G also changes, by `change × spillover(relation(G → F))`, computed exactly and rounded once.
+  - **One hop.** Spillover comes only from the command's own changes, never from other spillover.
+  - **It adds up per faction,** with any direct change to G, so each party still gets one `StandingChanged` (P-39).
+  - **Characters' standing doesn't spill.**
+- **Settle here, and record in DECISIONS:**
+  - whether spillover follows the change as applied (after awareness and the ±100 clamp) or as intended;
+  - whether it follows every standing change with a faction, including leaving costs and defection costs;
+  - how the events or an explanation say which change spilled.
+- **CLI.** Show where each spilled change came from.
 
-**Acceptance** (Riverhold, as in DESIGN.md §8.2)
+**Acceptance** (Riverhold, with the default curve)
 
-1. **Watch the player after two thefts** from merchant_ava, which leave them at −10.00 / −6.00. `outcome fined_by_watch player` then emits, after its own events, exactly two band changes, factions first:
-   - `city_watch` → player: neutral → unfriendly at −27.24 (affinity −7.24 at distance 80.26, plus standing −20.00);
-   - `captain_hale` → player: neutral → unfriendly at −29.10 (§8.2).
-   No one else's score changes: the fine touches only the Watch's and Hale's standing, and Hale is the Watch's only member.
-2. **With `hysteresis = 5.0`, the same fine emits none:** −27.24 and −29.10 are past −25.00, but not by 5. A third theft then takes Hale to −30.90 (affinity −10.90 at distance 90.53, standing −10.00, faction opinion −10.00), which emits his change. The Watch, at −29.04 (affinity −9.04 at 85.31, standing −20.00), stays neutral.
-3. **Only watched subjects.** An unwatched subject emits nothing, and after `Unwatch` the events stop.
-4. **No change, no event.** A command that changes no score, or moves one within its band, emits no band change.
-5. **Replay.** Replaying the events reproduces the watched set and the current bands (invariant 4).
-6. **Load errors:** `hysteresis` below 0, at its key.
-
-**Validates** (DESIGN.md §12.2): `hysteresis` is ≥ 0.
-
-## Phase 3 — Factions, standing and rank
-
-### M6 · Standing spillover between factions — P1 · Outline
-
-**Covers:** the spillover part of DESIGN.md §7.1: one hop, using the `standing.spillover` curve.
-
-**Anchors**
-
-- Robbing vex (guild −10.00) → `city_watch` +1.80.
-- `donate_to_temple` (temple +10.00) → `city_watch` +1.00 and `ashen_circle` −2.40.
-- `lantern_guild` ↔ `free_company` (+20) spills nothing under the default curve.
+1. **The player steals from vex.** It's −10.00 with the Guild (`target_factions`) and −20.00 with vex. The Watch regards the Guild at −80, where the curve gives −0.18, so standing with the Watch rises by +1.80. The Free Company regards the Guild at +20, which gives 0, and the Temple and the Ashen Circle have no relation with the Guild, so 0. Events: the Watch 0 → 1.80, the Guild 0 → −10.00, then vex 0 → −20.00.
+2. **`donate_to_temple`:** the Temple +10.00, the Watch +1.00 (it regards the Temple at +60: 0.10), and the Ashen Circle −2.40 (it regards the Temple at −90: −0.24).
+3. **No cascade.** The Watch's +1.80 in example 1 doesn't spill on to the Temple, which regards the Watch at +60.
+4. **Load errors:** a `standing.spillover` value outside −1…1, at its key.
 
 **Validates** (DESIGN.md §12.2): spillover multipliers are within −1…1.
 
