@@ -25,6 +25,8 @@ relate <from> <to> <value> [--one-way]                          set how <from> a
 relate <from> <to> --by <n> [--one-way]                         shift a relation by <n>, stopping at -100 and 100
 disposition <observer> <subject> [--explain]                    how <observer>, a faction or character, regards <subject>: a score and its band
 distance <observer> <subject> [--explain]                       how far <subject> is from <observer>, a faction or character, as the observer sees it
+faction-align <faction> <law> <good>                            set a faction's alignment, then review its members
+faction-shift <faction> [--law <n>] [--good <n>]                move a faction's alignment, stopping at -100 and 100, then review its members
 watch <character>                                               report whenever anyone's disposition toward <character> changes band
 unwatch <character>                                             stop reporting <character>'s band changes
 watching                                                        the watched characters, and the band each observer puts them in

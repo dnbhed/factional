@@ -1,0 +1,23 @@
+# Probation and runtime faction alignment (DESIGN.md §9.3): a faction's ideals can move
+# during play, and its members are reviewed against them. The Watch gives a straying
+# officer 100 ticks to come back.
+load content/sample
+# The Watch to 40 / 20: Captain Hale is 35.09 away, past a captain's 25.00.
+faction-shift city_watch --law -30
+# Back to 60 / 20 in time: 15.21 away, and the probation is cleared.
+faction-shift city_watch --law 20
+advance 200
+assert show character captain_hale == captain_hale — Captain Hale — law 75.00, good 30.00 — Lawful Neutral — member of city_watch (captain) since tick 0
+
+load content/sample
+faction-shift city_watch --law -30
+# Nothing yet at 99 ticks; at 100 he's expelled, at a cost of -20.00 with the Watch that
+# spills +3.60 to the Guild (-80) and -2.00 to the Temple (+60).
+advance 99
+advance 1
+assert standing captain_hale city_watch == 55.00
+
+# A faction moving away flags a member too: the Guild to 10 / -10 puts Vex 65.19 away.
+load content/sample
+faction-shift lantern_guild --law 70
+assert faction-align lantern_guild 120 0 == error: law: 120.00 is outside -100.00..100.00

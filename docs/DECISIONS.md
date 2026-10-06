@@ -280,6 +280,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Expulsion uses the standing step every other change uses,** so its cost spills (P-46).
   - **Probation and faction alignment changes are M11,** split out to keep M8 small. Until then `probation` is an unknown policy, so no world can name a rule the engine can't run (D-20).
   - *Why:* drift reacts to what actually moved, reports each real change once, and leaves events that read without context.
+- **P-48 · How probation and faction alignment changes apply** (made in M11, 2026-10-06).
+  - **A faction's alignment is state,** changed only by commands, with an event, so replays and saves carry it (P-15). Every query reads the current value.
+  - **A faction move reviews every member,** exactly as a member's own move reviews their memberships (P-47). It's one combined set of reviews, in id order.
+  - **Probation runs out at `started + grace_ticks`,** checked after every command, though only `AdvanceTime` moves time. Exactly at `until` it has run out.
+  - **Reviews keep probation honest.** Back within tolerance clears it straight away, so at expiry the member is always still out, and `then` applies without another check. A property test checks it: everyone on probation is out of tolerance, and their probation hasn't run out.
+  - **`ProbationExpired` comes first,** then the consequence's own events, so a listener can tell an expiry from an ordinary expulsion or demotion.
+  - **A shift with no effect emits nothing,** like a relation set to its current value.
+  - *Why:* drift reacts to every real change in the distance between member and faction, whichever side moved, and every outcome reads plainly in the events.
 
 ## Open
 
