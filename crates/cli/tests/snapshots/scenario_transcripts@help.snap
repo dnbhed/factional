@@ -4,41 +4,44 @@ expression: transcript
 input_file: scenarios/help.scenario
 ---
 > help
-help                                                            list these commands
-quit                                                            leave the REPL, or end a script early
-load <dir>                                                      load the content files in <dir>, such as content/sample, as a new world
-characters                                                      list the loaded characters
-show character <id>                                             a character's alignment and its label
-factions                                                        list the factions, with their tolerances and members
-show faction <id>                                               a faction's alignment, label, tolerances and members
-can-join <character> <faction> [--explain]                      whether <character> may join <faction> now, and why not
-join <character> <faction>                                      <character> joins <faction>, if they may
-leave <character> <faction>                                     <character> leaves <faction>
-ranks <faction>                                                 a faction's rank ladder, lowest first
-promote <character> <faction> [--explain]                       move <character> up a rank, if the next rank's requirements hold
-demote <character> <faction>                                    move <character> down a rank
-standing <subject> [<party>]                                    how factions and characters regard <subject> from what has passed between them
-outcomes                                                        list the outcomes, such as quest results
-outcome <outcome> <character>                                   apply an outcome's effects to <character>
-relations [<faction>]                                           how factions regard each other, or just <faction>, with bands and conflicts
-relate <from> <to> <value> [--one-way]                          set how <from> and <to> regard each other; --one-way sets only <from> → <to>
-relate <from> <to> --by <n> [--one-way]                         shift a relation by <n>, stopping at -100 and 100
-disposition <observer> <subject> [--explain]                    how <observer>, a faction or character, regards <subject>: a score and its band
-distance <observer> <subject> [--explain]                       how far <subject> is from <observer>, a faction or character, as the observer sees it
-resolve <character> <faction-to-keep>                           settle a war between two of <character>'s factions by leaving the other
-faction-align <faction> <law> <good>                            set a faction's alignment, then review its members
-faction-shift <faction> [--law <n>] [--good <n>]                move a faction's alignment, stopping at -100 and 100, then review its members
-watch <character>                                               report whenever anyone's disposition toward <character> changes band
-unwatch <character>                                             stop reporting <character>'s band changes
-watching                                                        the watched characters, and the band each observer puts them in
-actions                                                         list the action catalogue and how each act moves alignment
-act <actor> <action> [--target <id>] [--scale <n>] [--explain]  <actor> does <action>; --scale says how big this instance was (default 1.00)
-advance <ticks>                                                 move time forward
-time                                                            the current tick
-events [--since <seq>]                                          what has happened, oldest first; --since shows only later events
-journal                                                         every command issued, and whether it was accepted
-calc <a> <op> <b>                                               the engine's fixed-point arithmetic; <op> is + - * or /
-curve <curve> at <x>                                            a curve's value at <x>; <curve> is a number or [[x, y], ...]
-echo <text>                                                     print <text>
-fail <message>                                                  fail with <message>; for testing scripts
-assert <command> == <expected>                                  check that <command>'s result is exactly <expected>
+help                                                                 list these commands
+quit                                                                 leave the REPL, or end a script early
+load <dir>                                                           load the content files in <dir>, such as content/sample, as a new world
+characters                                                           list the loaded characters
+show character <id>                                                  a character's alignment and its label
+factions                                                             list the factions, with their tolerances and members
+show faction <id>                                                    a faction's alignment, label, tolerances and members
+can-join <character> <faction> [--explain]                           whether <character> may join <faction> now, and why not
+join <character> <faction>                                           <character> joins <faction>, if they may
+leave <character> <faction>                                          <character> leaves <faction>
+ranks <faction>                                                      a faction's rank ladder, lowest first
+promote <character> <faction> [--explain]                            move <character> up a rank, if the next rank's requirements hold
+demote <character> <faction>                                         move <character> down a rank
+standing <subject> [<party>]                                         how factions and characters regard <subject> from what has passed between them
+outcomes                                                             list the outcomes, such as quest results
+outcome <outcome> <character>                                        apply an outcome's effects to <character>
+relations [<faction>]                                                how factions regard each other, or just <faction>, with bands and conflicts
+relate <from> <to> <value> [--one-way]                               set how <from> and <to> regard each other; --one-way sets only <from> → <to>
+relate <from> <to> --by <n> [--one-way]                              shift a relation by <n>, stopping at -100 and 100
+disposition <observer> <subject> [--explain]                         how <observer>, a faction or character, regards <subject>: a score and its band
+distance <observer> <subject> [--explain]                            how far <subject> is from <observer>, a faction or character, as the observer sees it
+modify <observer|everyone> <subject> <id> <amount> [--until <tick>]  put a modifier on how <observer> regards <subject>, as another module would
+unmodify <subject> <id>                                              take a modifier off <subject>
+modifiers <subject>                                                  the modifiers on how <subject> is seen
+resolve <character> <faction-to-keep>                                settle a war between two of <character>'s factions by leaving the other
+faction-align <faction> <law> <good>                                 set a faction's alignment, then review its members
+faction-shift <faction> [--law <n>] [--good <n>]                     move a faction's alignment, stopping at -100 and 100, then review its members
+watch <character>                                                    report whenever anyone's disposition toward <character> changes band
+unwatch <character>                                                  stop reporting <character>'s band changes
+watching                                                             the watched characters, and the band each observer puts them in
+actions                                                              list the action catalogue and how each act moves alignment
+act <actor> <action> [--target <id>] [--scale <n>] [--explain]       <actor> does <action>; --scale says how big this instance was (default 1.00)
+advance <ticks>                                                      move time forward
+time                                                                 the current tick
+events [--since <seq>]                                               what has happened, oldest first; --since shows only later events
+journal                                                              every command issued, and whether it was accepted
+calc <a> <op> <b>                                                    the engine's fixed-point arithmetic; <op> is + - * or /
+curve <curve> at <x>                                                 a curve's value at <x>; <curve> is a number or [[x, y], ...]
+echo <text>                                                          print <text>
+fail <message>                                                       fail with <message>; for testing scripts
+assert <command> == <expected>                                       check that <command>'s result is exactly <expected>

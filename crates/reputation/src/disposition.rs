@@ -2,7 +2,7 @@ use std::fmt;
 
 use factional_core::{Fixed, is_valid_id};
 
-use crate::{Distance, FactionId, InvalidId};
+use crate::{CharacterId, Distance, FactionId, InvalidId, ModifierId};
 
 /// A named range of disposition scores, such as `neutral` (DESIGN.md §8.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,6 +258,37 @@ pub struct Component {
     pub weighted: Fixed,
     /// What made up the value, for kinship and faction opinion; empty for the others.
     pub parts: Vec<Part>,
+    /// The modifiers that made up the value, for the modifiers component; empty for the
+    /// others.
+    pub modifiers: Vec<AppliedModifier>,
+}
+
+/// Who a disposition modifier is for (DESIGN.md §8.1). Everyone comes first, then factions,
+/// then characters.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModifierObserver {
+    Everyone,
+    /// The faction, and every character in it.
+    Faction(FactionId),
+    Character(CharacterId),
+}
+
+impl fmt::Display for ModifierObserver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ModifierObserver::Everyone => f.write_str("everyone"),
+            ModifierObserver::Faction(id) => id.fmt(f),
+            ModifierObserver::Character(id) => id.fmt(f),
+        }
+    }
+}
+
+/// A modifier another module put on how a subject is seen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppliedModifier {
+    pub id: ModifierId,
+    pub observer: ModifierObserver,
+    pub amount: Fixed,
 }
 
 /// One contribution to kinship or faction opinion.

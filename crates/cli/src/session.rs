@@ -1,12 +1,13 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use factional_core::{Fixed, ParseFixedError, Ratio, article, suggest};
+use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Condition, ConditionCheck, Distance, DriftPolicy, Event, Faction, FactionId,
-    LeaveReason, Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Shift, StandingEffects,
-    TableDecision, TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
+    LeaveReason, ModifierId, ModifierObserver, Observed, Observer, OutcomeId, Party, RankCheck,
+    RankRef, Shift, StandingEffects, TableDecision, TableSource, Toward, Verdict, WeightsFrom,
+    Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -79,6 +80,15 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "distance <observer> <subject> [--explain]",
         "how far <subject> is from <observer>, a faction or character, as the observer sees it",
+    ),
+    (
+        "modify <observer|everyone> <subject> <id> <amount> [--until <tick>]",
+        "put a modifier on how <observer> regards <subject>, as another module would",
+    ),
+    ("unmodify <subject> <id>", "take a modifier off <subject>"),
+    (
+        "modifiers <subject>",
+        "the modifiers on how <subject> is seen",
     ),
     (
         "resolve <character> <faction-to-keep>",
@@ -233,6 +243,9 @@ impl Session {
             "relate" => Ok(self.relate(rest)),
             "faction-align" => Ok(self.faction_alignment(rest, false)),
             "resolve" => Ok(self.resolve(rest)),
+            "modify" => Ok(self.modify(rest)),
+            "unmodify" => Ok(self.unmodify(rest)),
+            "modifiers" => Ok(self.modifiers(rest)),
             "faction-shift" => Ok(self.faction_alignment(rest, true)),
             "join" => Ok(self.membership(rest, true)),
             "leave" => Ok(self.membership(rest, false)),
@@ -806,6 +819,19 @@ impl Session {
                     };
                     line += &format!(" ({note})");
                 }
+                ComponentKind::Modifiers if !component.modifiers.is_empty() => {
+                    let modifiers: Vec<String> = component
+                        .modifiers
+                        .iter()
+                        .map(|modifier| {
+                            format!(
+                                "{} {} from {}",
+                                modifier.id, modifier.amount, modifier.observer
+                            )
+                        })
+                        .collect();
+                    line += &format!(" ({})", modifiers.join("; "));
+                }
                 ComponentKind::Standing | ComponentKind::Modifiers => {}
             }
             explained.push(line);
@@ -984,6 +1010,110 @@ impl Session {
             Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
             Err(refusal) => Outcome::Error(refusal.to_string()),
         }
+    }
+
+    /// `modify <observer|everyone> <subject> <id> <amount> [--until <tick>]`: the engine
+    /// decides, and the events or its refusal are shown. The observer is a faction if one
+    /// has that id, otherwise a character.
+    fn modify(&mut self, args: &str) -> Outcome {
+        const USAGE: &str = "modify needs the form: modify <observer|everyone> <subject> <id> <amount> [--until <tick>]";
+        let words: Vec<&str> = args.split_whitespace().collect();
+        let (observer, subject, id, amount, until) = match words[..] {
+            [observer, subject, id, amount] => (observer, subject, id, amount, None),
+            [observer, subject, id, amount, "--until", tick] if !is_flag(tick) => {
+                (observer, subject, id, amount, Some(tick))
+            }
+            _ => return Outcome::Error(USAGE.to_owned()),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        let parsed = (|| -> Result<Command, String> {
+            let observer = if observer == "everyone" {
+                ModifierObserver::Everyone
+            } else if let Some(faction) = world.factions().find(|f| f.id.as_str() == observer) {
+                ModifierObserver::Faction(faction.id.clone())
+            } else {
+                ModifierObserver::Character(
+                    CharacterId::new(observer).map_err(|invalid| invalid.to_string())?,
+                )
+            };
+            let expires_at = match until {
+                Some(tick) => Some(Tick(
+                    tick.parse()
+                        .map_err(|_| format!("'{tick}' is not a whole tick"))?,
+                )),
+                None => None,
+            };
+            Ok(Command::AddModifier {
+                id: ModifierId::new(id).map_err(|invalid| invalid.to_string())?,
+                observer,
+                subject: CharacterId::new(subject).map_err(|invalid| invalid.to_string())?,
+                amount: amount
+                    .parse()
+                    .map_err(|error: ParseFixedError| error.to_string())?,
+                expires_at,
+            })
+        })();
+        let command = match parsed {
+            Ok(command) => command,
+            Err(message) => return Outcome::Error(message),
+        };
+        match world.execute(command) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
+    /// `unmodify <subject> <id>`: the engine decides, and the events or its refusal are
+    /// shown.
+    fn unmodify(&mut self, args: &str) -> Outcome {
+        let [subject, id] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error("unmodify needs the form: unmodify <subject> <id>".to_owned());
+        };
+        let command = match (CharacterId::new(subject), ModifierId::new(id)) {
+            (Ok(subject), Ok(id)) => Command::RemoveModifier { subject, id },
+            (Err(invalid), _) | (_, Err(invalid)) => return Outcome::Error(invalid.to_string()),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(command) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
+    /// `modifiers <subject>`: the modifiers on how the subject is seen, in id order.
+    fn modifiers(&self, args: &str) -> Outcome {
+        let [subject] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error("modifiers needs the form: modifiers <subject>".to_owned());
+        };
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let Some(character) = world.characters().find(|c| c.id.as_str() == subject) else {
+            let ids: Vec<&str> = world.characters().map(|c| c.id.as_str()).collect();
+            return Outcome::Error(format!(
+                "unknown character '{subject}'{}",
+                hint(subject, ids)
+            ));
+        };
+        let modifiers = world
+            .modifiers(&character.id)
+            .expect("a character from the world");
+        if modifiers.is_empty() {
+            return Outcome::Output(format!("{} has no modifiers", character.id));
+        }
+        Outcome::Output(lines(modifiers.iter().map(|(modifier, until)| {
+            let until = until
+                .map(|tick| format!(", until tick {tick}"))
+                .unwrap_or_default();
+            format!(
+                "{}: {} from {}{until}",
+                modifier.id, modifier.amount, modifier.observer
+            )
+        })))
     }
 
     /// `resolve <character> <faction-to-keep>`: the engine decides, and the events or its
@@ -1375,6 +1505,20 @@ fn describe_event(event: &Event) -> String {
             character,
             factions: (a, b),
         } => format!("{a} and {b} are no longer in conflict, so {character} keeps both"),
+        Change::ModifierAdded {
+            subject,
+            id,
+            observer,
+            amount,
+            expires_at,
+        } => {
+            let until = expires_at
+                .map(|tick| format!(", until tick {tick}"))
+                .unwrap_or_default();
+            format!("modifier {id} on {subject}: {amount} from {observer}{until}")
+        }
+        Change::ModifierRemoved { subject, id } => format!("modifier {id} on {subject} removed"),
+        Change::ModifierExpired { subject, id } => format!("modifier {id} on {subject} expired"),
         Change::FactionAlignmentChanged { faction, from, to } => format!(
             "{faction}'s alignment moved from {} to {}",
             axes(*from),
@@ -1429,6 +1573,19 @@ fn describe_command(command: &Command) -> String {
             source, character, ..
         } => format!("effects from {source} on {character}"),
         Command::Watch { subject } => format!("watch {subject}"),
+        Command::AddModifier {
+            id,
+            observer,
+            subject,
+            amount,
+            expires_at,
+        } => {
+            let until = expires_at
+                .map(|tick| format!(" --until {tick}"))
+                .unwrap_or_default();
+            format!("modify {observer} {subject} {id} {amount}{until}")
+        }
+        Command::RemoveModifier { subject, id } => format!("unmodify {subject} {id}"),
         Command::ResolveConflict { character, keep } => format!("resolve {character} {keep}"),
         Command::SetFactionAlignment { faction, alignment } => format!(
             "faction-align {faction} {} {}",
@@ -2953,6 +3110,103 @@ mod tests {
         assert_eq!(
             session.execute("faction-align temple ten 0"),
             command_error("'ten' is not a number")
+        );
+    }
+
+    #[test]
+    fn modifiers_change_dispositions_and_explain_where_they_came_from() {
+        let mut session = riverhold();
+        for line in [
+            "act player steal --target merchant_ava",
+            "act player steal --target merchant_ava",
+            "outcome fined_by_watch player",
+        ] {
+            session.execute(line).expect("valid");
+        }
+        // The thefts made 6 events, and the fine 5 (two of them spills).
+        assert_eq!(
+            session.execute("modify captain_hale player bribed 20"),
+            output("#12 at tick 0: modifier bribed on player: 20.00 from captain_hale")
+        );
+        assert_eq!(
+            session.execute("modify everyone player hero_of_riverhold 10 --until 50"),
+            output(
+                "#13 at tick 0: modifier hero_of_riverhold on player: 10.00 from everyone, until tick 50"
+            )
+        );
+        assert_eq!(
+            session.execute("modifiers player"),
+            output(
+                "bribed: 20.00 from captain_hale\nhero_of_riverhold: 10.00 from everyone, until tick 50"
+            )
+        );
+        let Ok(Outcome::Output(explained)) =
+            session.execute("disposition captain_hale player --explain")
+        else {
+            panic!("expected the explanation");
+        };
+        // DESIGN.md §8.2's −29.10, plus 30.00.
+        assert!(
+            explained.starts_with("captain_hale → player: 0.90 (neutral)\n"),
+            "{explained}"
+        );
+        assert!(
+            explained.contains(
+                "\nmodifiers: 30.00 × 1.00 = 30.00 (bribed 20.00 from captain_hale; hero_of_riverhold 10.00 from everyone)\n"
+            ),
+            "{explained}"
+        );
+        assert_eq!(
+            session.execute("unmodify player bribed"),
+            output("#14 at tick 0: modifier bribed on player removed")
+        );
+        assert_eq!(
+            session.execute("modify temple player blessed 5"),
+            output("#15 at tick 0: modifier blessed on player: 5.00 from temple")
+        );
+        assert_eq!(
+            session.execute("modifiers vex"),
+            output("vex has no modifiers")
+        );
+    }
+
+    #[test]
+    fn modifier_commands_report_mistakes() {
+        let mut session = riverhold();
+        let usage = command_error(
+            "modify needs the form: modify <observer|everyone> <subject> <id> <amount> [--until <tick>]",
+        );
+        for line in [
+            "modify everyone player",
+            "modify everyone player x 5 --until",
+            "modify everyone player x 5 --for 3",
+            "modify everyone player x 5 --until --soon",
+        ] {
+            assert_eq!(session.execute(line), usage, "{line}");
+        }
+        assert_eq!(
+            session.execute("modify everyone player x five"),
+            command_error("'five' is not a number")
+        );
+        assert_eq!(
+            session.execute("modify everyone player x 5 --until soon"),
+            command_error("'soon' is not a whole tick")
+        );
+        assert_eq!(
+            session.execute("modify ghost player x 5"),
+            command_error("unknown character 'ghost'")
+        );
+        assert_eq!(
+            session.execute("unmodify player x"),
+            command_error("player has no modifier 'x'")
+        );
+        assert_eq!(
+            session.execute("unmodify player"),
+            command_error("unmodify needs the form: unmodify <subject> <id>")
+        );
+        assert_eq!(
+            session.execute("modifiers"),
+            command_error("modifiers needs the form: modifiers <subject>")
         );
     }
 

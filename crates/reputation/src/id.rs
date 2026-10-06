@@ -82,6 +82,11 @@ id_type!(
     ProfileId
 );
 
+id_type!(
+    /// A disposition modifier's id, such as `bribed`, unique for its subject (DESIGN.md §8.1).
+    ModifierId
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;

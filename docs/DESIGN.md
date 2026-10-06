@@ -286,7 +286,9 @@ tolerance = 25.0          # captains are held to a stricter standard
 | **standing** | the observer's personal standing toward the subject | the subject's standing with the faction |
 | **kinship** | the sum of relation(F → G) over every pairing of an observer faction F with a subject faction G; a faction they share counts as `disposition.same_faction` (default +50) | the same, with the faction itself as the only F |
 | **faction opinion** | the sum of the subject's standing with each of the observer's factions: the NPC partly adopts their factions' view | not used |
-| **modifiers** | the sum of active modifiers from other modules (§11) | the same |
+| **modifiers** | the sum of active modifiers from other modules (§11): those for everyone, for the observer, and for the observer's factions | those for everyone and for the faction |
+
+Modifiers come from `AddModifier { id, observer, subject, amount, expires_at }`. The observer is everyone, a faction (which counts for its members too) or a character, and `amount` is within ±100. They last until `RemoveModifier`, or until time reaches `expires_at` (`ModifierExpired`). An id is unique per subject, and adding one that's there is refused (P-50).
 
 Each component is clamped to ±100 (P-7). Kinship sums one part per pair of the observer's and subject's factions: a faction they share counts as `same_faction`, and any other pair as how the observer's faction regards the subject's. Faction opinion sums the subject's standing with each of a character observer's factions; a faction observer has none. Each weighted component is rounded once (P-40). The score is the weighted sum of the components, and its band is the first one whose `up_to` is at or above the score:
 
@@ -526,7 +528,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | Standing and membership | `StandingChanged`, `JoinedFaction`, `LeftFaction { Voluntary \| Defected \| Expelled \| ConflictResolved }`, `RankChanged` |
 | Drift | `ProbationStarted`, `ProbationCleared`, `ProbationExpired`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
 | Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict`, `MembershipConflictEnded` |
-| Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierExpired` |
+| Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierRemoved`, `ModifierExpired` |
 
 ### 11.3 Queries (read)
 

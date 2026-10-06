@@ -54,6 +54,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M8 — drift policies: a faction's `drift` (`ignore`, `flag`, `demote`, `expel`), `membership.default_drift` (built in, `flag`) and `expel_standing_change` (−20.00, spilling like any standing change); members whose alignment a command moved are reviewed against each faction, before band changes; `MemberOutOfTolerance`, `MemberBackInTolerance`, `LeftFaction(expelled)`; demotion steps down to the highest rung that allows them; drift in faction listings; split from M11; done 2026-10-06 (#23)
 - M11 — probation and runtime faction alignment: the `probation` policy (`grace_ticks`, then `demote` or `expel`) with `ProbationStarted`, `ProbationCleared` and `ProbationExpired`, checked when time advances; `SetFactionAlignment` and `ShiftFactionAlignment` with `FactionAlignmentChanged`, reviewing every member; faction alignment is now state, used by distance, disposition and joining; `faction-align`, `faction-shift`; property tests for probation; done 2026-10-06 (#24)
 - M9 — war between your own factions: a relation change that puts two of a character's factions in conflict is accepted and opens a `MembershipConflict` (ending with `MembershipConflictEnded` if they make peace first), replacing M2's refusal; `ResolveConflict` leaves the other side at its `leave_standing_change`, which spills; `membership.conflict` (`ask`, `ask` with `auto_after_ticks`, or `auto`) keeps the higher rung, then standing, then service, then the lower id; invariant 6 allows open conflicts; `resolve`, wars in `show character`; done 2026-10-06 (#25)
+- M10 — disposition modifiers: `AddModifier` (for everyone, a faction and its members, or one character; within ±100; with an optional expiry) and `RemoveModifier`, with `ModifierAdded`, `ModifierRemoved` and `ModifierExpired`; expiry checked after every command; the modifiers component adds up those that apply, clamped to ±100, and `--explain` names each; `modify`, `unmodify`, `modifiers`; done 2026-10-06 (#26)
 
 ---
 
@@ -63,41 +64,32 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M10 · Disposition modifiers from other modules — P1 · Next
+## Phase 4 — Designer tooling and persistence
 
-**Why:** P-6's fifth component. Other modules change how someone is seen for a while: a bribe, a disguise, a hero's welcome. Until now that component has always been 0 (DESIGN.md §8.1).
+### T1 · Validation sweep and JSON Schema — P1 · Next
+
+**Why:** P-32 and the designer workflow (DESIGN.md §12.3). A designer should be able to check a world, and get help writing one, without starting the REPL.
 
 **Scope**
 
-- **Commands.**
-  - `AddModifier { id, observer, subject, amount, expires_at }`: the observer is `Everyone`, a faction or a character; `amount` is within ±100; `expires_at` is an optional tick.
-  - `RemoveModifier { id, subject }`.
-  - Events: `ModifierAdded`, `ModifierRemoved`, `ModifierExpired`.
-  - Refused: an unknown observer or subject, an amount out of range, an `expires_at` that isn't after now, removing one that isn't there.
-  - Settle here: whether adding an id that already exists replaces it or is refused.
-- **Expiry.** A modifier expires when time reaches `expires_at`, checked after every command, like probation.
-- **The modifiers component.** It adds up every modifier that applies to the pair: those for `Everyone`, those for the observer itself, and, for a character observer, those for their factions. Then it's clamped to ±100 and weighted by `disposition.weights.modifiers`. `--explain` lists each modifier with where it came from.
-- **Watched band changes** (D3) follow modifiers like any other change.
-- **CLI:** `modify <observer|everyone> <subject> <id> <amount> [--until <tick>]`, `unmodify <subject> <id>`, and `modifiers <subject>`.
+- **`factional validate <dir>`** reads and checks a content directory without starting a session:
+  - every error and warning, each with its file and key, as `load` gives them;
+  - then a one-line summary: how many characters, factions, actions, relations and outcomes;
+  - exit status 0 if it would load, 1 if not. Warnings alone don't fail it.
+- **Whole-world warnings:**
+  - a faction no starting character is within joining tolerance of, so nobody could join it at the start;
+  - **settle here** what "a rank no one can reach" means. Under the current rules every rank is reachable in principle: standing is capped at 100 and rank tolerances are at least 0. Either find a real case (such as a rank tolerance stricter than any starting member could meet) or drop it, with a note in DECISIONS.
+- **`factional schema [<file>]`** prints a JSON Schema for each content file (`balance`, `factions`, `characters`, `actions`, `relations`, `outcomes`), for editor autocomplete. It describes every key the readers accept, with types, ranges and enumerations such as the drift policies, rule outcomes and metrics. Keep it in step with the readers: a test checks that every key in `content/sample` and `docs/examples/riverhold` is in the schema, and that the schema names no key the readers would reject.
+- **`content/README.md`** for designers: what each file is for, how to validate, how to use the schema in an editor, and a pointer to DESIGN.md §12.
 
-**Acceptance** (Riverhold, DESIGN.md §8.2: Hale regards the player at −29.10)
+**Acceptance**
 
-1. **One observer.** `AddModifier { bribed, captain_hale, player, +20 }`: the modifiers component is 20.00 × 1.00, so Hale's score is −9.10, neutral.
-2. **Everyone.** `AddModifier { hero_of_riverhold, everyone, player, +10 }` as well: the component is 30.00, so −29.10 + 30.00 = 0.90.
-3. **Through factions.** A modifier from the City Watch toward the player counts for Hale, a member, and for the Watch itself.
-4. **Expiry.** With `--until 10`, `advance 9` leaves it, and `advance 1` emits `ModifierExpired`, taking Hale back to −9.10.
-5. **Watched.** Watching the player, adding `bribed` emits `DispositionBandChanged` for Hale, unfriendly → neutral.
-6. **Clamped.** Modifiers adding up to more than 100 count as 100.
-
-**Validates** (commands, at runtime): observers and subjects exist; amounts are within ±100; `expires_at` is in the future.
-
-## Phase 4 — Designer tooling and persistence
-
-### T1 · Validation sweep and JSON Schema — P1 · Outline
-
-- `factional validate <dir>` reports every error and warning at once, without loading a world. Each increment adds its own checks as it lands (DESIGN.md §12.2); T1 adds the warnings that need the whole world: a faction no starting character could join, and a rank no one can reach.
-- `factional schema` produces the JSON Schema for editor autocomplete.
-- A content README for designers.
+1. `factional validate content/sample` prints its summary and exits 0.
+2. `factional validate crates/cli/tests/fixtures/worlds/broken` lists every problem, exactly as `load` does, and exits 1.
+3. `factional validate crates/cli/tests/fixtures/worlds/reformed` prints Vex's member-tolerance warning and exits 0.
+4. A fixture with a faction that no starting character is within tolerance of warns, naming the faction and its nearest character with the distance.
+5. `factional schema factions` is valid JSON Schema, whose `drift.policy` enumerates `ignore`, `flag`, `demote`, `expel` and `probation`.
+6. Every key in `content/sample` and `docs/examples/riverhold` appears in the schema. Keys for settings the engine doesn't read yet are reported as such, not silently allowed.
 
 ### T2 · What-if: compare and reload — P1 · Outline
 
