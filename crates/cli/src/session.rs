@@ -1260,6 +1260,7 @@ fn describe_event(event: &Event) -> String {
             let reason = match reason {
                 LeaveReason::Voluntary => "voluntary",
                 LeaveReason::Defected => "defected",
+                LeaveReason::Expelled => "expelled",
             };
             format!("{character} left {faction} ({reason})")
         }
@@ -1302,6 +1303,22 @@ fn describe_event(event: &Event) -> String {
             format!("now watching {subject} ({} observers)", bands.len())
         }
         Change::Unwatched { subject } => format!("no longer watching {subject}"),
+        Change::MemberOutOfTolerance {
+            character,
+            faction,
+            distance,
+            tolerance,
+        } => format!(
+            "{character} has drifted out of {faction}'s tolerance: {distance} from it, tolerance {tolerance}"
+        ),
+        Change::MemberBackInTolerance {
+            character,
+            faction,
+            distance,
+            tolerance,
+        } => format!(
+            "{character} is back within {faction}'s tolerance: {distance} from it, tolerance {tolerance}"
+        ),
         Change::DispositionBandChanged {
             observer,
             subject,
@@ -1508,14 +1525,23 @@ fn describe_faction(world: &World, faction: &Faction) -> String {
     } else {
         format!("members: {}", members.join(", "))
     };
+    let policy = world
+        .drift_policy(&faction.id)
+        .expect("a faction from the world");
+    let by_default = if faction.drift.is_none() {
+        ", by default"
+    } else {
+        ""
+    };
     format!(
-        "{} — {} — {} — {} — tolerance {}, member tolerance {} — {members}",
+        "{} — {} — {} — {} — tolerance {}, member tolerance {}, drift {}{by_default} — {members}",
         faction.id,
         faction.name,
         axes(faction.alignment),
         faction.alignment.label(world.balance().label_threshold),
         faction.tolerances.tolerance(),
         faction.tolerances.member(),
+        policy.key(),
     )
 }
 
@@ -2192,11 +2218,11 @@ mod tests {
         assert_eq!(
             riverhold().execute("factions"),
             output(
-                "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00 — members: brother_ash (initiate)\n\
-                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00 — members: captain_hale (captain)\n\
-                 free_company — The Free Company — law -10.00, good 0.00 — True Neutral — tolerance 60.00, member tolerance 80.00 — no members\n\
-                 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: vex (fence)\n\
-                 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira (ordained)"
+                "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00, drift expel — members: brother_ash (initiate)\n\
+                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00, drift flag, by default — members: captain_hale (captain)\n\
+                 free_company — The Free Company — law -10.00, good 0.00 — True Neutral — tolerance 60.00, member tolerance 80.00, drift ignore — no members\n\
+                 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00, drift flag — members: vex (fence)\n\
+                 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00, drift demote — members: sister_mira (ordained)"
             )
         );
     }
@@ -2207,7 +2233,7 @@ mod tests {
         assert_eq!(
             session.execute("show faction temple"),
             output(
-                "temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00 — members: sister_mira (ordained)"
+                "temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00, drift demote — members: sister_mira (ordained)"
             )
         );
         assert_eq!(
@@ -2382,7 +2408,7 @@ mod tests {
         assert_eq!(
             session.execute("show faction lantern_guild"),
             output(
-                "lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00 — members: player (cutpurse), vex (fence)"
+                "lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00, drift flag — members: player (cutpurse), vex (fence)"
             )
         );
         assert_eq!(

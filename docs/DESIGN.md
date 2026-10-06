@@ -440,6 +440,16 @@ The drift policy applies when a member's distance to their faction exceeds their
 
 Drift is checked whenever the member's alignment, the faction's alignment, or a tolerance changes. Probation expiry is checked when time advances.
 
+How it applies (P-47):
+
+- **Member alignment changes are checked now; faction alignment changes and probation arrive in M11.** After a command that moved a member's alignment, each of their factions reviews them in id order, after the command's own events and before watched band changes (§8.3). Tolerances don't change at runtime.
+- **A faction without its own policy uses `membership.default_drift`,** which is built in as `flag`. `flag` remembers who is out, so it reports crossing out and back once each.
+- **`demote` steps down** to the highest rung at or below theirs whose tolerance allows them, one `RankChanged` per rung. If none does, they're expelled.
+- **`expel` costs `expel_standing_change`** (−20 by default), which spills like any standing change (§7.1).
+- **Exactly at the tolerance is within it,** as for joining.
+
+Worked example: Ash, an initiate 40.00 from the Ashen Circle, does a good deed and ends 44.00 away. The Circle expels: `LeftFaction(expelled)`, the Circle −20.00, and +4.80 with the Temple, which regards the Circle at −90.
+
 ### 9.4 Relations between factions (P-12)
 
 `relation(F → G)` runs −100…+100.
@@ -633,7 +643,8 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 (done) |
 | Spillover multipliers within −1…1 | error | M6 (done) |
 | Rule tables use known conditions, with the right kind of value, and only their table's outcomes; a refusal has a reason and no `standing_change`; rung numbers ≥ 1; rank ids only in a faction's own tables and only its ranks; standing thresholds and `standing_change` within ±100; every table ends with a rule that always decides | error | M7 (done) |
-| Drift policies are known; probation has `grace_ticks` > 0 and a `then` | error | M8 |
+| Drift policies are known (`ignore`, `flag`, `demote`, `expel`); `expel_standing_change` within ±100 | error | M8 (done) |
+| Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` ≥ 0 | error | M9 |
 | `knowledge.model` is a known model | error | K1 |
 | A faction no starting character could join; a rank no one can reach | warning | T1 |

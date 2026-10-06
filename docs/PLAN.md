@@ -29,7 +29,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1 → Q0 → U0`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1 → Q0 → U0`
 
 ## Done
 
@@ -51,6 +51,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - A5 — target-aware effects: an action's `by_target.law`, `.good` and `.relation` curves (the most hostile relation from the actor's factions toward the target's), joining inertia in one exactly computed product rounded once; load check for negative curves; an `action_shift` query that `decide` uses; `act --explain` shows each target multiplier and where it came from; a property test for invariant 8 with every multiplier; done 2026-10-05 (#20)
 - D3 — watched subjects: `Watch` and `Unwatch` (the starting bands travel in `Watched`, so replay runs no rules); after every accepted command, `DispositionBandChanged` for each observer whose view of a watched subject left its band, with `disposition.hysteresis`; `Bands::band_after`; a property test that with no hysteresis the remembered band is always the current one; `watch`, `unwatch`, `watching`; done 2026-10-06 (#21)
 - M6 — standing spillover: `standing.spillover` (a curve within −1…1, on by default); every standing change with a faction spills one hop to every other faction by how it regards the first, from the change as applied, rounded once, adding up with direct changes; `StandingChanged` carries what spilled and from where, and the CLI says so; done 2026-10-06 (#22)
+- M8 — drift policies: a faction's `drift` (`ignore`, `flag`, `demote`, `expel`), `membership.default_drift` (built in, `flag`) and `expel_standing_change` (−20.00, spilling like any standing change); members whose alignment a command moved are reviewed against each faction, before band changes; `MemberOutOfTolerance`, `MemberBackInTolerance`, `LeftFaction(expelled)`; demotion steps down to the highest rung that allows them; drift in faction listings; split from M11; done 2026-10-06 (#23)
 
 ---
 
@@ -60,40 +61,38 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M8 · Drift policies and runtime faction alignment — P1 · Next
+### M11 · Probation and runtime faction alignment — P1 · Next
 
-**Why:** D-9 and P-11. A member who drifts away from their faction's ideals is noticed, put on probation, demoted or thrown out, as the faction chooses (DESIGN.md §9.3).
+**Why:** the rest of D-9 and DESIGN.md §9.3. A faction can give a drifting member time to come back before acting, and the host can move a faction's ideals during play, with its members reviewed against them. Split from M8.
 
 **Scope**
 
-- **Content.**
-  - A faction's `drift = { policy = … }`: `ignore`, `flag`, `probation` (with `grace_ticks` > 0 and `then = "expel"` or `"demote"`), `demote` or `expel`.
-  - `membership.default_drift` for factions that set none. Built in, it's `flag`.
-  - A faction's `expel_standing_change`, −20.00 by default.
-- **When drift is checked.** For each member whose alignment, or whose faction's alignment, a command changed. A member is drifting when their distance to the faction is past their member tolerance: the stricter of their rank's `tolerance` and the faction's `member_tolerance`, as in M7.
-- **Probation expiry** is checked when time advances. It expires once `grace_ticks` have passed since it started.
-- **Commands.** `SetFactionAlignment` and `ShiftFactionAlignment` emit `FactionAlignmentChanged { faction, from, to }`, then the faction's members are reviewed.
-- **Events:** `MemberOutOfTolerance`, `MemberBackInTolerance`, `ProbationStarted`, `ProbationCleared`, `RankChanged` and `LeftFaction { reason: Expelled }`. An expulsion applies `expel_standing_change`, which spills like any standing change (M6).
-- **CLI.** `faction-align <faction> <law> <good>`, `faction-shift <faction> --law <n> --good <n>`, and drift in `show faction`.
+- **Probation.**
+  - The policy is `drift = { policy = "probation", grace_ticks = N, then = "expel" | "demote" }`, with N > 0.
+  - When a member drifts out, `ProbationStarted { character, faction, until }`.
+  - If a later review finds them back within tolerance before it ends, `ProbationCleared`.
+  - When time advances to or past `until` with them still out, `then` applies, as M8's `expel` or `demote` would.
+  - A member who leaves while on probation is no longer on it.
+- **Faction alignment at runtime.**
+  - `SetFactionAlignment { faction, alignment }` and `ShiftFactionAlignment { faction, by }` emit `FactionAlignmentChanged { faction, from, to }`, then review every member of that faction, as M8 reviews a member who moved.
+  - Distance, disposition and joining all use the faction's alignment now.
+- **CLI:** `faction-align <faction> <law> <good>`, and `faction-shift <faction> [--law <n>] [--good <n>]`.
+- **Sample world:** the Watch gets the example world's probation (100 ticks, then expel).
 
-**Acceptance** (Riverhold, with the example world's drift policies)
+**Acceptance** (Riverhold sample, with the Watch on probation)
 
-1. **`flag` (the Guild).** Vex is a fence at −55 / −20, 7.07 from the Guild. Shifting the Guild +70 law, to 10 / −10, puts him 65.19 away (gaps 65 and 5 × 0.5): past the 60.00 member tolerance, so `MemberOutOfTolerance` and nothing else. Shifting it back −20, to −10 / −10, puts him 45.28 away, so `MemberBackInTolerance`.
-2. **`expel` (the Ashen Circle).** Brother Ash is at 25 / −70, 10.08 from the Circle. Shifting the Circle +60 good, to 20 / −20, puts him 50.02 away (gaps 5 × 0.25 and 50): past 40.00. He's expelled: `LeftFaction(expelled)`, then standing with the Circle −20.00, which spills +4.80 to the Temple (−0.24 at −90).
-3. **`demote` (the Temple).** A high priest at 30 / 50 is 30.00 from the Temple: past the high priest's own tolerance of 20.00, but within the Temple's 45.00. They're demoted to ordained, then checked again: ordained sets no tolerance, so the 45.00 applies, and they stay. A member already on the lowest rung would be expelled instead.
-4. **`probation` (the Watch: 100 ticks, then expel).** Captain Hale is at 75 / 30. Shifting the Watch −30 law, to 40 / 20, puts him 35.09 away (gaps 35 and 10 × 0.25): past the captain's 25.00. So `ProbationStarted`, ending at tick 100.
-   - **Cleared:** shifting the Watch +20 law, to 60 / 20, puts him 15.21 away, so `ProbationCleared`.
-   - **Expired:** if nothing changes, `advance 100` expels him. That's `LeftFaction(expelled)`, then the Watch −20.00 (75.00 → 55.00), which spills +3.60 to the Guild and −2.00 to the Temple.
-5. **`ignore` (the Free Company):** no drift events at all.
-6. **Member alignment changes trigger it too:** an act that takes a member past their tolerance is checked like a faction change.
+1. **Probation starts.** Captain Hale is at 75 / 30. `faction-shift city_watch --law -30` moves the Watch to 40 / 20, putting him 35.09 away (gaps 35 and 10 × 0.25): past the captain's 25.00. So `FactionAlignmentChanged`, then `ProbationStarted` until tick 100.
+2. **Cleared.** `faction-shift city_watch --law 20`, to 60 / 20, puts him 15.21 away (gaps 15 and 2.5): `ProbationCleared`.
+3. **Expired.** If nothing changes instead, `advance 100` expels him. That's `LeftFaction(expelled)`, then the Watch 75.00 → 55.00, spilling +3.60 to the Guild (−80: −0.18) and −2.00 to the Temple (+60: 0.10).
+4. **Not yet.** `advance 99` changes nothing; the next tick expels.
+5. **A faction shift flags too.** `faction-shift lantern_guild --law 70`, to 10 / −10, puts Vex 65.19 away (gaps 65 and 10 × 0.5): `MemberOutOfTolerance` (M8's `flag`).
+6. **Refusals:** an unknown faction, with a "did you mean"; an axis outside ±100 for `SetFactionAlignment`. A shift stops at ±100, as alignment does.
 7. **Load errors at their keys:**
-   - an unknown policy, with a "did you mean";
    - `probation` without `grace_ticks` or `then`;
    - `grace_ticks = 0`;
-   - `then` other than `expel` or `demote`;
-   - `expel_standing_change` outside ±100.
+   - `then` other than `expel` or `demote`.
 
-**Validates** (DESIGN.md §12.2): drift policies are known; probation has `grace_ticks` > 0 and a `then`.
+**Validates** (DESIGN.md §12.2): probation has `grace_ticks` > 0 and a `then` of `expel` or `demote`.
 
 ### M9 · When two of your factions go to war — P1 · Outline
 

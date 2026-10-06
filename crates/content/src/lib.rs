@@ -11,11 +11,11 @@ use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Axis, Balance, Band, BandProblem,
     Bands, Character, CharacterId, ComponentKind, Condition, Content, ContentProblem,
-    ContentWarning, DispositionWeights, Effects, Faction, FactionId, Inertia, InertiaProfile,
-    InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser, Rank, RankId, RankKey,
-    RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects, StandingKey,
-    StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem, TargetCurve,
-    ToleranceProblem, Tolerances, Toward, Verdict, WeightProblem, Weights,
+    ContentWarning, DispositionWeights, DriftPolicy, Effects, Faction, FactionId, Inertia,
+    InertiaProfile, InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser, Rank,
+    RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects,
+    StandingKey, StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem,
+    TargetCurve, ToleranceProblem, Tolerances, Toward, Verdict, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -217,6 +217,9 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             }
             ContentProblem::LeaveStandingOutOfRange { faction, .. } => {
                 (FACTIONS_FILE, format!("{faction}.leave_standing_change"))
+            }
+            ContentProblem::ExpelStandingOutOfRange { faction, .. } => {
+                (FACTIONS_FILE, format!("{faction}.expel_standing_change"))
             }
             ContentProblem::NegativeDispositionWeight { component, .. } => (
                 BALANCE_FILE,
@@ -443,6 +446,9 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         inertia.finish(report);
     }
     if let Some(mut membership) = file.optional_table("membership", "[membership]", report) {
+        if let Some(policy) = read_drift(&mut membership, "default_drift", report) {
+            balance.default_drift = policy;
+        }
         balance.rule_tables = read_rule_tables(&mut membership, report);
         membership.finish(report);
     }
@@ -838,6 +844,10 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
         .unwrap_or_default();
     let ranks = read_ranks(&mut section, report);
     let rule_tables = read_rule_tables(&mut section, report);
+    let drift = read_drift(&mut section, "drift", report);
+    let expel_standing_change = section
+        .optional_fixed("expel_standing_change", report)
+        .unwrap_or(Faction::DEFAULT_EXPEL_STANDING_CHANGE);
     let tolerances = tolerance.and_then(|tolerance| match Tolerances::new(tolerance, member) {
         Ok(tolerances) => Some(tolerances),
         Err(problem) => {
@@ -859,7 +869,37 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
         leave_standing_change,
         ranks: ranks?,
         rule_tables,
+        drift,
+        expel_standing_change,
     })
+}
+
+/// A drift setting, `{ policy = "flag" }`, under `key`: a faction's `drift`, or
+/// `membership.default_drift` (DESIGN.md §9.3). `None` if it's absent or wrong (that's
+/// reported).
+fn read_drift(
+    section: &mut Section<'_>,
+    key: &'static str,
+    report: &mut Report,
+) -> Option<DriftPolicy> {
+    let mut drift = section.optional_table(key, "{ policy = \"flag\" }", report)?;
+    let policy = drift.text("policy", report).and_then(|text| {
+        let policy = DriftPolicy::from_key(&text);
+        if policy.is_none() {
+            let keys = DriftPolicy::ALL.map(DriftPolicy::key);
+            let message = match suggest(&text, keys) {
+                Some(close) => format!("unknown drift policy '{text}' (did you mean '{close}'?)"),
+                None => format!(
+                    "unknown drift policy '{text}': use {}, {}, {} or {}",
+                    keys[0], keys[1], keys[2], keys[3]
+                ),
+            };
+            report.error(&drift.path_to("policy"), message);
+        }
+        policy
+    });
+    drift.finish(report);
+    policy
 }
 
 /// The `defectors` and `deserters` tables under `section`, each `{ rules = [...] }`
@@ -1210,8 +1250,8 @@ mod tests {
     use super::*;
     use factional_core::Fixed;
     use factional_reputation::{
-        ActionId, CharacterId, Condition, FactionId, Inertia, InertiaProfile, Metric, ProfileId,
-        RankRef, Rule, TableKind, TargetCurve, Toward, Verdict, Weights,
+        ActionId, CharacterId, Condition, DriftPolicy, FactionId, Inertia, InertiaProfile, Metric,
+        ProfileId, RankRef, Rule, TableKind, TargetCurve, Toward, Verdict, Weights,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -1676,7 +1716,7 @@ mod tests {
             name = "The Watch"
             alignment = { law = 70.0, good = 20.0 }
             weights = { law = 1.5, good = 0.25 }
-            drift = "flag"
+            motto = "Order"
         "#;
         assert_eq!(
             problems(factions(text)),
@@ -1687,7 +1727,7 @@ mod tests {
                 "factions.toml: temple.alignment.good: 180.00 is outside -100.00..100.00",
                 "factions.toml: watch.weights.law: 1.50 must be between 0.00 and 1.00",
                 "factions.toml: watch: missing 'tolerance'",
-                "factions.toml: watch: unknown key 'drift'",
+                "factions.toml: watch: unknown key 'motto'",
             ]
         );
     }
@@ -1996,6 +2036,86 @@ mod tests {
             found,
             [
                 "factions.toml: vex: 'vex' is also a character's id: factions and characters need different ids"
+            ]
+        );
+    }
+
+    // Drift (M8)
+
+    fn with_drift(lines: &str) -> String {
+        WATCH.replacen(
+            "member_tolerance = 50.0",
+            &format!("member_tolerance = 50.0\n        {lines}"),
+            1,
+        )
+    }
+
+    #[test]
+    fn reads_drift_policies_and_the_cost_of_expulsion() {
+        let content = parse_content(Sources {
+            balance: Some("[membership]\ndefault_drift = { policy = \"ignore\" }\n"),
+            factions: Some(&with_drift(
+                "drift = { policy = \"expel\" }\n        expel_standing_change = -35.0",
+            )),
+            ..Sources::default()
+        })
+        .expect("valid content");
+        let watch = &content.factions[&FactionId::new("city_watch").expect("valid id")];
+        assert_eq!(
+            (watch.drift, watch.expel_standing_change),
+            (Some(DriftPolicy::Expel), h(-35_00))
+        );
+        assert_eq!(content.balance.default_drift, DriftPolicy::Ignore);
+        let plain = factions(WATCH).expect("valid content");
+        let watch = &plain.factions[&FactionId::new("city_watch").expect("valid id")];
+        assert_eq!(
+            (watch.drift, watch.expel_standing_change),
+            (None, h(-20_00))
+        );
+        assert_eq!(plain.balance.default_drift, DriftPolicy::Flag);
+    }
+
+    #[test]
+    fn reports_drift_mistakes_at_their_keys() {
+        let cases = [
+            (
+                "drift = { policy = \"flagg\" }",
+                "factions.toml: city_watch.drift.policy: unknown drift policy 'flagg' (did you mean 'flag'?)",
+            ),
+            (
+                "drift = { policy = \"probation\" }",
+                "factions.toml: city_watch.drift.policy: unknown drift policy 'probation': use ignore, flag, demote or expel",
+            ),
+            (
+                "drift = { policy = \"flag\", grace_ticks = 5 }",
+                "factions.toml: city_watch.drift: unknown key 'grace_ticks'",
+            ),
+            (
+                "drift = \"flag\"",
+                "factions.toml: city_watch.drift: expected a table, like { policy = \"flag\" }",
+            ),
+            (
+                "drift = {}",
+                "factions.toml: city_watch.drift: missing 'policy'",
+            ),
+            (
+                "expel_standing_change = -120.0",
+                "factions.toml: city_watch.expel_standing_change: -120.00 is outside -100.00..100.00",
+            ),
+        ];
+        for (lines, expected) in cases {
+            assert_eq!(
+                problems(factions(&with_drift(lines))),
+                [expected],
+                "{lines}"
+            );
+        }
+        assert_eq!(
+            problems(balance(
+                "[membership]\ndefault_drift = { policy = \"expell\" }\n"
+            )),
+            [
+                "balance.toml: membership.default_drift.policy: unknown drift policy 'expell' (did you mean 'expel'?)"
             ]
         );
     }

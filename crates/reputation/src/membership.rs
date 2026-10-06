@@ -76,12 +76,51 @@ pub struct StartingMembership {
     pub rank: Option<RankId>,
 }
 
-/// Why a character left a faction. Expulsion and conflict resolution arrive with M8 and M9.
+/// Why a character left a faction. Conflict resolution arrives with M9.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeaveReason {
     Voluntary,
     /// To join an enemy of the faction (DESIGN.md §9.2).
     Defected,
+    /// Thrown out for drifting from the faction's ideals (DESIGN.md §9.3).
+    Expelled,
+}
+
+/// What a faction does about a member who drifts past their tolerance (DESIGN.md §9.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriftPolicy {
+    Ignore,
+    /// Report it, and report when they're back.
+    Flag,
+    /// Down a rung at a time until they're within the rank's tolerance; expelled if they're
+    /// still out on the lowest rung.
+    Demote,
+    Expel,
+}
+
+impl DriftPolicy {
+    pub const ALL: [DriftPolicy; 4] = [
+        DriftPolicy::Ignore,
+        DriftPolicy::Flag,
+        DriftPolicy::Demote,
+        DriftPolicy::Expel,
+    ];
+
+    /// Its name in content, such as `flag`.
+    pub fn key(self) -> &'static str {
+        match self {
+            DriftPolicy::Ignore => "ignore",
+            DriftPolicy::Flag => "flag",
+            DriftPolicy::Demote => "demote",
+            DriftPolicy::Expel => "expel",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<DriftPolicy> {
+        DriftPolicy::ALL
+            .into_iter()
+            .find(|policy| policy.key() == key)
+    }
 }
 
 /// One requirement of the next rank (DESIGN.md §7.2).
@@ -223,6 +262,18 @@ mod tests {
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
+    }
+
+    #[test]
+    fn drift_policies_are_named_as_content_writes_them() {
+        assert_eq!(
+            DriftPolicy::ALL.map(DriftPolicy::key),
+            ["ignore", "flag", "demote", "expel"]
+        );
+        for policy in DriftPolicy::ALL {
+            assert_eq!(DriftPolicy::from_key(policy.key()), Some(policy));
+        }
+        assert_eq!(DriftPolicy::from_key("probation"), None);
     }
 
     #[test]

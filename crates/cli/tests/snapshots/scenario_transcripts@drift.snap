@@ -1,0 +1,41 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/drift.scenario
+---
+> load crates/cli/tests/fixtures/worlds/drift
+loaded 5 characters from crates/cli/tests/fixtures/worlds/drift
+> act nell report_crime
+#1 at tick 0: nell did report_crime
+#2 at tick 0: nell's alignment moved from law 0.00, good -10.00 to law 4.00, good -9.00
+#3 at tick 0: nell's standing with city_watch moved from 0.00 to 5.00
+#4 at tick 0: nell's standing with lantern_guild moved from 0.00 to -0.90, with -0.90 spilled from city_watch (5.00 × -0.18; lantern_guild regards it at -80.00)
+#5 at tick 0: nell's standing with temple moved from 0.00 to 0.50, with 0.50 spilled from city_watch (5.00 × 0.10; temple regards it at 60.00)
+#6 at tick 0: nell has drifted out of lantern_guild's tolerance: 64.00 from it, tolerance 60.00
+> act nell steal
+#7 at tick 0: nell did steal
+#8 at tick 0: nell's alignment moved from law 4.00, good -9.00 to law -1.00, good -12.00
+#9 at tick 0: nell is back within lantern_guild's tolerance: 59.01 from it, tolerance 60.00
+> act ash help_stranger
+#10 at tick 0: ash did help_stranger
+#11 at tick 0: ash's alignment moved from law 20.00, good -40.00 to law 20.00, good -36.00
+#12 at tick 0: ash left ashen_circle (expelled)
+#13 at tick 0: ash's standing with ashen_circle moved from 0.00 to -20.00
+#14 at tick 0: ash's standing with temple moved from 0.00 to 4.80, with 4.80 spilled from ashen_circle (-20.00 × -0.24; temple regards it at -90.00)
+> assert show character ash == ash — Ash — law 20.00, good -36.00 — Neutral Evil
+> act ilse extort
+#15 at tick 0: ilse did extort
+#16 at tick 0: ilse's alignment moved from law 30.00, good 60.00 to law 28.00, good 54.00
+#17 at tick 0: ilse's rank in temple changed from high_priest to ordained
+> assert show character ilse == ilse — Ilse — law 28.00, good 54.00 — Neutral Good — member of temple (ordained) since tick 0
+> act oren extort
+#18 at tick 0: oren did extort
+#19 at tick 0: oren's alignment moved from law 30.00, good 36.00 to law 28.00, good 30.00
+#20 at tick 0: oren left temple (expelled)
+#21 at tick 0: oren's standing with ashen_circle moved from 0.00 to 4.80, with 4.80 spilled from temple (-20.00 × -0.24; ashen_circle regards it at -90.00)
+#22 at tick 0: oren's standing with city_watch moved from 0.00 to -2.00, with -2.00 spilled from temple (-20.00 × 0.10; city_watch regards it at 60.00)
+#23 at tick 0: oren's standing with temple moved from 0.00 to -20.00
+> act brann steal
+#24 at tick 0: brann did steal
+#25 at tick 0: brann's alignment moved from law -10.00, good 0.00 to law -15.00, good -3.00
+> assert show character brann == brann — Brann — law -15.00, good -3.00 — True Neutral — member of free_company (sellsword) since tick 0

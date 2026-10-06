@@ -142,6 +142,21 @@ pub enum Change {
         before: Fixed,
         after: Fixed,
     },
+    /// A member of a faction whose policy is `flag` drifted past their tolerance: `distance`
+    /// is how far they are now (DESIGN.md §9.3).
+    MemberOutOfTolerance {
+        character: CharacterId,
+        faction: FactionId,
+        distance: Fixed,
+        tolerance: Fixed,
+    },
+    /// A flagged member is back within their tolerance.
+    MemberBackInTolerance {
+        character: CharacterId,
+        faction: FactionId,
+        distance: Fixed,
+        tolerance: Fixed,
+    },
     /// `subject` is now watched; `bands` is every observer's band toward them at that moment,
     /// factions first, then characters, each in id order (DESIGN.md §8.3).
     Watched {

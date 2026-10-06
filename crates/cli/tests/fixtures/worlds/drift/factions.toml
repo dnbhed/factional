@@ -1,3 +1,4 @@
+# Riverhold's factions and drift policies, with the Free Company's tolerance set tight.
 # Riverhold's factions (DESIGN.md §9, §13).
 #
 # Each [table] is one faction; its name is the id you type in the CLI. Factions and
@@ -99,8 +100,9 @@ name = "The Free Company"
 alignment = { law = -10.0, good = 0.0 }
 # Mercenaries barely care about either axis, so almost anyone seems close.
 weights = { law = 0.25, good = 0.25 }
-tolerance = 60.0
-member_tolerance = 80.0
+# Set tight for this fixture, so anyone drifts: the policy ignores it.
+tolerance = 1.0
+member_tolerance = 1.0
 # Mercenaries don't take kindly to deserters, but don't care what you believe.
 leave_standing_change = -10.0
 drift = { policy = "ignore" }

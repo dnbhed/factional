@@ -38,8 +38,8 @@ pub use faction::{Faction, Rank};
 pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId, ProfileId, RankId};
 pub use inertia::{Inertia, InertiaProfile, Toward};
 pub use membership::{
-    JoinAssessment, JoinBlock, LeaveReason, Membership, PromotionAssessment, RankCheck,
-    StartingMembership, ToleranceProblem, Tolerances,
+    DriftPolicy, JoinAssessment, JoinBlock, LeaveReason, Membership, PromotionAssessment,
+    RankCheck, StartingMembership, ToleranceProblem, Tolerances,
 };
 pub use relation::{Regard, Relation, RelationEnds, RelationSide};
 pub use shift::{AxisShift, Shift, TargetRelation};
