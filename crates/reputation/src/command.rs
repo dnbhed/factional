@@ -4,7 +4,7 @@ use factional_core::{Envelope, Fixed, Tick, article};
 
 use crate::{
     AXIS_LIMIT, ActionId, Alignment, CharacterId, Effects, FactionId, JoinAssessment, LeaveReason,
-    Observer, OutcomeId, Party, PromotionAssessment, RankId, Witnesses,
+    Observer, OutcomeId, Party, PromotionAssessment, RankId, Spill, Witnesses,
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
@@ -121,6 +121,9 @@ pub enum Change {
         party: Party,
         before: Fixed,
         after: Fixed,
+        /// What spilled over from changes with other factions, if any, in faction id order
+        /// (DESIGN.md §7.1).
+        spilled: Vec<Spill>,
     },
     /// An outcome was applied; its changes follow as their own events.
     OutcomeApplied {

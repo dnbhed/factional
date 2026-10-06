@@ -241,6 +241,15 @@ change × spillover( relation(G → F) )
 
 Example: robbing a member of the Lantern Guild costs −10.00 with the guild. The City Watch regards the guild at −80, so you gain +1.80 with the Watch.
 
+How it applies (P-46):
+
+- **Every standing change with a faction spills,** whatever caused it: acts, outcomes, effects, leaving or defecting.
+- **The change as applied.** A change cut short at ±100 spills only what landed. Each spill is `change × multiplier`, computed exactly and rounded once, and one that rounds to 0 is left out.
+- **It adds up per faction** with any direct change, so each party still gets one `StandingChanged`. Its `spilled` list says how much came from which faction, at what relation and multiplier.
+- **Values within −1…1,** checked at load.
+
+Riverhold: a donation to the Temple (+10.00) gives +1.00 with the Watch (it regards the Temple at +60: 0.10) and −2.40 with the Ashen Circle (−90: −0.24).
+
 ### 7.2 Rank (P-9)
 
 Each faction defines a ladder of ranks. Members join on the bottom rung.
@@ -622,7 +631,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Standing names factions and characters that exist; values within ±100; `leave_standing_change` within ±100 | error | M3 (done) |
 | A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung; rank standing requirements within ±100, tolerances ≥ 0 | error | M5 (done) |
 | A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 (done) |
-| Spillover multipliers within −1…1 | error | M6 |
+| Spillover multipliers within −1…1 | error | M6 (done) |
 | Rule tables use known conditions, with the right kind of value, and only their table's outcomes; a refusal has a reason and no `standing_change`; rung numbers ≥ 1; rank ids only in a faction's own tables and only its ranks; standing thresholds and `standing_change` within ±100; every table ends with a rule that always decides | error | M7 (done) |
 | Drift policies are known; probation has `grace_ticks` > 0 and a `then` | error | M8 |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` ≥ 0 | error | M9 |

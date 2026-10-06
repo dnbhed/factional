@@ -1274,7 +1274,24 @@ fn describe_event(event: &Event) -> String {
             party,
             before,
             after,
-        } => format!("{subject}'s standing with {party} moved from {before} to {after}"),
+            spilled,
+        } => {
+            let mut moved =
+                format!("{subject}'s standing with {party} moved from {before} to {after}");
+            let spills: Vec<String> = spilled
+                .iter()
+                .map(|spill| {
+                    format!(
+                        "{} spilled from {} ({} × {}; {party} regards it at {})",
+                        spill.amount, spill.from, spill.change, spill.multiplier, spill.relation
+                    )
+                })
+                .collect();
+            if !spills.is_empty() {
+                moved += &format!(", with {}", spills.join(", and "));
+            }
+            moved
+        }
         Change::OutcomeApplied { outcome, character } => {
             format!("outcome {outcome} applied to {character}")
         }
@@ -2028,8 +2045,9 @@ mod tests {
             output(
                 "#3 at tick 0: player did steal, targeting vex, at scale 0.50\n\
                  #4 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -12.50, good -7.50\n\
-                 #5 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00\n\
-                 #6 at tick 0: player's standing with vex moved from 0.00 to -20.00"
+                 #5 at tick 0: player's standing with city_watch moved from 0.00 to 1.80, with 1.80 spilled from lantern_guild (-10.00 × -0.18; city_watch regards it at -80.00)\n\
+                 #6 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00\n\
+                 #7 at tick 0: player's standing with vex moved from 0.00 to -20.00"
             )
         );
     }
@@ -2517,7 +2535,7 @@ mod tests {
             .expect("valid");
         assert_eq!(
             session.execute("promote vex lantern_guild"),
-            output("#3 at tick 0: vex's rank in lantern_guild changed from fence to shadow")
+            output("#4 at tick 0: vex's rank in lantern_guild changed from fence to shadow")
         );
         assert_eq!(
             session.execute("promote vex lantern_guild"),
@@ -2525,7 +2543,7 @@ mod tests {
         );
         assert_eq!(
             session.execute("demote vex lantern_guild"),
-            output("#4 at tick 0: vex's rank in lantern_guild changed from shadow to fence")
+            output("#5 at tick 0: vex's rank in lantern_guild changed from shadow to fence")
         );
         assert_eq!(
             session.execute("journal"),
@@ -2712,14 +2730,16 @@ mod tests {
             output(
                 "#8 at tick 0: outcome fined_by_watch applied to player\n\
                  #9 at tick 0: player's standing with city_watch moved from 0.00 to -20.00\n\
-                 #10 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00\n\
-                 #11 at tick 0: city_watch now regards player as unfriendly (was neutral), at -27.24\n\
-                 #12 at tick 0: captain_hale now regards player as unfriendly (was neutral), at -29.10"
+                 #10 at tick 0: player's standing with lantern_guild moved from 0.00 to 3.60, with 3.60 spilled from city_watch (-20.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #11 at tick 0: player's standing with temple moved from 0.00 to -2.00, with -2.00 spilled from city_watch (-20.00 × 0.10; temple regards it at 60.00)\n\
+                 #12 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00\n\
+                 #13 at tick 0: city_watch now regards player as unfriendly (was neutral), at -27.24\n\
+                 #14 at tick 0: captain_hale now regards player as unfriendly (was neutral), at -29.10"
             )
         );
         assert_eq!(
             session.execute("unwatch player"),
-            output("#13 at tick 0: no longer watching player")
+            output("#15 at tick 0: no longer watching player")
         );
         assert_eq!(
             session.execute("journal"),
@@ -2793,13 +2813,14 @@ mod tests {
             output(
                 "#1 at tick 0: player did steal, targeting vex\n\
                  #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00\n\
-                 #3 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00\n\
-                 #4 at tick 0: player's standing with vex moved from 0.00 to -20.00"
+                 #3 at tick 0: player's standing with city_watch moved from 0.00 to 1.80, with 1.80 spilled from lantern_guild (-10.00 × -0.18; city_watch regards it at -80.00)\n\
+                 #4 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00\n\
+                 #5 at tick 0: player's standing with vex moved from 0.00 to -20.00"
             )
         );
         assert_eq!(
             session.execute("standing player"),
-            output("lantern_guild: -10.00\nvex: -20.00")
+            output("city_watch: 1.80\nlantern_guild: -10.00\nvex: -20.00")
         );
         assert_eq!(session.execute("standing player vex"), output("-20.00"));
         assert_eq!(session.execute("standing player temple"), output("0.00"));
@@ -2829,7 +2850,9 @@ mod tests {
             output(
                 "#1 at tick 0: outcome fined_by_watch applied to player\n\
                  #2 at tick 0: player's standing with city_watch moved from 0.00 to -20.00\n\
-                 #3 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00"
+                 #3 at tick 0: player's standing with lantern_guild moved from 0.00 to 3.60, with 3.60 spilled from city_watch (-20.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #4 at tick 0: player's standing with temple moved from 0.00 to -2.00, with -2.00 spilled from city_watch (-20.00 × 0.10; temple regards it at 60.00)\n\
+                 #5 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00"
             )
         );
         assert_eq!(
@@ -3135,7 +3158,8 @@ mod tests {
             output(
                 "#1 at tick 0: vex left lantern_guild (defected)\n\
                  #2 at tick 0: vex joined city_watch as a recruit\n\
-                 #3 at tick 0: vex's standing with city_watch moved from 0.00 to -10.00"
+                 #3 at tick 0: vex's standing with city_watch moved from 0.00 to -10.00\n\
+                 #4 at tick 0: vex's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)"
             )
         );
     }

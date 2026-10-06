@@ -1,0 +1,13 @@
+# Standing spillover (DESIGN.md §7.1): when your standing with one faction changes, every
+# other faction's changes by change × spillover(how it regards the first), one hop only.
+load content/sample
+# Robbing Vex costs -10.00 with the Guild. The Watch regards the Guild at -80: -0.18, so +1.80.
+act player steal --target vex
+assert standing player city_watch == 1.80
+# One hop: the Temple regards the Watch at +60, but the +1.80 spills no further.
+assert standing player temple == 0.00
+# A donation: +10.00 with the Temple; the Watch (+60) shares 0.10, the Circle (-90) -0.24.
+act player donate_to_temple
+assert standing player city_watch == 2.80
+assert standing player ashen_circle == -2.40
+standing player

@@ -44,7 +44,7 @@ pub use membership::{
 pub use relation::{Regard, Relation, RelationEnds, RelationSide};
 pub use shift::{AxisShift, Shift, TargetRelation};
 pub use standing::{
-    ActionStanding, Effects, Outcome, Party, StandingEffects, StandingKey, StandingOwner,
+    ActionStanding, Effects, Outcome, Party, Spill, StandingEffects, StandingKey, StandingOwner,
 };
 pub use world::{
     Balance, Content, ContentProblem, ContentWarning, Distance, Observer, ProfileUser, RankKey,

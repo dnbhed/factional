@@ -1,0 +1,29 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/spillover.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --target vex
+#1 at tick 0: player did steal, targeting vex
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with city_watch moved from 0.00 to 1.80, with 1.80 spilled from lantern_guild (-10.00 × -0.18; city_watch regards it at -80.00)
+#4 at tick 0: player's standing with lantern_guild moved from 0.00 to -10.00
+#5 at tick 0: player's standing with vex moved from 0.00 to -20.00
+> assert standing player city_watch == 1.80
+> assert standing player temple == 0.00
+> act player donate_to_temple
+#6 at tick 0: player did donate_to_temple
+#7 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -5.00, good 0.00
+#8 at tick 0: player's standing with ashen_circle moved from 0.00 to -2.40, with -2.40 spilled from temple (10.00 × -0.24; ashen_circle regards it at -90.00)
+#9 at tick 0: player's standing with city_watch moved from 1.80 to 2.80, with 1.00 spilled from temple (10.00 × 0.10; city_watch regards it at 60.00)
+#10 at tick 0: player's standing with temple moved from 0.00 to 10.00
+> assert standing player city_watch == 2.80
+> assert standing player ashen_circle == -2.40
+> standing player
+ashen_circle: -2.40
+city_watch: 2.80
+lantern_guild: -10.00
+temple: 10.00
+vex: -20.00

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use factional_core::{Curve, CurveError, Fixed, Tick, article, suggest};
+use factional_core::{Curve, CurveError, Fixed, Ratio, Tick, article, suggest};
 
 use crate::defection::{self, Situation};
 use crate::distance::gap;
@@ -12,7 +12,7 @@ use crate::{
     DispositionWeights, Effects, Event, Faction, FactionId, Inertia, InertiaProfile,
     JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric, Outcome, OutcomeId,
     Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide,
-    Role, Rule, Shift, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner,
+    Role, Rule, Shift, Spill, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner,
     TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses,
     measure,
 };
@@ -46,6 +46,9 @@ pub struct Balance {
     /// `disposition.hysteresis`: how far past a band's edge a watched score must go to
     /// leave the band (DESIGN.md §8.3).
     pub hysteresis: Fixed,
+    /// `standing.spillover`: the share of a standing change with one faction that another
+    /// gets, by how it regards the first (DESIGN.md §7.1, P-13).
+    pub spillover: Curve,
 }
 
 impl Balance {
@@ -57,6 +60,19 @@ impl Balance {
 
     /// `alignment.label_threshold`'s default: 33.00.
     pub const DEFAULT_LABEL_THRESHOLD: Fixed = Fixed::from_hundredths(33_00);
+
+    /// `standing.spillover`'s default: bitter enemies feel a little of the opposite, allies
+    /// share up to half, and anything between −50 and 50 shares nothing.
+    pub fn default_spillover() -> Curve {
+        let point = |x: i64, y: i64| (Fixed::from_hundredths(x), Fixed::from_hundredths(y));
+        Curve::from_points(vec![
+            point(-100_00, -30),
+            point(-50_00, 0),
+            point(50_00, 0),
+            point(100_00, 50),
+        ])
+        .expect("the default spillover is a valid curve")
+    }
 
     /// `disposition.affinity`'s default: 50 when identical, 0 at 60 apart, −50 at 200.
     pub fn default_affinity() -> Curve {
@@ -85,6 +101,7 @@ impl Default for Balance {
             rule_tables: BTreeMap::new(),
             inertia: Inertia::default(),
             hysteresis: Fixed::ZERO,
+            spillover: Balance::default_spillover(),
         }
     }
 }
@@ -180,6 +197,8 @@ pub enum ContentProblem {
     SameFactionOutOfRange(Fixed),
     /// `disposition.hysteresis` below 0.
     NegativeHysteresis(Fixed),
+    /// `standing.spillover` gives a multiplier outside −1…1.
+    SpilloverOutOfRange(CurveError),
     /// A faction with no ranks: every faction needs a rung for new members.
     NoRanks(FactionId),
     /// Two ranks in one faction share an id; `index` is the second.
@@ -288,6 +307,12 @@ impl Content {
             .check_y_within(-AXIS_LIMIT, AXIS_LIMIT)
             .err()
             .map(ContentProblem::AffinityOutOfRange);
+        let spillover = self
+            .balance
+            .spillover
+            .check_y_within(-Fixed::ONE, Fixed::ONE)
+            .err()
+            .map(ContentProblem::SpilloverOutOfRange);
         let shared_ids = self
             .factions
             .keys()
@@ -398,6 +423,7 @@ impl Content {
         });
         affinity
             .into_iter()
+            .chain(spillover)
             .chain(threshold)
             .chain(self.inertia_problems())
             .chain(self.target_scaling_problems())
@@ -711,7 +737,8 @@ impl fmt::Display for ContentProblem {
                 f,
                 "'{id}' is also a character's id: factions and characters need different ids"
             ),
-            ContentProblem::AffinityOutOfRange(error) => error.fmt(f),
+            ContentProblem::AffinityOutOfRange(error)
+            | ContentProblem::SpilloverOutOfRange(error) => error.fmt(f),
             ContentProblem::UnknownMembershipFaction {
                 faction,
                 suggestion,
@@ -1412,9 +1439,10 @@ impl World {
     /// One `StandingChanged` for each party whose standing toward `subject` moves, in party
     /// order. Each change is scaled by the party's awareness of it, and stops at ±100.
     fn standing_changes(&self, subject: &CharacterId, deltas: Deltas) -> Vec<Change> {
-        deltas
+        // Each party's direct change first, as before and after.
+        let mut moved: BTreeMap<Party, (Fixed, Fixed, Vec<Spill>)> = deltas
             .into_iter()
-            .filter_map(|(party, delta)| {
+            .map(|(party, delta)| {
                 let change = delta.saturating_mul(self.awareness(&party));
                 let before = self.standing_now(subject, &party);
                 // A sum too big to hold means a change that reaches the end by itself.
@@ -1422,13 +1450,57 @@ impl World {
                     .checked_add(change)
                     .unwrap_or(change)
                     .clamp(-AXIS_LIMIT, AXIS_LIMIT);
-                (after != before).then(|| Change::StandingChanged {
+                (party, (before, after, Vec::new()))
+            })
+            .collect();
+        // Then one hop of spillover from each faction's change as applied (DESIGN.md §7.1,
+        // P-46): spills come only from direct changes, never from other spills.
+        let direct: Vec<(FactionId, Fixed)> = moved
+            .iter()
+            .filter_map(|(party, (before, after, _))| match party {
+                // A change that landed as 0 spills 0, which is left out below.
+                Party::Faction(faction) => Some((faction.clone(), *after - *before)),
+                Party::Character(_) => None,
+            })
+            .collect();
+        for (from, change) in direct {
+            for to in self.content.factions.keys().filter(|to| **to != from) {
+                let relation = relation_value(&self.state.relations, to, &from);
+                let multiplier = self.content.balance.spillover.exact_at(relation);
+                let amount = Ratio::from_fixed(change)
+                    .checked_mul(multiplier)
+                    .and_then(Ratio::round)
+                    .expect("a change within ±200 times a multiplier within ±1 fits");
+                if amount == Fixed::ZERO {
+                    continue;
+                }
+                let party = Party::Faction(to.clone());
+                let (_, after, spills) = moved.entry(party.clone()).or_insert_with(|| {
+                    let before = self.standing_now(subject, &party);
+                    (before, before, Vec::new())
+                });
+                *after = (*after + amount).clamp(-AXIS_LIMIT, AXIS_LIMIT);
+                spills.push(Spill {
+                    from: from.clone(),
+                    change,
+                    relation,
+                    multiplier,
+                    amount,
+                });
+            }
+        }
+        moved
+            .into_iter()
+            .filter(|(_, (before, after, _))| after != before)
+            .map(
+                |(party, (before, after, spilled))| Change::StandingChanged {
                     subject: subject.clone(),
                     party,
                     before,
                     after,
-                })
-            })
+                    spilled,
+                },
+            )
             .collect()
     }
 
@@ -2243,9 +2315,8 @@ mod tests {
     use crate::{
         AXIS_LIMIT, ActionStanding, AlignmentDelta, AxisShift, Band, Condition, ConditionCheck,
         Effects, JoinBlock, LeaveReason, Observed, Part, Rank, RankCheck, RankRef, RelationEnds,
-        Role, StandingEffects, StartingMembership, Tolerances, Verdict, Witnesses,
+        Role, Spill, StandingEffects, StartingMembership, Tolerances, Verdict, Witnesses,
     };
-    use factional_core::Ratio;
 
     const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
@@ -2481,6 +2552,7 @@ mod tests {
             same_faction: h(40_00),
             rule_tables: [(TableKind::Defectors, sample_defectors())].into(),
             hysteresis: h(5_00),
+            spillover: Curve::constant(h(25)),
             inertia: Inertia {
                 default_profile: profile_id("hardening"),
                 profiles: [(profile_id("hardening"), hardening())].into(),
@@ -4153,6 +4225,14 @@ mod tests {
         world.standing(&id(subject), party).expect("both exist")
     }
 
+    fn stamped(seq: u64, payload: Change) -> Event {
+        Event {
+            seq,
+            tick: Tick(0),
+            payload,
+        }
+    }
+
     fn standing_changed(seq: u64, subject: &str, party: Party, before: i64, after: i64) -> Event {
         Event {
             seq,
@@ -4162,6 +4242,7 @@ mod tests {
                 party,
                 before: h(before),
                 after: h(after),
+                spilled: Vec::new(),
             },
         }
     }
@@ -4262,8 +4343,18 @@ mod tests {
         assert_eq!(
             events[2..],
             [
-                standing_changed(3, "player", party_faction("lantern_guild"), 0, -10_00),
-                standing_changed(4, "player", party_character("vex"), 0, -20_00),
+                stamped(
+                    3,
+                    spilled(
+                        "player",
+                        "city_watch",
+                        0,
+                        1_80,
+                        vec![spill("lantern_guild", -10_00, -80_00, -18, 1_80)]
+                    )
+                ),
+                standing_changed(4, "player", party_faction("lantern_guild"), 0, -10_00),
+                standing_changed(5, "player", party_character("vex"), 0, -20_00),
             ]
         );
     }
@@ -4274,15 +4365,22 @@ mod tests {
         let events = world
             .execute(act("player", "donate_to_temple", None, 1_00))
             .expect("accepted");
+        // The Watch regards the Temple at +60, so it shares 0.10 of the +10.00 (P-46).
         assert_eq!(
             events[2..],
-            [standing_changed(
-                3,
-                "player",
-                party_faction("temple"),
-                0,
-                10_00
-            )]
+            [
+                stamped(
+                    3,
+                    spilled(
+                        "player",
+                        "city_watch",
+                        0,
+                        1_00,
+                        vec![spill("temple", 10_00, 60_00, 10, 1_00)]
+                    )
+                ),
+                standing_changed(4, "player", party_faction("temple"), 0, 10_00),
+            ]
         );
         let events = world
             .execute(act("player", "steal", None, 1_00))
@@ -4335,7 +4433,28 @@ mod tests {
                     },
                 },
                 standing_changed(2, "player", party_faction("city_watch"), 0, -20_00),
-                standing_changed(3, "player", party_character("captain_hale"), 0, -10_00),
+                // The Watch's −20.00 spills: −0.18 to the Guild, 0.10 to the Temple.
+                stamped(
+                    3,
+                    spilled(
+                        "player",
+                        "lantern_guild",
+                        0,
+                        3_60,
+                        vec![spill("city_watch", -20_00, -80_00, -18, 3_60)]
+                    )
+                ),
+                stamped(
+                    4,
+                    spilled(
+                        "player",
+                        "temple",
+                        0,
+                        -2_00,
+                        vec![spill("city_watch", -20_00, 60_00, 10, -2_00)]
+                    )
+                ),
+                standing_changed(5, "player", party_character("captain_hale"), 0, -10_00),
             ])
         );
         let events = world
@@ -4352,8 +4471,28 @@ mod tests {
         assert_eq!(
             events[2..],
             [
-                standing_changed(6, "player", party_faction("city_watch"), -20_00, -10_00),
-                standing_changed(7, "player", party_character("ava"), 0, 30_00),
+                standing_changed(8, "player", party_faction("city_watch"), -20_00, -10_00),
+                stamped(
+                    9,
+                    spilled(
+                        "player",
+                        "lantern_guild",
+                        3_60,
+                        1_80,
+                        vec![spill("city_watch", 10_00, -80_00, -18, -1_80)]
+                    )
+                ),
+                stamped(
+                    10,
+                    spilled(
+                        "player",
+                        "temple",
+                        -2_00,
+                        -1_00,
+                        vec![spill("city_watch", 10_00, 60_00, 10, 1_00)]
+                    )
+                ),
+                standing_changed(11, "player", party_character("ava"), 0, 30_00),
             ]
         );
     }
@@ -4375,8 +4514,10 @@ mod tests {
             .expect("accepted");
         assert_eq!(
             events[1..],
+            // Each fine made 5 events: the Watch's −20.00 spills +3.60 to the Guild and −2.00
+            // to the Temple. At −100.00 the Watch's change is 0 as applied, so nothing spills.
             [standing_changed(
-                17,
+                27,
                 "player",
                 party_character("captain_hale"),
                 -50_00,
@@ -4427,9 +4568,12 @@ mod tests {
             .expect("accepted");
         assert_eq!(
             world.standings(&id("player")),
+            // The Watch's +10.00 spills −1.80 to the Guild and +1.00 to the Temple; the
+            // Guild's −10.00 spills +1.80 to the Watch.
             Some(vec![
-                (party_faction("city_watch"), h(10_00)),
-                (party_faction("lantern_guild"), h(-10_00)),
+                (party_faction("city_watch"), h(11_80)),
+                (party_faction("lantern_guild"), h(-11_80)),
+                (party_faction("temple"), h(1_00)),
                 (party_character("ava"), h(30_00)),
                 (party_character("vex"), h(-20_00)),
             ])
@@ -4494,7 +4638,17 @@ mod tests {
                         character: id("player"),
                     },
                 },
-                standing_changed(2, "player", party_faction("temple"), 0, 25_00),
+                stamped(
+                    2,
+                    spilled(
+                        "player",
+                        "city_watch",
+                        0,
+                        2_50,
+                        vec![spill("temple", 25_00, 60_00, 10, 2_50)]
+                    )
+                ),
+                standing_changed(3, "player", party_faction("temple"), 0, 25_00),
             ])
         );
     }
@@ -4750,7 +4904,8 @@ mod tests {
         assert_eq!(
             events,
             [Event {
-                seq: 3,
+                // Giving 30.00 with the Guild also spilled −5.40 to the Watch (event 3).
+                seq: 4,
                 tick: Tick(0),
                 payload: Change::RankChanged {
                     character: id("vex"),
@@ -5529,10 +5684,11 @@ mod tests {
             ]
         );
         // They follow the command's own events, numbered on from them: each theft made 3
-        // events and watching 1, so the fine's start at 8.
+        // events and watching 1, so the fine's start at 8. The fine's own are the outcome,
+        // the Watch, the Guild and the Temple (spilled), and Hale.
         assert_eq!(
             events.iter().map(|event| event.seq).collect::<Vec<_>>(),
-            [8, 9, 10, 11, 12]
+            [8, 9, 10, 11, 12, 13, 14]
         );
         let watched: BTreeMap<Observer, String> = world.watched().next().expect("player").1.clone();
         assert_eq!(watched[&faction_observer("city_watch")], "unfriendly");
@@ -6072,6 +6228,243 @@ mod tests {
         );
     }
 
+    // Standing spillover (DESIGN.md §7.1)
+
+    fn spill(from: &str, change: i64, relation: i64, multiplier: i64, amount: i64) -> Spill {
+        Spill {
+            from: faction_id(from),
+            change: h(change),
+            relation: h(relation),
+            multiplier: Ratio::from_fixed(h(multiplier)),
+            amount: h(amount),
+        }
+    }
+
+    fn spilled(subject: &str, party: &str, before: i64, after: i64, spills: Vec<Spill>) -> Change {
+        Change::StandingChanged {
+            subject: id(subject),
+            party: Party::Faction(faction_id(party)),
+            before: h(before),
+            after: h(after),
+            spilled: spills,
+        }
+    }
+
+    fn standing_changes(events: &[Event]) -> Vec<Change> {
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, Change::StandingChanged { .. }))
+            .map(|event| event.payload.clone())
+            .collect()
+    }
+
+    /// The Watch, the Guild, the Temple, the Free Company and the Ashen Circle, with the
+    /// default spillover curve; the player, and Vex in the Guild.
+    fn spill_world(player: Character) -> World {
+        defectors_world([
+            player,
+            member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+        ])
+    }
+
+    fn effects_on_player(factions: &[(&str, i64)]) -> Command {
+        Command::ApplyEffects {
+            source: "test".to_owned(),
+            character: id("player"),
+            effects: Effects {
+                alignment: AlignmentDelta::default(),
+                standing: named(factions, &[]),
+            },
+        }
+    }
+
+    #[test]
+    fn robbing_a_guild_member_pleases_the_watch() {
+        let mut world = spill_world(character("Player", 0, 0));
+        let events = world
+            .execute(act("player", "steal", Some("vex"), 1_00))
+            .expect("accepted");
+        // The Watch regards the Guild at −80: −0.18, so −10.00 with the Guild is +1.80. The
+        // Free Company (+20) and the others (0) take nothing.
+        assert_eq!(
+            standing_changes(&events),
+            [
+                spilled(
+                    "player",
+                    "city_watch",
+                    0,
+                    1_80,
+                    vec![spill("lantern_guild", -10_00, -80_00, -18, 1_80)]
+                ),
+                spilled("player", "lantern_guild", 0, -10_00, Vec::new()),
+                standing_moved_toward("player", Party::Character(id("vex")), 0, -20_00),
+            ]
+        );
+        // One hop: the Temple, which regards the Watch at +60, gets nothing of the +1.80.
+        assert_eq!(
+            world.standing(&id("player"), &Party::Faction(faction_id("temple"))),
+            Some(Fixed::ZERO)
+        );
+    }
+
+    #[test]
+    fn a_donation_pleases_the_temples_allies_and_annoys_its_enemies() {
+        let mut world = spill_world(character("Player", 0, 0));
+        let events = world
+            .execute(act("player", "donate_to_temple", None, 1_00))
+            .expect("accepted");
+        // The Watch regards the Temple at +60: 0.10. The Circle at −90: −0.24.
+        assert_eq!(
+            standing_changes(&events),
+            [
+                spilled(
+                    "player",
+                    "ashen_circle",
+                    0,
+                    -2_40,
+                    vec![spill("temple", 10_00, -90_00, -24, -2_40)]
+                ),
+                spilled(
+                    "player",
+                    "city_watch",
+                    0,
+                    1_00,
+                    vec![spill("temple", 10_00, 60_00, 10, 1_00)]
+                ),
+                spilled("player", "temple", 0, 10_00, Vec::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn spills_add_to_direct_changes_and_never_cascade() {
+        let mut world = spill_world(character("Player", 0, 0));
+        let events = world
+            .execute(effects_on_player(&[
+                ("lantern_guild", -10_00),
+                ("city_watch", 5_00),
+            ]))
+            .expect("accepted");
+        // The Watch: +5.00 direct and +1.80 from the Guild. The Guild: −10.00 direct and
+        // −0.90 from the Watch (−0.18 × 5.00). The Temple: 0.10 × 5.00 from the Watch.
+        assert_eq!(
+            standing_changes(&events),
+            [
+                spilled(
+                    "player",
+                    "city_watch",
+                    0,
+                    6_80,
+                    vec![spill("lantern_guild", -10_00, -80_00, -18, 1_80)]
+                ),
+                spilled(
+                    "player",
+                    "lantern_guild",
+                    0,
+                    -10_90,
+                    vec![spill("city_watch", 5_00, -80_00, -18, -90)]
+                ),
+                spilled(
+                    "player",
+                    "temple",
+                    0,
+                    50,
+                    vec![spill("city_watch", 5_00, 60_00, 10, 50)]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_spill_follows_the_change_as_applied_and_stops_at_the_ends() {
+        let player = standing_with(
+            standing_with(character("Player", 0, 0), "lantern_guild", -95_00),
+            "city_watch",
+            99_50,
+        );
+        let mut world = spill_world(player);
+        let events = world
+            .execute(act("player", "steal", Some("vex"), 1_00))
+            .expect("accepted");
+        // Only −5.00 of the −10.00 fits before −100: the Watch gets −0.18 × −5.00 = +0.90,
+        // which stops at 100.00.
+        assert_eq!(
+            standing_changes(&events)[..2],
+            [
+                spilled(
+                    "player",
+                    "city_watch",
+                    99_50,
+                    100_00,
+                    vec![spill("lantern_guild", -5_00, -80_00, -18, 90)]
+                ),
+                spilled("player", "lantern_guild", -95_00, -100_00, Vec::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_spill_is_rounded_once_and_one_that_rounds_to_nothing_is_left_out() {
+        let mut world = spill_world(character("Player", 0, 0));
+        let events = world
+            .execute(effects_on_player(&[("temple", 4)]))
+            .expect("accepted");
+        // The Circle: −0.24 × 0.04 = −0.0096, rounded once to −0.01. The Watch: 0.10 × 0.04
+        // = 0.004, which rounds to nothing.
+        assert_eq!(
+            standing_changes(&events),
+            [
+                spilled(
+                    "player",
+                    "ashen_circle",
+                    0,
+                    -1,
+                    vec![spill("temple", 4, -90_00, -24, -1)]
+                ),
+                spilled("player", "temple", 0, 4, Vec::new()),
+            ]
+        );
+    }
+
+    #[test]
+    fn characters_standing_does_not_spill() {
+        let mut world = spill_world(character("Player", 0, 0));
+        let events = world
+            .execute(act("player", "help_stranger", Some("vex"), 1_00))
+            .expect("accepted");
+        assert_eq!(
+            standing_changes(&events),
+            [standing_moved_toward(
+                "player",
+                Party::Character(id("vex")),
+                0,
+                10_00
+            )]
+        );
+    }
+
+    #[test]
+    fn spillover_stays_within_minus_one_to_one() {
+        let mut content = defectors_content([]);
+        content.balance.spillover = points(&[(-100_00, -1_00), (100_00, 1_50)]);
+        assert_eq!(
+            content.problems(),
+            [ContentProblem::SpilloverOutOfRange(
+                CurveError::ValueOutOfRange {
+                    value: h(1_50),
+                    low: h(-1_00),
+                    high: h(1_00),
+                }
+            )]
+        );
+        assert_eq!(
+            content.problems()[0].to_string(),
+            "curve value 1.50 is outside -1.00 to 1.00"
+        );
+        content.balance.spillover = points(&[(-100_00, -1_00), (100_00, 1_00)]);
+        assert_eq!(content.problems(), []);
+    }
+
     // Joining an enemy: defectors and deserters (DESIGN.md §9.2)
 
     fn accept(standing_change: i64) -> Verdict {
@@ -6204,6 +6597,17 @@ mod tests {
             party: Party::Faction(faction_id(faction)),
             before: h(before),
             after: h(after),
+            spilled: Vec::new(),
+        }
+    }
+
+    fn standing_moved_toward(character: &str, party: Party, before: i64, after: i64) -> Change {
+        Change::StandingChanged {
+            subject: id(character),
+            party,
+            before: h(before),
+            after: h(after),
+            spilled: Vec::new(),
         }
     }
 
@@ -6261,6 +6665,21 @@ mod tests {
                 left("vex", "lantern_guild"),
                 joined("vex", "city_watch", "recruit"),
                 standing_moved("vex", "city_watch", 0, -10_00),
+                // The −10.00 with the Watch spills +1.80 to the Guild and −1.00 to the Temple.
+                spilled(
+                    "vex",
+                    "lantern_guild",
+                    30_00,
+                    31_80,
+                    vec![spill("city_watch", -10_00, -80_00, -18, 1_80)]
+                ),
+                spilled(
+                    "vex",
+                    "temple",
+                    0,
+                    -1_00,
+                    vec![spill("city_watch", -10_00, 60_00, 10, -1_00)]
+                ),
             ]
         );
         assert_eq!(
@@ -6351,6 +6770,14 @@ mod tests {
             payloads(&events),
             [
                 left("mole", "lantern_guild"),
+                // The Guild's −40.00 spills −0.18 to the Watch: +7.20.
+                spilled(
+                    "mole",
+                    "city_watch",
+                    50_00,
+                    57_20,
+                    vec![spill("lantern_guild", -40_00, -80_00, -18, 7_20)]
+                ),
                 standing_moved("mole", "lantern_guild", 0, -40_00),
                 joined("mole", "city_watch", "recruit"),
             ]
@@ -6381,6 +6808,21 @@ mod tests {
                 left("vex", "lantern_guild"),
                 joined("vex", "city_watch", "recruit"),
                 standing_moved("vex", "city_watch", 0, -20_00),
+                // The −20.00 with the Watch spills: −0.06 at −60, −0.18 at −80.
+                spilled(
+                    "vex",
+                    "free_company",
+                    0,
+                    1_20,
+                    vec![spill("city_watch", -20_00, -60_00, -6, 1_20)]
+                ),
+                spilled(
+                    "vex",
+                    "lantern_guild",
+                    0,
+                    3_60,
+                    vec![spill("city_watch", -20_00, -80_00, -18, 3_60)]
+                ),
             ]
         );
     }
