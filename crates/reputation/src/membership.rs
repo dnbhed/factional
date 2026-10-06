@@ -84,6 +84,37 @@ pub enum LeaveReason {
     Defected,
     /// Thrown out for drifting from the faction's ideals (DESIGN.md §9.3).
     Expelled,
+    /// The other side of a war between two of their factions was kept (DESIGN.md §9.4).
+    ConflictResolved,
+}
+
+/// `membership.conflict`: what happens when two of a character's factions go to war
+/// (DESIGN.md §9.4, D-16).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictRule {
+    /// Wait for the host or a quest to send `ResolveConflict`; with `auto_after_ticks`,
+    /// resolve automatically if nobody has by then.
+    Ask { auto_after_ticks: Option<u64> },
+    /// Resolve automatically, straight away.
+    Auto,
+}
+
+impl Default for ConflictRule {
+    fn default() -> ConflictRule {
+        ConflictRule::Ask {
+            auto_after_ticks: None,
+        }
+    }
+}
+
+impl ConflictRule {
+    /// How long after a conflict opens it's resolved automatically; `None` for never.
+    pub fn auto_after(self) -> Option<u64> {
+        match self {
+            ConflictRule::Ask { auto_after_ticks } => auto_after_ticks,
+            ConflictRule::Auto => Some(0),
+        }
+    }
 }
 
 /// What a faction does about a member who drifts past their tolerance (DESIGN.md §9.3).

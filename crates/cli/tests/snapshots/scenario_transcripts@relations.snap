@@ -54,11 +54,14 @@ free_company → lantern_guild: 20.00 (friendly)
 lantern_guild → free_company: 20.00 (friendly)
 > join player free_company
 #7 at tick 0: player joined free_company as a sellsword
-> assert relate lantern_guild free_company -60 == error: that would put two of player's factions in conflict: free_company and lantern_guild
+> relate lantern_guild free_company -60
+#8 at tick 0: lantern_guild → free_company changed from 20.00 to -60.00
+#9 at tick 0: free_company → lantern_guild changed from 20.00 to -60.00
+#10 at tick 0: free_company and lantern_guild are now in conflict, and player belongs to both
 > journal
 1. act player steal --scale 4.00 — accepted
 2. join player lantern_guild — accepted
 3. relate city_watch lantern_guild --by 40.00 — accepted
 4. relate city_watch free_company -60.00 --one-way — accepted
 5. join player free_company — accepted
-6. relate lantern_guild free_company -60.00 — refused: that would put two of player's factions in conflict: free_company and lantern_guild
+6. relate lantern_guild free_company -60.00 — accepted

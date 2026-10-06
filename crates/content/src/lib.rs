@@ -10,10 +10,10 @@ use std::{fmt, fs, io};
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Axis, Balance, Band, BandProblem,
-    Bands, Character, CharacterId, ComponentKind, Condition, Consequence, Content, ContentProblem,
-    ContentWarning, DispositionWeights, DriftPolicy, Effects, Faction, FactionId, Inertia,
-    InertiaProfile, InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser, Rank,
-    RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects,
+    Bands, Character, CharacterId, ComponentKind, Condition, ConflictRule, Consequence, Content,
+    ContentProblem, ContentWarning, DispositionWeights, DriftPolicy, Effects, Faction, FactionId,
+    Inertia, InertiaProfile, InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser,
+    Rank, RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects,
     StandingKey, StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem,
     TargetCurve, ToleranceProblem, Tolerances, Toward, Verdict, WeightProblem, Weights,
 };
@@ -448,6 +448,9 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
     if let Some(mut membership) = file.optional_table("membership", "[membership]", report) {
         if let Some(policy) = read_drift(&mut membership, "default_drift", report) {
             balance.default_drift = policy;
+        }
+        if let Some(rule) = read_conflict_rule(&mut membership, report) {
+            balance.conflict = rule;
         }
         balance.rule_tables = read_rule_tables(&mut membership, report);
         membership.finish(report);
@@ -909,6 +912,48 @@ fn read_drift(
     policy
 }
 
+/// `membership.conflict = { resolve = "ask" | "auto", auto_after_ticks = N }`: how a war
+/// between two of someone's factions is settled (DESIGN.md §9.4). `auto_after_ticks` only
+/// goes with `ask`. `None` if it's absent or wrong (that's reported).
+fn read_conflict_rule(section: &mut Section<'_>, report: &mut Report) -> Option<ConflictRule> {
+    let mut rule = section.optional_table("conflict", "{ resolve = \"ask\" }", report)?;
+    let resolve = rule.text("resolve", report);
+    let after = if rule.has_any(&["auto_after_ticks"]) {
+        Some(rule.whole("auto_after_ticks", report))
+    } else {
+        None
+    };
+    let read = match (resolve.as_deref(), after) {
+        (None, _) => None,
+        (Some("ask"), None) => Some(ConflictRule::Ask {
+            auto_after_ticks: None,
+        }),
+        (Some("ask"), Some(ticks)) => ticks.map(|ticks| ConflictRule::Ask {
+            auto_after_ticks: Some(ticks),
+        }),
+        (Some("auto"), None) => Some(ConflictRule::Auto),
+        (Some("auto"), Some(_)) => {
+            report.error(
+                &rule.path_to("auto_after_ticks"),
+                "auto settles straight away; auto_after_ticks goes with ask",
+            );
+            None
+        }
+        (Some(other), _) => {
+            let message = match suggest(other, ["ask", "auto"]) {
+                Some(close) => {
+                    format!("unknown way to resolve '{other}' (did you mean '{close}'?)")
+                }
+                None => format!("unknown way to resolve '{other}': use ask or auto"),
+            };
+            report.error(&rule.path_to("resolve"), message);
+            None
+        }
+    };
+    rule.finish(report);
+    read
+}
+
 /// A probation's `grace_ticks`, at least 1, and `then`, `demote` or `expel`.
 fn read_probation(drift: &mut Section<'_>, report: &mut Report) -> Option<DriftPolicy> {
     let grace_ticks = drift.whole("grace_ticks", report).and_then(|ticks| {
@@ -1288,9 +1333,9 @@ mod tests {
     use super::*;
     use factional_core::Fixed;
     use factional_reputation::{
-        ActionId, CharacterId, Condition, Consequence, DriftPolicy, FactionId, Inertia,
-        InertiaProfile, Metric, ProfileId, RankRef, Rule, TableKind, TargetCurve, Toward, Verdict,
-        Weights,
+        ActionId, CharacterId, Condition, ConflictRule, Consequence, DriftPolicy, FactionId,
+        Inertia, InertiaProfile, Metric, ProfileId, RankRef, Rule, TableKind, TargetCurve, Toward,
+        Verdict, Weights,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -2213,6 +2258,63 @@ mod tests {
                 "balance.toml: membership.default_drift.policy: unknown drift policy 'expell' (did you mean 'expel'?)"
             ]
         );
+    }
+
+    // Wars between your own factions (M9)
+
+    fn conflict_rule(line: &str) -> Result<Content, ContentError> {
+        balance(&format!("[membership]\nconflict = {line}\n"))
+    }
+
+    #[test]
+    fn reads_how_wars_between_your_own_factions_are_settled() {
+        let rule = |line: &str| conflict_rule(line).expect("valid content").balance.conflict;
+        assert_eq!(
+            rule("{ resolve = \"ask\" }"),
+            ConflictRule::Ask {
+                auto_after_ticks: None
+            }
+        );
+        assert_eq!(
+            rule("{ resolve = \"ask\", auto_after_ticks = 50 }"),
+            ConflictRule::Ask {
+                auto_after_ticks: Some(50)
+            }
+        );
+        assert_eq!(rule("{ resolve = \"auto\" }"), ConflictRule::Auto);
+        assert_eq!(
+            balance("").expect("valid").balance.conflict,
+            ConflictRule::default()
+        );
+    }
+
+    #[test]
+    fn reports_conflict_rule_mistakes_at_their_keys() {
+        let cases = [
+            (
+                "{ resolve = \"auot\" }",
+                "balance.toml: membership.conflict.resolve: unknown way to resolve 'auot' (did you mean 'auto'?)",
+            ),
+            (
+                "{ resolve = \"never\" }",
+                "balance.toml: membership.conflict.resolve: unknown way to resolve 'never': use ask or auto",
+            ),
+            (
+                "{ resolve = \"ask\", auto_after_ticks = -1 }",
+                "balance.toml: membership.conflict.auto_after_ticks: expected a whole number, like 100",
+            ),
+            (
+                "{ resolve = \"auto\", auto_after_ticks = 5 }",
+                "balance.toml: membership.conflict.auto_after_ticks: auto settles straight away; auto_after_ticks goes with ask",
+            ),
+            (
+                "{ auto_after_ticks = 5 }",
+                "balance.toml: membership.conflict: missing 'resolve'",
+            ),
+        ];
+        for (line, expected) in cases {
+            assert_eq!(problems(conflict_rule(line)), [expected], "{line}");
+        }
     }
 
     // Spillover (M6)

@@ -82,6 +82,12 @@ pub enum Command {
         faction: FactionId,
         by: AlignmentDelta,
     },
+    /// Settles every open war between `keep` and another of `character`'s factions by
+    /// leaving the other (DESIGN.md §9.4, D-16).
+    ResolveConflict {
+        character: CharacterId,
+        keep: FactionId,
+    },
     /// Starts reporting when anyone's disposition toward `subject` changes band (DESIGN.md
     /// §8.3, P-23).
     Watch { subject: CharacterId },
@@ -187,6 +193,17 @@ pub enum Change {
         character: CharacterId,
         faction: FactionId,
     },
+    /// Two of `character`'s factions are now in conflict; `factions` is in id order. It
+    /// stays open until resolved, or until they're no longer in conflict (DESIGN.md §9.4).
+    MembershipConflict {
+        character: CharacterId,
+        factions: (FactionId, FactionId),
+    },
+    /// An open conflict ended because the two factions are no longer in conflict.
+    MembershipConflictEnded {
+        character: CharacterId,
+        factions: (FactionId, FactionId),
+    },
     /// A faction's alignment changed at runtime.
     FactionAlignmentChanged {
         faction: FactionId,
@@ -284,11 +301,10 @@ pub enum CommandError {
     },
     /// A relation or effect outside −100…100.
     ValueOutOfRange { value: Fixed },
-    /// The change would put two of `character`'s factions in conflict. Until M9 can resolve
-    /// that, it's refused, so no one is ever in two factions at war (invariant 6).
-    WouldPutInConflict {
+    /// `ResolveConflict` naming a faction that isn't in an open conflict of the character's.
+    NoConflict {
         character: CharacterId,
-        factions: (FactionId, FactionId),
+        faction: FactionId,
     },
     /// `Watch` for a subject already watched.
     AlreadyWatched { subject: CharacterId },
@@ -404,13 +420,9 @@ impl fmt::Display for CommandError {
             CommandError::ValueOutOfRange { value } => {
                 write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
             }
-            CommandError::WouldPutInConflict {
-                character,
-                factions: (a, b),
-            } => write!(
-                f,
-                "that would put two of {character}'s factions in conflict: {a} and {b}"
-            ),
+            CommandError::NoConflict { character, faction } => {
+                write!(f, "{character} has no open conflict involving {faction}")
+            }
             CommandError::AlreadyWatched { subject } => {
                 write!(f, "{subject} is already watched")
             }

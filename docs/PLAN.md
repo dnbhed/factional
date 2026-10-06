@@ -53,6 +53,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M6 — standing spillover: `standing.spillover` (a curve within −1…1, on by default); every standing change with a faction spills one hop to every other faction by how it regards the first, from the change as applied, rounded once, adding up with direct changes; `StandingChanged` carries what spilled and from where, and the CLI says so; done 2026-10-06 (#22)
 - M8 — drift policies: a faction's `drift` (`ignore`, `flag`, `demote`, `expel`), `membership.default_drift` (built in, `flag`) and `expel_standing_change` (−20.00, spilling like any standing change); members whose alignment a command moved are reviewed against each faction, before band changes; `MemberOutOfTolerance`, `MemberBackInTolerance`, `LeftFaction(expelled)`; demotion steps down to the highest rung that allows them; drift in faction listings; split from M11; done 2026-10-06 (#23)
 - M11 — probation and runtime faction alignment: the `probation` policy (`grace_ticks`, then `demote` or `expel`) with `ProbationStarted`, `ProbationCleared` and `ProbationExpired`, checked when time advances; `SetFactionAlignment` and `ShiftFactionAlignment` with `FactionAlignmentChanged`, reviewing every member; faction alignment is now state, used by distance, disposition and joining; `faction-align`, `faction-shift`; property tests for probation; done 2026-10-06 (#24)
+- M9 — war between your own factions: a relation change that puts two of a character's factions in conflict is accepted and opens a `MembershipConflict` (ending with `MembershipConflictEnded` if they make peace first), replacing M2's refusal; `ResolveConflict` leaves the other side at its `leave_standing_change`, which spills; `membership.conflict` (`ask`, `ask` with `auto_after_ticks`, or `auto`) keeps the higher rung, then standing, then service, then the lower id; invariant 6 allows open conflicts; `resolve`, wars in `show character`; done 2026-10-06 (#25)
 
 ---
 
@@ -62,46 +63,33 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M9 · When two of your factions go to war — P1 · Next
+### M10 · Disposition modifiers from other modules — P1 · Next
 
-**Why:** D-16. Factions fall out during play, and a character in both has to choose, or have the choice made for them (DESIGN.md §9.4). This replaces M2's interim refusal (P-38).
-
-**Scope**
-
-- **The conflict.** A relation change that puts two of a character's factions in conflict is accepted. After its `RelationChanged` events, it emits `MembershipConflict { character, factions }` for each character in both, in id order, and the engine remembers the pair until it's resolved.
-- **Resolving by hand.** `ResolveConflict { character, keep }` ends the other membership with `LeftFaction { reason: ConflictResolved }`. Refused when there's no conflict, or when `keep` isn't one of its two factions.
-- **Settle here, and record in DECISIONS:**
-  - what leaving costs: the left faction's `leave_standing_change`, spilling like any standing change, or nothing;
-  - what happens if the relation recovers before anyone resolves it.
-- **Automatic resolution.** `membership.conflict = { resolve = "ask" | "auto", auto_after_ticks = N }`; `ask` is the default.
-  - `auto` with N = 0 resolves straight away. With N > 0, it resolves once N ticks have passed, unless a `ResolveConflict` comes first.
-  - The rule keeps the higher rung, then the higher standing with the faction, then the longer service (earlier `since`), then the lower faction id.
-- **Invariant 6** becomes: no one is in two factions in conflict, except while a `MembershipConflict` for that pair is unresolved. Its property test changes to match.
-- **CLI:** `resolve <character> <faction-to-keep>`, and open conflicts in `show character`.
-
-**Acceptance** (Riverhold)
-
-1. **War between your own factions.** Vex, a fence of the Guild, joins the Free Company: 12.31 away (gaps 45 × 0.25 and 20 × 0.25), within its 60. `relate lantern_guild free_company -60` is accepted: two `RelationChanged`, then `MembershipConflict { vex, [free_company, lantern_guild] }`. Both memberships stand.
-2. **Resolved by hand.** `resolve vex lantern_guild` gives `LeftFaction { vex, free_company, ConflictResolved }`, then the cost settled above. `resolve vex lantern_guild` again is refused: no open conflict.
-3. **Automatic, each tie-break** (`resolve = "auto"`, `auto_after_ticks = 0`):
-   - **rank:** Vex, a fence (rung 2) of the Guild and a sellsword (rung 1) of the Company, keeps the Guild;
-   - **standing:** equal rungs, standing 30 with one faction and 0 with the other, keeps the 30;
-   - **service:** equal rungs and standing, one joined at tick 0 and the other at tick 5, keeps the tick-0 faction;
-   - **id:** all equal, keeps `free_company` over `lantern_guild`.
-4. **Later, or sooner by hand.** With `auto_after_ticks = 10`, `advance 9` changes nothing and `advance 1` resolves it. A `resolve` before then settles it, and nothing happens at tick 10.
-5. **Load errors at their keys:**
-   - `resolve` other than `ask` or `auto`, with a "did you mean";
-   - `auto_after_ticks` that isn't a whole number ≥ 0.
-
-**Validates** (DESIGN.md §12.2): `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is ≥ 0.
-
-### M10 · Disposition modifiers from other modules — P1 · Outline
+**Why:** P-6's fifth component. Other modules change how someone is seen for a while: a bribe, a disguise, a hero's welcome. Until now that component has always been 0 (DESIGN.md §8.1).
 
 **Scope**
 
-- `AddModifier { id, observer: everyone | faction | character, subject, amount, expires_at? }` and `RemoveModifier`.
-- Modifiers expire on `AdvanceTime`.
-- The modifiers component of disposition.
+- **Commands.**
+  - `AddModifier { id, observer, subject, amount, expires_at }`: the observer is `Everyone`, a faction or a character; `amount` is within ±100; `expires_at` is an optional tick.
+  - `RemoveModifier { id, subject }`.
+  - Events: `ModifierAdded`, `ModifierRemoved`, `ModifierExpired`.
+  - Refused: an unknown observer or subject, an amount out of range, an `expires_at` that isn't after now, removing one that isn't there.
+  - Settle here: whether adding an id that already exists replaces it or is refused.
+- **Expiry.** A modifier expires when time reaches `expires_at`, checked after every command, like probation.
+- **The modifiers component.** It adds up every modifier that applies to the pair: those for `Everyone`, those for the observer itself, and, for a character observer, those for their factions. Then it's clamped to ±100 and weighted by `disposition.weights.modifiers`. `--explain` lists each modifier with where it came from.
+- **Watched band changes** (D3) follow modifiers like any other change.
+- **CLI:** `modify <observer|everyone> <subject> <id> <amount> [--until <tick>]`, `unmodify <subject> <id>`, and `modifiers <subject>`.
+
+**Acceptance** (Riverhold, DESIGN.md §8.2: Hale regards the player at −29.10)
+
+1. **One observer.** `AddModifier { bribed, captain_hale, player, +20 }`: the modifiers component is 20.00 × 1.00, so Hale's score is −9.10, neutral.
+2. **Everyone.** `AddModifier { hero_of_riverhold, everyone, player, +10 }` as well: the component is 30.00, so −29.10 + 30.00 = 0.90.
+3. **Through factions.** A modifier from the City Watch toward the player counts for Hale, a member, and for the Watch itself.
+4. **Expiry.** With `--until 10`, `advance 9` leaves it, and `advance 1` emits `ModifierExpired`, taking Hale back to −9.10.
+5. **Watched.** Watching the player, adding `bribed` emits `DispositionBandChanged` for Hale, unfriendly → neutral.
+6. **Clamped.** Modifiers adding up to more than 100 count as 100.
+
+**Validates** (commands, at runtime): observers and subjects exist; amounts are within ±100; `expires_at` is in the future.
 
 ## Phase 4 — Designer tooling and persistence
 
