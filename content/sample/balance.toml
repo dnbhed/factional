@@ -106,6 +106,14 @@ bands = [
 # demote or expel.
 default_drift = { policy = "flag" }
 
+# When a relation change puts two of a character's factions in conflict, a war between their
+# own factions opens. "ask" waits for the game or a quest to choose (`resolve <character>
+# <faction-to-keep>`); add auto_after_ticks = N to settle it automatically if nobody has
+# within N ticks. "auto" settles it straight away. Settling automatically keeps the higher
+# rank, then the higher standing, then the longer service, then the lower faction id.
+# Leaving costs the faction's leave_standing_change.
+conflict = { resolve = "ask" }
+
 [membership.defectors]
 rules = [
   { when = { standing_with_target_at_least = 50.0 }, then = "accept" },

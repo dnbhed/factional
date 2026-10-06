@@ -81,6 +81,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "how far <subject> is from <observer>, a faction or character, as the observer sees it",
     ),
     (
+        "resolve <character> <faction-to-keep>",
+        "settle a war between two of <character>'s factions by leaving the other",
+    ),
+    (
         "faction-align <faction> <law> <good>",
         "set a faction's alignment, then review its members",
     ),
@@ -228,6 +232,7 @@ impl Session {
             "outcome" => Ok(self.outcome(rest)),
             "relate" => Ok(self.relate(rest)),
             "faction-align" => Ok(self.faction_alignment(rest, false)),
+            "resolve" => Ok(self.resolve(rest)),
             "faction-shift" => Ok(self.faction_alignment(rest, true)),
             "join" => Ok(self.membership(rest, true)),
             "leave" => Ok(self.membership(rest, false)),
@@ -981,6 +986,27 @@ impl Session {
         }
     }
 
+    /// `resolve <character> <faction-to-keep>`: the engine decides, and the events or its
+    /// refusal are shown.
+    fn resolve(&mut self, args: &str) -> Outcome {
+        let [character, keep] = args.split_whitespace().collect::<Vec<_>>()[..] else {
+            return Outcome::Error(
+                "resolve needs the form: resolve <character> <faction-to-keep>".to_owned(),
+            );
+        };
+        let (character, keep) = match member_ids(character, keep) {
+            Ok(ids) => ids,
+            Err(message) => return Outcome::Error(message),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(Command::ResolveConflict { character, keep }) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
     /// `watch <character>` or `unwatch <character>`: the engine decides, and the events or
     /// its refusal are shown.
     fn watch(&mut self, args: &str, watching: bool) -> Outcome {
@@ -1287,6 +1313,7 @@ fn describe_event(event: &Event) -> String {
                 LeaveReason::Voluntary => "voluntary",
                 LeaveReason::Defected => "defected",
                 LeaveReason::Expelled => "expelled",
+                LeaveReason::ConflictResolved => "the war between their factions was settled",
             };
             format!("{character} left {faction} ({reason})")
         }
@@ -1340,6 +1367,14 @@ fn describe_event(event: &Event) -> String {
         Change::ProbationExpired { character, faction } => {
             format!("{character}'s probation with {faction} ran out")
         }
+        Change::MembershipConflict {
+            character,
+            factions: (a, b),
+        } => format!("{a} and {b} are now in conflict, and {character} belongs to both"),
+        Change::MembershipConflictEnded {
+            character,
+            factions: (a, b),
+        } => format!("{a} and {b} are no longer in conflict, so {character} keeps both"),
         Change::FactionAlignmentChanged { faction, from, to } => format!(
             "{faction}'s alignment moved from {} to {}",
             axes(*from),
@@ -1394,6 +1429,7 @@ fn describe_command(command: &Command) -> String {
             source, character, ..
         } => format!("effects from {source} on {character}"),
         Command::Watch { subject } => format!("watch {subject}"),
+        Command::ResolveConflict { character, keep } => format!("resolve {character} {keep}"),
         Command::SetFactionAlignment { faction, alignment } => format!(
             "faction-align {faction} {} {}",
             alignment.law(),
@@ -1741,6 +1777,15 @@ fn describe(world: &World, character: &Character) -> String {
     );
     if !memberships.is_empty() {
         line += &format!(" — member of {}", memberships.join(", "));
+    }
+    let wars: Vec<String> = world
+        .conflicts(&character.id)
+        .expect("a character from the world")
+        .into_iter()
+        .map(|(a, b)| format!("{a} and {b}"))
+        .collect();
+    if !wars.is_empty() {
+        line += &format!(" — at war: {}", wars.join("; "));
     }
     line
 }
@@ -3412,7 +3457,7 @@ mod tests {
     }
 
     #[test]
-    fn a_war_between_two_of_a_characters_factions_is_refused_for_now() {
+    fn a_war_between_two_of_a_characters_factions_is_theirs_to_settle() {
         let mut session = riverhold();
         session
             .execute("act player steal --scale 4")
@@ -3421,9 +3466,34 @@ mod tests {
         session.execute("join player free_company").expect("valid");
         assert_eq!(
             session.execute("relate lantern_guild free_company -60"),
-            command_error(
-                "that would put two of player's factions in conflict: free_company and lantern_guild"
+            output(
+                "#5 at tick 0: lantern_guild → free_company changed from 20.00 to -60.00\n\
+                 #6 at tick 0: free_company → lantern_guild changed from 20.00 to -60.00\n\
+                 #7 at tick 0: free_company and lantern_guild are now in conflict, and player belongs to both"
             )
+        );
+        assert_eq!(
+            session.execute("show character player"),
+            output(
+                "player — The Player — law -20.00, good -12.00 — True Neutral — member of free_company (sellsword) since tick 0, lantern_guild (cutpurse) since tick 0 — at war: free_company and lantern_guild"
+            )
+        );
+        // Leaving the Company costs 10.00 there; the Guild, now at −60 with it, gets +0.60.
+        assert_eq!(
+            session.execute("resolve player lantern_guild"),
+            output(
+                "#8 at tick 0: player left free_company (the war between their factions was settled)\n\
+                 #9 at tick 0: player's standing with free_company moved from 0.00 to -10.00\n\
+                 #10 at tick 0: player's standing with lantern_guild moved from 0.00 to 0.60, with 0.60 spilled from free_company (-10.00 × -0.06; lantern_guild regards it at -60.00)"
+            )
+        );
+        assert_eq!(
+            session.execute("resolve player lantern_guild"),
+            command_error("player has no open conflict involving lantern_guild")
+        );
+        assert_eq!(
+            session.execute("resolve player"),
+            command_error("resolve needs the form: resolve <character> <faction-to-keep>")
         );
     }
 

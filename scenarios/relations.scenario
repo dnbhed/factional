@@ -15,7 +15,8 @@ assert can-join player city_watch == no: 90.35 from The City Watch, tolerance is
 # A one-way grudge is enough for conflict.
 relate city_watch free_company -60 --one-way
 relations free_company
-# Until the engine can settle a war between someone's own factions (M9), it won't start one.
+# A war between two of the player's own factions opens a conflict for the game to settle
+# (see wars.scenario).
 join player free_company
-assert relate lantern_guild free_company -60 == error: that would put two of player's factions in conflict: free_company and lantern_guild
+relate lantern_guild free_company -60
 journal

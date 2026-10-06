@@ -1,0 +1,20 @@
+# War between your own factions (DESIGN.md §9.4): when a relation change puts two of a
+# character's factions in conflict, a war opens for the game, a quest or the automatic rule
+# to settle. Riverhold asks.
+load content/sample
+# Vex, a fence of the Guild, joins the Free Company: 12.31 away, within its 60.
+join vex free_company
+relate lantern_guild free_company -60
+show character vex
+# Vex keeps the Guild. Leaving the Company costs 10.00 there, and the Guild, now at -60
+# with it, takes -0.06 of that the other way: +0.60.
+resolve vex lantern_guild
+assert resolve vex lantern_guild == error: vex has no open conflict involving lantern_guild
+assert show character vex == vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild (fence) since tick 0
+
+# Peace before anyone settles it ends the war, and Vex keeps both.
+load content/sample
+join vex free_company
+relate lantern_guild free_company -60
+relate lantern_guild free_company -40
+assert show character vex == vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of free_company (sellsword) since tick 0, lantern_guild (fence) since tick 0

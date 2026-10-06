@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -8,13 +9,13 @@ use crate::distance::gap;
 use crate::shift::{Target, shifts};
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, Axis, Bands, Change, Character,
-    CharacterId, Command, CommandError, Component, ComponentKind, Consequence, Defection,
-    Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction, FactionId, Inertia,
-    InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric,
-    Outcome, OutcomeId, Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Regard,
-    Relation, RelationSide, Role, Rule, Shift, Spill, StandingEffects, StandingKey, StandingOwner,
-    TableKind, TableOwner, TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict,
-    Weights, Witnesses, measure,
+    CharacterId, Command, CommandError, Component, ComponentKind, ConflictRule, Consequence,
+    Defection, Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction, FactionId,
+    Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership,
+    Metric, Outcome, OutcomeId, Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId,
+    Regard, Relation, RelationSide, Role, Rule, Shift, Spill, StandingEffects, StandingKey,
+    StandingOwner, TableKind, TableOwner, TableProblem, TableSource, TargetCurve, TargetRelation,
+    Toward, Verdict, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -52,6 +53,9 @@ pub struct Balance {
     /// `membership.default_drift`: the drift policy of a faction that sets none (DESIGN.md
     /// §9.3).
     pub default_drift: DriftPolicy,
+    /// `membership.conflict`: how a war between two of someone's factions is settled
+    /// (DESIGN.md §9.4).
+    pub conflict: ConflictRule,
 }
 
 impl Balance {
@@ -106,6 +110,7 @@ impl Default for Balance {
             hysteresis: Fixed::ZERO,
             spillover: Balance::default_spillover(),
             default_drift: DriftPolicy::Flag,
+            conflict: ConflictRule::default(),
         }
     }
 }
@@ -1019,6 +1024,9 @@ struct State {
     out_of_tolerance: BTreeSet<(CharacterId, FactionId)>,
     /// Members on probation, and when it runs out.
     probation: BTreeMap<(CharacterId, FactionId), Tick>,
+    /// Open wars between two of a character's factions, the pair in id order, and when each
+    /// opened (DESIGN.md §9.4).
+    conflicts: BTreeMap<(CharacterId, FactionId, FactionId), Tick>,
     /// Every faction's alignment now; it starts as content gives it.
     faction_alignments: BTreeMap<FactionId, Alignment>,
 }
@@ -1070,6 +1078,7 @@ impl State {
             watched: BTreeMap::new(),
             out_of_tolerance: BTreeSet::new(),
             probation: BTreeMap::new(),
+            conflicts: BTreeMap::new(),
             faction_alignments: content
                 .factions
                 .values()
@@ -1132,6 +1141,19 @@ impl World {
         }
         for change in decided {
             emitted.push(self.record(change));
+        }
+        // Wars between someone's own factions open or end with the relations, and any that
+        // are due are settled (DESIGN.md §9.4).
+        for change in self.conflict_review() {
+            emitted.push(self.record(change));
+        }
+        for (character, leave) in self.due_resolutions() {
+            // An earlier settlement in this pass may already have taken them out.
+            if self.is_member(&character, &leave) {
+                for change in self.resolution(&character, &[leave]) {
+                    emitted.push(self.record(change));
+                }
+            }
         }
         // Every membership whose member or faction moved is reviewed, in id order, each from
         // the state the last review left (DESIGN.md §9.3).
@@ -1441,6 +1463,29 @@ impl World {
                     .expect("clamped to the axes");
                 Ok(faction_moved(faction, from, to))
             }
+            Command::ResolveConflict { character, keep } => {
+                self.existing(character, Role::Member)?;
+                self.faction(keep)
+                    .ok_or_else(|| self.unknown_faction(keep))?;
+                let others: Vec<FactionId> = self
+                    .state
+                    .conflicts
+                    .keys()
+                    .filter(|(who, _, _)| who == character)
+                    .filter_map(|(_, a, b)| match (a == keep, b == keep) {
+                        (true, _) => Some(b.clone()),
+                        (_, true) => Some(a.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                if others.is_empty() {
+                    return Err(CommandError::NoConflict {
+                        character: character.clone(),
+                        faction: keep.clone(),
+                    });
+                }
+                Ok(self.resolution(character, &others))
+            }
             Command::Watch { subject } => {
                 self.existing(subject, Role::Subject)?;
                 if self.state.watched.contains_key(subject) {
@@ -1717,6 +1762,90 @@ impl World {
         changes
     }
 
+    /// Wars that opened or ended with the relations as they are now: for each character in
+    /// id order, each pair of their factions in id order (DESIGN.md §9.4).
+    fn conflict_review(&self) -> Vec<Change> {
+        let threshold = self.content.balance.conflict_threshold;
+        let mut changes = Vec::new();
+        for (character, factions) in &self.state.memberships {
+            let factions: Vec<&FactionId> = factions.keys().collect();
+            for (index, a) in factions.iter().enumerate() {
+                for b in &factions[index + 1..] {
+                    let at_war = hostility(&self.state.relations, a, b) <= threshold;
+                    let key = (character.clone(), (*a).clone(), (*b).clone());
+                    let pair = ((*a).clone(), (*b).clone());
+                    match (at_war, self.state.conflicts.contains_key(&key)) {
+                        (true, false) => changes.push(Change::MembershipConflict {
+                            character: character.clone(),
+                            factions: pair,
+                        }),
+                        (false, true) => changes.push(Change::MembershipConflictEnded {
+                            character: character.clone(),
+                            factions: pair,
+                        }),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        changes
+    }
+
+    /// Open wars the automatic rule settles now, in id order, as `(character, faction to
+    /// leave)`. It keeps the higher rung, then the higher standing, then the longer service,
+    /// then the lower id (DESIGN.md §9.4).
+    fn due_resolutions(&self) -> Vec<(CharacterId, FactionId)> {
+        let Some(after) = self.content.balance.conflict.auto_after() else {
+            return Vec::new();
+        };
+        self.state
+            .conflicts
+            .iter()
+            .filter(|(_, since)| Tick(since.0.saturating_add(after)) <= self.state.now)
+            .map(|((character, a, b), _)| {
+                let claim = |faction: &FactionId| {
+                    let membership = &self.state.memberships[character][faction];
+                    let rung = self.content.factions[faction]
+                        .rank_position(&membership.rank)
+                        .expect("a member's rank is on their faction's ladder");
+                    let standing = self.standing_now(character, &Party::Faction(faction.clone()));
+                    // Earlier service, then the lower id, count for more.
+                    (
+                        rung,
+                        standing,
+                        Reverse(membership.since),
+                        Reverse(faction.clone()),
+                    )
+                };
+                let leave = if claim(a) >= claim(b) { b } else { a };
+                (character.clone(), leave.clone())
+            })
+            .collect()
+    }
+
+    /// `character` leaves each of `leave` to settle a war, paying each one's
+    /// `leave_standing_change` in one standing step, which spills (P-49).
+    fn resolution(&self, character: &CharacterId, leave: &[FactionId]) -> Vec<Change> {
+        let mut changes: Vec<Change> = leave
+            .iter()
+            .map(|faction| Change::LeftFaction {
+                character: character.clone(),
+                faction: faction.clone(),
+                reason: LeaveReason::ConflictResolved,
+            })
+            .collect();
+        let mut cost = Deltas::new();
+        for faction in leave {
+            add(
+                &mut cost,
+                Party::Faction(faction.clone()),
+                self.content.factions[faction].leave_standing_change,
+            );
+        }
+        changes.extend(self.standing_changes(character, cost));
+        changes
+    }
+
     /// Every probation that has run out by now, in id order.
     fn expired_probations(&self) -> Vec<(CharacterId, FactionId)> {
         self.state
@@ -1833,8 +1962,8 @@ impl World {
     }
 
     /// The changes from giving `from → to` (and with `mutual`, `to → from`) the value `after`
-    /// works out from what's there now. Refused if it would put two of anyone's factions in
-    /// conflict: until M9 can resolve that, invariant 6 holds by refusal.
+    /// works out from what's there now. A war it starts between two of someone's factions is
+    /// reported after it (DESIGN.md §9.4).
     fn relation_changes(
         &self,
         from: &FactionId,
@@ -1863,20 +1992,6 @@ impl World {
                     before,
                     after,
                 });
-            }
-        }
-        let threshold = self.content.balance.conflict_threshold;
-        for (character, factions) in &self.state.memberships {
-            let factions: Vec<&FactionId> = factions.keys().collect();
-            for (i, a) in factions.iter().enumerate() {
-                for b in &factions[i + 1..] {
-                    if hostility(&relations, a, b) <= threshold {
-                        return Err(CommandError::WouldPutInConflict {
-                            character: character.clone(),
-                            factions: ((*a).clone(), (*b).clone()),
-                        });
-                    }
-                }
             }
         }
         Ok(changes)
@@ -1965,6 +2080,9 @@ impl World {
                 self.state
                     .probation
                     .remove(&(character.clone(), faction.clone()));
+                self.state
+                    .conflicts
+                    .retain(|(who, a, b), _| who != character || (a != faction && b != faction));
             }
             Change::ProbationStarted {
                 ref character,
@@ -1986,6 +2104,22 @@ impl World {
                 self.state
                     .probation
                     .remove(&(character.clone(), faction.clone()));
+            }
+            Change::MembershipConflict {
+                ref character,
+                factions: (ref a, ref b),
+            } => {
+                self.state
+                    .conflicts
+                    .insert((character.clone(), a.clone(), b.clone()), event.tick);
+            }
+            Change::MembershipConflictEnded {
+                ref character,
+                factions: (ref a, ref b),
+            } => {
+                self.state
+                    .conflicts
+                    .remove(&(character.clone(), a.clone(), b.clone()));
             }
             Change::FactionAlignmentChanged {
                 ref faction, to, ..
@@ -2233,6 +2367,20 @@ impl World {
             profile: profile.clone(),
             axes: shifts(from, delta, scale, None, inertia),
         })
+    }
+
+    /// `character`'s open wars between two of their factions, each pair in id order.
+    /// `None` for an unknown character.
+    pub fn conflicts(&self, character: &CharacterId) -> Option<Vec<(FactionId, FactionId)>> {
+        self.character(character)?;
+        Some(
+            self.state
+                .conflicts
+                .keys()
+                .filter(|(who, _, _)| who == character)
+                .map(|(_, a, b)| (a.clone(), b.clone()))
+                .collect(),
+        )
     }
 
     /// `faction`'s alignment now, which commands can change (DESIGN.md §9.1). `None` for an
@@ -2862,6 +3010,7 @@ mod tests {
             hysteresis: h(5_00),
             spillover: Curve::constant(h(25)),
             default_drift: DriftPolicy::Demote,
+            conflict: ConflictRule::Auto,
             inertia: Inertia {
                 default_profile: profile_id("hardening"),
                 profiles: [(profile_id("hardening"), hardening())].into(),
@@ -4318,46 +4467,6 @@ mod tests {
         assert_eq!(
             CommandError::SelfRelation.to_string(),
             "a faction can't have a relation with itself"
-        );
-    }
-
-    #[test]
-    fn a_relation_change_cannot_put_two_of_a_characters_factions_at_war() {
-        let mut world = riverhold();
-        steal_times(&mut world, 4);
-        world
-            .execute(join("player", "lantern_guild"))
-            .expect("accepted");
-        world
-            .execute(join("player", "free_company"))
-            .expect("accepted");
-        let refusal = refused(
-            &mut world,
-            set("lantern_guild", "free_company", -60_00, false),
-        );
-        assert_eq!(
-            refusal,
-            CommandError::WouldPutInConflict {
-                character: id("player"),
-                factions: (faction_id("free_company"), faction_id("lantern_guild")),
-            }
-        );
-        assert_eq!(
-            refusal.to_string(),
-            "that would put two of player's factions in conflict: free_company and lantern_guild"
-        );
-        assert_eq!(
-            refused(
-                &mut world,
-                shift("free_company", "lantern_guild", -70_00, false)
-            ),
-            refusal
-        );
-        // Short of conflict is fine.
-        assert!(
-            world
-                .execute(set("lantern_guild", "free_company", -49_99, true))
-                .is_ok()
         );
     }
 
@@ -7317,6 +7426,308 @@ mod tests {
         assert_eq!(world.faction_alignment(&faction_id("nowhere")), None);
     }
 
+    // War between your own factions (DESIGN.md §9.4)
+
+    /// Vex, a fence (rung 2) of the Guild with standing 30, and a sellsword (rung 1) of the
+    /// Free Company, which costs 10.00 to leave; Kit, a cutpurse and a sellsword with
+    /// `kit_standing` with the Free Company; and `rule` for settling wars.
+    fn two_sides(rule: ConflictRule) -> World {
+        let mut vex = standing_with(
+            ranked(character("Vex", -55_00, -20_00), "lantern_guild", "fence"),
+            "lantern_guild",
+            30_00,
+        );
+        vex.memberships.push(StartingMembership {
+            faction: faction_id("free_company"),
+            rank: None,
+        });
+        let mut content = Content {
+            characters: [vex].into_iter().map(|c| (c.id.clone(), c)).collect(),
+            factions: factions(),
+            actions: actions(),
+            relations: relations(),
+            ..Content::default()
+        };
+        content.balance.conflict = rule;
+        content
+            .factions
+            .get_mut(&faction_id("free_company"))
+            .expect("the Company")
+            .leave_standing_change = h(-10_00);
+        World::new(content).expect("valid content")
+    }
+
+    fn war() -> Command {
+        set("lantern_guild", "free_company", -60_00, true)
+    }
+
+    fn conflict_opened(character: &str) -> Change {
+        Change::MembershipConflict {
+            character: id(character),
+            factions: (faction_id("free_company"), faction_id("lantern_guild")),
+        }
+    }
+
+    fn resolved(character: &str, faction: &str) -> Change {
+        Change::LeftFaction {
+            character: id(character),
+            faction: faction_id(faction),
+            reason: LeaveReason::ConflictResolved,
+        }
+    }
+
+    fn resolve(character: &str, keep: &str) -> Command {
+        Command::ResolveConflict {
+            character: id(character),
+            keep: faction_id(keep),
+        }
+    }
+
+    /// Leaving the Company costs 10.00 there; the Guild, now at −60 with it, takes −0.06 of
+    /// that the other way: +0.60.
+    fn vex_leaves_the_company() -> Vec<Change> {
+        vec![
+            resolved("vex", "free_company"),
+            standing_moved("vex", "free_company", 0, -10_00),
+            spilled(
+                "vex",
+                "lantern_guild",
+                30_00,
+                30_60,
+                vec![spill("free_company", -10_00, -60_00, -6, 60)],
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_war_between_two_of_a_characters_factions_opens_a_conflict() {
+        let mut world = two_sides(ConflictRule::default());
+        let events = world.execute(war()).expect("accepted, no longer refused");
+        assert_eq!(payloads(&events)[2..], [conflict_opened("vex")]);
+        assert_eq!(
+            world.conflicts(&id("vex")),
+            Some(vec![(
+                faction_id("free_company"),
+                faction_id("lantern_guild")
+            )])
+        );
+        assert_eq!(
+            factions_of(&world, "vex").len(),
+            2,
+            "both memberships stand"
+        );
+        assert_eq!(world.conflicts(&id("ghost")), None);
+    }
+
+    #[test]
+    fn a_conflict_is_settled_by_hand_at_the_cost_of_leaving() {
+        let mut world = two_sides(ConflictRule::default());
+        world.execute(war()).expect("accepted");
+        let events = world
+            .execute(resolve("vex", "lantern_guild"))
+            .expect("accepted");
+        assert_eq!(payloads(&events), vex_leaves_the_company());
+        assert_eq!(world.conflicts(&id("vex")), Some(vec![]));
+        let none = CommandError::NoConflict {
+            character: id("vex"),
+            faction: faction_id("lantern_guild"),
+        };
+        assert_eq!(
+            world.execute(resolve("vex", "lantern_guild")),
+            Err(none.clone())
+        );
+        assert_eq!(
+            none.to_string(),
+            "vex has no open conflict involving lantern_guild"
+        );
+        assert_eq!(
+            world.execute(resolve("vex", "tempel")),
+            Err(CommandError::UnknownFaction {
+                faction: faction_id("tempel"),
+                suggestion: Some(faction_id("temple")),
+            })
+        );
+    }
+
+    #[test]
+    fn a_conflict_ends_if_the_factions_make_peace_first() {
+        let mut world = two_sides(ConflictRule::default());
+        world.execute(war()).expect("accepted");
+        let events = world
+            .execute(set("lantern_guild", "free_company", -40_00, true))
+            .expect("accepted");
+        assert_eq!(
+            payloads(&events)[2..],
+            [Change::MembershipConflictEnded {
+                character: id("vex"),
+                factions: (faction_id("free_company"), faction_id("lantern_guild")),
+            }]
+        );
+        assert_eq!(factions_of(&world, "vex").len(), 2);
+    }
+
+    #[test]
+    fn the_automatic_rule_keeps_the_higher_rank_first() {
+        let mut world = two_sides(ConflictRule::Auto);
+        let events = world.execute(war()).expect("accepted");
+        // A fence (rung 2) outranks a sellsword (rung 1): the Guild stays.
+        let mut expected = vec![conflict_opened("vex")];
+        expected.extend(vex_leaves_the_company());
+        assert_eq!(payloads(&events)[2..], expected);
+    }
+
+    /// Kit, a cutpurse and a sellsword: equal rungs. `standing` with the Free Company, and
+    /// whether Kit joins the Company at tick 5 rather than starting in it.
+    fn kit_at_war(standing: i64, joins_later: bool) -> Vec<Change> {
+        let mut kit = standing_with(
+            member_of(character("Kit", -30_00, -10_00), &["lantern_guild"]),
+            "free_company",
+            standing,
+        );
+        if !joins_later {
+            kit.memberships.push(StartingMembership {
+                faction: faction_id("free_company"),
+                rank: None,
+            });
+        }
+        let mut content = Content {
+            characters: [(kit.id.clone(), kit)].into(),
+            factions: factions(),
+            actions: actions(),
+            relations: relations(),
+            ..Content::default()
+        };
+        content.balance.conflict = ConflictRule::Auto;
+        let mut world = World::new(content).expect("valid content");
+        if joins_later {
+            world.execute(advance(5)).expect("accepted");
+            world
+                .execute(join("kit", "free_company"))
+                .expect("22.36 away, within 60");
+        }
+        let events = world.execute(war()).expect("accepted");
+        payloads(&events)[3..].to_vec()
+    }
+
+    #[test]
+    fn the_automatic_rule_breaks_ties_by_standing_then_service_then_id() {
+        // Higher standing: the Free Company (30) over the Guild (0).
+        assert_eq!(
+            kit_at_war(30_00, false)[0],
+            resolved("kit", "lantern_guild")
+        );
+        // Longer service: the Guild (since tick 0) over the Company (since tick 5).
+        assert_eq!(kit_at_war(0, true)[0], resolved("kit", "free_company"));
+        // All equal: the lower id, free_company.
+        assert_eq!(kit_at_war(0, false)[0], resolved("kit", "lantern_guild"));
+    }
+
+    #[test]
+    fn asking_can_fall_back_to_the_rule_after_a_while() {
+        let rule = ConflictRule::Ask {
+            auto_after_ticks: Some(10),
+        };
+        let mut world = two_sides(rule);
+        world.execute(war()).expect("accepted");
+        assert_eq!(world.execute(advance(9)).expect("accepted").len(), 1);
+        let events = world.execute(advance(1)).expect("accepted");
+        assert_eq!(payloads(&events)[1..], vex_leaves_the_company());
+        // Settled by hand first, nothing happens at tick 10.
+        let mut world = two_sides(rule);
+        world.execute(war()).expect("accepted");
+        world.execute(advance(3)).expect("accepted");
+        world
+            .execute(resolve("vex", "free_company"))
+            .expect("accepted");
+        assert_eq!(world.execute(advance(7)).expect("accepted").len(), 1);
+        assert_eq!(factions_of(&world, "vex")[0].0, "free_company");
+    }
+
+    #[test]
+    fn leaving_one_side_ends_the_conflict() {
+        let mut world = two_sides(ConflictRule::Ask {
+            auto_after_ticks: Some(1),
+        });
+        world.execute(war()).expect("accepted");
+        world
+            .execute(leave("vex", "free_company"))
+            .expect("accepted");
+        assert_eq!(world.conflicts(&id("vex")), Some(vec![]));
+        assert_eq!(world.execute(advance(5)).expect("accepted").len(), 1);
+    }
+
+    #[test]
+    fn leaving_ends_only_the_leavers_conflict() {
+        let mut kit = member_of(character("Kit", -30_00, -10_00), &["lantern_guild"]);
+        kit.memberships.push(StartingMembership {
+            faction: faction_id("free_company"),
+            rank: None,
+        });
+        let mut world = World::new(Content {
+            characters: [
+                kit,
+                member_of(
+                    character("Rook", -30_00, -10_00),
+                    &["lantern_guild", "free_company"],
+                ),
+            ]
+            .into_iter()
+            .map(|c| (c.id.clone(), c))
+            .collect(),
+            factions: factions(),
+            relations: relations(),
+            ..Content::default()
+        })
+        .expect("valid content");
+        world.execute(war()).expect("accepted");
+        let events = world
+            .execute(leave("kit", "free_company"))
+            .expect("accepted");
+        // Rook's war goes on untouched: it isn't closed and opened again.
+        assert_eq!(
+            payloads(&events),
+            [Change::LeftFaction {
+                character: id("kit"),
+                faction: faction_id("free_company"),
+                reason: LeaveReason::Voluntary,
+            }]
+        );
+        assert_eq!(world.conflicts(&id("kit")), Some(vec![]));
+        assert_eq!(
+            world.conflicts(&id("rook")),
+            Some(vec![(
+                faction_id("free_company"),
+                faction_id("lantern_guild")
+            )])
+        );
+    }
+
+    #[test]
+    fn a_faction_is_never_at_war_with_itself_even_with_a_positive_threshold() {
+        let mut content = two_sides(ConflictRule::default()).content.clone();
+        content.balance.conflict_threshold = h(10_00);
+        let mut world = World::new(content).expect("valid content");
+        // +5 is within 10 of nothing: the Guild and the Company are now in conflict, and
+        // that's the only pair, though each faction regards itself at 0.
+        let events = world
+            .execute(set("lantern_guild", "free_company", 5_00, true))
+            .expect("accepted");
+        assert_eq!(payloads(&events)[2..], [conflict_opened("vex")]);
+    }
+
+    #[test]
+    fn the_conflict_rule_says_when_it_settles() {
+        assert_eq!(ConflictRule::default().auto_after(), None);
+        assert_eq!(ConflictRule::Auto.auto_after(), Some(0));
+        assert_eq!(
+            ConflictRule::Ask {
+                auto_after_ticks: Some(10)
+            }
+            .auto_after(),
+            Some(10)
+        );
+    }
+
     // Joining an enemy: defectors and deserters (DESIGN.md §9.2)
 
     fn accept(standing_change: i64) -> Verdict {
@@ -7905,6 +8316,7 @@ mod tests {
                 Just("vex"),
                 Just("ava"),
                 Just("nell"),
+                Just("rook"),
                 Just("ghost")
             ]
         };
@@ -7979,17 +8391,24 @@ mod tests {
         proptest::collection::vec(command, 0..30)
     }
 
-    /// Riverhold with the sample rule tables, and Nell, a reformed Guild member who can defect
-    /// to the Watch.
-    /// The Watch puts drifters on probation for 50 ticks, then demotes them; the Guild
-    /// expels them.
+    /// Riverhold with the sample rule tables. Nell is a reformed Guild member who can defect
+    /// to the Watch, and Rook is in both the Guild and the Free Company, so random relations
+    /// can put him in a war. The Watch puts drifters on probation for 50 ticks, then demotes
+    /// them; the Guild expels them; wars are settled automatically after 20 ticks.
     fn run(commands: &[Command]) -> World {
         let mut content = defectors_content([
             character("Vex", -55_00, -20_00),
             character("Ava", 20_00, 10_00),
             character("Player", 0, 0),
             member_of(character("Nell", 35_00, 10_00), &["lantern_guild"]),
+            member_of(
+                character("Rook", -40_00, -10_00),
+                &["lantern_guild", "free_company"],
+            ),
         ]);
+        content.balance.conflict = ConflictRule::Ask {
+            auto_after_ticks: Some(20),
+        };
         let mut drift = |faction: &str, policy: DriftPolicy| {
             content
                 .factions
@@ -8056,9 +8475,12 @@ mod tests {
             prop_assert_eq!(world.now(), Tick(total));
         }
 
-        /// DESIGN.md §14, invariant 6 (until M9 adds `MembershipConflict`).
+        /// DESIGN.md §14, invariant 6: no one is in two factions in conflict, except while a
+        /// `MembershipConflict` for that pair is open.
         #[test]
-        fn no_one_is_ever_in_two_factions_in_conflict(commands in commands()) {
+        fn no_one_is_in_two_factions_in_conflict_without_an_open_conflict(
+            commands in commands()
+        ) {
             let world = run(&commands);
             for character in world.characters() {
                 let factions: Vec<&FactionId> = world
@@ -8066,9 +8488,12 @@ mod tests {
                     .expect("the character exists")
                     .map(|(faction, _)| faction)
                     .collect();
+                let open = world.conflicts(&character.id).expect("the character exists");
                 for (i, a) in factions.iter().enumerate() {
                     for b in &factions[i + 1..] {
-                        prop_assert!(!world.in_conflict(a, b).expect("both exist"));
+                        if world.in_conflict(a, b).expect("both exist") {
+                            prop_assert!(open.contains(&((*a).clone(), (*b).clone())));
+                        }
                     }
                 }
             }

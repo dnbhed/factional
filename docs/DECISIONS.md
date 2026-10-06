@@ -288,6 +288,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`ProbationExpired` comes first,** then the consequence's own events, so a listener can tell an expiry from an ordinary expulsion or demotion.
   - **A shift with no effect emits nothing,** like a relation set to its current value.
   - *Why:* drift reacts to every real change in the distance between member and faction, whichever side moved, and every outcome reads plainly in the events.
+- **P-49 · How a war between your own factions is settled** (made in M9, 2026-10-06).
+  - **Accepted, then reported.** M2's refusal (P-38) is gone. After any command, each pair of a character's factions is checked: a conflict opens when the pair is in conflict, and ends with `MembershipConflictEnded` if it isn't any more before anyone settled it. Nobody leaves then.
+  - **Leaving costs `leave_standing_change`,** whether a person or the rule chose, in one standing step that spills (P-46). Choosing a side is leaving the other.
+  - **`auto_after_ticks` goes with `ask`,** as the example world wrote it: wait for the game, then fall back to the rule. `auto` settles at once. (M9's plan had it on `auto`; the example's reading is clearer.)
+  - **The rule compares rungs as numbers,** across different ladders, then standing, then the earlier `since`, then the lower id. It always picks one.
+  - **`ResolveConflict` settles every open conflict involving `keep`,** and is refused if there are none.
+  - **Invariant 6** now allows two factions in conflict only while their conflict is open. Its property test runs with a character in two factions, so random relations can start wars and the rule settles them.
+  - *Why:* the game decides who someone stands with, with a rule to fall back on, and every step shows in the events.
 
 ## Open
 

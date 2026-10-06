@@ -462,13 +462,22 @@ Worked example: Ash, an initiate 40.00 from the Ashen Circle, does a good deed a
 - **Runtime changes.** Relations change through `SetRelation` and `ShiftRelation`, for wars and treaties sent by a quest module or the CLI. Each emits a `RelationChanged` for every direction that moved. Shifts stop at ±100, and a set outside ±100 is refused.
 - **Content.** `relations.toml` lists `[[relation]]` entries, each `between = [a, b]` (both directions) or `from`/`to` (one), with a `value`. Every direction may be set once, and any left out is 0.
 - **Enemy exclusion (D-4).** A member of a faction in conflict with another can't join it. The refusal names the faction and the more hostile of the two directions. M7 replaces this plain refusal with rule tables.
-- **Until M9.** A relation change that would put two of one character's factions in conflict is refused, so invariant 6 holds without `MembershipConflict` (P-38).
+- **A war between someone's own factions** is accepted, and opens a conflict for them (below). Before M9 it was refused (P-38).
 
 **War between your own factions (D-16).** If a relation change puts two of a character's factions in conflict:
 
 - The engine emits `MembershipConflict` and marks both memberships as conflicted. Invariant 6 allows that state until it's resolved.
 - The host or a quest resolves it with `ResolveConflict { character, keep }`. The other membership ends with `LeftFaction { reason: ConflictResolved }`.
 - Optionally, `membership.conflict` sets an automatic rule instead, applied straight away or after `auto_after_ticks` if nobody has resolved it. The rule keeps the higher rank, then the higher standing, then the longer service, then the lower faction id.
+
+How it applies (P-49):
+
+- **When.** After a command's own events, every pair of each character's factions is checked. A pair now in conflict without an open conflict opens one (`MembershipConflict`); an open conflict whose pair is no longer in conflict ends (`MembershipConflictEnded`), and the character keeps both. Then any conflict the rule settles is settled.
+- **The rule.** `conflict = { resolve = "ask" }` waits for `ResolveConflict` (the default); add `auto_after_ticks = N` to settle automatically N ticks after it opened. `resolve = "auto"` settles straight away.
+- **Leaving costs the faction's `leave_standing_change`,** in one standing step that spills, whether a person or the rule settled it. `ResolveConflict` settles every open conflict between `keep` and another of their factions at once.
+- **Leaving either side by any route ends the conflict.**
+
+Worked example: Vex, a fence of the Guild, joins the Free Company, and the two fall to −60. A conflict opens. `resolve vex lantern_guild` leaves the Company: −10.00 there, which spills +0.60 to the Guild (−0.06 at −60).
 - The exact standing consequences of leaving are settled when M9 comes up.
 
 ## 10. Knowledge (D-7)
@@ -516,7 +525,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | Time and actions | `TimeAdvanced`, `ActionPerformed`, `AlignmentChanged` |
 | Standing and membership | `StandingChanged`, `JoinedFaction`, `LeftFaction { Voluntary \| Defected \| Expelled \| ConflictResolved }`, `RankChanged` |
 | Drift | `ProbationStarted`, `ProbationCleared`, `ProbationExpired`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
-| Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict` |
+| Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict`, `MembershipConflictEnded` |
 | Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierExpired` |
 
 ### 11.3 Queries (read)
@@ -647,7 +656,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Rule tables use known conditions, with the right kind of value, and only their table's outcomes; a refusal has a reason and no `standing_change`; rung numbers ≥ 1; rank ids only in a faction's own tables and only its ranks; standing thresholds and `standing_change` within ±100; every table ends with a rule that always decides | error | M7 (done) |
 | Drift policies are known (`ignore`, `flag`, `demote`, `expel`); `expel_standing_change` within ±100 | error | M8 (done) |
 | Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 (done) |
-| `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` ≥ 0 | error | M9 |
+| `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is a whole number ≥ 0, and only with `ask` | error | M9 (done) |
 | `knowledge.model` is a known model | error | K1 |
 | A faction no starting character could join; a rank no one can reach | warning | T1 |
 
