@@ -5,7 +5,7 @@ use factional_core::{Curve, CurveError, Fixed, Tick, article, suggest};
 
 use crate::defection::{self, Situation};
 use crate::distance::gap;
-use crate::inertia::shifts;
+use crate::shift::{Target, shifts};
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, Axis, Bands, Change, Character,
     CharacterId, Command, CommandError, Component, ComponentKind, Defection, Disposition,
@@ -13,7 +13,8 @@ use crate::{
     JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric, Outcome, OutcomeId,
     Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide,
     Role, Rule, Shift, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner,
-    TableProblem, TableSource, Toward, Verdict, Weights, Witnesses, measure,
+    TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses,
+    measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -203,6 +204,12 @@ pub enum ContentProblem {
         profile: ProfileId,
         suggestion: Option<ProfileId>,
     },
+    /// An action's `by_target` curve goes below 0, which would reverse its effect (P-28).
+    NegativeTargetScaling {
+        action: ActionId,
+        curve: TargetCurve,
+        value: Fixed,
+    },
     /// An inertia curve goes below 0, which would reverse a shift (P-5).
     NegativeInertia {
         profile: ProfileId,
@@ -387,6 +394,7 @@ impl Content {
             .into_iter()
             .chain(threshold)
             .chain(self.inertia_problems())
+            .chain(self.target_scaling_problems())
             .chain(shared_ids)
             .chain(memberships)
             .chain(self.rank_problems())
@@ -464,6 +472,24 @@ impl Content {
             .into_iter()
             .chain(negative)
             .chain(characters)
+            .collect()
+    }
+
+    /// Every action's `by_target` curves must stay at or above 0: actions in id order, then
+    /// curves in `TargetCurve` order.
+    fn target_scaling_problems(&self) -> Vec<ContentProblem> {
+        self.actions
+            .values()
+            .flat_map(|action| {
+                action.by_target.iter().filter_map(|(curve, shape)| {
+                    let lowest = shape.lowest();
+                    (lowest < Fixed::ZERO).then(|| ContentProblem::NegativeTargetScaling {
+                        action: action.id.clone(),
+                        curve: *curve,
+                        value: lowest,
+                    })
+                })
+            })
             .collect()
     }
 
@@ -771,6 +797,11 @@ impl fmt::Display for ContentProblem {
                     None => Ok(()),
                 }
             }
+            ContentProblem::NegativeTargetScaling { value, .. } => write!(
+                f,
+                "{value} is below {}: a target can soften or sharpen an act, never reverse it",
+                Fixed::ZERO
+            ),
             ContentProblem::NegativeInertia { value, .. } => write!(
                 f,
                 "{value} is below {}: inertia can damp or amplify a shift, never reverse it",
@@ -1066,7 +1097,9 @@ impl World {
                     scale: *scale,
                     witnesses: witnesses.clone(),
                 }];
-                let to = from.shifted(catalogued.alignment, *scale, self.inertia_of(actor).1);
+                let to = self
+                    .act_shift(actor, catalogued, target.as_ref(), *scale)
+                    .applied_to(from);
                 if to != from {
                     changes.push(Change::AlignmentChanged {
                         character: actor.clone(),
@@ -1631,6 +1664,68 @@ impl World {
         )
     }
 
+    /// How `actor` doing `action` to `target` at `scale` would move them now, with who it's
+    /// done to and their inertia: each axis it touches, with its working (DESIGN.md §5.2–5.4).
+    /// `None` if the actor, action or target is unknown.
+    pub fn action_shift(
+        &self,
+        actor: &CharacterId,
+        action: &ActionId,
+        target: Option<&CharacterId>,
+        scale: Fixed,
+    ) -> Option<Shift> {
+        self.alignment(actor)?;
+        let action = self.content.actions.get(action)?;
+        if let Some(target) = target {
+            self.alignment(target)?;
+        }
+        Some(self.act_shift(actor, action, target, scale))
+    }
+
+    /// The working of an act whose actor, and target if any, exist.
+    fn act_shift(
+        &self,
+        actor: &CharacterId,
+        action: &Action,
+        target: Option<&CharacterId>,
+        scale: Fixed,
+    ) -> Shift {
+        let from = self.state.alignments[actor];
+        let (profile, inertia) = self.inertia_of(actor);
+        let target = target.map(|target| Target {
+            curves: &action.by_target,
+            alignment: self.state.alignments[target],
+            relation: self.target_relation(actor, target),
+        });
+        Shift {
+            profile: profile.clone(),
+            axes: shifts(from, action.alignment, scale, target.as_ref(), inertia),
+        }
+    }
+
+    /// The most hostile relation from any of `actor`'s factions toward any of `target`'s,
+    /// the first in id order on a tie; a faction and itself don't count, and with no pair
+    /// left it's 0 (DESIGN.md §5.4).
+    fn target_relation(&self, actor: &CharacterId, target: &CharacterId) -> TargetRelation {
+        let theirs = self.factions_of(target);
+        let mut most_hostile = TargetRelation {
+            value: Fixed::ZERO,
+            between: None,
+        };
+        for from in self.factions_of(actor) {
+            for to in theirs.iter().filter(|to| **to != from) {
+                let value = relation_value(&self.state.relations, &from, to);
+                if most_hostile.between.is_none() || value < most_hostile.value {
+                    most_hostile = TargetRelation {
+                        value,
+                        between: Some((from.clone(), to.clone())),
+                    };
+                }
+            }
+        }
+        most_hostile
+    }
+
     /// How `delta` × `scale` would move `character` now, with their inertia: each axis it
     /// touches, with its working (DESIGN.md §5.2, §5.3). `None` for an unknown character.
     pub fn shift(
@@ -1643,7 +1738,7 @@ impl World {
         let (profile, inertia) = self.inertia_of(character);
         Some(Shift {
             profile: profile.clone(),
-            axes: shifts(from, delta, scale, inertia),
+            axes: shifts(from, delta, scale, None, inertia),
         })
     }
 
@@ -2117,6 +2212,7 @@ mod tests {
                 good: h(good),
             },
             standing: ActionStanding::default(),
+            by_target: BTreeMap::new(),
         }
     }
 
@@ -5270,6 +5366,8 @@ mod tests {
                 from: h(85_00),
                 base: h(4_00),
                 scale: Fixed::ONE,
+                by_target: None,
+                by_relation: None,
                 // 0.405 is 0.81 × 0.50.
                 inertia: Some((
                     Toward::Good,
@@ -5379,6 +5477,187 @@ mod tests {
                 "-0.10 is below 0.00: inertia can damp or amplify a shift, never reverse it",
                 "unknown inertia profile 'stedy' (did you mean 'steady'?)",
             ]
+        );
+    }
+
+    // Target-aware effects (DESIGN.md §5.4)
+
+    /// `murder` with its `by_target` curves from DESIGN.md §5.4.
+    fn murder() -> Action {
+        let mut murder = action("murder", -10_00, -15_00);
+        murder.by_target = [
+            (
+                TargetCurve::Good,
+                points(&[(-100_00, 20), (0, 1_00), (100_00, 1_50)]),
+            ),
+            (
+                TargetCurve::Relation,
+                points(&[(-100_00, 50), (-50_00, 80), (0, 1_00)]),
+            ),
+        ]
+        .into();
+        murder
+    }
+
+    /// Riverhold's people for §5.4's murders: Hale (hardening, the Watch), Vex (the Guild),
+    /// Ash and Mira (in no faction here) and the player.
+    fn murderers() -> World {
+        let mut content = with_inertia([
+            hardened(member_of(character("Hale", 75_00, 30_00), &["city_watch"])),
+            member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+            character("Ash", 25_00, -70_00),
+            character("Mira", 35_00, 85_00),
+            character("Player", 0, 0),
+        ]);
+        content.actions.insert(action_id("murder"), murder());
+        World::new(content).expect("valid content")
+    }
+
+    fn murder_shift(world: &World, actor: &str, target: &str) -> Vec<(Axis, Fixed)> {
+        world
+            .action_shift(
+                &id(actor),
+                &action_id("murder"),
+                Some(&id(target)),
+                Fixed::ONE,
+            )
+            .expect("all exist")
+            .axes
+            .iter()
+            .map(|axis| (axis.axis, axis.shift))
+            .collect()
+    }
+
+    #[test]
+    fn who_is_murdered_changes_how_evil_it_is() {
+        let world = murderers();
+        assert_eq!(
+            murder_shift(&world, "player", "ash"),
+            [(Axis::Law, h(-10_00)), (Axis::Good, h(-6_60))]
+        );
+        assert_eq!(
+            murder_shift(&world, "player", "mira"),
+            [(Axis::Law, h(-10_00)), (Axis::Good, h(-21_38))]
+        );
+        assert_eq!(
+            murder_shift(&world, "hale", "vex"),
+            [(Axis::Law, h(-6_20)), (Axis::Good, h(-664))]
+        );
+    }
+
+    #[test]
+    fn a_murder_moves_the_killer_by_the_working() {
+        let mut world = murderers();
+        let events = world
+            .execute(act("hale", "murder", Some("vex"), 1_00))
+            .expect("accepted");
+        assert_eq!(
+            events[1].payload,
+            Change::AlignmentChanged {
+                character: id("hale"),
+                from: Alignment::new(h(75_00), h(30_00)).expect("in range"),
+                to: Alignment::new(h(68_80), h(23_36)).expect("in range"),
+            }
+        );
+        // Without a target, murder moves the killer in full (after Hale's inertia).
+        assert_eq!(
+            world
+                .action_shift(&id("player"), &action_id("murder"), None, Fixed::ONE)
+                .expect("exists")
+                .axes
+                .iter()
+                .map(|axis| axis.shift)
+                .collect::<Vec<_>>(),
+            [h(-10_00), h(-15_00)]
+        );
+    }
+
+    #[test]
+    fn the_relation_is_the_most_hostile_between_their_factions() {
+        let relation_between = |actor: &[&str], target: &[&str]| {
+            let mut content = with_inertia([
+                member_of(character("Killer", 0, 0), actor),
+                member_of(character("Victim", 0, 0), target),
+            ]);
+            content.actions.insert(action_id("murder"), murder());
+            let world = World::new(content).expect("valid content");
+            let shift = world
+                .action_shift(
+                    &id("killer"),
+                    &action_id("murder"),
+                    Some(&id("victim")),
+                    Fixed::ONE,
+                )
+                .expect("all exist");
+            let (relation, _) = shift.axes[0]
+                .by_relation
+                .clone()
+                .expect("murder has the curve");
+            (
+                relation.value,
+                relation.between.map(|(from, to)| format!("{from} → {to}")),
+            )
+        };
+        // The Watch regards the Guild at −80, and the Temple regards it at 0.
+        assert_eq!(
+            relation_between(&["city_watch", "temple"], &["lantern_guild", "temple"]),
+            (h(-80_00), Some("city_watch → lantern_guild".to_owned()))
+        );
+        // A tie goes to the first pair in id order.
+        assert_eq!(
+            relation_between(&["temple"], &["lantern_guild", "free_company"]),
+            (Fixed::ZERO, Some("temple → free_company".to_owned()))
+        );
+        // A faction and itself don't count, so fellow members are unrelated: 0.
+        assert_eq!(
+            relation_between(&["city_watch"], &["city_watch"]),
+            (Fixed::ZERO, None)
+        );
+        assert_eq!(relation_between(&[], &["city_watch"]), (Fixed::ZERO, None));
+    }
+
+    #[test]
+    fn an_action_shift_needs_everything_it_names_to_exist() {
+        let world = murderers();
+        let shift = |actor: &str, action: &str, target: Option<&str>| {
+            world
+                .action_shift(
+                    &id(actor),
+                    &action_id(action),
+                    target.map(id).as_ref(),
+                    Fixed::ONE,
+                )
+                .is_some()
+        };
+        assert!(shift("hale", "murder", Some("vex")));
+        assert!(!shift("ghost", "murder", Some("vex")));
+        assert!(!shift("hale", "dance", Some("vex")));
+        assert!(!shift("hale", "murder", Some("ghost")));
+    }
+
+    #[test]
+    fn target_curves_cannot_go_below_zero() {
+        let mut content = with_inertia([]);
+        let mut cruel = murder();
+        cruel
+            .by_target
+            .insert(TargetCurve::Good, points(&[(-100_00, -10), (100_00, 1_00)]));
+        // Exactly 0 is allowed: it stops the act moving that axis.
+        cruel
+            .by_target
+            .insert(TargetCurve::Law, Curve::constant(Fixed::ZERO));
+        content.actions.insert(action_id("murder"), cruel);
+        assert_eq!(
+            content.problems(),
+            [ContentProblem::NegativeTargetScaling {
+                action: action_id("murder"),
+                curve: TargetCurve::Good,
+                value: h(-10),
+            }]
+        );
+        assert_eq!(
+            content.problems()[0].to_string(),
+            "-0.10 is below 0.00: a target can soften or sharpen an act, never reverse it"
         );
     }
 

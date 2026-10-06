@@ -18,10 +18,11 @@ mod id;
 mod inertia;
 mod membership;
 mod relation;
+mod shift;
 mod standing;
 mod world;
 
-pub use action::{Action, Witnesses};
+pub use action::{Action, TargetCurve, Witnesses};
 pub use alignment::{AXIS_LIMIT, Alignment, AlignmentDelta, Axis, AxisOutOfRange};
 pub use character::Character;
 pub use command::{Change, Command, CommandError, Event, JournalEntry, Role};
@@ -35,12 +36,13 @@ pub use disposition::{
 pub use distance::{Metric, WeightProblem, Weights, measure};
 pub use faction::{Faction, Rank};
 pub use id::{ActionId, CharacterId, FactionId, InvalidId, OutcomeId, ProfileId, RankId};
-pub use inertia::{AxisShift, Inertia, InertiaProfile, Shift, Toward};
+pub use inertia::{Inertia, InertiaProfile, Toward};
 pub use membership::{
     JoinAssessment, JoinBlock, LeaveReason, Membership, PromotionAssessment, RankCheck,
     StartingMembership, ToleranceProblem, Tolerances,
 };
 pub use relation::{Regard, Relation, RelationEnds, RelationSide};
+pub use shift::{AxisShift, Shift, TargetRelation};
 pub use standing::{
     ActionStanding, Effects, Outcome, Party, StandingEffects, StandingKey, StandingOwner,
 };

@@ -571,3 +571,25 @@ fn promotion_in_riverhold_needs_the_next_ranks_requirements() {
         "sister_mira can't be promoted in temple: high_priest needs standing 80.00, sister_mira has 40.00"
     );
 }
+
+/// The good shift from `actor` murdering `target`, as the engine works it out.
+fn murder_good(world: &World, actor: &str, target: &str) -> String {
+    let shift = world
+        .action_shift(
+            &character(actor),
+            &ActionId::new("murder").expect("valid id"),
+            Some(&character(target)),
+            Fixed::ONE,
+        )
+        .expect("all exist");
+    shift.axes[1].shift.to_string()
+}
+
+#[test]
+fn riverholds_murders_weigh_who_was_killed() {
+    let world = riverhold();
+    // DESIGN.md §5.4: the wicked, a saint, and a sworn enemy killed by a hardened captain.
+    assert_eq!(murder_good(&world, "player", "brother_ash"), "-6.60");
+    assert_eq!(murder_good(&world, "player", "sister_mira"), "-21.38");
+    assert_eq!(murder_good(&world, "captain_hale", "vex"), "-6.64");
+}

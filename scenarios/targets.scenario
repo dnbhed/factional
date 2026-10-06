@@ -1,0 +1,18 @@
+# Target-aware effects (DESIGN.md §5.4): who an act is done to scales how far it moves the
+# actor. Murder weighs less against the wicked (by_target.good) and against a sworn enemy
+# (by_target.relation), and every multiplier, inertia included, joins one product that's
+# rounded once.
+load content/sample
+# brother_ash is at good -70: 0.44. The player is in no faction, so the relation is 0: 1.00.
+act player murder --target brother_ash --explain
+assert show character player == player — The Player — law -10.00, good -6.60 — True Neutral
+load content/sample
+# sister_mira is at good 85: 1.425, so -15.00 × 1.425 = -21.375, rounded once to -21.38.
+act player murder --target sister_mira --explain
+load content/sample
+# Hale's Watch regards Vex's Guild at -80: 0.62 on both axes; Vex is at good -20: 0.84; and
+# Hale hardens: 0.85. Good: -15.00 × 0.84 × 0.62 × 0.85 = -6.6402 → -6.64.
+act captain_hale murder --target vex --explain
+assert show character captain_hale == captain_hale — Captain Hale — law 68.80, good 23.36 — Lawful Neutral — member of city_watch (captain) since tick 0
+# With no target, nothing scales it but Hale's inertia.
+act captain_hale murder --explain

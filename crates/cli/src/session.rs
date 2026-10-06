@@ -905,13 +905,12 @@ impl Session {
             Command::PerformAction {
                 actor,
                 action,
+                target,
                 scale,
                 ..
             } if explain => world
-                .actions()
-                .find(|known| &known.id == action)
-                .and_then(|known| world.shift(actor, known.alignment, *scale))
-                .map(|shift| describe_shift(&shift, actor)),
+                .action_shift(actor, action, target.as_ref(), *scale)
+                .map(|shift| describe_shift(&shift, actor, target.as_ref())),
             _ => None,
         };
         match world.execute(command) {
@@ -996,30 +995,57 @@ impl Session {
     }
 }
 
-/// How an act moved `actor`, axis by axis, from the engine's working (DESIGN.md §5.2): each
-/// multiplier, and where the inertia came from.
-fn describe_shift(shift: &Shift, actor: &CharacterId) -> Vec<String> {
-    let mut described = vec![format!(
-        "shift = base × scale × inertia, rounded once; {actor}'s inertia profile is {}",
-        shift.profile
-    )];
+/// How an act moved `actor`, axis by axis, from the engine's working (DESIGN.md §5.2–5.4):
+/// each multiplier, and where it came from. Target multipliers appear only for an act with a
+/// `target` whose action has the curves.
+fn describe_shift(shift: &Shift, actor: &CharacterId, target: Option<&CharacterId>) -> Vec<String> {
+    let mut axes = Vec::new();
+    let mut targeted = false;
     for axis in &shift.axes {
+        let mut multipliers = Vec::new();
+        if let (Some((at, multiplier)), Some(target)) = (axis.by_target, target) {
+            multipliers.push(format!(
+                "{multiplier} (by_target.{} at {target}'s {at})",
+                axis.axis.key()
+            ));
+        }
+        if let Some((relation, multiplier)) = &axis.by_relation {
+            let at = match &relation.between {
+                Some((from, to)) => format!("{from} → {to} {}", relation.value),
+                None => format!("{}: no relation between their factions", relation.value),
+            };
+            multipliers.push(format!("{multiplier} (by_target.relation at {at})"));
+        }
+        if !multipliers.is_empty() {
+            targeted = true;
+        }
         let toward = Toward::of(axis.axis, axis.base).expect("only moved axes have working");
         let curve = format!("{}.{}", axis.axis.key(), toward.key());
-        let inertia = match axis.inertia {
+        multipliers.push(match axis.inertia {
             Some((_, multiplier)) => format!("{multiplier} ({curve} at {})", axis.from),
             None => format!("{} ({} has no {curve} curve)", Ratio::ONE, shift.profile),
-        };
-        described.push(format!(
-            "{}: {} × {} × {inertia} = {}, from {} to {}",
+        });
+        axes.push(format!(
+            "{}: {} × {} × {} = {}, from {} to {}",
             axis.axis.key(),
             axis.base,
             axis.scale,
+            multipliers.join(" × "),
             axis.shift,
             axis.from,
             axis.to
         ));
     }
+    let formula = if targeted {
+        "base × scale × target × inertia"
+    } else {
+        "base × scale × inertia"
+    };
+    let mut described = vec![format!(
+        "shift = {formula}, rounded once; {actor}'s inertia profile is {}",
+        shift.profile
+    )];
+    described.extend(axes);
     described
 }
 
@@ -2534,6 +2560,34 @@ mod tests {
                 "shift = base × scale × inertia, rounded once; player's inertia profile is steady",
                 "law: -5.00 × 2.00 × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00",
                 "good: -3.00 × 2.00 × 1.00 (steady has no good.toward_evil curve) = -6.00, from 0.00 to -6.00",
+            ]
+        );
+    }
+
+    #[test]
+    fn act_explains_how_the_target_scaled_each_axis() {
+        // Hale (hardening, the Watch) murders Vex (the Guild, good −20): DESIGN.md §5.4.
+        assert_eq!(
+            working_of(
+                &mut riverhold(),
+                "act captain_hale murder --target vex --explain"
+            ),
+            [
+                "shift = base × scale × target × inertia, rounded once; captain_hale's inertia profile is hardening",
+                "law: -10.00 × 1.00 × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 1.00 (hardening has no law.toward_chaotic curve) = -6.20, from 75.00 to 68.80",
+                "good: -15.00 × 1.00 × 0.84 (by_target.good at vex's -20.00) × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 0.85 (good.toward_evil at 30.00) = -6.64, from 30.00 to 23.36",
+            ]
+        );
+        // The player is in no faction, so the relation curve is read at 0.
+        assert_eq!(
+            working_of(
+                &mut riverhold(),
+                "act player murder --target brother_ash --explain"
+            ),
+            [
+                "shift = base × scale × target × inertia, rounded once; player's inertia profile is steady",
+                "law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00",
+                "good: -15.00 × 1.00 × 0.44 (by_target.good at brother_ash's -70.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -6.60, from 0.00 to -6.60",
             ]
         );
     }

@@ -252,6 +252,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Too big to compute still lands at the end of the axis,** as before: the shift saturates in the act's direction.
   - **`--explain` shows exact multipliers,** to up to four decimals, marked `≈` when they need more. A rounded multiplier would show a number the engine didn't use (P-24).
   - *Why:* every shift is a single, explainable multiplication of exact values, and designers can reproduce it by hand.
+- **P-44 · Which relation scales an act** (made in A5, 2026-10-05).
+  - **The most hostile pair, from the actor's side.** `by_target.relation` reads the lowest relation from any of the actor's factions toward any of the target's. It's directed, because this is how the actor's side regards the victim's. On a tie, the first pair in id order is named.
+  - **A faction and itself don't count.** Killing a fellow member isn't excused by any relation, so with no pair of different factions the curve is read at 0, as when either side has no faction.
+  - **The target's position is read before the act,** like the actor's for inertia.
+  - **`--explain` names the pair,** or says there was no relation, so a designer can find the number in `relations.toml`.
+  - *Why:* one number per act, chosen the way D-18 describes, which a designer can trace to content.
 
 ## Open
 
