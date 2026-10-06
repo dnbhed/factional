@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use factional_core::Fixed;
+use factional_core::{Fixed, Ratio};
 
 use crate::{ActionId, AlignmentDelta, CharacterId, FactionId, OutcomeId};
 
@@ -20,6 +20,21 @@ impl fmt::Display for Party {
             Party::Character(id) => id.fmt(f),
         }
     }
+}
+
+/// Part of a standing change that spilled over from a change with another faction
+/// (DESIGN.md §7.1, P-13): `amount` is `change × multiplier`, rounded once, where the
+/// multiplier is `standing.spillover` at how this faction regards `from`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Spill {
+    /// The faction whose standing changed directly.
+    pub from: FactionId,
+    /// That change, as applied.
+    pub change: Fixed,
+    /// How the faction receiving the spill regards `from`.
+    pub relation: Fixed,
+    pub multiplier: Ratio,
+    pub amount: Fixed,
 }
 
 /// Whose `standing` block a content problem is in.

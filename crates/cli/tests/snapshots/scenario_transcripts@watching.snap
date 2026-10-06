@@ -20,17 +20,19 @@ player — neutral: ashen_circle, city_watch, lantern_guild, temple, brother_ash
 > outcome fined_by_watch player
 #8 at tick 0: outcome fined_by_watch applied to player
 #9 at tick 0: player's standing with city_watch moved from 0.00 to -20.00
-#10 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
-#11 at tick 0: city_watch now regards player as unfriendly (was neutral), at -27.24
-#12 at tick 0: captain_hale now regards player as unfriendly (was neutral), at -29.10
+#10 at tick 0: player's standing with lantern_guild moved from 0.00 to 3.60, with 3.60 spilled from city_watch (-20.00 × -0.18; lantern_guild regards it at -80.00)
+#11 at tick 0: player's standing with temple moved from 0.00 to -2.00, with -2.00 spilled from city_watch (-20.00 × 0.10; temple regards it at 60.00)
+#12 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
+#13 at tick 0: city_watch now regards player as unfriendly (was neutral), at -27.24
+#14 at tick 0: captain_hale now regards player as unfriendly (was neutral), at -29.10
 > assert disposition city_watch player == -27.24 (unfriendly)
 > watching
 player — unfriendly: city_watch, captain_hale; neutral: ashen_circle, lantern_guild, temple, brother_ash, merchant_ava, sister_mira, vex; friendly: free_company
 > act player help_stranger --target merchant_ava
-#13 at tick 0: player did help_stranger, targeting merchant_ava
-#14 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -10.00, good -2.00
-#15 at tick 0: player's standing with merchant_ava moved from -40.00 to -30.00
+#15 at tick 0: player did help_stranger, targeting merchant_ava
+#16 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -10.00, good -2.00
+#17 at tick 0: player's standing with merchant_ava moved from -40.00 to -30.00
 > assert unwatch vex == error: vex isn't watched
 > unwatch player
-#16 at tick 0: no longer watching player
+#18 at tick 0: no longer watching player
 > assert watching == no one is watched yet

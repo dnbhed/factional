@@ -63,6 +63,14 @@ bands = [
   { name = "friendly" },
 ]
 
+[standing]
+# When your standing with one faction changes, every other faction's changes too, by
+# change × spillover(how that faction regards the first), rounded once (DESIGN.md §7.1).
+# Bitter enemies feel a little of the opposite and allies share up to half; anything
+# between -50 and 50 shares nothing. It's one hop: a spilled change spills no further.
+# Values must stay within -1 to 1. Each spill shows in the event, after "spilled from".
+spillover = [[-100.0, -0.3], [-50.0, 0.0], [50.0, 0.0], [100.0, 0.5]]
+
 [relations]
 # Two factions are in conflict when either regards the other at or below this. A member of
 # one joins the other only if the [membership] tables below allow it.

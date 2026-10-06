@@ -469,9 +469,10 @@ fn riverholds_acts_and_outcomes_change_standing() {
             character: character("player"),
         })
         .expect("accepted");
+    // −20.00 from the fine, on top of +1.80 spilled from robbing a Guild member (P-46).
     assert_eq!(
         standing(&world, "player", Party::Faction(faction_id("city_watch"))),
-        "-20.00"
+        "-18.20"
     );
     assert_eq!(
         standing(
@@ -482,9 +483,37 @@ fn riverholds_acts_and_outcomes_change_standing() {
         "-10.00"
     );
     act(&mut world, "donate_to_temple", None);
+    // +10.00, on top of −2.00 spilled from the fine: the Temple regards the Watch at +60.
     assert_eq!(
         standing(&world, "player", Party::Faction(faction_id("temple"))),
-        "10.00"
+        "8.00"
+    );
+}
+
+#[test]
+fn riverholds_factions_share_in_standing_changes() {
+    let mut world = riverhold();
+    let with = |world: &World, faction: &str| {
+        standing(world, "player", Party::Faction(faction_id(faction)))
+    };
+    // Robbing Vex: −10.00 with the Guild. The Watch regards it at −80: −0.18, so +1.80.
+    act(&mut world, "steal", Some("vex"));
+    assert_eq!(
+        [
+            "lantern_guild",
+            "city_watch",
+            "free_company",
+            "temple",
+            "ashen_circle"
+        ]
+        .map(|faction| with(&world, faction)),
+        ["-10.00", "1.80", "0.00", "0.00", "0.00"]
+    );
+    // A donation: +10.00 with the Temple; the Watch (+60) shares 0.10, the Circle (−90) −0.24.
+    act(&mut world, "donate_to_temple", None);
+    assert_eq!(
+        ["temple", "city_watch", "ashen_circle"].map(|faction| with(&world, faction)),
+        ["10.00", "2.80", "-2.40"]
     );
 }
 

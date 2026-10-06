@@ -9,7 +9,8 @@ loaded 6 characters from content/sample
 #1 at tick 0: player did murder, targeting brother_ash
 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -10.00, good -6.60
 #3 at tick 0: player's standing with ashen_circle moved from 0.00 to -40.00
-#4 at tick 0: player's standing with brother_ash moved from 0.00 to -100.00
+#4 at tick 0: player's standing with temple moved from 0.00 to 9.60, with 9.60 spilled from ashen_circle (-40.00 × -0.24; temple regards it at -90.00)
+#5 at tick 0: player's standing with brother_ash moved from 0.00 to -100.00
 shift = base × scale × target × inertia, rounded once; player's inertia profile is steady
 law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00
 good: -15.00 × 1.00 × 0.44 (by_target.good at brother_ash's -70.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -6.60, from 0.00 to -6.60
@@ -19,8 +20,10 @@ loaded 6 characters from content/sample
 > act player murder --target sister_mira --explain
 #1 at tick 0: player did murder, targeting sister_mira
 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -10.00, good -21.38
-#3 at tick 0: player's standing with temple moved from 0.00 to -40.00
-#4 at tick 0: player's standing with sister_mira moved from 0.00 to -100.00
+#3 at tick 0: player's standing with ashen_circle moved from 0.00 to 9.60, with 9.60 spilled from temple (-40.00 × -0.24; ashen_circle regards it at -90.00)
+#4 at tick 0: player's standing with city_watch moved from 0.00 to -4.00, with -4.00 spilled from temple (-40.00 × 0.10; city_watch regards it at 60.00)
+#5 at tick 0: player's standing with temple moved from 0.00 to -40.00
+#6 at tick 0: player's standing with sister_mira moved from 0.00 to -100.00
 shift = base × scale × target × inertia, rounded once; player's inertia profile is steady
 law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00
 good: -15.00 × 1.00 × 1.425 (by_target.good at sister_mira's 85.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -21.38, from 0.00 to -21.38
@@ -29,15 +32,16 @@ loaded 6 characters from content/sample
 > act captain_hale murder --target vex --explain
 #1 at tick 0: captain_hale did murder, targeting vex
 #2 at tick 0: captain_hale's alignment moved from law 75.00, good 30.00 to law 68.80, good 23.36
-#3 at tick 0: captain_hale's standing with lantern_guild moved from 0.00 to -40.00
-#4 at tick 0: captain_hale's standing with vex moved from 0.00 to -100.00
+#3 at tick 0: captain_hale's standing with city_watch moved from 75.00 to 82.20, with 7.20 spilled from lantern_guild (-40.00 × -0.18; city_watch regards it at -80.00)
+#4 at tick 0: captain_hale's standing with lantern_guild moved from 0.00 to -40.00
+#5 at tick 0: captain_hale's standing with vex moved from 0.00 to -100.00
 shift = base × scale × target × inertia, rounded once; captain_hale's inertia profile is hardening
 law: -10.00 × 1.00 × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 1.00 (hardening has no law.toward_chaotic curve) = -6.20, from 75.00 to 68.80
 good: -15.00 × 1.00 × 0.84 (by_target.good at vex's -20.00) × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 0.85 (good.toward_evil at 30.00) = -6.64, from 30.00 to 23.36
 > assert show character captain_hale == captain_hale — Captain Hale — law 68.80, good 23.36 — Lawful Neutral — member of city_watch (captain) since tick 0
 > act captain_hale murder --explain
-#5 at tick 0: captain_hale did murder
-#6 at tick 0: captain_hale's alignment moved from law 68.80, good 23.36 to law 58.80, good 10.11
+#6 at tick 0: captain_hale did murder
+#7 at tick 0: captain_hale's alignment moved from law 68.80, good 23.36 to law 58.80, good 10.11
 shift = base × scale × inertia, rounded once; captain_hale's inertia profile is hardening
 law: -10.00 × 1.00 × 1.00 (hardening has no law.toward_chaotic curve) = -10.00, from 68.80 to 58.80
 good: -15.00 × 1.00 × 0.8832 (good.toward_evil at 23.36) = -13.25, from 23.36 to 10.11

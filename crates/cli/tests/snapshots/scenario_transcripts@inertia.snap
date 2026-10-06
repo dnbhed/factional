@@ -29,5 +29,7 @@ good: -3.00 × 1.00 × 0.85 (good.toward_evil at 30.00) = -2.55, from 30.00 to 2
 #9 at tick 0: outcome rescued_merchant applied to sister_mira
 #10 at tick 0: sister_mira's alignment moved from law 35.00, good 86.62 to law 35.00, good 88.98
 #11 at tick 0: sister_mira's standing with city_watch moved from 0.00 to 10.00
-#12 at tick 0: sister_mira's standing with merchant_ava moved from 10.00 to 40.00
+#12 at tick 0: sister_mira's standing with lantern_guild moved from 0.00 to -1.80, with -1.80 spilled from city_watch (10.00 × -0.18; lantern_guild regards it at -80.00)
+#13 at tick 0: sister_mira's standing with temple moved from 40.00 to 41.00, with 1.00 spilled from city_watch (10.00 × 0.10; temple regards it at 60.00)
+#14 at tick 0: sister_mira's standing with merchant_ava moved from 10.00 to 40.00
 > assert show character sister_mira == sister_mira — Sister Mira — law 35.00, good 88.98 — Lawful Good — member of temple (ordained) since tick 0

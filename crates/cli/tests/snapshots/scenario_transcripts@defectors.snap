@@ -26,12 +26,13 @@ city_watch's defectors (balance.toml): rule 2, accept, standing -10.00
 #1 at tick 0: vex left lantern_guild (defected)
 #2 at tick 0: vex joined city_watch as a recruit
 #3 at tick 0: vex's standing with city_watch moved from 0.00 to -10.00
+#4 at tick 0: vex's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)
 > assert show character vex == vex — Vex — law 35.00, good 10.00 — Lawful Neutral — member of city_watch (recruit) since tick 0
 > assert standing vex city_watch == -10.00
 > assert can-join kestrel city_watch == no: kestrel belongs to The Lantern Guild, in conflict with The City Watch (-80.00): refused by The Lantern Guild's deserters rule 1, "Officers don't walk away."
 > join nell city_watch
-#4 at tick 0: nell left lantern_guild (defected)
-#5 at tick 0: nell joined city_watch as a recruit
+#5 at tick 0: nell left lantern_guild (defected)
+#6 at tick 0: nell joined city_watch as a recruit
 > can-join brother_ash temple --explain
 brother_ash → temple: no
 distance 20.00 (euclidean), tolerance 35.00

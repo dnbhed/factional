@@ -265,6 +265,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Hysteresis edges.** A band is left above its upper edge plus the margin, or at its lower edge less the margin or below. That matches the bands themselves, where a score on an edge belongs to the lower band, so with no margin the band is always the score's own (a property test checks it). Leaving lands in the score's own band, however far it went.
   - **Refusals.** Watching someone already watched, or unwatching someone who isn't, is refused rather than ignored, so a host's mistake shows.
   - *Why:* other modules get one event per real change in how someone is seen, in a fixed order, and a save replays to the same remembered bands.
+- **P-46 · How spillover applies** (made in M6, 2026-10-06).
+  - **From the change as applied.** A faction's change spills after awareness and the ±100 clamp. Someone already at −100 with the Guild who robs it again changes nothing, so nothing spills.
+  - **From every standing change with a faction:** acts, outcomes, effects, leaving and defection costs alike. They all go through one function, so no cause is forgotten.
+  - **One hop, from direct changes only.** It adds to any direct change on the same faction, giving one `StandingChanged` per party per standing step. A defection's separate costs are separate steps, as in P-42.
+  - **Each spill is rounded once,** and one that rounds to 0 is left out of the events.
+  - **Events carry their spills.** `StandingChanged.spilled` names the source faction, its change, the relation and the multiplier, so the event reads without context (P-15) and the CLI can say where a change came from.
+  - **No awareness is applied to spills yet.** Under the omniscient model it's 1.00 either way; K1 decides how a faction learns of a spill.
+  - *Why:* standing with one faction colours how its allies and enemies see you, in a way designers can trace event by event.
 
 ## Open
 

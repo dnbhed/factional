@@ -163,6 +163,7 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         let (file, key) = match problem {
             ContentProblem::SharedId(id) => (FACTIONS_FILE, id.to_string()),
             ContentProblem::AffinityOutOfRange(_) => (BALANCE_FILE, "disposition.affinity".into()),
+            ContentProblem::SpilloverOutOfRange(_) => (BALANCE_FILE, "standing.spillover".into()),
             ContentProblem::UnknownMembershipFaction {
                 character, index, ..
             }
@@ -430,6 +431,12 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
             balance.hysteresis = hysteresis;
         }
         disposition.finish(report);
+    }
+    if let Some(mut standing) = file.optional_table("standing", "[standing]", report) {
+        if let Some(spillover) = standing.optional_curve("spillover", report) {
+            balance.spillover = spillover;
+        }
+        standing.finish(report);
     }
     if let Some(mut inertia) = file.optional_table("inertia", "[inertia]", report) {
         balance.inertia = read_inertia(&mut inertia, report);
@@ -1989,6 +1996,31 @@ mod tests {
             found,
             [
                 "factions.toml: vex: 'vex' is also a character's id: factions and characters need different ids"
+            ]
+        );
+    }
+
+    // Spillover (M6)
+
+    #[test]
+    fn reads_and_checks_the_spillover_curve() {
+        let content = balance("[standing]\nspillover = [[-100.0, -0.5], [100.0, 0.5]]\n")
+            .expect("valid content");
+        assert_eq!(
+            content.balance.spillover,
+            parse_curve("[[-100.0, -0.5], [100.0, 0.5]]").expect("valid curve")
+        );
+        assert_eq!(
+            balance("").expect("valid").balance.spillover,
+            factional_reputation::Balance::default_spillover()
+        );
+        assert_eq!(
+            problems(balance(
+                "[standing]\nspillover = [[-100.0, -0.5], [100.0, 1.5]]\nspilover = 1\n"
+            )),
+            [
+                "balance.toml: standing: unknown key 'spilover' (did you mean 'spillover'?)",
+                "balance.toml: standing.spillover: curve value 1.50 is outside -1.00 to 1.00",
             ]
         );
     }

@@ -42,7 +42,9 @@ bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly
 > outcome fined_by_watch player
 #7 at tick 0: outcome fined_by_watch applied to player
 #8 at tick 0: player's standing with city_watch moved from 0.00 to -20.00
-#9 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
+#9 at tick 0: player's standing with lantern_guild moved from 0.00 to 3.60, with 3.60 spilled from city_watch (-20.00 × -0.18; lantern_guild regards it at -80.00)
+#10 at tick 0: player's standing with temple moved from 0.00 to -2.00, with -2.00 spilled from city_watch (-20.00 × 0.10; temple regards it at 60.00)
+#11 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
 > disposition captain_hale player --explain
 captain_hale → player: -29.10 (unfriendly)
 affinity: -9.10 × 1.00 = -9.10, at distance 85.48 (euclidean)

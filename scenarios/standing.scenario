@@ -13,13 +13,15 @@ assert standing player temple == 10.00
 outcomes
 outcome fined_by_watch player
 assert standing player captain_hale == -10.00
-# Standing stops at -100: after five fines the Watch can think no worse of the player.
+# Standing stops at -100. Robbing a Guild member and the donation spilled +2.80 to the Watch
+# (see spillover.scenario), so five fines leave it at -97.20 and the sixth reaches the end.
 outcome fined_by_watch player
 outcome fined_by_watch player
 outcome fined_by_watch player
+outcome fined_by_watch player
+assert standing player city_watch == -97.20
 outcome fined_by_watch player
 assert standing player city_watch == -100.00
-outcome fined_by_watch player
 standing player
 # Leaving the Free Company costs standing with it.
 join player free_company
