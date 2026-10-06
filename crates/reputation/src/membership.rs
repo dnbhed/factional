@@ -96,28 +96,60 @@ pub enum DriftPolicy {
     /// still out on the lowest rung.
     Demote,
     Expel,
+    /// `ProbationStarted`, then `then` if they're still out once `grace_ticks` have passed.
+    Probation {
+        grace_ticks: u64,
+        then: Consequence,
+    },
+}
+
+/// What happens when a probation runs out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Consequence {
+    Demote,
+    Expel,
+}
+
+impl Consequence {
+    pub const ALL: [Consequence; 2] = [Consequence::Demote, Consequence::Expel];
+
+    /// Its name in content: `demote` or `expel`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Consequence::Demote => "demote",
+            Consequence::Expel => "expel",
+        }
+    }
 }
 
 impl DriftPolicy {
-    pub const ALL: [DriftPolicy; 4] = [
+    /// The policies with no settings of their own.
+    pub const SIMPLE: [DriftPolicy; 4] = [
         DriftPolicy::Ignore,
         DriftPolicy::Flag,
         DriftPolicy::Demote,
         DriftPolicy::Expel,
     ];
 
+    /// Every policy's name in content.
+    pub const KEYS: [&'static str; 5] = ["ignore", "flag", "demote", "expel", "probation"];
+
     /// Its name in content, such as `flag`.
     pub fn key(self) -> &'static str {
-        match self {
-            DriftPolicy::Ignore => "ignore",
-            DriftPolicy::Flag => "flag",
-            DriftPolicy::Demote => "demote",
-            DriftPolicy::Expel => "expel",
-        }
+        let index = match self {
+            DriftPolicy::Ignore => 0,
+            DriftPolicy::Flag => 1,
+            DriftPolicy::Demote => 2,
+            DriftPolicy::Expel => 3,
+            DriftPolicy::Probation { .. } => 4,
+        };
+        DriftPolicy::KEYS[index]
     }
 
-    pub fn from_key(key: &str) -> Option<DriftPolicy> {
-        DriftPolicy::ALL
+    /// The policy with no settings called `key`; `None` for `probation`, which has settings,
+    /// or an unknown name.
+    pub fn simple(key: &str) -> Option<DriftPolicy> {
+        DriftPolicy::SIMPLE
             .into_iter()
             .find(|policy| policy.key() == key)
     }
@@ -266,14 +298,18 @@ mod tests {
 
     #[test]
     fn drift_policies_are_named_as_content_writes_them() {
-        assert_eq!(
-            DriftPolicy::ALL.map(DriftPolicy::key),
-            ["ignore", "flag", "demote", "expel"]
-        );
-        for policy in DriftPolicy::ALL {
-            assert_eq!(DriftPolicy::from_key(policy.key()), Some(policy));
+        let probation = DriftPolicy::Probation {
+            grace_ticks: 1,
+            then: Consequence::Expel,
+        };
+        let mut keys = DriftPolicy::SIMPLE.map(DriftPolicy::key).to_vec();
+        keys.push(probation.key());
+        assert_eq!(keys, DriftPolicy::KEYS);
+        for policy in DriftPolicy::SIMPLE {
+            assert_eq!(DriftPolicy::simple(policy.key()), Some(policy));
         }
-        assert_eq!(DriftPolicy::from_key("probation"), None);
+        assert_eq!(DriftPolicy::simple("probation"), None);
+        assert_eq!(Consequence::ALL.map(Consequence::key), ["demote", "expel"]);
     }
 
     #[test]

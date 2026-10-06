@@ -442,11 +442,13 @@ Drift is checked whenever the member's alignment, the faction's alignment, or a 
 
 How it applies (P-47):
 
-- **Member alignment changes are checked now; faction alignment changes and probation arrive in M11.** After a command that moved a member's alignment, each of their factions reviews them in id order, after the command's own events and before watched band changes (§8.3). Tolerances don't change at runtime.
+- **When.** After a command that moved a member's alignment, or their faction's (`SetFactionAlignment`, `ShiftFactionAlignment`, which emit `FactionAlignmentChanged`), each affected membership is reviewed in id order. That happens after the command's own events, then probation expiries, then watched band changes (§8.3). Tolerances don't change at runtime.
 - **A faction without its own policy uses `membership.default_drift`,** which is built in as `flag`. `flag` remembers who is out, so it reports crossing out and back once each.
 - **`demote` steps down** to the highest rung at or below theirs whose tolerance allows them, one `RankChanged` per rung. If none does, they're expelled.
 - **`expel` costs `expel_standing_change`** (−20 by default), which spills like any standing change (§7.1).
 - **Exactly at the tolerance is within it,** as for joining.
+- **Probation** starts on drifting out (`ProbationStarted { until }`), clears if a later review finds them back (`ProbationCleared`), and runs out when time reaches `until`. Then `ProbationExpired`, followed by `then`'s events, as `demote` or `expel` would give them. Leaving ends it.
+- **A faction's alignment is state.** It starts as content gives it, and distance, disposition and joining always use the current value.
 
 Worked example: Ash, an initiate 40.00 from the Ashen Circle, does a good deed and ends 44.00 away. The Circle expels: `LeftFaction(expelled)`, the Circle −20.00, and +4.80 with the Temple, which regards the Circle at −90.
 
@@ -513,7 +515,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | --- | --- |
 | Time and actions | `TimeAdvanced`, `ActionPerformed`, `AlignmentChanged` |
 | Standing and membership | `StandingChanged`, `JoinedFaction`, `LeftFaction { Voluntary \| Defected \| Expelled \| ConflictResolved }`, `RankChanged` |
-| Drift | `ProbationStarted`, `ProbationCleared`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
+| Drift | `ProbationStarted`, `ProbationCleared`, `ProbationExpired`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
 | Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict` |
 | Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierExpired` |
 
@@ -644,7 +646,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Spillover multipliers within −1…1 | error | M6 (done) |
 | Rule tables use known conditions, with the right kind of value, and only their table's outcomes; a refusal has a reason and no `standing_change`; rung numbers ≥ 1; rank ids only in a faction's own tables and only its ranks; standing thresholds and `standing_change` within ±100; every table ends with a rule that always decides | error | M7 (done) |
 | Drift policies are known (`ignore`, `flag`, `demote`, `expel`); `expel_standing_change` within ±100 | error | M8 (done) |
-| Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 |
+| Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 (done) |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` ≥ 0 | error | M9 |
 | `knowledge.model` is a known model | error | K1 |
 | A faction no starting character could join; a rank no one can reach | warning | T1 |

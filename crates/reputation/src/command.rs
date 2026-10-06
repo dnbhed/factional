@@ -3,8 +3,9 @@ use std::fmt;
 use factional_core::{Envelope, Fixed, Tick, article};
 
 use crate::{
-    AXIS_LIMIT, ActionId, Alignment, CharacterId, Effects, FactionId, JoinAssessment, LeaveReason,
-    Observer, OutcomeId, Party, PromotionAssessment, RankId, Spill, Witnesses,
+    AXIS_LIMIT, ActionId, Alignment, AlignmentDelta, CharacterId, Effects, FactionId,
+    JoinAssessment, LeaveReason, Observer, OutcomeId, Party, PromotionAssessment, RankId, Spill,
+    Witnesses,
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
@@ -69,6 +70,17 @@ pub enum Command {
         source: String,
         character: CharacterId,
         effects: Effects,
+    },
+    /// Sets `faction`'s alignment, then reviews its members (DESIGN.md §9.1, §9.3).
+    SetFactionAlignment {
+        faction: FactionId,
+        alignment: Alignment,
+    },
+    /// Moves `faction`'s alignment by `by`, stopping at the ends of each axis, then reviews
+    /// its members.
+    ShiftFactionAlignment {
+        faction: FactionId,
+        by: AlignmentDelta,
     },
     /// Starts reporting when anyone's disposition toward `subject` changes band (DESIGN.md
     /// §8.3, P-23).
@@ -156,6 +168,30 @@ pub enum Change {
         faction: FactionId,
         distance: Fixed,
         tolerance: Fixed,
+    },
+    /// A member of a faction whose policy is `probation` drifted past their tolerance; it
+    /// runs out at `until` (DESIGN.md §9.3).
+    ProbationStarted {
+        character: CharacterId,
+        faction: FactionId,
+        until: Tick,
+    },
+    /// A member on probation is back within their tolerance in time.
+    ProbationCleared {
+        character: CharacterId,
+        faction: FactionId,
+    },
+    /// A probation ran out with the member still out; the consequence follows as its own
+    /// events.
+    ProbationExpired {
+        character: CharacterId,
+        faction: FactionId,
+    },
+    /// A faction's alignment changed at runtime.
+    FactionAlignmentChanged {
+        faction: FactionId,
+        from: Alignment,
+        to: Alignment,
     },
     /// `subject` is now watched; `bands` is every observer's band toward them at that moment,
     /// factions first, then characters, each in id order (DESIGN.md §8.3).

@@ -30,6 +30,11 @@
 #   { policy = "demote" }  down a rung at a time until their rank allows them; expelled if
 #                          they're still out on the lowest rung
 #   { policy = "expel" }   thrown out, costing expel_standing_change with the faction
+#   { policy = "probation", grace_ticks = 100, then = "expel" }
+#                          put on probation; if they're still out once grace_ticks have
+#                          passed, then applies ("demote" or "expel"). Back in time clears it.
+# A faction's alignment can also change during play (`faction-shift`, `faction-align`), and
+# its members are reviewed the same way.
 # expel_standing_change (optional): -100 to 100; -20 if left out. It spills to other
 # factions like any standing change.
 
@@ -40,6 +45,8 @@ alignment = { law = 70.0, good = 20.0 }
 weights = { law = 1.0, good = 0.25 }
 tolerance = 40.0
 member_tolerance = 50.0
+# The Watch gives a straying officer a hundred ticks to mend their ways.
+drift = { policy = "probation", grace_ticks = 100, then = "expel" }
 
 [[city_watch.ranks]]
 id = "recruit"

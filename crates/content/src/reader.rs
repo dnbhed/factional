@@ -168,6 +168,18 @@ impl<'t> Section<'t> {
         self.to_fixed(key, value, report)
     }
 
+    /// A required whole number of at least 0, such as a count of ticks.
+    pub(crate) fn whole(&mut self, key: &'static str, report: &mut Report) -> Option<u64> {
+        let whole = match self.required(key, report)? {
+            Value::Integer(whole) => u64::try_from(*whole).ok(),
+            _ => None,
+        };
+        if whole.is_none() {
+            report.error(&self.path_to(key), "expected a whole number, like 100");
+        }
+        whole
+    }
+
     /// A number that may be left out; `None` if it's absent or wrong (a wrong one is reported).
     pub(crate) fn optional_fixed(
         &mut self,

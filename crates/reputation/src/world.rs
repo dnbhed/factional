@@ -8,13 +8,13 @@ use crate::distance::gap;
 use crate::shift::{Target, shifts};
 use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, Axis, Bands, Change, Character,
-    CharacterId, Command, CommandError, Component, ComponentKind, Defection, Disposition,
-    DispositionWeights, DriftPolicy, Effects, Event, Faction, FactionId, Inertia, InertiaProfile,
-    JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric, Outcome, OutcomeId,
-    Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide,
-    Role, Rule, Shift, Spill, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner,
-    TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses,
-    measure,
+    CharacterId, Command, CommandError, Component, ComponentKind, Consequence, Defection,
+    Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction, FactionId, Inertia,
+    InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, LeaveReason, Membership, Metric,
+    Outcome, OutcomeId, Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Regard,
+    Relation, RelationSide, Role, Rule, Shift, Spill, StandingEffects, StandingKey, StandingOwner,
+    TableKind, TableOwner, TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict,
+    Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -1017,6 +1017,10 @@ struct State {
     watched: BTreeMap<CharacterId, BTreeMap<Observer, String>>,
     /// Members flagged as out of tolerance, until they're back or leave (DESIGN.md §9.3).
     out_of_tolerance: BTreeSet<(CharacterId, FactionId)>,
+    /// Members on probation, and when it runs out.
+    probation: BTreeMap<(CharacterId, FactionId), Tick>,
+    /// Every faction's alignment now; it starts as content gives it.
+    faction_alignments: BTreeMap<FactionId, Alignment>,
 }
 
 impl State {
@@ -1065,6 +1069,12 @@ impl State {
                 .collect(),
             watched: BTreeMap::new(),
             out_of_tolerance: BTreeSet::new(),
+            probation: BTreeMap::new(),
+            faction_alignments: content
+                .factions
+                .values()
+                .map(|faction| (faction.id.clone(), faction.alignment))
+                .collect(),
         }
     }
 }
@@ -1107,23 +1117,46 @@ impl World {
         let decided = decided?;
         // The command's own changes first; then, from the state they leave, any band changes
         // watched subjects are owed (DESIGN.md §8.3).
-        let moved: BTreeSet<CharacterId> = decided
-            .iter()
-            .filter_map(|change| match change {
-                Change::AlignmentChanged { character, .. } => Some(character.clone()),
-                _ => None,
-            })
-            .collect();
+        let mut moved_characters = BTreeSet::new();
+        let mut moved_factions = BTreeSet::new();
+        for change in &decided {
+            match change {
+                Change::AlignmentChanged { character, .. } => {
+                    moved_characters.insert(character.clone());
+                }
+                Change::FactionAlignmentChanged { faction, .. } => {
+                    moved_factions.insert(faction.clone());
+                }
+                _ => {}
+            }
+        }
         for change in decided {
             emitted.push(self.record(change));
         }
-        // Members whose alignment moved are reviewed against each of their factions, one at
-        // a time from the state the last review left (DESIGN.md §9.3).
-        for character in &moved {
-            for faction in self.factions_of(character) {
-                for change in self.drift_review(character, &faction) {
+        // Every membership whose member or faction moved is reviewed, in id order, each from
+        // the state the last review left (DESIGN.md §9.3).
+        let mut reviews: BTreeSet<(CharacterId, FactionId)> = BTreeSet::new();
+        for character in moved_characters {
+            for faction in self.factions_of(&character) {
+                reviews.insert((character.clone(), faction));
+            }
+        }
+        for faction in moved_factions {
+            for member in self.members(&faction).expect("the faction exists") {
+                reviews.insert((member.clone(), faction.clone()));
+            }
+        }
+        for (character, faction) in reviews {
+            if self.is_member(&character, &faction) {
+                for change in self.drift_review(&character, &faction) {
                     emitted.push(self.record(change));
                 }
+            }
+        }
+        // Then any probation that has run out (time only moves on `AdvanceTime`).
+        for (character, faction) in self.expired_probations() {
+            for change in self.probation_expiry(&character, &faction) {
+                emitted.push(self.record(change));
             }
         }
         for change in self.band_changes() {
@@ -1387,6 +1420,27 @@ impl World {
                 changes.extend(self.effect_changes(character, &found.effects));
                 Ok(changes)
             }
+            Command::SetFactionAlignment { faction, alignment } => {
+                let from = self
+                    .faction_alignment(faction)
+                    .ok_or_else(|| self.unknown_faction(faction))?;
+                Ok(faction_moved(faction, from, *alignment))
+            }
+            Command::ShiftFactionAlignment { faction, by } => {
+                let from = self
+                    .faction_alignment(faction)
+                    .ok_or_else(|| self.unknown_faction(faction))?;
+                // A sum too big to hold means a shift that reaches the end by itself.
+                let axis = |position: Fixed, shift: Fixed| {
+                    position
+                        .checked_add(shift)
+                        .unwrap_or(shift)
+                        .clamp(-AXIS_LIMIT, AXIS_LIMIT)
+                };
+                let to = Alignment::new(axis(from.law(), by.law), axis(from.good(), by.good))
+                    .expect("clamped to the axes");
+                Ok(faction_moved(faction, from, to))
+            }
             Command::Watch { subject } => {
                 self.existing(subject, Role::Subject)?;
                 if self.state.watched.contains_key(subject) {
@@ -1610,30 +1664,93 @@ impl World {
                     });
                 }
             }
-            DriftPolicy::Demote => {
-                // Down a rung at a time to the highest whose tolerance allows them, or out if
-                // none does.
-                let allowed = (0..=rung)
-                    .rev()
-                    .find(|&lower| distance <= found.member_tolerance(lower));
-                for step in (allowed.unwrap_or(0)..rung).rev() {
-                    changes.push(Change::RankChanged {
-                        character: character.clone(),
-                        faction: faction.clone(),
-                        from: found.ranks[step + 1].id.clone(),
-                        to: found.ranks[step].id.clone(),
-                    });
-                }
-                if allowed.is_none() {
-                    changes.extend(self.expulsion(character, found));
-                }
-            }
+            DriftPolicy::Demote => changes.extend(self.demotion(character, found, rung, distance)),
             DriftPolicy::Expel => {
                 if distance > tolerance {
                     changes.extend(self.expulsion(character, found));
                 }
             }
+            DriftPolicy::Probation { grace_ticks, .. } => {
+                let key = (character.clone(), faction.clone());
+                let on_probation = self.state.probation.contains_key(&key);
+                if distance > tolerance && !on_probation {
+                    changes.push(Change::ProbationStarted {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                        until: Tick(self.state.now.0.saturating_add(grace_ticks)),
+                    });
+                } else if distance <= tolerance && on_probation {
+                    changes.push(Change::ProbationCleared {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                    });
+                }
+            }
         }
+        changes
+    }
+
+    /// `character` down a rung at a time from `rung` to the highest whose tolerance allows
+    /// them at `distance`, or out if none does.
+    fn demotion(
+        &self,
+        character: &CharacterId,
+        found: &Faction,
+        rung: usize,
+        distance: Fixed,
+    ) -> Vec<Change> {
+        let allowed = (0..=rung)
+            .rev()
+            .find(|&lower| distance <= found.member_tolerance(lower));
+        let mut changes: Vec<Change> = (allowed.unwrap_or(0)..rung)
+            .rev()
+            .map(|step| Change::RankChanged {
+                character: character.clone(),
+                faction: found.id.clone(),
+                from: found.ranks[step + 1].id.clone(),
+                to: found.ranks[step].id.clone(),
+            })
+            .collect();
+        if allowed.is_none() {
+            changes.extend(self.expulsion(character, found));
+        }
+        changes
+    }
+
+    /// Every probation that has run out by now, in id order.
+    fn expired_probations(&self) -> Vec<(CharacterId, FactionId)> {
+        self.state
+            .probation
+            .iter()
+            .filter(|(_, until)| **until <= self.state.now)
+            .map(|(key, _)| key.clone())
+            .collect()
+    }
+
+    /// What happens when `character`'s probation in `faction` runs out: its `then`. Reviews
+    /// clear a probation as soon as they're back, so they're still out.
+    fn probation_expiry(&self, character: &CharacterId, faction: &FactionId) -> Vec<Change> {
+        let found = &self.content.factions[faction];
+        let DriftPolicy::Probation { then, .. } =
+            found.drift.unwrap_or(self.content.balance.default_drift)
+        else {
+            unreachable!("only a faction on probation puts members on probation")
+        };
+        let rung = found
+            .rank_position(&self.state.memberships[character][faction].rank)
+            .expect("a member's rank is on their faction's ladder");
+        let distance = self
+            .distance(&Observer::Faction(faction.clone()), character)
+            .expect("both exist")
+            .value;
+        let mut changes = vec![Change::ProbationExpired {
+            character: character.clone(),
+            faction: faction.clone(),
+        }];
+        changes.extend(match then {
+            Consequence::Expel => self.expulsion(character, found),
+            Consequence::Demote => self.demotion(character, found, rung, distance),
+        });
         changes
     }
 
@@ -1845,6 +1962,35 @@ impl World {
                 self.state
                     .out_of_tolerance
                     .remove(&(character.clone(), faction.clone()));
+                self.state
+                    .probation
+                    .remove(&(character.clone(), faction.clone()));
+            }
+            Change::ProbationStarted {
+                ref character,
+                ref faction,
+                until,
+            } => {
+                self.state
+                    .probation
+                    .insert((character.clone(), faction.clone()), until);
+            }
+            Change::ProbationCleared {
+                ref character,
+                ref faction,
+            }
+            | Change::ProbationExpired {
+                ref character,
+                ref faction,
+            } => {
+                self.state
+                    .probation
+                    .remove(&(character.clone(), faction.clone()));
+            }
+            Change::FactionAlignmentChanged {
+                ref faction, to, ..
+            } => {
+                self.state.faction_alignments.insert(faction.clone(), to);
             }
             Change::MemberOutOfTolerance {
                 ref character,
@@ -2087,6 +2233,12 @@ impl World {
             profile: profile.clone(),
             axes: shifts(from, delta, scale, None, inertia),
         })
+    }
+
+    /// `faction`'s alignment now, which commands can change (DESIGN.md §9.1). `None` for an
+    /// unknown faction.
+    pub fn faction_alignment(&self, faction: &FactionId) -> Option<Alignment> {
+        self.state.faction_alignments.get(faction).copied()
     }
 
     /// What `faction` does about members who drift (DESIGN.md §9.3): its own policy, or
@@ -2377,10 +2529,7 @@ impl World {
     /// observer's weights and the world's metric (DESIGN.md §6). `None` if either is unknown.
     pub fn distance(&self, observer: &Observer, subject: &CharacterId) -> Option<Distance> {
         let (from, own_weights) = match observer {
-            Observer::Faction(id) => {
-                let faction = self.faction(id)?;
-                (faction.alignment, faction.weights)
-            }
+            Observer::Faction(id) => (self.faction_alignment(id)?, self.faction(id)?.weights),
             Observer::Character(id) => (self.alignment(id)?, self.character(id)?.weights),
         };
         let to = self.alignment(subject)?;
@@ -2398,6 +2547,18 @@ impl World {
             weights_from,
         })
     }
+}
+
+/// The change a faction alignment command makes: none if it doesn't move.
+fn faction_moved(faction: &FactionId, from: Alignment, to: Alignment) -> Vec<Change> {
+    if to == from {
+        return Vec::new();
+    }
+    vec![Change::FactionAlignmentChanged {
+        faction: faction.clone(),
+        from,
+        to,
+    }]
 }
 
 fn within_range(value: Fixed) -> bool {
@@ -2458,8 +2619,9 @@ mod tests {
     use super::*;
     use crate::{
         AXIS_LIMIT, ActionStanding, AlignmentDelta, AxisShift, Band, Condition, ConditionCheck,
-        Effects, JoinBlock, LeaveReason, Observed, Part, Rank, RankCheck, RankRef, RelationEnds,
-        Role, Spill, StandingEffects, StartingMembership, Tolerances, Verdict, Witnesses,
+        Consequence, Effects, JoinBlock, LeaveReason, Observed, Part, Rank, RankCheck, RankRef,
+        RelationEnds, Role, Spill, StandingEffects, StartingMembership, Tolerances, Verdict,
+        Witnesses,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -6891,6 +7053,270 @@ mod tests {
         );
     }
 
+    // Probation and runtime faction alignment (DESIGN.md §9.3)
+
+    fn probation(grace_ticks: u64, then: Consequence) -> DriftPolicy {
+        DriftPolicy::Probation { grace_ticks, then }
+    }
+
+    /// Riverhold's people with Hale as the Watch's captain, and the Watch on probation:
+    /// `grace_ticks` and then `then`.
+    fn on_watch(then: Consequence) -> World {
+        let mut content = outcomes_content();
+        let hale = content
+            .characters
+            .get_mut(&id("captain_hale"))
+            .expect("Hale");
+        hale.memberships[0].rank = Some(rank_id("captain"));
+        content
+            .factions
+            .get_mut(&faction_id("city_watch"))
+            .expect("the Watch")
+            .drift = Some(probation(100, then));
+        World::new(content).expect("valid content")
+    }
+
+    fn shift_faction(faction: &str, law: i64, good: i64) -> Command {
+        Command::ShiftFactionAlignment {
+            faction: faction_id(faction),
+            by: AlignmentDelta {
+                law: h(law),
+                good: h(good),
+            },
+        }
+    }
+
+    fn faction_moved_to(faction: &str, from: (i64, i64), to: (i64, i64)) -> Change {
+        Change::FactionAlignmentChanged {
+            faction: faction_id(faction),
+            from: aligned(from.0, from.1),
+            to: aligned(to.0, to.1),
+        }
+    }
+
+    fn probation_started(character: &str, faction: &str, until: u64) -> Change {
+        Change::ProbationStarted {
+            character: id(character),
+            faction: faction_id(faction),
+            until: Tick(until),
+        }
+    }
+
+    #[test]
+    fn a_member_left_behind_by_their_faction_goes_on_probation() {
+        let mut world = on_watch(Consequence::Expel);
+        // The Watch to 40 / 20: Hale, at 75 / 30, is 35.09 away (gaps 35 and 10 × 0.25),
+        // past a captain's 25.00.
+        let events = world
+            .execute(shift_faction("city_watch", -30_00, 0))
+            .expect("accepted");
+        assert_eq!(
+            payloads(&events),
+            [
+                faction_moved_to("city_watch", (70_00, 20_00), (40_00, 20_00)),
+                probation_started("captain_hale", "city_watch", 100),
+            ]
+        );
+        assert_eq!(
+            world.faction_alignment(&faction_id("city_watch")),
+            Some(aligned(40_00, 20_00))
+        );
+        // Back to 60 / 20 in time: 15.21 away (gaps 15 and 2.5).
+        let events = world
+            .execute(shift_faction("city_watch", 20_00, 0))
+            .expect("accepted");
+        assert_eq!(
+            payloads(&events),
+            [
+                faction_moved_to("city_watch", (40_00, 20_00), (60_00, 20_00)),
+                Change::ProbationCleared {
+                    character: id("captain_hale"),
+                    faction: faction_id("city_watch"),
+                },
+            ]
+        );
+        assert_eq!(
+            payloads(&world.execute(advance(200)).expect("accepted")).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn probation_starts_once_past_the_tolerance_and_clears_only_what_started() {
+        let mut world = on_watch(Consequence::Expel);
+        let set = |law: i64, good: i64| Command::SetFactionAlignment {
+            faction: faction_id("city_watch"),
+            alignment: aligned(law, good),
+        };
+        // Nothing to clear while he's within it.
+        assert_eq!(
+            payloads(
+                &world
+                    .execute(shift_faction("city_watch", 1_00, 0))
+                    .expect("accepted")
+            )
+            .len(),
+            1
+        );
+        // The Watch at 50 / 30 puts Hale exactly 25.00 away: still within a captain's 25.00.
+        assert_eq!(
+            payloads(&world.execute(set(50_00, 30_00)).expect("accepted")).len(),
+            1
+        );
+        // At 49.99 / 30 he's 25.01 away.
+        let events = world.execute(set(49_99, 30_00)).expect("accepted");
+        assert_eq!(
+            payloads(&events)[1..],
+            [probation_started("captain_hale", "city_watch", 100)]
+        );
+        // Further away, already on probation: nothing new.
+        assert_eq!(
+            payloads(
+                &world
+                    .execute(shift_faction("city_watch", -10_00, 0))
+                    .expect("accepted")
+            )
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_probation_that_runs_out_expels_at_a_cost_that_spills() {
+        let mut world = on_watch(Consequence::Expel);
+        world
+            .execute(shift_faction("city_watch", -30_00, 0))
+            .expect("accepted");
+        let early = world.execute(advance(99)).expect("accepted");
+        assert_eq!(early.len(), 1, "only the time");
+        let events = world.execute(advance(1)).expect("accepted");
+        assert_eq!(
+            payloads(&events[1..]),
+            [
+                Change::ProbationExpired {
+                    character: id("captain_hale"),
+                    faction: faction_id("city_watch"),
+                },
+                expelled("captain_hale", "city_watch"),
+                standing_moved("captain_hale", "city_watch", 75_00, 55_00),
+                // The Guild regards the Watch at −80 (−0.18), the Temple at +60 (0.10).
+                spilled(
+                    "captain_hale",
+                    "lantern_guild",
+                    0,
+                    3_60,
+                    vec![spill("city_watch", -20_00, -80_00, -18, 3_60)]
+                ),
+                spilled(
+                    "captain_hale",
+                    "temple",
+                    0,
+                    -2_00,
+                    vec![spill("city_watch", -20_00, 60_00, 10, -2_00)]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_probation_that_demotes_steps_down_to_a_rank_that_allows_them() {
+        let mut world = on_watch(Consequence::Demote);
+        world
+            .execute(shift_faction("city_watch", -30_00, 0))
+            .expect("accepted");
+        let events = world.execute(advance(100)).expect("accepted");
+        // 35.09 is past a captain's 25.00 but within the Watch's 50.00 for a sergeant.
+        assert_eq!(
+            payloads(&events[1..]),
+            [
+                Change::ProbationExpired {
+                    character: id("captain_hale"),
+                    faction: faction_id("city_watch"),
+                },
+                rank_changed("captain_hale", "city_watch", "captain", "sergeant"),
+            ]
+        );
+    }
+
+    #[test]
+    fn leaving_ends_a_probation() {
+        let mut world = on_watch(Consequence::Expel);
+        world
+            .execute(shift_faction("city_watch", -30_00, 0))
+            .expect("accepted");
+        world
+            .execute(leave("captain_hale", "city_watch"))
+            .expect("accepted");
+        assert_eq!(
+            payloads(&world.execute(advance(100)).expect("accepted")).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_faction_moving_away_flags_a_member() {
+        let mut world = with_outcomes();
+        // The Guild to 10 / −10: Vex, at −55 / −20, is 65.19 away (gaps 65 and 10 × 0.5).
+        let events = world
+            .execute(shift_faction("lantern_guild", 70_00, 0))
+            .expect("accepted");
+        assert_eq!(
+            payloads(&events),
+            [
+                faction_moved_to("lantern_guild", (-60_00, -10_00), (10_00, -10_00)),
+                Change::MemberOutOfTolerance {
+                    character: id("vex"),
+                    faction: faction_id("lantern_guild"),
+                    distance: h(65_19),
+                    tolerance: h(60_00),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn setting_a_factions_alignment_moves_it_and_a_shift_stops_at_the_ends() {
+        let mut world = with_outcomes();
+        let set = |alignment| Command::SetFactionAlignment {
+            faction: faction_id("temple"),
+            alignment,
+        };
+        assert_eq!(
+            payloads(&world.execute(set(aligned(10_00, 90_00))).expect("accepted")),
+            [faction_moved_to("temple", (30_00, 80_00), (10_00, 90_00))]
+        );
+        assert_eq!(
+            world.execute(set(aligned(10_00, 90_00))),
+            Ok(vec![]),
+            "no move"
+        );
+        assert_eq!(
+            payloads(
+                &world
+                    .execute(shift_faction("temple", -150_00, 50_00))
+                    .expect("accepted")
+            ),
+            [faction_moved_to(
+                "temple",
+                (10_00, 90_00),
+                (-100_00, 100_00)
+            )]
+        );
+        assert_eq!(
+            world.execute(shift_faction("tempel", 1_00, 0)),
+            Err(CommandError::UnknownFaction {
+                faction: faction_id("tempel"),
+                suggestion: Some(faction_id("temple")),
+            })
+        );
+        // Distance measures against where the faction is now.
+        let distance = world
+            .distance(&Observer::Faction(faction_id("temple")), &id("player"))
+            .expect("both exist");
+        assert_eq!(distance.observer, aligned(-100_00, 100_00));
+        assert_eq!(world.faction_alignment(&faction_id("nowhere")), None);
+    }
+
     // Joining an enemy: defectors and deserters (DESIGN.md §9.2)
 
     fn accept(standing_change: i64) -> Verdict {
@@ -7539,26 +7965,41 @@ mod tests {
                 Command::Unwatch { subject: id(who) }
             }
         });
+        let faction_shift = (faction(), -60_00_i64..=60_00, -60_00_i64..=60_00)
+            .prop_map(|(faction, law, good)| shift_faction(faction, law, good));
         let command = prop_oneof![
             (0_u64..=1_000).prop_map(advance),
             action,
             membership,
             relate,
             effects,
-            watching
+            watching,
+            faction_shift
         ];
         proptest::collection::vec(command, 0..30)
     }
 
     /// Riverhold with the sample rule tables, and Nell, a reformed Guild member who can defect
     /// to the Watch.
+    /// The Watch puts drifters on probation for 50 ticks, then demotes them; the Guild
+    /// expels them.
     fn run(commands: &[Command]) -> World {
-        let mut world = defectors_world([
+        let mut content = defectors_content([
             character("Vex", -55_00, -20_00),
             character("Ava", 20_00, 10_00),
             character("Player", 0, 0),
             member_of(character("Nell", 35_00, 10_00), &["lantern_guild"]),
         ]);
+        let mut drift = |faction: &str, policy: DriftPolicy| {
+            content
+                .factions
+                .get_mut(&faction_id(faction))
+                .expect("a faction")
+                .drift = Some(policy);
+        };
+        drift("city_watch", probation(50, Consequence::Demote));
+        drift("lantern_guild", DriftPolicy::Expel);
+        let mut world = World::new(content).expect("valid content");
         for command in commands {
             let _ = world.execute(command.clone());
         }
@@ -7654,6 +8095,26 @@ mod tests {
         fn a_flagged_member_is_a_member_out_of_tolerance(commands in commands()) {
             let world = run(&commands);
             for (character, faction) in &world.state.out_of_tolerance {
+                let membership = &world.state.memberships[character][faction];
+                let found = &world.content.factions[faction];
+                let rung = found.rank_position(&membership.rank).expect("on the ladder");
+                let distance = world
+                    .distance(&Observer::Faction(faction.clone()), character)
+                    .expect("both exist")
+                    .value;
+                prop_assert!(distance > found.member_tolerance(rung));
+            }
+        }
+
+        /// DESIGN.md §9.3: anyone on probation is a member past their tolerance, and their
+        /// probation hasn't run out yet.
+        #[test]
+        fn a_probation_is_for_a_member_out_of_tolerance_until_it_runs_out(
+            commands in commands()
+        ) {
+            let world = run(&commands);
+            for ((character, faction), until) in &world.state.probation {
+                prop_assert!(*until > world.now());
                 let membership = &world.state.memberships[character][faction];
                 let found = &world.content.factions[faction];
                 let rung = found.rank_position(&membership.rank).expect("on the ladder");

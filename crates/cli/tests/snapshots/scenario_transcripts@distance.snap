@@ -7,7 +7,7 @@ input_file: scenarios/distance.scenario
 loaded 6 characters from content/sample
 > factions
 ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00, drift expel — members: brother_ash (initiate)
-city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00, drift flag, by default — members: captain_hale (captain)
+city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00, drift probation for 100 ticks, then expel — members: captain_hale (captain)
 free_company — The Free Company — law -10.00, good 0.00 — True Neutral — tolerance 60.00, member tolerance 80.00, drift ignore — no members
 lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00, drift flag — members: vex (fence)
 temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00, drift demote — members: sister_mira (ordained)

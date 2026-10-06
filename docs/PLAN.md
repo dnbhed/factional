@@ -52,6 +52,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - D3 — watched subjects: `Watch` and `Unwatch` (the starting bands travel in `Watched`, so replay runs no rules); after every accepted command, `DispositionBandChanged` for each observer whose view of a watched subject left its band, with `disposition.hysteresis`; `Bands::band_after`; a property test that with no hysteresis the remembered band is always the current one; `watch`, `unwatch`, `watching`; done 2026-10-06 (#21)
 - M6 — standing spillover: `standing.spillover` (a curve within −1…1, on by default); every standing change with a faction spills one hop to every other faction by how it regards the first, from the change as applied, rounded once, adding up with direct changes; `StandingChanged` carries what spilled and from where, and the CLI says so; done 2026-10-06 (#22)
 - M8 — drift policies: a faction's `drift` (`ignore`, `flag`, `demote`, `expel`), `membership.default_drift` (built in, `flag`) and `expel_standing_change` (−20.00, spilling like any standing change); members whose alignment a command moved are reviewed against each faction, before band changes; `MemberOutOfTolerance`, `MemberBackInTolerance`, `LeftFaction(expelled)`; demotion steps down to the highest rung that allows them; drift in faction listings; split from M11; done 2026-10-06 (#23)
+- M11 — probation and runtime faction alignment: the `probation` policy (`grace_ticks`, then `demote` or `expel`) with `ProbationStarted`, `ProbationCleared` and `ProbationExpired`, checked when time advances; `SetFactionAlignment` and `ShiftFactionAlignment` with `FactionAlignmentChanged`, reviewing every member; faction alignment is now state, used by distance, disposition and joining; `faction-align`, `faction-shift`; property tests for probation; done 2026-10-06 (#24)
 
 ---
 
@@ -61,57 +62,36 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 3 — Factions, standing and rank
 
-### M11 · Probation and runtime faction alignment — P1 · Next
+### M9 · When two of your factions go to war — P1 · Next
 
-**Why:** the rest of D-9 and DESIGN.md §9.3. A faction can give a drifting member time to come back before acting, and the host can move a faction's ideals during play, with its members reviewed against them. Split from M8.
-
-**Scope**
-
-- **Probation.**
-  - The policy is `drift = { policy = "probation", grace_ticks = N, then = "expel" | "demote" }`, with N > 0.
-  - When a member drifts out, `ProbationStarted { character, faction, until }`.
-  - If a later review finds them back within tolerance before it ends, `ProbationCleared`.
-  - When time advances to or past `until` with them still out, `then` applies, as M8's `expel` or `demote` would.
-  - A member who leaves while on probation is no longer on it.
-- **Faction alignment at runtime.**
-  - `SetFactionAlignment { faction, alignment }` and `ShiftFactionAlignment { faction, by }` emit `FactionAlignmentChanged { faction, from, to }`, then review every member of that faction, as M8 reviews a member who moved.
-  - Distance, disposition and joining all use the faction's alignment now.
-- **CLI:** `faction-align <faction> <law> <good>`, and `faction-shift <faction> [--law <n>] [--good <n>]`.
-- **Sample world:** the Watch gets the example world's probation (100 ticks, then expel).
-
-**Acceptance** (Riverhold sample, with the Watch on probation)
-
-1. **Probation starts.** Captain Hale is at 75 / 30. `faction-shift city_watch --law -30` moves the Watch to 40 / 20, putting him 35.09 away (gaps 35 and 10 × 0.25): past the captain's 25.00. So `FactionAlignmentChanged`, then `ProbationStarted` until tick 100.
-2. **Cleared.** `faction-shift city_watch --law 20`, to 60 / 20, puts him 15.21 away (gaps 15 and 2.5): `ProbationCleared`.
-3. **Expired.** If nothing changes instead, `advance 100` expels him. That's `LeftFaction(expelled)`, then the Watch 75.00 → 55.00, spilling +3.60 to the Guild (−80: −0.18) and −2.00 to the Temple (+60: 0.10).
-4. **Not yet.** `advance 99` changes nothing; the next tick expels.
-5. **A faction shift flags too.** `faction-shift lantern_guild --law 70`, to 10 / −10, puts Vex 65.19 away (gaps 65 and 10 × 0.5): `MemberOutOfTolerance` (M8's `flag`).
-6. **Refusals:** an unknown faction, with a "did you mean"; an axis outside ±100 for `SetFactionAlignment`. A shift stops at ±100, as alignment does.
-7. **Load errors at their keys:**
-   - `probation` without `grace_ticks` or `then`;
-   - `grace_ticks = 0`;
-   - `then` other than `expel` or `demote`.
-
-**Validates** (DESIGN.md §12.2): probation has `grace_ticks` > 0 and a `then` of `expel` or `demote`.
-
-### M9 · When two of your factions go to war — P1 · Outline
-
-**Covers:** DESIGN.md §9.4, D-16.
+**Why:** D-16. Factions fall out during play, and a character in both has to choose, or have the choice made for them (DESIGN.md §9.4). This replaces M2's interim refusal (P-38).
 
 **Scope**
 
-- A relation change that puts two of a character's factions in conflict emits `MembershipConflict` and marks both memberships as conflicted. This replaces M2's interim refusal (P-38).
-- `ResolveConflict { character, keep }` ends the other membership with `LeftFaction { reason: ConflictResolved }`.
-- `membership.conflict` sets the optional automatic rule, applied straight away or after `auto_after_ticks`. The rule keeps the higher rank, then the higher standing, then the longer service, then the lower faction id.
-- Settle the standing consequences of leaving, and record the choice in DECISIONS.md.
-- CLI: `resolve <character> <faction-to-keep>`.
+- **The conflict.** A relation change that puts two of a character's factions in conflict is accepted. After its `RelationChanged` events, it emits `MembershipConflict { character, factions }` for each character in both, in id order, and the engine remembers the pair until it's resolved.
+- **Resolving by hand.** `ResolveConflict { character, keep }` ends the other membership with `LeftFaction { reason: ConflictResolved }`. Refused when there's no conflict, or when `keep` isn't one of its two factions.
+- **Settle here, and record in DECISIONS:**
+  - what leaving costs: the left faction's `leave_standing_change`, spilling like any standing change, or nothing;
+  - what happens if the relation recovers before anyone resolves it.
+- **Automatic resolution.** `membership.conflict = { resolve = "ask" | "auto", auto_after_ticks = N }`; `ask` is the default.
+  - `auto` with N = 0 resolves straight away. With N > 0, it resolves once N ticks have passed, unless a `ResolveConflict` comes first.
+  - The rule keeps the higher rung, then the higher standing with the faction, then the longer service (earlier `since`), then the lower faction id.
+- **Invariant 6** becomes: no one is in two factions in conflict, except while a `MembershipConflict` for that pair is unresolved. Its property test changes to match.
+- **CLI:** `resolve <character> <faction-to-keep>`, and open conflicts in `show character`.
 
-**Anchors:** to be written when M9 comes up next. They must cover:
+**Acceptance** (Riverhold)
 
-- a war declared between two of a character's factions;
-- resolving it by hand;
-- each tie-break of the automatic rule;
-- `auto_after_ticks` running out, versus a resolution that arrives first.
+1. **War between your own factions.** Vex, a fence of the Guild, joins the Free Company: 12.31 away (gaps 45 × 0.25 and 20 × 0.25), within its 60. `relate lantern_guild free_company -60` is accepted: two `RelationChanged`, then `MembershipConflict { vex, [free_company, lantern_guild] }`. Both memberships stand.
+2. **Resolved by hand.** `resolve vex lantern_guild` gives `LeftFaction { vex, free_company, ConflictResolved }`, then the cost settled above. `resolve vex lantern_guild` again is refused: no open conflict.
+3. **Automatic, each tie-break** (`resolve = "auto"`, `auto_after_ticks = 0`):
+   - **rank:** Vex, a fence (rung 2) of the Guild and a sellsword (rung 1) of the Company, keeps the Guild;
+   - **standing:** equal rungs, standing 30 with one faction and 0 with the other, keeps the 30;
+   - **service:** equal rungs and standing, one joined at tick 0 and the other at tick 5, keeps the tick-0 faction;
+   - **id:** all equal, keeps `free_company` over `lantern_guild`.
+4. **Later, or sooner by hand.** With `auto_after_ticks = 10`, `advance 9` changes nothing and `advance 1` resolves it. A `resolve` before then settles it, and nothing happens at tick 10.
+5. **Load errors at their keys:**
+   - `resolve` other than `ask` or `auto`, with a "did you mean";
+   - `auto_after_ticks` that isn't a whole number ≥ 0.
 
 **Validates** (DESIGN.md §12.2): `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is ≥ 0.
 

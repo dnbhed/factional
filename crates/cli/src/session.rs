@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use factional_core::{Fixed, ParseFixedError, Ratio, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
-    ComponentKind, Condition, ConditionCheck, Distance, Event, Faction, FactionId, LeaveReason,
-    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Shift, StandingEffects,
+    ComponentKind, Condition, ConditionCheck, Distance, DriftPolicy, Event, Faction, FactionId,
+    LeaveReason, Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Shift, StandingEffects,
     TableDecision, TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
 };
 
@@ -79,6 +79,14 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "distance <observer> <subject> [--explain]",
         "how far <subject> is from <observer>, a faction or character, as the observer sees it",
+    ),
+    (
+        "faction-align <faction> <law> <good>",
+        "set a faction's alignment, then review its members",
+    ),
+    (
+        "faction-shift <faction> [--law <n>] [--good <n>]",
+        "move a faction's alignment, stopping at -100 and 100, then review its members",
     ),
     (
         "watch <character>",
@@ -219,6 +227,8 @@ impl Session {
             "outcomes" => Ok(self.outcomes()),
             "outcome" => Ok(self.outcome(rest)),
             "relate" => Ok(self.relate(rest)),
+            "faction-align" => Ok(self.faction_alignment(rest, false)),
+            "faction-shift" => Ok(self.faction_alignment(rest, true)),
             "join" => Ok(self.membership(rest, true)),
             "leave" => Ok(self.membership(rest, false)),
             "actions" => Ok(self.actions()),
@@ -955,6 +965,22 @@ impl Session {
         }
     }
 
+    /// `faction-align <faction> <law> <good>` or `faction-shift <faction> [--law <n>]
+    /// [--good <n>]`: the engine decides, and the events or its refusal are shown.
+    fn faction_alignment(&mut self, args: &str, shifting: bool) -> Outcome {
+        let command = match parse_faction_alignment(args, shifting) {
+            Ok(command) => command,
+            Err(message) => return Outcome::Error(message),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        match world.execute(command) {
+            Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
     /// `watch <character>` or `unwatch <character>`: the engine decides, and the events or
     /// its refusal are shown.
     fn watch(&mut self, args: &str, watching: bool) -> Outcome {
@@ -1303,6 +1329,22 @@ fn describe_event(event: &Event) -> String {
             format!("now watching {subject} ({} observers)", bands.len())
         }
         Change::Unwatched { subject } => format!("no longer watching {subject}"),
+        Change::ProbationStarted {
+            character,
+            faction,
+            until,
+        } => format!("{character} is on probation with {faction} until tick {until}"),
+        Change::ProbationCleared { character, faction } => {
+            format!("{character}'s probation with {faction} is cleared")
+        }
+        Change::ProbationExpired { character, faction } => {
+            format!("{character}'s probation with {faction} ran out")
+        }
+        Change::FactionAlignmentChanged { faction, from, to } => format!(
+            "{faction}'s alignment moved from {} to {}",
+            axes(*from),
+            axes(*to)
+        ),
         Change::MemberOutOfTolerance {
             character,
             faction,
@@ -1352,6 +1394,17 @@ fn describe_command(command: &Command) -> String {
             source, character, ..
         } => format!("effects from {source} on {character}"),
         Command::Watch { subject } => format!("watch {subject}"),
+        Command::SetFactionAlignment { faction, alignment } => format!(
+            "faction-align {faction} {} {}",
+            alignment.law(),
+            alignment.good()
+        ),
+        Command::ShiftFactionAlignment { faction, by } => {
+            format!(
+                "faction-shift {faction} --law {} --good {}",
+                by.law, by.good
+            )
+        }
         Command::Unwatch { subject } => format!("unwatch {subject}"),
         Command::SetRelation {
             from,
@@ -1460,6 +1513,58 @@ fn one_way(mutual: bool) -> &'static str {
     if mutual { "" } else { " --one-way" }
 }
 
+/// `faction-align`'s or `faction-shift`'s arguments as a command.
+fn parse_faction_alignment(args: &str, shifting: bool) -> Result<Command, String> {
+    let number = |text: &str| -> Result<Fixed, String> {
+        text.parse()
+            .map_err(|error: ParseFixedError| error.to_string())
+    };
+    let words: Vec<&str> = args.split_whitespace().collect();
+    if !shifting {
+        let [faction, law, good] = words[..] else {
+            return Err(
+                "faction-align needs the form: faction-align <faction> <law> <good>".to_owned(),
+            );
+        };
+        let faction = FactionId::new(faction).map_err(|invalid| invalid.to_string())?;
+        let alignment = Alignment::new(number(law)?, number(good)?).map_err(|problems| {
+            let problem = &problems[0];
+            format!("{}: {problem}", problem.axis.key())
+        })?;
+        return Ok(Command::SetFactionAlignment { faction, alignment });
+    }
+    const USAGE: &str =
+        "faction-shift needs the form: faction-shift <faction> [--law <n>] [--good <n>]";
+    let [faction, options @ ..] = &words[..] else {
+        return Err(USAGE.to_owned());
+    };
+    let (mut law, mut good) = (None, None);
+    let mut options = options.iter();
+    while let Some(option) = options.next() {
+        let slot = match *option {
+            "--law" => &mut law,
+            "--good" => &mut good,
+            _ => return Err(USAGE.to_owned()),
+        };
+        let Some(value) = options.next().filter(|value| !is_flag(value)) else {
+            return Err(USAGE.to_owned());
+        };
+        if slot.replace(number(value)?).is_some() {
+            return Err(USAGE.to_owned());
+        }
+    }
+    if law.is_none() && good.is_none() {
+        return Err(USAGE.to_owned());
+    }
+    Ok(Command::ShiftFactionAlignment {
+        faction: FactionId::new(faction).map_err(|invalid| invalid.to_string())?,
+        by: AlignmentDelta {
+            law: law.unwrap_or_default(),
+            good: good.unwrap_or_default(),
+        },
+    })
+}
+
 /// `relate`'s arguments as a command.
 fn parse_relate(args: &str) -> Result<Command, String> {
     const USAGE: &str = "relate needs the form: relate <from> <to> <value> [--one-way], or relate <from> <to> --by <n> [--one-way]";
@@ -1505,6 +1610,16 @@ fn no_world() -> Outcome {
     Outcome::Error("no world is loaded yet: use load <dir> first".to_owned())
 }
 
+/// A drift policy as content writes it, with probation's settings in words.
+fn describe_drift(policy: DriftPolicy) -> String {
+    match policy {
+        DriftPolicy::Probation { grace_ticks, then } => {
+            format!("probation for {grace_ticks} ticks, then {}", then.key())
+        }
+        simple => simple.key().to_owned(),
+    }
+}
+
 /// One line about a faction: `temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good`.
 fn describe_faction(world: &World, faction: &Faction) -> String {
     let members: Vec<String> = world
@@ -1528,6 +1643,9 @@ fn describe_faction(world: &World, faction: &Faction) -> String {
     let policy = world
         .drift_policy(&faction.id)
         .expect("a faction from the world");
+    let alignment = world
+        .faction_alignment(&faction.id)
+        .expect("a faction from the world");
     let by_default = if faction.drift.is_none() {
         ", by default"
     } else {
@@ -1537,11 +1655,11 @@ fn describe_faction(world: &World, faction: &Faction) -> String {
         "{} — {} — {} — {} — tolerance {}, member tolerance {}, drift {}{by_default} — {members}",
         faction.id,
         faction.name,
-        axes(faction.alignment),
-        faction.alignment.label(world.balance().label_threshold),
+        axes(alignment),
+        alignment.label(world.balance().label_threshold),
         faction.tolerances.tolerance(),
         faction.tolerances.member(),
-        policy.key(),
+        describe_drift(policy),
     )
 }
 
@@ -2219,7 +2337,7 @@ mod tests {
             riverhold().execute("factions"),
             output(
                 "ashen_circle — The Ashen Circle — law 20.00, good -80.00 — Neutral Evil — tolerance 30.00, member tolerance 40.00, drift expel — members: brother_ash (initiate)\n\
-                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00, drift flag, by default — members: captain_hale (captain)\n\
+                 city_watch — The City Watch — law 70.00, good 20.00 — Lawful Neutral — tolerance 40.00, member tolerance 50.00, drift probation for 100 ticks, then expel — members: captain_hale (captain)\n\
                  free_company — The Free Company — law -10.00, good 0.00 — True Neutral — tolerance 60.00, member tolerance 80.00, drift ignore — no members\n\
                  lantern_guild — The Lantern Guild — law -60.00, good -10.00 — Chaotic Neutral — tolerance 45.00, member tolerance 60.00, drift flag — members: vex (fence)\n\
                  temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good — tolerance 35.00, member tolerance 45.00, drift demote — members: sister_mira (ordained)"
@@ -2719,6 +2837,77 @@ mod tests {
                 "law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00",
                 "good: -15.00 × 1.00 × 0.44 (by_target.good at brother_ash's -70.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -6.60, from 0.00 to -6.60",
             ]
+        );
+    }
+
+    #[test]
+    fn shifting_a_faction_reviews_its_members() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("faction-shift city_watch --law -30"),
+            output(
+                "#1 at tick 0: city_watch's alignment moved from law 70.00, good 20.00 to law 40.00, good 20.00\n\
+                 #2 at tick 0: captain_hale is on probation with city_watch until tick 100"
+            )
+        );
+        assert_eq!(
+            session.execute("faction-shift city_watch --good 5 --law 20"),
+            output(
+                "#3 at tick 0: city_watch's alignment moved from law 40.00, good 20.00 to law 60.00, good 25.00\n\
+                 #4 at tick 0: captain_hale's probation with city_watch is cleared"
+            )
+        );
+        assert_eq!(
+            session.execute("faction-align temple 10 90"),
+            output(
+                "#5 at tick 0: temple's alignment moved from law 30.00, good 80.00 to law 10.00, good 90.00"
+            )
+        );
+        assert_eq!(
+            session.execute("show faction temple"),
+            output(
+                "temple — Temple of the Dawn — law 10.00, good 90.00 — Neutral Good — tolerance 35.00, member tolerance 45.00, drift demote — members: sister_mira (ordained)"
+            )
+        );
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. faction-shift city_watch --law -30.00 --good 0.00 — accepted\n\
+                 2. faction-shift city_watch --law 20.00 --good 5.00 — accepted\n\
+                 3. faction-align temple 10.00 90.00 — accepted"
+            )
+        );
+    }
+
+    #[test]
+    fn faction_alignment_commands_report_mistakes() {
+        let mut session = riverhold();
+        let shift = command_error(
+            "faction-shift needs the form: faction-shift <faction> [--law <n>] [--good <n>]",
+        );
+        for line in [
+            "faction-shift city_watch",
+            "faction-shift city_watch --law",
+            "faction-shift city_watch --law 5 --law 5",
+            "faction-shift city_watch --charm 5",
+        ] {
+            assert_eq!(session.execute(line), shift, "{line}");
+        }
+        assert_eq!(
+            session.execute("faction-align temple 10"),
+            command_error("faction-align needs the form: faction-align <faction> <law> <good>")
+        );
+        assert_eq!(
+            session.execute("faction-align temple 120 0"),
+            command_error("law: 120.00 is outside -100.00..100.00")
+        );
+        assert_eq!(
+            session.execute("faction-shift tempel --law 5"),
+            command_error("unknown faction 'tempel' (did you mean 'temple'?)")
+        );
+        assert_eq!(
+            session.execute("faction-align temple ten 0"),
+            command_error("'ten' is not a number")
         );
     }
 

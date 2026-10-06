@@ -10,7 +10,7 @@ use std::{fmt, fs, io};
 use factional_core::{Curve, Fixed, suggest};
 use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Axis, Balance, Band, BandProblem,
-    Bands, Character, CharacterId, ComponentKind, Condition, Content, ContentProblem,
+    Bands, Character, CharacterId, ComponentKind, Condition, Consequence, Content, ContentProblem,
     ContentWarning, DispositionWeights, DriftPolicy, Effects, Faction, FactionId, Inertia,
     InertiaProfile, InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser, Rank,
     RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects,
@@ -883,23 +883,61 @@ fn read_drift(
     report: &mut Report,
 ) -> Option<DriftPolicy> {
     let mut drift = section.optional_table(key, "{ policy = \"flag\" }", report)?;
-    let policy = drift.text("policy", report).and_then(|text| {
-        let policy = DriftPolicy::from_key(&text);
-        if policy.is_none() {
-            let keys = DriftPolicy::ALL.map(DriftPolicy::key);
-            let message = match suggest(&text, keys) {
-                Some(close) => format!("unknown drift policy '{text}' (did you mean '{close}'?)"),
-                None => format!(
-                    "unknown drift policy '{text}': use {}, {}, {} or {}",
-                    keys[0], keys[1], keys[2], keys[3]
-                ),
-            };
-            report.error(&drift.path_to("policy"), message);
+    let text = drift.text("policy", report);
+    let policy = match text.as_deref() {
+        None => None,
+        Some("probation") => read_probation(&mut drift, report),
+        Some(text) => {
+            let policy = DriftPolicy::simple(text);
+            if policy.is_none() {
+                let keys = DriftPolicy::KEYS;
+                let message = match suggest(text, keys) {
+                    Some(close) => {
+                        format!("unknown drift policy '{text}' (did you mean '{close}'?)")
+                    }
+                    None => format!(
+                        "unknown drift policy '{text}': use {}, {}, {}, {} or {}",
+                        keys[0], keys[1], keys[2], keys[3], keys[4]
+                    ),
+                };
+                report.error(&drift.path_to("policy"), message);
+            }
+            policy
         }
-        policy
-    });
+    };
     drift.finish(report);
     policy
+}
+
+/// A probation's `grace_ticks`, at least 1, and `then`, `demote` or `expel`.
+fn read_probation(drift: &mut Section<'_>, report: &mut Report) -> Option<DriftPolicy> {
+    let grace_ticks = drift.whole("grace_ticks", report).and_then(|ticks| {
+        if ticks == 0 {
+            report.error(&drift.path_to("grace_ticks"), "0 must be at least 1");
+            None
+        } else {
+            Some(ticks)
+        }
+    });
+    let then = drift.text("then", report).and_then(|text| {
+        let found = Consequence::ALL.into_iter().find(|then| then.key() == text);
+        if found.is_none() {
+            let keys = Consequence::ALL.map(Consequence::key);
+            let message = match suggest(&text, keys) {
+                Some(close) => format!("unknown consequence '{text}' (did you mean '{close}'?)"),
+                None => format!(
+                    "unknown consequence '{text}': use {} or {}",
+                    keys[0], keys[1]
+                ),
+            };
+            report.error(&drift.path_to("then"), message);
+        }
+        found
+    });
+    Some(DriftPolicy::Probation {
+        grace_ticks: grace_ticks?,
+        then: then?,
+    })
 }
 
 /// The `defectors` and `deserters` tables under `section`, each `{ rules = [...] }`
@@ -1250,8 +1288,9 @@ mod tests {
     use super::*;
     use factional_core::Fixed;
     use factional_reputation::{
-        ActionId, CharacterId, Condition, DriftPolicy, FactionId, Inertia, InertiaProfile, Metric,
-        ProfileId, RankRef, Rule, TableKind, TargetCurve, Toward, Verdict, Weights,
+        ActionId, CharacterId, Condition, Consequence, DriftPolicy, FactionId, Inertia,
+        InertiaProfile, Metric, ProfileId, RankRef, Rule, TableKind, TargetCurve, Toward, Verdict,
+        Weights,
     };
 
     const fn h(hundredths: i64) -> Fixed {
@@ -2076,6 +2115,62 @@ mod tests {
     }
 
     #[test]
+    fn reads_a_probation_with_its_grace_and_its_consequence() {
+        let content = factions(&with_drift(
+            "drift = { policy = \"probation\", grace_ticks = 100, then = \"demote\" }",
+        ))
+        .expect("valid content");
+        let watch = &content.factions[&FactionId::new("city_watch").expect("valid id")];
+        assert_eq!(
+            watch.drift,
+            Some(DriftPolicy::Probation {
+                grace_ticks: 100,
+                then: Consequence::Demote,
+            })
+        );
+    }
+
+    #[test]
+    fn reports_probation_mistakes_at_their_keys() {
+        let cases: [(&str, &[&str]); 6] = [
+            (
+                "drift = { policy = \"probation\" }",
+                &[
+                    "factions.toml: city_watch.drift: missing 'grace_ticks'",
+                    "factions.toml: city_watch.drift: missing 'then'",
+                ],
+            ),
+            (
+                "drift = { policy = \"probation\", grace_ticks = 0, then = \"expel\" }",
+                &["factions.toml: city_watch.drift.grace_ticks: 0 must be at least 1"],
+            ),
+            (
+                "drift = { policy = \"probation\", grace_ticks = -5, then = \"expel\" }",
+                &["factions.toml: city_watch.drift.grace_ticks: expected a whole number, like 100"],
+            ),
+            (
+                "drift = { policy = \"probation\", grace_ticks = 2.5, then = \"expel\" }",
+                &["factions.toml: city_watch.drift.grace_ticks: expected a whole number, like 100"],
+            ),
+            (
+                "drift = { policy = \"probation\", grace_ticks = 10, then = \"expell\" }",
+                &[
+                    "factions.toml: city_watch.drift.then: unknown consequence 'expell' (did you mean 'expel'?)",
+                ],
+            ),
+            (
+                "drift = { policy = \"probation\", grace_ticks = 10, then = \"flag\" }",
+                &[
+                    "factions.toml: city_watch.drift.then: unknown consequence 'flag': use demote or expel",
+                ],
+            ),
+        ];
+        for (lines, expected) in cases {
+            assert_eq!(problems(factions(&with_drift(lines))), expected, "{lines}");
+        }
+    }
+
+    #[test]
     fn reports_drift_mistakes_at_their_keys() {
         let cases = [
             (
@@ -2083,8 +2178,8 @@ mod tests {
                 "factions.toml: city_watch.drift.policy: unknown drift policy 'flagg' (did you mean 'flag'?)",
             ),
             (
-                "drift = { policy = \"probation\" }",
-                "factions.toml: city_watch.drift.policy: unknown drift policy 'probation': use ignore, flag, demote or expel",
+                "drift = { policy = \"punish\" }",
+                "factions.toml: city_watch.drift.policy: unknown drift policy 'punish': use ignore, flag, demote, expel or probation",
             ),
             (
                 "drift = { policy = \"flag\", grace_ticks = 5 }",
