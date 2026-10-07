@@ -76,6 +76,14 @@ impl Curve {
         }
     }
 
+    /// Its points as `(x, y)`, in order; none for a constant.
+    pub fn points(&self) -> Vec<(Fixed, Fixed)> {
+        match &self.0 {
+            Shape::Constant(_) => Vec::new(),
+            Shape::Points(points) => points.iter().map(|point| (point.x, point.y)).collect(),
+        }
+    }
+
     /// The curve's value at `x`, rounded once.
     pub fn at(&self, x: Fixed) -> Fixed {
         self.exact_at(x)
@@ -205,6 +213,15 @@ mod tests {
     /// `[[0, 1.00], [50, 0.70], [100, 0.30]]`, from PLAN.md F2.
     fn falloff() -> Curve {
         curve(&[(0, 100), (5000, 70), (10000, 30)])
+    }
+
+    #[test]
+    fn lists_its_points_as_written_and_a_constant_has_none() {
+        assert_eq!(
+            falloff().points(),
+            [(h(0), h(1_00)), (h(50_00), h(70)), (h(100_00), h(30))]
+        );
+        assert_eq!(Curve::constant(h(7)).points(), []);
     }
 
     #[test]

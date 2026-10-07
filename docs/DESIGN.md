@@ -76,7 +76,7 @@ How a curve is evaluated:
 y = ( y0·(x1 − x0) + (y1 − y0)·(x − x0) ) / (x1 − x0)
 ```
 
-Curves are the one shape designers have to learn. In the CLI, `curve <curve> at <x>` gives any curve's value at a point, such as `curve [[0, 50], [60, 0], [200, -50]] at 70.18` → `-3.64`. T3 adds printing a knob's curve as a table.
+Curves are the one shape designers have to learn. In the CLI, `curve <curve> at <x>` gives any curve's value at a point, such as `curve [[0, 50], [60, 0], [200, -50]] at 70.18` → `-3.64`. `curve <knob>` prints a named knob's curve as a table, such as `curve disposition.affinity`, and `curve <knob> at <x>` evaluates it (T3).
 
 ## 5. Alignment
 
@@ -668,12 +668,13 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `factional schema <file>` for a content file's JSON Schema, to get completion and checking in an editor (T1).
 - `factional repl`, then `load content/sample`, to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
-- `curve [[0, 1.0], [100, 0.5]] at 25` in the REPL to try a curve's shape before using it.
+- `curve [[0, 1.0], [100, 0.5]] at 25` in the REPL to try a curve's shape before using it; without `at`, the whole curve as a table. A knob's name, such as `disposition.affinity`, `standing.spillover`, `inertia.hardening.good.toward_good` or `murder.by_target.good`, shows the curve the world uses (T3).
 - `factional run scenarios/<name>.scenario` to replay a scripted playthrough.
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working.
 - `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
 - `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
-- `map <faction>` to draw the alignment plane and who could join (T3), and `matrix --csv` to get dispositions into a spreadsheet.
+- `map <faction>` to draw the alignment plane, law across and good up: the cells within the faction's tolerance, the faction, and every character, with each one's distance in a key (T3, P-53).
+- `matrix [<subject>...] [--csv]` for every observer's disposition toward each subject, or with `--csv`, to get them into a spreadsheet (T3).
 
 ## 13. The sample world: Riverhold
 

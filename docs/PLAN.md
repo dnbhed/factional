@@ -57,6 +57,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - M10 — disposition modifiers: `AddModifier` (for everyone, a faction and its members, or one character; within ±100; with an optional expiry) and `RemoveModifier`, with `ModifierAdded`, `ModifierRemoved` and `ModifierExpired`; expiry checked after every command; the modifiers component adds up those that apply, clamped to ±100, and `--explain` names each; `modify`, `unmodify`, `modifiers`; done 2026-10-06 (#26)
 - T1 — `factional validate <dir>` (every problem and warning as `load` gives them, a summary line, exit 1 if it wouldn't load) and `validate <dir>` in the REPL; the warning for a faction no one starts within tolerance of, naming the nearest; "a rank no one can reach" dropped (P-51); `factional schema [<file>]`, a JSON Schema per content file built from the engine's own keys, enumerations, ranges and defaults, checked in under `schema/` and tested both ways against the sample, the complete example and the fixtures; `content/README.md`; done 2026-10-06 (#27)
 - T2 — `factional compare <scenario> --content A --against B`: the scenario's one load swapped, asserts run unchecked, then each character's changed alignment, standings and memberships and watchers' changed dispositions as `A → B`, and the first event where the runs diverge; `reload` in the REPL, replaying the whole journal on the re-read content and changing nothing unless every command comes out as before (P-52); done 2026-10-07 (#28)
+- T3 — `map <faction>` (the alignment plane, 21 by 21 cells: the faction's tolerance region, the faction and each character, with a key of distances; `World::distance_to_point`), `matrix [<subject>...] [--csv]` (every observer's disposition score toward each subject), and `curve <knob> [at <x>]` for the world's named curves, or any curve, as a table or at a point (`Curve::points`) (P-53); done 2026-10-07 (#29)
 
 ---
 
@@ -68,37 +69,27 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 4 — Designer tooling and persistence
 
-### T3 · Map, matrix and curves — P2 · Next
+### T4 · Saves — P2 · Next
 
-**Why:** DESIGN.md §12.3. Some tuning questions are about shape, not single numbers: who could join a faction, how everyone regards someone, and what a curve does across its range.
+**Why:** P-16 and X-3. A game needs to save and resume, and a designer wants to keep a session to come back to.
 
 **Scope**
 
-- **`map <faction>`** draws the alignment plane as text:
-  - law across (chaotic left, lawful right), good up (good at the top), −100 to 100 on each axis;
-  - the cells within the faction's tolerance (measured as `distance` measures it, with the faction's weights and the world's metric), the faction itself, and each character, with a key below;
-  - **settle here:** the grid's size, what marks a cell, and how two characters sharing a cell are shown.
-- **`matrix [<subject>...] [--csv]`** shows every observer's disposition score toward each subject (default: every character), observers as rows, factions first, each in id order. `--csv` gives the same as CSV, for a spreadsheet.
-- **`curve <knob>`** prints a named knob's curve as a table: each point, and the value at every 10 between its first and last x. The knobs:
-  - `disposition.affinity`, `standing.spillover`;
-  - `inertia.<profile>.<axis>.<toward>`, such as `inertia.hardening.good.toward_good`;
-  - `<action>.by_target.<curve>`, such as `murder.by_target.good`.
-- **`curve <knob> at <x>`** evaluates it, as F2's `curve <curve> at <x>` does a written curve. Unknown knobs get a "did you mean".
+- **`save <file>`** in the REPL writes the session: a format version, the content it was loaded from, and the event log and journal.
+- **`restore <file>`** reads it back: it loads the content and rebuilds the world with `World::replay`, which runs no rules (P-16), then restores the journal.
+- **The engine's events and commands become serialisable,** with serde derives in `factional-reputation`. Nothing in the engine does I/O; the CLI reads and writes the file.
+- **Settle with the user before starting (X-3):**
+  - the file format: JSON, TOML, or a binary format;
+  - whether a save holds the content itself, or names its directory with a fingerprint of the files;
+  - what restoring does when the content has changed since: refuse, or replay the journal as `reload` does (P-52);
+  - whether to store a snapshot of the state as well as the events, or rebuild from events alone.
 
 **Acceptance**
 
-1. `map city_watch` on content/sample marks Captain Hale (75, 30) inside the Watch's region and the player (0, 0) outside it, and its key gives the Watch's tolerance, 40.00.
-2. In `map`, a cell's centre exactly at the tolerance counts as inside, as `can-join` would.
-3. `matrix player` on content/sample gives Captain Hale's score as exactly what `disposition captain_hale player` gives; `matrix player --csv` starts with the header `observer,player`.
-4. `curve disposition.affinity` lists 50.00 at 0, 0.00 at 60 and −50.00 at 200, and `curve disposition.affinity at 130` gives −25.00.
-5. `curve inertia.hardening.good.toward_good at 50` gives 0.65, halfway between 1.0 at 0 and 0.3 at 100.
-6. `curve disposition.affinty` suggests `disposition.affinity`.
-
-### T4 · Saves — P2 · Outline
-
-- Serialises a snapshot plus the event log, with a format version.
-- Loading gives identical query answers; a property test checks it.
-- Format details are settled here (X-3).
+1. After `load content/sample`, two thefts and `watch player`, `save` then `restore` in a new session gives the same `events`, `journal`, `show character player` and `disposition captain_hale player`.
+2. A save starts with its format version, and restoring one with a version this build doesn't know is refused, naming both versions.
+3. Restoring a save whose content has changed since does what the decision above says, and says so.
+4. A property test: after random commands, saving and restoring gives identical answers to every query (DESIGN.md §14).
 
 ## Phase 5 — Knowledge and rumour
 

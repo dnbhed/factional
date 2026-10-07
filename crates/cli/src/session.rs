@@ -1,6 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::charts;
 use crate::check::{check, validate};
 use crate::compare::report;
 
@@ -148,8 +149,16 @@ const COMMANDS: &[(&str, &str)] = &[
         "the engine's fixed-point arithmetic; <op> is + - * or /",
     ),
     (
-        "curve <curve> at <x>",
-        "a curve's value at <x>; <curve> is a number or [[x, y], ...]",
+        "curve <curve> [at <x>]",
+        "a curve's value at <x>, or without at, the whole curve; <curve> is a knob, such as disposition.affinity, a number or [[x, y], ...]",
+    ),
+    (
+        "map <faction>",
+        "the alignment plane: who stands where, and the cells within <faction>'s tolerance",
+    ),
+    (
+        "matrix [<subject>...] [--csv]",
+        "every observer's disposition toward each subject (default: every character)",
     ),
     ("echo <text>", "print <text>"),
     ("fail <message>", "fail with <message>; for testing scripts"),
@@ -277,7 +286,15 @@ impl Session {
             "events" => Ok(self.events(rest)),
             "journal" => Ok(self.journal()),
             "calc" => Ok(calc(rest)),
-            "curve" => Ok(curve(rest)),
+            "curve" => Ok(charts::curve(self.world.as_ref(), rest)),
+            "map" => Ok(self
+                .world
+                .as_ref()
+                .map_or_else(no_world, |w| charts::map(w, rest))),
+            "matrix" => Ok(self
+                .world
+                .as_ref()
+                .map_or_else(no_world, |w| charts::matrix(w, rest))),
             "echo" => Ok(Outcome::Output(rest.to_owned())),
             "fail" => Ok(Outcome::Error(rest.to_owned())),
             "assert" => self.assert(rest),
@@ -1865,11 +1882,11 @@ fn parse_relate(args: &str) -> Result<Command, String> {
     })
 }
 
-fn lines(items: impl Iterator<Item = String>) -> String {
+pub(crate) fn lines(items: impl Iterator<Item = String>) -> String {
     items.collect::<Vec<_>>().join("\n")
 }
 
-fn no_world() -> Outcome {
+pub(crate) fn no_world() -> Outcome {
     Outcome::Error("no world is loaded yet: use load <dir> first".to_owned())
 }
 
@@ -1973,7 +1990,7 @@ fn describe_bands(world: &World) -> String {
 }
 
 /// ` (did you mean 'x'?)` when one of `ids` is close to `word`; otherwise nothing.
-fn hint(word: &str, ids: Vec<&str>) -> String {
+pub(crate) fn hint(word: &str, ids: Vec<&str>) -> String {
     suggest(word, ids)
         .map(|close| format!(" (did you mean '{close}'?)"))
         .unwrap_or_default()
@@ -2046,26 +2063,6 @@ fn calculate(args: &str) -> Result<Fixed, String> {
         _ => return Err(USAGE.to_owned()),
     };
     result.ok_or_else(|| "the result is out of range".to_owned())
-}
-
-/// `curve <curve> at <x>`: a curve's value at `x`, with the curve written as it would be in a
-/// content file, so a designer can try a shape before using it (DESIGN.md §4.2).
-fn curve(args: &str) -> Outcome {
-    match evaluate_curve(args) {
-        Ok(value) => Outcome::Output(value.to_string()),
-        Err(message) => Outcome::Error(message),
-    }
-}
-
-fn evaluate_curve(args: &str) -> Result<Fixed, String> {
-    const USAGE: &str = "curve needs the form: curve <curve> at <x>, for example: curve [[0, 1.0], [100, 0.5]] at 25";
-    let (spec, x) = args.rsplit_once(" at ").ok_or(USAGE)?;
-    let x: Fixed = x
-        .trim()
-        .parse()
-        .map_err(|error: ParseFixedError| error.to_string())?;
-    let curve = factional_content::parse_curve(spec.trim())?;
-    Ok(curve.at(x))
 }
 
 /// Whether a (trimmed) line has nothing to run: it's blank, or a `#` comment.
@@ -4033,10 +4030,9 @@ mod tests {
     #[test]
     fn curve_needs_a_curve_and_a_point() {
         let usage = command_error(
-            "curve needs the form: curve <curve> at <x>, for example: curve [[0, 1.0], [100, 0.5]] at 25",
+            "curve needs the form: curve <curve> [at <x>], where <curve> is a knob, such as disposition.affinity, or a curve, such as [[0, 1.0], [100, 0.5]]",
         );
         assert_eq!(run("curve"), usage);
-        assert_eq!(run("curve [[0, 1.0], [100, 0.5]]"), usage);
         assert_eq!(run("curve at 5"), usage);
     }
 
@@ -4082,7 +4078,9 @@ mod tests {
             "events [--since <seq>]",
             "journal",
             "calc <a> <op> <b>",
-            "curve <curve> at <x>",
+            "curve <curve> [at <x>]",
+            "map <faction>",
+            "matrix [<subject>...] [--csv]",
             "echo <text>",
             "fail <message>",
             "assert <command> == <expected>",

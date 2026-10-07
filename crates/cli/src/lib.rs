@@ -2,6 +2,7 @@
 //! the same set of commands, so any manual session can be saved as a scenario and replayed as
 //! a regression test (DECISIONS.md P-27).
 
+mod charts;
 mod check;
 mod compare;
 mod repl;

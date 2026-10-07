@@ -1,0 +1,10 @@
+# A faction at the centre of the plane with a tolerance of 30, for `map`: with the default
+# weights and metric its region is a circle, and (30, 0) is exactly on its edge.
+
+[ring]
+name = "The Ring"
+alignment = { law = 0.0, good = 0.0 }
+tolerance = 30.0
+
+[[ring.ranks]]
+id = "member"
