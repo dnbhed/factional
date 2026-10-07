@@ -550,6 +550,10 @@ impl Content {
         if ripple.hop_ticks == 0 {
             problems.push(ContentProblem::NoHopTicks);
         }
+        // Each pair listed so far, and who listed it last: a contact works both ways, so
+        // listing a pair again is a problem, on whichever side, reported where it comes later
+        // in id order.
+        let mut declared: BTreeMap<BTreeSet<&CharacterId>, &CharacterId> = BTreeMap::new();
         for character in self.characters.values() {
             let id = &character.id;
             for (index, contact) in character.contacts.iter().enumerate() {
@@ -558,28 +562,32 @@ impl Content {
                         character: id.clone(),
                         index,
                     }
-                } else if let Some(other) = self.characters.get(contact) {
-                    if character.contacts[..index].contains(contact) {
-                        ContentProblem::DuplicateContact {
-                            character: id.clone(),
-                            index,
-                            contact: contact.clone(),
-                        }
-                    } else if contact < id && other.contacts.contains(id) {
-                        ContentProblem::MutualContact {
-                            character: id.clone(),
-                            index,
-                            contact: contact.clone(),
-                        }
-                    } else {
-                        continue;
-                    }
-                } else {
+                } else if !self.characters.contains_key(contact) {
                     ContentProblem::UnknownContact {
                         character: id.clone(),
                         index,
                         contact: contact.clone(),
                         suggestion: closest(contact.as_str(), self.characters.keys()),
+                    }
+                } else {
+                    match declared.get(&BTreeSet::from([id, contact])) {
+                        None => {
+                            declared.insert(BTreeSet::from([id, contact]), id);
+                            continue;
+                        }
+                        Some(&by) if by == id => ContentProblem::DuplicateContact {
+                            character: id.clone(),
+                            index,
+                            contact: contact.clone(),
+                        },
+                        Some(_) => {
+                            declared.insert(BTreeSet::from([id, contact]), id);
+                            ContentProblem::MutualContact {
+                                character: id.clone(),
+                                index,
+                                contact: contact.clone(),
+                            }
+                        }
                     }
                 };
                 problems.push(problem);
@@ -1467,7 +1475,9 @@ impl World {
             .min_by_key(|(id, news)| (news.next.at, **id))
             .map(|(id, _)| *id)
         {
-            for change in self.news_arrival(news) {
+            let (arrival, standing) = self.news_arrival(news);
+            emitted.push(self.record(arrival));
+            for change in standing {
                 emitted.push(self.record(change));
             }
         }
@@ -2214,10 +2224,10 @@ impl World {
         })
     }
 
-    /// News `id` reaching its next hop: those it reaches and their factions learn of it, any
-    /// standing change due to them applies at the hop's awareness, rounded once, and it goes
-    /// on from there (DESIGN.md §10.2).
-    fn news_arrival(&self, id: u64) -> Vec<Change> {
+    /// News `id` reaching its next hop: its `NewsArrived`, as those it reaches and their
+    /// factions learn of it and it goes on from there, then the standing changes due to them,
+    /// at the hop's awareness, rounded once (DESIGN.md §10.2).
+    fn news_arrival(&self, id: u64) -> (Change, Vec<Change>) {
         let news = &self.state.news[&id];
         let arrived = news.next.clone();
         let mut learned = BTreeSet::new();
@@ -2234,14 +2244,13 @@ impl World {
             .filter(|(party, _)| learned.contains(*party))
             .map(|(party, change)| (party.clone(), change.saturating_mul(arrived.awareness)))
             .collect();
-        let mut changes = vec![Change::NewsArrived {
+        let arrival = Change::NewsArrived {
             news: id,
             arrived,
             learned,
             next,
-        }];
-        changes.extend(self.standing_changes(&news.actor, deltas));
-        changes
+        };
+        (arrival, self.standing_changes(&news.actor, deltas))
     }
 
     /// A character's inertia profile, and its id: their own, or the default. Content checks
