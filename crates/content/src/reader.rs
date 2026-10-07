@@ -190,7 +190,8 @@ impl<'t> Section<'t> {
         self.to_fixed(key, value, report)
     }
 
-    fn to_fixed(&self, key: &str, value: &Value, report: &mut Report) -> Option<Fixed> {
+    /// `value`, found at `key`, as a number; `None` if it isn't one (that's reported).
+    pub(crate) fn to_fixed(&self, key: &str, value: &Value, report: &mut Report) -> Option<Fixed> {
         if !matches!(value, Value::Integer(_) | Value::Float(_)) {
             report.error(&self.path_to(key), "expected a number, like 25.0");
             return None;

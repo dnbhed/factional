@@ -351,10 +351,10 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Spillover follows the faction's change** whether or not the other faction heard of the act.
   - **An act seen by everyone emits no news events,** so existing worlds and scenarios are unchanged.
   - *Why:* the host knows who noticed; this needs no new knobs, and a faction's standing still moves when a member sees something.
-- **P-56 · How ripple travels** (made in K0, 2026-10-07; built in K2).
+- **P-56 · How ripple travels** (made in K0, 2026-10-07; built in K2, where the user chose the change marked †).
   - **Contacts** are declared on one character and work both ways. With membership (faction to members, one hop) they're the whole graph: relations between factions don't carry news.
-  - **One `decay`, one `hop_ticks`, one `threshold`** for the world (0.50, 1, 0.10). Each party learns once, at its first and strongest arrival.
-  - **Awareness is an exact fraction,** and each value it scales is rounded once.
+  - **† A list of strengths, one per hop,** and one `hop_ticks`, for the world (`[0.5, 0.25, 0.1]`, 1). It replaces K0's `decay` and `threshold`: computed exactly, decay^hops overflows the engine's fractions after about 19 hops, and a 0.99 decay with a 0.10 threshold needs 229. The list is exact two-decimal values, its length is the horizon, and it needn't be geometric. Each strength is within 0.01–1.00 and none rises, so each party learns once, at its first and strongest arrival.
+  - **Each value awareness scales is rounded once.**
   - **Delivery** is on `AdvanceTime`, oldest first, ordered by tick, news, then factions before characters by id. `NewsArrived` records each arrival and what's next on its way, so replay and saves need no rules.
   - *Why:* the fewest knobs that give distance, delay and a horizon; per-contact strengths can come later if designers need them.
 - **P-57 · How perceived alignment is kept and used** (made in K0, 2026-10-07; built in K3).
@@ -378,6 +378,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Riverhold uses `witnessed` until K2.** Its acts in scenarios are seen by everyone, so nothing they show changes but the new `--explain` lines.
   - **The CLI says who saw an act with `--seen-by <id>,…` or `--unseen`;** without either, everyone did, as before.
   - *Why:* the explanation can't drift from the rule, and existing content and scenarios behave exactly as they did.
+- **P-60 · How ripple is built** (made in K2, 2026-10-07).
+  - **Two events.** `NewsSent` comes after an act's own events, with who has heard (firsthand learners and the actor), the standing changes still due to the rest at full strength, and the first hop. It's only sent when news has somewhere to go. `NewsArrived` follows `TimeAdvanced`, one per hop delivered. A piece of news has one hop on its way at a time, since every party a hop reaches arrives together.
+  - **The facts are fixed when it happens.** The parties due a change, the target's factions among them, are the ones the act named when it was done; the graph a hop follows is the one when it arrives.
+  - **A hop goes on from when it was due,** not from when time was advanced, so a long advance gives the same events as several short ones.
+  - **Riverhold uses `ripple` now,** with the contacts DESIGN.md §13 lists. Its acts seen by everyone send no news, so earlier scenarios change only where they use `--seen-by`.
+  - **`news` in the REPL** lists what's on its way, and `act --explain` says "no change for now" for those who may still hear.
+  - **Contacts outside the ripple model only warn.** `[knowledge.ripple]` written for another model isn't flagged: the settings keep their defaults when it's left out, so there's nothing to tell apart.
+  - *Why:* replay and saves rebuild news exactly from events, and what a party gets doesn't depend on how time was advanced.
 
 ## Open
 

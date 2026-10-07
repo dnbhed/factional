@@ -1,0 +1,33 @@
+# News rippling through Riverhold (K2, DESIGN.md §10.2). News goes from those who learned it
+# firsthand along contacts and through factions to their members, arriving at 0.50, 0.25
+# then 0.10 of its strength, ten ticks a hop. Ava's contacts are Hale and Mira, and Mira's
+# is Brother Ash.
+
+load content/sample
+
+# The player picks Hale's pocket, seen only by Ava. Nothing changes for Hale yet.
+act player steal --target captain_hale --seen-by merchant_ava
+news
+assert standing player == no standing with anyone yet
+
+# Five ticks on, the news hasn't arrived.
+advance 5
+assert standing player == no standing with anyone yet
+
+# At tick 10 Hale and Mira hear at 0.50, and the Watch and the Temple through them: Hale
+# −20.00 × 0.50 = −10.00, the Watch −10.00 × 0.50 = −5.00, which spills +0.90 to the Guild
+# (−0.18 at −80) and −0.50 to the Temple (0.10 at +60).
+advance 5
+assert standing player captain_hale == -10.00
+assert standing player city_watch == -5.00
+assert standing player lantern_guild == 0.90
+assert standing player temple == -0.50
+news
+
+# At tick 20 Ash and the Ashen Circle hear at 0.25; everyone near has heard, so it stops.
+advance 10
+assert news == no news on its way
+
+# A theft everyone sees sends no news: everyone already knows.
+act player steal --target vex
+assert news == no news on its way

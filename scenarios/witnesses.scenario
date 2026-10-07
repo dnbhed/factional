@@ -1,6 +1,7 @@
-# Witnessed acts (K1, DESIGN.md §10.1). Riverhold's knowledge model is "witnessed": only
-# those who learn of an act firsthand change their minds. That's the witnesses, the parties
-# the act names, and the factions of the characters among them, but never through the actor.
+# Witnessed acts (K1, DESIGN.md §10.1): at first, only those who learn of an act firsthand
+# change their minds. That's the witnesses, the parties the act names, and the factions of
+# the characters among them, but never through the actor. Riverhold's knowledge model is
+# "ripple", so news then goes on to others as time passes; ripple.scenario follows it.
 
 load content/sample
 

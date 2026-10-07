@@ -12,11 +12,11 @@ use crate::{
     Character, CharacterId, Command, CommandError, Component, ComponentKind, ConflictRule,
     Consequence, Defection, Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction,
     FactionId, Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, KnowledgeModel,
-    Learned, LeaveReason, Membership, Metric, ModifierId, ModifierObserver, Outcome, OutcomeId,
-    Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Reached, Regard, Relation,
-    RelationSide, RestoreError, Role, Rule, SavedCommand, Shift, Spill, StandingEffects,
-    StandingKey, StandingOwner, TableKind, TableOwner, TableProblem, TableSource, TargetCurve,
-    TargetRelation, Toward, Verdict, Weights, Witnesses, measure,
+    Learned, LeaveReason, Membership, Metric, ModifierId, ModifierObserver, News, NextHop, Outcome,
+    OutcomeId, Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Reached, Regard,
+    Relation, RelationSide, RestoreError, Ripple, Role, Rule, SavedCommand, Shift, Spill,
+    StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner, TableProblem, TableSource,
+    TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -59,6 +59,8 @@ pub struct Balance {
     pub conflict: ConflictRule,
     /// `knowledge.model`: who learns of an act (DESIGN.md §10.1).
     pub knowledge: KnowledgeModel,
+    /// `[knowledge.ripple]`: how news travels under the ripple model (DESIGN.md §10.2).
+    pub ripple: Ripple,
 }
 
 impl Balance {
@@ -115,6 +117,7 @@ impl Default for Balance {
             default_drift: DriftPolicy::Flag,
             conflict: ConflictRule::default(),
             knowledge: KnowledgeModel::default(),
+            ripple: Ripple::default(),
         }
     }
 }
@@ -262,6 +265,43 @@ pub enum ContentProblem {
         kind: TableKind,
         problem: TableProblem,
     },
+    /// `knowledge.ripple.strength` lists no hops.
+    NoRippleStrength,
+    /// A `knowledge.ripple.strength` outside 0.01–1.00; `index` is its place, from 0.
+    RippleStrengthOutOfRange { index: usize, value: Fixed },
+    /// A `knowledge.ripple.strength` stronger than the hop before it.
+    RippleStrengthRises {
+        index: usize,
+        value: Fixed,
+        before: Fixed,
+    },
+    /// `knowledge.ripple.hop_ticks` is 0.
+    NoHopTicks,
+    /// A contact names a character that doesn't exist; `index` is its place in the list.
+    UnknownContact {
+        character: CharacterId,
+        index: usize,
+        contact: CharacterId,
+        suggestion: Option<CharacterId>,
+    },
+    /// A character lists themself as a contact.
+    SelfContact {
+        character: CharacterId,
+        index: usize,
+    },
+    /// A character lists the same contact twice; `index` is the second.
+    DuplicateContact {
+        character: CharacterId,
+        index: usize,
+        contact: CharacterId,
+    },
+    /// Two characters list each other. A contact works both ways, so it's reported on the
+    /// one later in id order.
+    MutualContact {
+        character: CharacterId,
+        index: usize,
+        contact: CharacterId,
+    },
 }
 
 /// What names an inertia profile.
@@ -319,6 +359,9 @@ pub enum ContentWarning {
         tolerance: Fixed,
         nearest: Option<(CharacterId, Fixed)>,
     },
+    /// A character lists contacts in a world whose knowledge model isn't ripple, so they
+    /// carry nothing.
+    ContactsUnused { character: CharacterId },
 }
 
 impl Content {
@@ -459,7 +502,90 @@ impl Content {
             .chain(starts_in_conflict)
             .chain(self.standing_problems())
             .chain(self.disposition_problems())
+            .chain(self.knowledge_problems())
             .collect()
+    }
+
+    /// Everyone `character` passes news to: the contacts they list, and those who list them.
+    pub fn contacts_of(&self, character: &CharacterId) -> BTreeSet<CharacterId> {
+        let listed = self
+            .characters
+            .get(character)
+            .into_iter()
+            .flat_map(|found| found.contacts.iter().cloned());
+        let listing = self
+            .characters
+            .values()
+            .filter(|other| other.contacts.contains(character))
+            .map(|other| other.id.clone());
+        listed.chain(listing).collect()
+    }
+
+    /// `[knowledge.ripple]` lists at least one strength, each within 0.01–1.00 and none
+    /// stronger than the one before, and a hop takes at least a tick; then every character's
+    /// contacts name another character that exists, once, on one side only (DESIGN.md
+    /// §10.2).
+    fn knowledge_problems(&self) -> Vec<ContentProblem> {
+        let ripple = &self.balance.ripple;
+        let mut problems = Vec::new();
+        if ripple.strength.is_empty() {
+            problems.push(ContentProblem::NoRippleStrength);
+        }
+        for (index, &value) in ripple.strength.iter().enumerate() {
+            if !(Fixed::from_hundredths(1)..=Fixed::ONE).contains(&value) {
+                problems.push(ContentProblem::RippleStrengthOutOfRange { index, value });
+            }
+            if let Some(&before) = index
+                .checked_sub(1)
+                .map(|earlier| &ripple.strength[earlier])
+                && value > before
+            {
+                problems.push(ContentProblem::RippleStrengthRises {
+                    index,
+                    value,
+                    before,
+                });
+            }
+        }
+        if ripple.hop_ticks == 0 {
+            problems.push(ContentProblem::NoHopTicks);
+        }
+        for character in self.characters.values() {
+            let id = &character.id;
+            for (index, contact) in character.contacts.iter().enumerate() {
+                let problem = if contact == id {
+                    ContentProblem::SelfContact {
+                        character: id.clone(),
+                        index,
+                    }
+                } else if let Some(other) = self.characters.get(contact) {
+                    if character.contacts[..index].contains(contact) {
+                        ContentProblem::DuplicateContact {
+                            character: id.clone(),
+                            index,
+                            contact: contact.clone(),
+                        }
+                    } else if contact < id && other.contacts.contains(id) {
+                        ContentProblem::MutualContact {
+                            character: id.clone(),
+                            index,
+                            contact: contact.clone(),
+                        }
+                    } else {
+                        continue;
+                    }
+                } else {
+                    ContentProblem::UnknownContact {
+                        character: id.clone(),
+                        index,
+                        contact: contact.clone(),
+                        suggestion: closest(contact.as_str(), self.characters.keys()),
+                    }
+                };
+                problems.push(problem);
+            }
+        }
+        problems
     }
 
     /// Every ladder needs a rung, unique rank ids, standing requirements within ±100 and
@@ -789,6 +915,16 @@ impl Content {
                 }
             }
         }
+        if balance.knowledge != KnowledgeModel::Ripple {
+            warnings.extend(
+                self.characters
+                    .values()
+                    .filter(|character| !character.contacts.is_empty())
+                    .map(|character| ContentWarning::ContactsUnused {
+                        character: character.id.clone(),
+                    }),
+            );
+        }
         warnings
     }
 }
@@ -941,6 +1077,43 @@ impl fmt::Display for ContentProblem {
             | ContentProblem::NegativeHysteresis(value) => {
                 write!(f, "{value} must be at least {}", Fixed::ZERO)
             }
+            ContentProblem::NoRippleStrength => f.write_str(
+                "list at least one hop's strength; for news that doesn't travel, use the witnessed model",
+            ),
+            ContentProblem::RippleStrengthOutOfRange { value, .. } => write!(
+                f,
+                "{value} must be between {} and {}",
+                Fixed::from_hundredths(1),
+                Fixed::ONE
+            ),
+            ContentProblem::RippleStrengthRises { value, before, .. } => write!(
+                f,
+                "{value} is stronger than the hop before it, {before}: news only weakens as it travels"
+            ),
+            ContentProblem::NoHopTicks => f.write_str("a hop takes at least 1 tick"),
+            ContentProblem::UnknownContact {
+                contact,
+                suggestion,
+                ..
+            } => {
+                write!(f, "unknown character '{contact}'")?;
+                match suggestion {
+                    Some(close) => write!(f, " (did you mean '{close}'?)"),
+                    None => Ok(()),
+                }
+            }
+            ContentProblem::SelfContact { .. } => {
+                f.write_str("a character can't be their own contact")
+            }
+            ContentProblem::DuplicateContact { contact, .. } => {
+                write!(f, "'{contact}' is listed twice")
+            }
+            ContentProblem::MutualContact {
+                character, contact, ..
+            } => write!(
+                f,
+                "{contact} already lists {character}: a contact works both ways, so list it on one side only"
+            ),
             ContentProblem::StandingOutOfRange { value, .. }
             | ContentProblem::LeaveStandingOutOfRange { value, .. }
             | ContentProblem::ExpelStandingOutOfRange { value, .. }
@@ -1000,6 +1173,9 @@ impl fmt::Display for ContentWarning {
                     }
                     None => f.write_str("there are no characters"),
                 }
+            }
+            ContentWarning::ContactsUnused { .. } => {
+                f.write_str("contacts only carry news when knowledge.model is ripple")
             }
         }
     }
@@ -1093,6 +1269,8 @@ struct State {
     conflicts: BTreeMap<(CharacterId, FactionId, FactionId), Tick>,
     /// Every faction's alignment now; it starts as content gives it.
     faction_alignments: BTreeMap<FactionId, Alignment>,
+    /// News in flight, by the sequence number of its act (DESIGN.md §10.2).
+    news: BTreeMap<u64, News>,
 }
 
 impl State {
@@ -1149,6 +1327,7 @@ impl State {
                 .values()
                 .map(|faction| (faction.id.clone(), faction.alignment))
                 .collect(),
+            news: BTreeMap::new(),
         }
     }
 }
@@ -1277,6 +1456,20 @@ impl World {
         }
         for change in decided {
             emitted.push(self.record(change));
+        }
+        // News due by now arrives, oldest first, each hop going on from when it arrived
+        // (DESIGN.md §10.2).
+        while let Some(news) = self
+            .state
+            .news
+            .iter()
+            .filter(|(_, news)| news.next.at <= self.state.now)
+            .min_by_key(|(id, news)| (news.next.at, **id))
+            .map(|(id, _)| *id)
+        {
+            for change in self.news_arrival(news) {
+                emitted.push(self.record(change));
+            }
         }
         // Wars between someone's own factions open or end with the relations, and any that
         // are due are settled (DESIGN.md §9.4).
@@ -1416,14 +1609,17 @@ impl World {
                         to,
                     });
                 }
-                // Only the parties that learn of the act change their minds (DESIGN.md §10.1).
-                let deltas: Deltas = self
-                    .act_reach(actor, catalogued, target.as_ref(), witnesses)
+                // Only the parties that learn of the act change their minds (DESIGN.md §10.1);
+                // under ripple, news of it then goes on to the rest (§10.2).
+                let reach = self.act_reach(actor, catalogued, target.as_ref(), witnesses);
+                let news = self.news_sent(actor, catalogued, witnesses, &reach);
+                let deltas: Deltas = reach
                     .into_iter()
                     .filter(|reached| reached.learned.is_some())
                     .map(|reached| (reached.party, reached.change))
                     .collect();
                 changes.extend(self.standing_changes(actor, deltas));
+                changes.extend(news);
                 Ok(changes)
             }
             Command::JoinFaction { character, faction } => {
@@ -1878,8 +2074,12 @@ impl World {
         let nobody = BTreeSet::new();
         let seen = match (self.content.balance.knowledge, witnesses) {
             (KnowledgeModel::Omniscient, _) | (_, Witnesses::Everyone) => None,
-            (KnowledgeModel::Witnessed, Witnesses::Nobody) => Some(&nobody),
-            (KnowledgeModel::Witnessed, Witnesses::These(witnesses)) => Some(witnesses),
+            (KnowledgeModel::Witnessed | KnowledgeModel::Ripple, Witnesses::Nobody) => {
+                Some(&nobody)
+            }
+            (KnowledgeModel::Witnessed | KnowledgeModel::Ripple, Witnesses::These(witnesses)) => {
+                Some(witnesses)
+            }
         };
         // Those who learned firsthand and tell their factions: the witnesses and the
         // characters the act names, but never the actor.
@@ -1920,6 +2120,128 @@ impl World {
                 change,
             })
             .collect()
+    }
+
+    /// Under ripple, news of an act some didn't see: who has heard of it (those who learned
+    /// firsthand, and the actor), the standing changes still due to the rest, and its first
+    /// hop. `None` if everyone knows, or it goes nowhere (DESIGN.md §10.2).
+    fn news_sent(
+        &self,
+        actor: &CharacterId,
+        action: &Action,
+        witnesses: &Witnesses,
+        reach: &[Reached],
+    ) -> Option<Change> {
+        if self.content.balance.knowledge != KnowledgeModel::Ripple {
+            return None;
+        }
+        let nobody = BTreeSet::new();
+        let seen = match witnesses {
+            Witnesses::Everyone => return None,
+            Witnesses::Nobody => &nobody,
+            Witnesses::These(witnesses) => witnesses,
+        };
+        let named: Vec<Party> = action
+            .standing
+            .named
+            .parties()
+            .into_iter()
+            .map(|(party, _)| party)
+            .collect();
+        // Those who learned firsthand, and through the characters among them, their
+        // factions; never through the actor.
+        let mut learned: BTreeSet<Party> = named.iter().cloned().collect();
+        let characters = seen
+            .iter()
+            .chain(named.iter().filter_map(|party| match party {
+                Party::Character(character) => Some(character),
+                Party::Faction(_) => None,
+            }));
+        for character in characters.filter(|character| *character != actor) {
+            learned.insert(Party::Character(character.clone()));
+            learned.extend(self.factions_of(character).into_iter().map(Party::Faction));
+        }
+        let mut heard = learned.clone();
+        heard.insert(Party::Character(actor.clone()));
+        let next = self.next_hop(&heard, &learned, 0, self.state.now)?;
+        Some(Change::NewsSent {
+            news: self.events.len() as u64 + 1,
+            actor: actor.clone(),
+            heard,
+            due: reach
+                .iter()
+                .filter(|reached| reached.learned.is_none())
+                .map(|reached| (reached.party.clone(), reached.change))
+                .collect(),
+            next,
+        })
+    }
+
+    /// Where news goes after `learned` heard it at hop `hop` and tick `at`: every contact of
+    /// a character among them, and every member of a faction among them, who hasn't heard;
+    /// `None` if there's no one, or no further hop (DESIGN.md §10.2).
+    fn next_hop(
+        &self,
+        heard: &BTreeSet<Party>,
+        learned: &BTreeSet<Party>,
+        hop: u32,
+        at: Tick,
+    ) -> Option<NextHop> {
+        let ripple = &self.content.balance.ripple;
+        let hop = hop.checked_add(1)?;
+        let awareness = ripple.awareness(hop)?;
+        let parties: BTreeSet<CharacterId> = learned
+            .iter()
+            .flat_map(|party| match party {
+                Party::Character(character) => self.content.contacts_of(character),
+                Party::Faction(faction) => self
+                    .members(faction)
+                    .into_iter()
+                    .flatten()
+                    .cloned()
+                    .collect(),
+            })
+            .filter(|character| !heard.contains(&Party::Character(character.clone())))
+            .collect();
+        if parties.is_empty() {
+            return None;
+        }
+        Some(NextHop {
+            hop,
+            at: Tick(at.0.checked_add(ripple.hop_ticks)?),
+            awareness,
+            parties,
+        })
+    }
+
+    /// News `id` reaching its next hop: those it reaches and their factions learn of it, any
+    /// standing change due to them applies at the hop's awareness, rounded once, and it goes
+    /// on from there (DESIGN.md §10.2).
+    fn news_arrival(&self, id: u64) -> Vec<Change> {
+        let news = &self.state.news[&id];
+        let arrived = news.next.clone();
+        let mut learned = BTreeSet::new();
+        for character in &arrived.parties {
+            learned.insert(Party::Character(character.clone()));
+            let factions = self.factions_of(character).into_iter().map(Party::Faction);
+            learned.extend(factions.filter(|faction| !news.heard.contains(faction)));
+        }
+        let heard: BTreeSet<Party> = news.heard.union(&learned).cloned().collect();
+        let next = self.next_hop(&heard, &learned, arrived.hop, arrived.at);
+        let deltas: Deltas = news
+            .due
+            .iter()
+            .filter(|(party, _)| learned.contains(*party))
+            .map(|(party, change)| (party.clone(), change.saturating_mul(arrived.awareness)))
+            .collect();
+        let mut changes = vec![Change::NewsArrived {
+            news: id,
+            arrived,
+            learned,
+            next,
+        }];
+        changes.extend(self.standing_changes(&news.actor, deltas));
+        changes
     }
 
     /// A character's inertia profile, and its id: their own, or the default. Content checks
@@ -2306,6 +2628,39 @@ impl World {
         match event.payload {
             Change::TimeAdvanced { to, .. } => self.state.now = to,
             Change::ActionPerformed { .. } => {}
+            Change::NewsSent {
+                news,
+                ref actor,
+                ref heard,
+                ref due,
+                ref next,
+            } => {
+                self.state.news.insert(
+                    news,
+                    News {
+                        actor: actor.clone(),
+                        heard: heard.clone(),
+                        due: due.iter().cloned().collect(),
+                        next: next.clone(),
+                    },
+                );
+            }
+            Change::NewsArrived {
+                news,
+                ref learned,
+                ref next,
+                ..
+            } => match next {
+                Some(next) => {
+                    let travelling = self.state.news.get_mut(&news).expect("news in flight");
+                    travelling.heard.extend(learned.iter().cloned());
+                    travelling.due.retain(|party, _| !learned.contains(party));
+                    travelling.next = next.clone();
+                }
+                None => {
+                    self.state.news.remove(&news);
+                }
+            },
             Change::JoinedFaction {
                 ref character,
                 ref faction,
@@ -2609,6 +2964,12 @@ impl World {
             self.alignment(target)?;
         }
         Some(self.act_shift(actor, action, target, scale))
+    }
+
+    /// News in flight, by the sequence number of its act's `ActionPerformed`, oldest first
+    /// (DESIGN.md §10.2).
+    pub fn news(&self) -> impl Iterator<Item = (u64, &News)> {
+        self.state.news.iter().map(|(id, news)| (*id, news))
     }
 
     /// Who would learn of `actor` doing `action` to `target`, seen by `witnesses`: each party
@@ -3170,8 +3531,8 @@ mod tests {
     use super::*;
     use crate::{
         AXIS_LIMIT, ActionStanding, AlignmentDelta, AppliedModifier, AxisShift, Band, Condition,
-        ConditionCheck, Consequence, Effects, JoinBlock, LeaveReason, Observed, Part, Rank,
-        RankCheck, RankRef, RelationEnds, Role, Spill, StandingEffects, StartingMembership,
+        ConditionCheck, Consequence, Effects, JoinBlock, LeaveReason, NextHop, Observed, Part,
+        Rank, RankCheck, RankRef, RelationEnds, Role, Spill, StandingEffects, StartingMembership,
         Tolerances, Verdict, Witnesses,
     };
 
@@ -3192,6 +3553,7 @@ mod tests {
             inertia: None,
             memberships: Vec::new(),
             standing: StandingEffects::default(),
+            contacts: Vec::new(),
         }
     }
 
@@ -3415,6 +3777,10 @@ mod tests {
             default_drift: DriftPolicy::Demote,
             conflict: ConflictRule::Auto,
             knowledge: KnowledgeModel::Witnessed,
+            ripple: Ripple {
+                strength: vec![h(60), h(30)],
+                hop_ticks: 5,
+            },
             inertia: Inertia {
                 default_profile: profile_id("hardening"),
                 profiles: [(profile_id("hardening"), hardening())].into(),
@@ -6619,6 +6985,252 @@ mod tests {
         );
     }
 
+    /// The test world under the ripple model: Vex is in the Guild, Ava talks to Nell and
+    /// Nell to Vex. News arrives at 0.50 then 0.25, three ticks a hop.
+    fn rippling() -> World {
+        let mut ava = character("Ava", 20_00, 10_00);
+        ava.contacts = vec![id("nell")];
+        let mut nell = character("Nell", 35_00, 10_00);
+        nell.contacts = vec![id("vex")];
+        let mut content = world_of([
+            member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+            ava,
+            character("Player", 0, 0),
+            nell,
+        ])
+        .content;
+        content.balance.knowledge = KnowledgeModel::Ripple;
+        content.balance.ripple = Ripple {
+            strength: vec![h(50), h(25)],
+            hop_ticks: 3,
+        };
+        World::new(content).expect("valid content")
+    }
+
+    fn next_hop(hop: u32, at: u64, awareness: i64, parties: &[&str]) -> NextHop {
+        NextHop {
+            hop,
+            at: Tick(at),
+            awareness: h(awareness),
+            parties: parties.iter().copied().map(id).collect(),
+        }
+    }
+
+    #[test]
+    fn news_ripples_hop_by_hop_and_scales_standing_when_it_arrives() {
+        let mut world = rippling();
+        let events = world
+            .execute(Command::PerformAction {
+                actor: id("player"),
+                action: action_id("steal"),
+                target: Some(id("vex")),
+                scale: h(1_00),
+                witnesses: seen_by(&["ava"]),
+            })
+            .expect("accepted");
+        let sent: Vec<Change> = events
+            .into_iter()
+            .map(|event| event.payload)
+            .skip(2)
+            .collect();
+        assert_eq!(
+            sent,
+            [Change::NewsSent {
+                news: 1,
+                actor: id("player"),
+                heard: [Party::Character(id("ava")), Party::Character(id("player"))].into(),
+                due: vec![
+                    (Party::Faction(faction_id("lantern_guild")), h(-10_00)),
+                    (Party::Character(id("vex")), h(-20_00)),
+                ],
+                next: next_hop(1, 3, 50, &["nell"]),
+            }]
+        );
+        let in_flight: Vec<(u64, BTreeSet<CharacterId>)> = world
+            .news()
+            .map(|(news, travelling)| (news, travelling.next.parties.clone()))
+            .collect();
+        assert_eq!(in_flight, [(1, [id("nell")].into())]);
+        let payloads = |events: Vec<Event>| -> Vec<Change> {
+            events.into_iter().map(|event| event.payload).collect()
+        };
+        assert_eq!(
+            payloads(world.execute(advance(2)).expect("accepted")),
+            [Change::TimeAdvanced {
+                from: Tick(0),
+                to: Tick(2)
+            }],
+            "not there yet"
+        );
+        assert_eq!(
+            payloads(world.execute(advance(1)).expect("accepted")),
+            [
+                Change::TimeAdvanced {
+                    from: Tick(2),
+                    to: Tick(3)
+                },
+                Change::NewsArrived {
+                    news: 1,
+                    arrived: next_hop(1, 3, 50, &["nell"]),
+                    learned: [Party::Character(id("nell"))].into(),
+                    next: Some(next_hop(2, 6, 25, &["vex"])),
+                },
+            ],
+            "Ava already knows, so only Vex is next"
+        );
+        let arrived = payloads(world.execute(advance(3)).expect("accepted"));
+        assert_eq!(
+            arrived[1],
+            Change::NewsArrived {
+                news: 1,
+                arrived: next_hop(2, 6, 25, &["vex"]),
+                learned: [
+                    Party::Faction(faction_id("lantern_guild")),
+                    Party::Character(id("vex"))
+                ]
+                .into(),
+                next: None,
+            },
+            "the Guild hears through Vex, and there's no third hop"
+        );
+        // −10.00 and −20.00 at 0.25; the Watch regards the Guild at −80, so −0.18 of it.
+        assert_eq!(
+            world.standings(&id("player")),
+            Some(vec![
+                (Party::Faction(faction_id("city_watch")), h(45)),
+                (Party::Faction(faction_id("lantern_guild")), h(-2_50)),
+                (Party::Character(id("vex")), h(-5_00)),
+            ])
+        );
+        assert_eq!(world.news().count(), 0);
+    }
+
+    #[test]
+    fn ripple_strength_runs_down_its_list() {
+        let ripple = Ripple {
+            strength: vec![h(50), h(25)],
+            hop_ticks: 3,
+        };
+        assert_eq!(
+            (0..4).map(|hop| ripple.awareness(hop)).collect::<Vec<_>>(),
+            [Some(Fixed::ONE), Some(h(50)), Some(h(25)), None]
+        );
+    }
+
+    #[test]
+    fn ripple_settings_are_checked() {
+        let mut content = world_of([]).content;
+        content.balance.ripple = Ripple {
+            strength: vec![h(50), h(0), h(60), h(1_01)],
+            hop_ticks: 0,
+        };
+        assert_eq!(
+            content.problems(),
+            [
+                ContentProblem::RippleStrengthOutOfRange {
+                    index: 1,
+                    value: h(0)
+                },
+                ContentProblem::RippleStrengthRises {
+                    index: 2,
+                    value: h(60),
+                    before: h(0)
+                },
+                ContentProblem::RippleStrengthOutOfRange {
+                    index: 3,
+                    value: h(1_01)
+                },
+                ContentProblem::RippleStrengthRises {
+                    index: 3,
+                    value: h(1_01),
+                    before: h(60)
+                },
+                ContentProblem::NoHopTicks,
+            ]
+        );
+        content.balance.ripple = Ripple {
+            strength: Vec::new(),
+            hop_ticks: 1,
+        };
+        assert_eq!(content.problems(), [ContentProblem::NoRippleStrength]);
+        content.balance.ripple = Ripple {
+            strength: vec![h(1), h(1)],
+            hop_ticks: 1,
+        };
+        assert_eq!(
+            content.problems(),
+            [],
+            "0.01 is the weakest, and equal is fine"
+        );
+    }
+
+    #[test]
+    fn contacts_are_checked() {
+        let mut vex = character("Vex", -55_00, -20_00);
+        vex.contacts = vec![id("ava"), id("vex"), id("avx"), id("ava")];
+        let mut ava = character("Ava", 20_00, 10_00);
+        ava.contacts = vec![id("vex")];
+        let content = world_of([character("Player", 0, 0)]).content;
+        let content = Content {
+            characters: [vex, ava]
+                .into_iter()
+                .map(|c| (c.id.clone(), c))
+                .chain(content.characters)
+                .collect(),
+            ..content
+        };
+        assert_eq!(
+            content.problems(),
+            [
+                ContentProblem::MutualContact {
+                    character: id("vex"),
+                    index: 0,
+                    contact: id("ava")
+                },
+                ContentProblem::SelfContact {
+                    character: id("vex"),
+                    index: 1
+                },
+                ContentProblem::UnknownContact {
+                    character: id("vex"),
+                    index: 2,
+                    contact: id("avx"),
+                    suggestion: Some(id("ava")),
+                },
+                ContentProblem::DuplicateContact {
+                    character: id("vex"),
+                    index: 3,
+                    contact: id("ava")
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn contacts_outside_the_ripple_model_are_a_warning() {
+        let mut ava = character("Ava", 20_00, 10_00);
+        ava.contacts = vec![id("vex")];
+        let mut content = world_of([character("Vex", -55_00, -20_00), ava]).content;
+        for model in [KnowledgeModel::Omniscient, KnowledgeModel::Witnessed] {
+            content.balance.knowledge = model;
+            assert!(
+                content
+                    .warnings()
+                    .contains(&ContentWarning::ContactsUnused {
+                        character: id("ava")
+                    }),
+                "{model:?}"
+            );
+        }
+        content.balance.knowledge = KnowledgeModel::Ripple;
+        assert!(
+            !content
+                .warnings()
+                .iter()
+                .any(|warning| matches!(warning, ContentWarning::ContactsUnused { .. }))
+        );
+    }
+
     /// Runs a command that must be refused and checks that nothing changed but the journal.
     fn refused(world: &mut World, command: Command) -> CommandError {
         let (state, events) = (world.state.clone(), world.events.clone());
@@ -9480,6 +10092,49 @@ mod tests {
         proptest::collection::vec(command, 0..30)
     }
 
+    /// Who saw an act: everyone, no one, or some of the test world's characters.
+    fn witnesses() -> impl Strategy<Value = Witnesses> {
+        let who = prop_oneof![
+            Just("player"),
+            Just("vex"),
+            Just("ava"),
+            Just("nell"),
+            Just("rook")
+        ];
+        prop_oneof![
+            Just(Witnesses::Everyone),
+            Just(Witnesses::Nobody),
+            proptest::collection::btree_set(who, 1..3)
+                .prop_map(|ids| Witnesses::These(ids.into_iter().map(id).collect())),
+        ]
+    }
+
+    /// `commands()`, with each act seen by random witnesses.
+    fn seen_commands() -> impl Strategy<Value = Vec<Command>> {
+        (commands(), proptest::collection::vec(witnesses(), 30)).prop_map(|(commands, seen)| {
+            commands
+                .into_iter()
+                .zip(seen)
+                .map(|(command, witnesses)| match command {
+                    Command::PerformAction {
+                        actor,
+                        action,
+                        target,
+                        scale,
+                        ..
+                    } => Command::PerformAction {
+                        actor,
+                        action,
+                        target,
+                        scale,
+                        witnesses,
+                    },
+                    other => other,
+                })
+                .collect()
+        })
+    }
+
     /// Riverhold with the sample rule tables. Nell is a reformed Guild member who can defect
     /// to the Watch, and Rook is in both the Guild and the Free Company, so random relations
     /// can put him in a war. The Watch puts drifters on probation for 50 ticks, then demotes
@@ -9488,11 +10143,14 @@ mod tests {
         run_in(KnowledgeModel::default(), commands)
     }
 
-    /// `run`, under this knowledge model.
+    /// `run`, under this knowledge model. Under ripple, Ava talks to Nell and Rook, and Nell
+    /// to Vex; news arrives at 0.50 then 0.25, three ticks a hop.
     fn run_in(model: KnowledgeModel, commands: &[Command]) -> World {
+        let mut ava = character("Ava", 20_00, 10_00);
+        ava.contacts = vec![id("nell"), id("rook")];
         let mut content = defectors_content([
             character("Vex", -55_00, -20_00),
-            character("Ava", 20_00, 10_00),
+            ava,
             character("Player", 0, 0),
             member_of(character("Nell", 35_00, 10_00), &["lantern_guild"]),
             member_of(
@@ -9512,7 +10170,16 @@ mod tests {
         };
         drift("city_watch", probation(50, Consequence::Demote));
         drift("lantern_guild", DriftPolicy::Expel);
+        content
+            .characters
+            .get_mut(&id("nell"))
+            .expect("Nell")
+            .contacts = vec![id("vex")];
         content.balance.knowledge = model;
+        content.balance.ripple = Ripple {
+            strength: vec![h(50), h(25)],
+            hop_ticks: 3,
+        };
         let mut world = World::new(content).expect("valid content");
         for command in commands {
             let _ = world.execute(command.clone());
@@ -9553,8 +10220,10 @@ mod tests {
         #[test]
         fn acts_everyone_sees_give_the_same_events_under_witnessed(commands in commands()) {
             let witnessed = run_in(KnowledgeModel::Witnessed, &commands);
+            let rippling = run_in(KnowledgeModel::Ripple, &commands);
             let omniscient = run_in(KnowledgeModel::Omniscient, &commands);
             prop_assert_eq!(witnessed.events(), omniscient.events());
+            prop_assert_eq!(rippling.events(), omniscient.events());
         }
 
         /// Under `witnessed`, an act no one sees changes no one's standing: the test world's
@@ -9584,6 +10253,51 @@ mod tests {
                             "{:?}", event
                         );
                     }
+                }
+            }
+        }
+
+        /// Under ripple, with acts seen by anyone: replaying the events or restoring a save
+        /// gives the same world, news in flight included, and the journal gives the same
+        /// events again (invariants 3, 4 and 11).
+        #[test]
+        fn rippling_worlds_replay_and_restore_exactly(commands in seen_commands()) {
+            let world = run_in(KnowledgeModel::Ripple, &commands);
+            let replayed = World::replay(world.content.clone(), world.events()).expect("valid content");
+            prop_assert_eq!(&replayed.state, &world.state);
+            let restored = World::restore(world.content.clone(), &world.saved_journal(), world.events())
+                .expect("restores");
+            prop_assert_eq!(&restored.state, &world.state);
+            prop_assert_eq!(restored.journal(), world.journal());
+            let journal: Vec<Command> =
+                world.journal().iter().map(|entry| entry.command.clone()).collect();
+            let rerun = run_in(KnowledgeModel::Ripple, &journal);
+            prop_assert_eq!(rerun.events(), world.events());
+        }
+
+        /// DESIGN.md §14, invariant 13: news always stops. Each party hears a piece of news
+        /// at most once, none arrives before it's due or later than its last hop allows, and
+        /// once time passes that, nothing is on its way.
+        #[test]
+        fn news_always_stops_and_no_one_hears_it_twice(commands in seen_commands()) {
+            let mut world = run_in(KnowledgeModel::Ripple, &commands);
+            world.execute(advance(7)).expect("time moves on");
+            prop_assert_eq!(world.news().count(), 0);
+            let (hops, ticks) = (2, 3);
+            let mut heard: BTreeMap<u64, (Tick, BTreeSet<Party>)> = BTreeMap::new();
+            for event in world.events() {
+                match &event.payload {
+                    Change::NewsSent { news, heard: first, .. } => {
+                        prop_assert!(heard.insert(*news, (event.tick, first.clone())).is_none());
+                    }
+                    Change::NewsArrived { news, arrived, learned, .. } => {
+                        let (sent, so_far) = heard.get_mut(news).expect("sent first");
+                        prop_assert!(arrived.at <= event.tick, "{:?}", event);
+                        prop_assert!(arrived.at.0 - sent.0 <= hops * ticks, "{:?}", event);
+                        prop_assert!(so_far.is_disjoint(learned), "{:?}", event);
+                        so_far.extend(learned.iter().cloned());
+                    }
+                    _ => {}
                 }
             }
         }

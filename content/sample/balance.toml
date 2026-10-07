@@ -130,7 +130,15 @@ rules = [
 ]
 
 [knowledge]
-# Who learns of an act: "omniscient" (everyone, fully and at once, whoever saw it) or
-# "witnessed" (only the witnesses, the parties the act names, and the factions of those
-# who learned). A party that doesn't learn of an act keeps its standing (DESIGN.md §10.1).
-model = "witnessed"
+# Who learns of an act: "omniscient" (everyone, fully and at once, whoever saw it),
+# "witnessed" (only the witnesses, the parties the act names, and the factions of those who
+# learned), or "ripple" (those, then onward through contacts and factions). A party that
+# hasn't learned of an act keeps its standing (DESIGN.md §10).
+model = "ripple"
+
+[knowledge.ripple]
+# How strongly news arrives at each hop beyond those who saw it; it goes no further than
+# the last. Standing changes scale with it.
+strength = [0.5, 0.25, 0.1]
+# How many ticks each hop takes.
+hop_ticks = 10

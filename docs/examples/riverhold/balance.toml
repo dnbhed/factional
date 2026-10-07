@@ -123,9 +123,9 @@ rules = [
 model = "ripple"
 
 [knowledge.ripple]
-# Each hop multiplies the news's strength by this... (K2)
-decay = 0.5
-# ...takes this many ticks per hop...
+# How strongly news arrives at each hop beyond those who saw it, first hop first; none may be
+# stronger than the one before, and it goes no further than the last. Standing changes
+# scale with it. (K2)
+strength = [0.5, 0.25, 0.1]
+# How many ticks each hop takes.
 hop_ticks = 10
-# ...and stops at a hop whose strength would be below this.
-threshold = 0.1

@@ -327,6 +327,24 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
                 };
                 (file, format!("{table}.{at}"))
             }
+            ContentProblem::NoRippleStrength => {
+                (BALANCE_FILE, "knowledge.ripple.strength".to_owned())
+            }
+            ContentProblem::RippleStrengthOutOfRange { index, .. }
+            | ContentProblem::RippleStrengthRises { index, .. } => {
+                (BALANCE_FILE, format!("knowledge.ripple.strength[{index}]"))
+            }
+            ContentProblem::NoHopTicks => (BALANCE_FILE, "knowledge.ripple.hop_ticks".to_owned()),
+            ContentProblem::UnknownContact {
+                character, index, ..
+            }
+            | ContentProblem::SelfContact { character, index }
+            | ContentProblem::DuplicateContact {
+                character, index, ..
+            }
+            | ContentProblem::MutualContact {
+                character, index, ..
+            } => (CHARACTERS_FILE, format!("{character}.contacts[{index}]")),
         };
         Diagnostic {
             file: file.to_owned(),
@@ -370,6 +388,11 @@ pub fn warnings(content: &Content) -> Vec<Diagnostic> {
             ContentWarning::NoOneWithinTolerance { faction, .. } => Diagnostic {
                 file: FACTIONS_FILE.to_owned(),
                 key: Some(format!("{faction}.tolerance")),
+                message: warning.to_string(),
+            },
+            ContentWarning::ContactsUnused { character } => Diagnostic {
+                file: CHARACTERS_FILE.to_owned(),
+                key: Some(format!("{character}.contacts")),
                 message: warning.to_string(),
             },
         })
@@ -501,13 +524,33 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
                             format!("unknown knowledge model '{key}' (did you mean '{close}'?)")
                         }
                         None => format!(
-                            "unknown knowledge model '{key}': use {} or {}",
-                            keys[0], keys[1]
+                            "unknown knowledge model '{key}': use {}, {} or {}",
+                            keys[0], keys[1], keys[2]
                         ),
                     };
                     report.error(&knowledge.path_to("model"), message);
                 }
             }
+        }
+        if let Some(mut ripple) = knowledge.optional_table("ripple", "[knowledge.ripple]", report) {
+            if let Some(items) = ripple.optional_list("strength", "[0.5, 0.25, 0.1]", report) {
+                let strength: Vec<Option<Fixed>> = items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        ripple.to_fixed(&format!("strength[{index}]"), item, report)
+                    })
+                    .collect();
+                if let Some(strength) = strength.into_iter().collect() {
+                    balance.ripple.strength = strength;
+                }
+            }
+            if ripple.has_any(&["hop_ticks"])
+                && let Some(ticks) = ripple.whole("hop_ticks", report)
+            {
+                balance.ripple.hop_ticks = ticks;
+            }
+            ripple.finish(report);
         }
         knowledge.finish(report);
     }
@@ -666,6 +709,7 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
                 }
             });
     let memberships = read_memberships(&mut section, report);
+    let contacts = read_contacts(&mut section, report);
     let standing = section
         .optional_table("standing", STANDING_EXAMPLE, report)
         .map(|standing| read_named_standing(standing, report))
@@ -679,7 +723,32 @@ fn read_character(id: CharacterId, fields: &toml::Table, report: &mut Report) ->
         inertia,
         memberships: memberships?,
         standing,
+        contacts: contacts?,
     })
+}
+
+/// A character's `contacts`: the ids of the characters they pass news to; empty if left
+/// out. `None` if any is wrong (that's reported).
+fn read_contacts(section: &mut Section<'_>, report: &mut Report) -> Option<Vec<CharacterId>> {
+    let Some(items) = section.optional_list("contacts", "[\"captain_hale\"]", report) else {
+        return Some(Vec::new());
+    };
+    let path = section.path_to("contacts");
+    let contacts: Vec<Option<CharacterId>> = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let at = format!("{path}[{index}]");
+            let Value::String(text) = item else {
+                report.error(&at, "expected a character's id in quotes");
+                return None;
+            };
+            CharacterId::new(text)
+                .map_err(|invalid| report.error(&at, invalid.to_string()))
+                .ok()
+        })
+        .collect();
+    contacts.into_iter().collect()
 }
 
 /// A rule's `standing_change` key, which a table problem may point at.
@@ -1653,9 +1722,9 @@ mod tests {
             ]
         );
         assert_eq!(
-            problems(balance("[knowledge]\nmodel = \"ripple\"")),
+            problems(balance("[knowledge]\nmodel = \"rumour\"")),
             [
-                "balance.toml: knowledge.model: unknown knowledge model 'ripple': use omniscient or witnessed"
+                "balance.toml: knowledge.model: unknown knowledge model 'rumour': use omniscient, witnessed or ripple"
             ]
         );
         assert_eq!(
@@ -1670,6 +1739,130 @@ mod tests {
             problems(balance("knowledge = 1")),
             ["balance.toml: knowledge: expected a table, like [knowledge]"]
         );
+    }
+
+    #[test]
+    fn reads_how_news_ripples() {
+        let content = balance(
+            "[knowledge]\nmodel = \"ripple\"\n\n[knowledge.ripple]\nstrength = [0.6, 0.3]\nhop_ticks = 10",
+        )
+        .expect("valid content");
+        assert_eq!(
+            content.balance.knowledge,
+            factional_reputation::KnowledgeModel::Ripple
+        );
+        assert_eq!(
+            content.balance.ripple,
+            factional_reputation::Ripple {
+                strength: vec![h(60), h(30)],
+                hop_ticks: 10,
+            }
+        );
+        let defaults = balance("[knowledge]\nmodel = \"ripple\"").expect("valid content");
+        assert_eq!(
+            defaults.balance.ripple,
+            factional_reputation::Ripple {
+                strength: vec![h(50), h(25), h(10)],
+                hop_ticks: 1,
+            },
+            "0.50, 0.25 and 0.10, a tick a hop"
+        );
+    }
+
+    #[test]
+    fn reports_ripple_mistakes_at_their_keys() {
+        assert_eq!(
+            problems(balance(
+                "[knowledge.ripple]\nstrength = 0.5\nhop_ticks = 1.5\nhops = 3"
+            )),
+            [
+                "balance.toml: knowledge.ripple.strength: expected a list, like [0.5, 0.25, 0.1]",
+                "balance.toml: knowledge.ripple.hop_ticks: expected a whole number, like 100",
+                "balance.toml: knowledge.ripple: unknown key 'hops'",
+            ]
+        );
+        assert_eq!(
+            problems(balance("[knowledge.ripple]\nstrength = [0.5, \"half\"]")),
+            ["balance.toml: knowledge.ripple.strength[1]: expected a number, like 25.0"]
+        );
+        assert_eq!(
+            problems(balance(
+                "[knowledge.ripple]\nstrength = [0.5, 0.0, 0.6]\nhop_ticks = 0"
+            )),
+            [
+                "balance.toml: knowledge.ripple.strength[1]: 0.00 must be between 0.01 and 1.00",
+                "balance.toml: knowledge.ripple.strength[2]: 0.60 is stronger than the hop before it, 0.00: news only weakens as it travels",
+                "balance.toml: knowledge.ripple.hop_ticks: a hop takes at least 1 tick",
+            ]
+        );
+        assert_eq!(
+            problems(balance("[knowledge.ripple]\nstrength = []")),
+            [
+                "balance.toml: knowledge.ripple.strength: list at least one hop's strength; for news that doesn't travel, use the witnessed model"
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_a_characters_contacts() {
+        let content = characters(&format!(
+            "{VEX}contacts = [\"ava\"]\n\n[ava]\nname = \"Ava\"\nalignment = {{ law = 20.0, good = 10.0 }}\n"
+        ))
+        .expect("valid content");
+        let id = |text| CharacterId::new(text).expect("valid id");
+        assert_eq!(content.characters[&id("vex")].contacts, [id("ava")]);
+        assert!(content.characters[&id("ava")].contacts.is_empty());
+    }
+
+    #[test]
+    fn reports_contact_mistakes_at_their_keys() {
+        assert_eq!(
+            problems(characters(&format!("{VEX}contacts = \"ava\"\n"))),
+            ["characters.toml: vex.contacts: expected a list, like [\"captain_hale\"]"]
+        );
+        assert_eq!(
+            problems(characters(&format!("{VEX}contacts = [\"Ava\", 3]\n"))),
+            [
+                "characters.toml: vex.contacts[0]: 'Ava' isn't a valid id: use lowercase letters, digits and _, starting with a letter",
+                "characters.toml: vex.contacts[1]: expected a character's id in quotes",
+            ]
+        );
+        let ava = "[ava]\nname = \"Ava\"\nalignment = { law = 20.0, good = 10.0 }\ncontacts = [\"vex\"]\n";
+        assert_eq!(
+            problems(characters(&format!(
+                "{VEX}contacts = [\"ava\", \"vex\", \"avx\", \"ava\"]\n\n{ava}"
+            ))),
+            [
+                "characters.toml: vex.contacts[0]: ava already lists vex: a contact works both ways, so list it on one side only",
+                "characters.toml: vex.contacts[1]: a character can't be their own contact",
+                "characters.toml: vex.contacts[2]: unknown character 'avx' (did you mean 'ava'?)",
+                "characters.toml: vex.contacts[3]: 'ava' is listed twice",
+            ]
+        );
+    }
+
+    #[test]
+    fn warns_about_contacts_outside_the_ripple_model() {
+        let text = format!(
+            "{VEX}contacts = [\"ava\"]\n\n[ava]\nname = \"Ava\"\nalignment = {{ law = 20.0, good = 10.0 }}\n"
+        );
+        let warned: Vec<String> = warnings(&characters(&text).expect("valid content"))
+            .iter()
+            .map(Diagnostic::to_string)
+            .collect();
+        assert_eq!(
+            warned,
+            [
+                "characters.toml: vex.contacts: contacts only carry news when knowledge.model is ripple"
+            ]
+        );
+        let rippling = parse_content(Sources {
+            balance: Some("[knowledge]\nmodel = \"ripple\""),
+            characters: Some(&text),
+            ..Sources::default()
+        })
+        .expect("valid content");
+        assert!(warnings(&rippling).is_empty());
     }
 
     #[test]

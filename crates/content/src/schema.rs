@@ -640,17 +640,56 @@ fn balance() -> Value {
         &[],
         Some("How factions regard each other (DESIGN.md §9.4)."),
     );
-    let knowledge = object(
-        [(
-            "model",
-            with_default(
-                one_of(
-                    KnowledgeModel::ALL.map(KnowledgeModel::key),
-                    "Who learns of an act: omniscient (everyone, whoever saw it) or witnessed (the witnesses, the parties it names, and their factions) (DESIGN.md §10.1).",
+    let strength: Vec<Value> = defaults
+        .ripple
+        .strength
+        .iter()
+        .copied()
+        .map(number)
+        .collect();
+    let ripple = object(
+        [
+            (
+                "strength",
+                with_default(
+                    json!({
+                        "type": "array",
+                        "minItems": 1,
+                        "items": ranged(
+                            Some(Fixed::from_hundredths(1)),
+                            Some(Fixed::ONE),
+                            "How strongly news arrives at this hop.",
+                        ),
+                        "description": "How strongly news arrives at each hop beyond those who saw it, first hop first; none stronger than the one before. It goes no further than the last.",
+                    }),
+                    Value::Array(strength),
                 ),
-                defaults.knowledge.key().into(),
             ),
-        )],
+            (
+                "hop_ticks",
+                with_default(
+                    json!({ "type": "integer", "minimum": 1, "description": "How many ticks each hop takes." }),
+                    defaults.ripple.hop_ticks.into(),
+                ),
+            ),
+        ],
+        &[],
+        Some("How news travels under the ripple model (DESIGN.md §10.2)."),
+    );
+    let knowledge = object(
+        [
+            (
+                "model",
+                with_default(
+                    one_of(
+                        KnowledgeModel::ALL.map(KnowledgeModel::key),
+                        "Who learns of an act: omniscient (everyone, whoever saw it), witnessed (the witnesses, the parties it names, and their factions) or ripple (those, then onward through contacts and factions) (DESIGN.md §10).",
+                    ),
+                    defaults.knowledge.key().into(),
+                ),
+            ),
+            ("ripple", ripple),
+        ],
         &[],
         Some("Who learns of what (DESIGN.md §10)."),
     );
@@ -772,6 +811,13 @@ fn character() -> Value {
                 list(membership, "The factions they start in."),
             ),
             ("standing", json!({ "$ref": "#/$defs/standing" })),
+            (
+                "contacts",
+                list(
+                    id("A character's id."),
+                    "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
+                ),
+            ),
         ],
         &["name", "alignment"],
         None,

@@ -492,7 +492,7 @@ By default every character and faction knows about every act immediately (`knowl
 
 Phase 5 replaces that with knowledge that has to travel. It was designed in K0 and is built in four steps: who learns firsthand (K1), how news spreads (K2), judging by what you know (K3), and secret membership (K4).
 
-**The whole idea in one paragraph.** An act is news. The people who saw it learn it fully; their factions learn it through them; news then passes from person to person along declared contacts and through factions to their members, weaker at each hop and taking time at each one, until it's too faint to matter. Everyone who learns of an act updates their picture of the actor, their *perceived alignment*, by what they learned, at the strength they learned it, and anyone the act's standing effects name changes their standing by the same fraction. From K3 everyone judges by their own picture (D-21): disposition, joining, promotion and drift. A faction that allows it can have secret members, whom other factions don't know about until they're exposed (D-23, D-24).
+**The whole idea in one paragraph.** An act is news. The people who saw it learn it fully; their factions learn it through them; news then passes from person to person along declared contacts and through factions to their members, weaker at each hop and taking time at each one, until it has gone as far as the world lets it. Everyone who learns of an act updates their picture of the actor, their *perceived alignment*, by what they learned, at the strength they learned it, and anyone the act's standing effects name changes their standing by the same fraction. From K3 everyone judges by their own picture (D-21): disposition, joining, promotion and drift. A faction that allows it can have secret members, whom other factions don't know about until they're exposed (D-23, D-24).
 
 ### 10.1 Models and awareness (K1, P-55)
 
@@ -504,7 +504,7 @@ Phase 5 replaces that with knowledge that has to travel. It was designed in K0 a
 | `witnessed` | Only those who learn firsthand (below). |
 | `ripple` | Those who learn firsthand, then everyone the news reaches through the social graph (§10.2). |
 
-**Awareness** is how well a party knows of a piece of news, from 0 (not at all) to 1 (as if they'd seen it). It's computed exactly, as a fraction, and every value it scales is rounded once (P-1).
+**Awareness** is how well a party knows of a piece of news, from 0 (not at all) to 1 (as if they'd seen it). Each hop's awareness is a two-decimal value from content (§10.2), and every value it scales is rounded once (P-1).
 
 **Who learns firsthand,** at awareness 1:
 
@@ -529,11 +529,11 @@ The **social graph** is built from content, so its reach is known before the gam
 
 **How news travels:**
 
-- From each party that has just learned, the news goes one hop to each neighbour that hasn't heard it yet, arriving `knowledge.ripple.hop_ticks` later at `awareness × knowledge.ripple.decay`.
-- It stops at a hop whose awareness would be below `knowledge.ripple.threshold`. With the defaults (decay 0.50, threshold 0.10) that's three hops: 1.00, 0.50, 0.25, 0.125.
-- Each party learns a piece of news once, the first time it reaches them. With one decay for every hop, the first arrival is always the strongest.
-- **News in flight is state.** It's delivered as time advances (`AdvanceTime`), oldest first, so a single long advance carries news several hops. Each arrival is recorded in a `NewsArrived` event, with who learned, at what awareness, and what is now on its way, so replay rebuilds the news in flight without running rules, and saves carry it (P-54).
-- **Order.** Arrivals are taken by tick, then by news (the act's sequence number), then factions before characters, each in id order. Each arrival's standing changes follow its `NewsArrived` event.
+- From each party that has just learned, the news goes one hop to each neighbour that hasn't heard it yet, arriving `knowledge.ripple.hop_ticks` later.
+- **`knowledge.ripple.strength`** lists the awareness it arrives at on each hop, first hop first, and it goes no further than the last. The default, `[0.5, 0.25, 0.1]`, is three hops beyond those who saw it. Each is within 0.01–1.00 and none is stronger than the one before (P-56).
+- Each party learns a piece of news once, the first time it reaches them. Since strength never rises, the first arrival is always the strongest.
+- **News in flight is state.** An act some didn't see emits `NewsSent` after its own events: who has heard (those who learned firsthand, and the actor), the standing changes still due to the rest, and the first hop. It's delivered as time advances (`AdvanceTime`), oldest first, so a single long advance carries news several hops, each going on from when it arrived. Each arrival is a `NewsArrived` event, with who learned, at what awareness, and what is now on its way, so replay rebuilds the news in flight without running rules, and saves carry it (P-54).
+- **Order.** Arrivals are taken by tick, then by news (the act's sequence number), then factions before characters, each in id order. Each arrival's standing changes follow its `NewsArrived` event, right after `TimeAdvanced` and before any other review.
 - Once nothing more is on its way, the news is forgotten. What people learned stays in their pictures and standings.
 
 **Worked example.** In Riverhold, Ava's contacts are Hale and Mira, and Mira's include Brother Ash. Hop ticks are 10. The player picks Captain Hale's pocket at tick 0, seen only by Merchant Ava (`steal` costs the target 20 and the target's factions 10).
@@ -597,7 +597,7 @@ A faction's own table replaces the world's `membership.exposed`. Built in: `expe
 X-1 also asked what this costs. Nothing is stored per observer for what everyone knows, and nothing per act once its news has stopped:
 
 - **Pictures** are kept as offsets from the starting alignment, in two tiers. A shift everyone learns of goes into the subject's **public** offset, one per character. A shift only some learn of goes into a **private** offset for each observer that learned it, kept only for observer–subject pairs that have one. Perceived = start + public + private.
-- So under `omniscient`, or with every act seen by everyone, there are no private offsets at all. Otherwise the private store grows with the reach of unwitnessed acts, which the threshold bounds: three hops by default.
+- So under `omniscient`, or with every act seen by everyone, there are no private offsets at all. Otherwise the private store grows with the reach of unwitnessed acts, which the strength list bounds: three hops by default.
 - **News in flight** holds the act's facts (actor, target, shift, the standing changes it carries) and who has heard, and is dropped when it stops.
 - **Secret memberships** keep the set of outsiders each has been exposed to.
 
@@ -605,7 +605,7 @@ If private offsets grow too large for a host, letting them fade back to the publ
 
 ### 10.6 What it keeps
 
-- **Completeness (D-20).** The graph, the decay and the threshold are content, so who can ever hear of what is computable at load time (§16.2). Every `exposed` table ends with a rule that decides.
+- **Completeness (D-20).** The graph and the strength list are content, so who can ever hear of what is computable at load time (§16.2). Every `exposed` table ends with a rule that decides.
 - **Determinism.** Breadth-first in a fixed order, with exact fractions and one rounding per value.
 - **Replay and saves.** News, pictures and exposures change only through events, so replaying the event log rebuilds them, and a save restores them (P-15, P-54).
 
@@ -641,7 +641,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | Drift | `ProbationStarted`, `ProbationCleared`, `ProbationExpired`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
 | Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict`, `MembershipConflictEnded` |
 | Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierRemoved`, `ModifierExpired` |
-| Knowledge | `NewsArrived` (K2), `MembershipExposed` and `LeftFaction { Exposed }` (K4) |
+| Knowledge | `NewsSent`, `NewsArrived` (K2), `MembershipExposed` and `LeftFaction { Exposed }` (K4) |
 
 ### 11.3 Queries (read)
 
@@ -654,7 +654,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 - `now`: the current tick
 - `events_since`: the events after a sequence number (P-33)
 - `journal`: every command issued, and whether it was accepted
-- `news`: what's on its way, to whom and when (K2)
+- `news`: each piece of news on its way, with who has heard, its next hop and the standing changes still due (K2)
 - `perceived`: an observer's perceived alignment of a character, with the shifts it's made of (K3)
 - `knows_membership`: whether an observer knows of a membership (K4)
 
@@ -720,7 +720,7 @@ This table lists every knob: where it lives, its default, and the increment that
 | faction `drift`, `expel_standing_change`; `membership.default_drift` | factions.toml, balance.toml | `flag`; −20 | M8 |
 | `membership.conflict` (`resolve`, `auto_after_ticks`) | balance.toml | resolved by the host or a quest | M9 |
 | `knowledge.model` | balance.toml | `omniscient` | K1 |
-| `knowledge.ripple.decay`, `.hop_ticks`, `.threshold` | balance.toml | 0.50, 1, 0.10 | K2 |
+| `knowledge.ripple.strength`, `.hop_ticks` | balance.toml | `[0.5, 0.25, 0.1]`, 1 | K2 |
 | character `contacts` | characters.toml | none | K2 |
 | faction `secret_members`; a starting membership's `secret` | factions.toml, characters.toml | false | K4 |
 | `membership.exposed`, per-faction override | balance.toml, factions.toml | expel, at the faction's `expel_standing_change` | K4 |
@@ -780,9 +780,9 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 (done) |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is a whole number ≥ 0, and only with `ask` | error | M9 (done) |
 | `knowledge.model` is a known model | error | K1 (done) |
-| `decay` within 0–1; `threshold` within 0.01–1; `hop_ticks` a whole number ≥ 1 | error | K2 |
-| Contacts name characters that exist, not themselves, each pair once whichever side declares it | error | K2 |
-| `[knowledge.ripple]` or contacts in a world whose model isn't `ripple` | warning | K2 |
+| `strength` lists at least one hop, each within 0.01–1.00 and none stronger than the one before; `hop_ticks` a whole number ≥ 1 | error | K2 (done) |
+| Contacts name characters that exist, not themselves, each pair once whichever side declares it | error | K2 (done) |
+| Contacts in a world whose model isn't `ripple` | warning | K2 (done) |
 | `secret_members` only in a `witnessed` or `ripple` world; a secret starting membership only in a faction that allows them | error | K4 |
 | `exposed` tables: as for the M7 tables, with the outcomes `keep`, `demote` and `expel` | error | K4 |
 | A faction no starting character is within joining tolerance of, naming the nearest and their distance (P-51) | warning | T1 (done) |
@@ -797,6 +797,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `factional run scenarios/<name>.scenario` to replay a scripted playthrough.
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working. On `act` it includes who learns of the act and why (K1).
 - `act … --seen-by <id>,…` or `--unseen` to say who saw an act; without either, everyone did (K1).
+- `news` in the REPL for what's on its way: who has heard of each act, who hears next, when and how strongly, and the standing changes still due (K2).
 - `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
 - `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
 - `save <file>` and `restore <file>` in the REPL to keep a session and come back to it (T4, P-54).
@@ -872,7 +873,7 @@ Every example in this document and in PLAN.md uses this world. It lives in `cont
 
 **Knowledge** (from K1; designed in K0)
 
-- The model is `ripple`, with decay 0.50, threshold 0.10 and 10 ticks a hop (§10.2). Until K2 reads `ripple`, `content/sample` uses `witnessed`.
+- The model is `ripple`: news arrives at 0.50, 0.25, then 0.10, ten ticks a hop (§10.2).
 - Contacts: `merchant_ava` ↔ `captain_hale`, `merchant_ava` ↔ `sister_mira`, `sister_mira` ↔ `brother_ash`.
 - The Lantern Guild and the Ashen Circle allow secret members. `membership.exposed` keeps a member with standing 60 or more at −30, and otherwise expels at −40 (§10.4).
 
@@ -892,7 +893,7 @@ Each invariant has a property test (`proptest`) over random content and random c
 10. A curve's value always stays within the range of its own y values.
 11. Restoring a save gives the same world: the same state, events and journal (T4).
 12. Knowledge only ever hides: with every act and outcome seen by everyone and no secret memberships, `witnessed` and `ripple` give exactly the events `omniscient` does, and every awareness is within 0…1 (K1–K3).
-13. News always stops: each party learns a piece of news at most once, and none is still on its way more than `hop_ticks` × the number of hops the threshold allows after it began (K2).
+13. News always stops: each party learns a piece of news at most once, none arrives before it's due, and none is still on its way more than `hop_ticks` × the length of `strength` after it began (K2).
 
 ## 15. Crates (P-25)
 

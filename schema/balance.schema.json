@@ -605,12 +605,42 @@
       "properties": {
         "model": {
           "default": "omniscient",
-          "description": "Who learns of an act: omniscient (everyone, whoever saw it) or witnessed (the witnesses, the parties it names, and their factions) (DESIGN.md §10.1).",
+          "description": "Who learns of an act: omniscient (everyone, whoever saw it), witnessed (the witnesses, the parties it names, and their factions) or ripple (those, then onward through contacts and factions) (DESIGN.md §10).",
           "enum": [
             "omniscient",
-            "witnessed"
+            "witnessed",
+            "ripple"
           ],
           "type": "string"
+        },
+        "ripple": {
+          "additionalProperties": false,
+          "description": "How news travels under the ripple model (DESIGN.md §10.2).",
+          "properties": {
+            "hop_ticks": {
+              "default": 1,
+              "description": "How many ticks each hop takes.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "strength": {
+              "default": [
+                0.5,
+                0.25,
+                0.1
+              ],
+              "description": "How strongly news arrives at each hop beyond those who saw it, first hop first; none stronger than the one before. It goes no further than the last.",
+              "items": {
+                "description": "How strongly news arrives at this hop.",
+                "maximum": 1.0,
+                "minimum": 0.01,
+                "type": "number"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "type": "object"
         }
       },
       "type": "object"
