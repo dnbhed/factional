@@ -916,7 +916,7 @@ scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/sna
 
 - **Dependencies point one way:** core ← reputation ← content ← cli.
 - **Future modules** (quests, combat and the rest) become sibling crates. They depend on core and talk to reputation only through §11.
-- **A host-engine adapter** waits until a host is chosen (E0, X-2). That would be a Bevy plugin, or a C ABI for Godot, Unity or Unreal.
+- **A host-engine adapter** waits until a game needs a host (X-2, left open in E0). That would be a Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for Unity, Unreal or others.
 
 ## 16. Completeness across modules (D-20)
 

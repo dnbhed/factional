@@ -421,7 +421,7 @@ None right now. A new question gets the next free number, starting at O-5.
 ## Deferred
 
 - **X-1 · Perceived alignment.** Whether observers judge a character by what they know of them rather than by their true alignment, and how. Settled in K0 by the user's choice: D-21, with P-57 for how.
-- **X-2 · Host engine and integration route.** A Bevy plugin, or a C ABI for Godot, Unity or Unreal. Settled in E0.
+- **X-2 · Host engine and integration route.** A Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for any engine. In E0 (2026-10-07) the user chose not yet: the module stays engine-agnostic until a game needs a host, and the host adapter (E1) and binary saves (T5) wait for it.
 - **X-3 · Save format and versioning.** Settled in T4 by the user's choices; see P-54.
 - **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Which factions a quest affects, directly and through spillover, war and membership; what counts as a conflict with another faction's questline at a stage; and how to check this without exploring every combination of stages. Settled in Q0, the quest module's design pass (DESIGN.md §16.1).
 - **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). Two candidates, chosen between in U0:
