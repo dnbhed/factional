@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → U0 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → U0 → E1 → T5`
 
 ## Done
 
@@ -67,6 +67,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - K4 — secret membership (D-23): factions' `secret_members` (needs `witnessed` or `ripple`), secret starting memberships and `JoinFaction { secretly }` with `assess_join_secretly`; a secret membership is known only to the faction, its members and the character, so kinship, joining and wars count only the memberships each side knows of, and a double agent keeps both; invariant 6 amended, with a property test under ripple; `join`/`can-join --secretly`; the Guild and the Circle allow secret members; split from K5 (P-62); done 2026-10-07 (#35)
 - K5 — exposure (D-24): `Expose { character, faction, witnesses }` and `MembershipExposed`, the news of it rippling; the `exposed` rule table (`keep`, `demote`, `expel`; built in, expel) judged by each faction that learns and is at war with the secret one, `LeftFaction { Exposed }`, and wars opening between memberships each side knows of; `assess_exposure`; `expose … [--seen-by] [--explain]`; Riverhold's exposed table, with the double agent made in play rather than at the start (P-63); done 2026-10-07 (#36)
 - E0 — host engine: the user chose not yet, so X-2 stays deferred and the module stays engine-agnostic; E1 and T5, which need a host, wait at the end of the queue, and Q0 is next; done 2026-10-07 (#37)
+- Q0 — design pass for quests (DESIGN.md §17): quests of stages with choices, chained into questlines, given by a faction, a character or no one; reconciling as every lockout declared in `locks`, found by conservative bounds checked choice by stage, never combinations; the user's choices D-25 to D-28, settling X-4, with P-64 and P-65; Q1 to Q5 outlined; done 2026-10-07 (#38)
 
 ---
 
@@ -92,9 +93,25 @@ Waits until a game needs a host; then a host is chosen and E1 builds its adapter
 
 ## Beyond this module
 
-### Q0 · Quest module design pass: reconciling questlines across factions — P3 · Next
+### Q1 · Quest content — P3 · Next
 
-The quest module comes after this one. Its first step is a design pass that settles X-4: what it means for a faction's quests and questlines to reconcile with every other faction they affect, and those factions' questlines, at every stage, and how the loader checks it (D-20, DESIGN.md §16). No quest content loads until that check exists.
+`factional-quests`, `quests.toml` and `questlines.toml`: quests (name, an optional giver: a faction, a character or no one), stages (requirements) and choices (an outcome or inline effects, `next`), and questlines chaining quests; every reference and range checked, and their JSON Schemas; the CLI lists quests and questlines (DESIGN.md §17.1, D-25, D-28, P-64). Until Q4's lockout check exists, `validate` checks quests but a world with quests doesn't load (D-20), so Q1 to Q4 build the checks before Q5 plays anything.
+
+### Q2 · Quest effects — P3 · Outline
+
+`join`, `leave`, `promote`, `demote` and `relation` effects, as outcomes and inline, sent to this module as commands (§17.1).
+
+### Q3 · Reachable stages — P3 · Outline
+
+Every stage reachable along some path of its own quest, and every quest of a questline from the quests before it; dead content is an error (§17.2).
+
+### Q4 · The lockout check — P3 · Outline
+
+Per-choice bounds and per-world recoverability, each choice checked against each stage of every other quest, whoever gives it; `locks` declarations, undeclared lockouts as errors, stale locks as warnings (§17.3, D-26, D-27, P-65).
+
+### Q5 · Playing quests — P3 · Outline
+
+Starting a questline, making choices and recording progress as commands and events in the quest module, sending this module its effects; in the CLI (§17).
 
 ### U0 · Editor design pass: web or egui — P3
 
