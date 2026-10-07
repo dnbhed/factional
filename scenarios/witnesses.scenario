@@ -1,0 +1,26 @@
+# Witnessed acts (K1, DESIGN.md §10.1). Riverhold's knowledge model is "witnessed": only
+# those who learn of an act firsthand change their minds. That's the witnesses, the parties
+# the act names, and the factions of the characters among them, but never through the actor.
+
+load content/sample
+
+# The player picks Hale's pocket, seen only by Merchant Ava. Hale didn't notice, so neither
+# he nor the Watch knows: the alignment moves, the standings don't.
+act player steal --target captain_hale --seen-by merchant_ava --explain
+assert show character player == player — The Player — law -5.00, good -3.00 — True Neutral
+assert standing player == no standing with anyone yet
+
+# Caught in the act: Hale sees it, and the Watch learns through him. −10.00 with the Watch
+# spills +1.80 to the Guild (−0.18 at −80) and −1.00 to the Temple (0.10 at +60).
+act player steal --target captain_hale --seen-by captain_hale --explain
+assert standing player captain_hale == -20.00
+assert standing player city_watch == -10.00
+assert standing player lantern_guild == 1.80
+assert standing player temple == -1.00
+
+# A donation reaches the Temple, which it names, even unseen: +10.00, spilling +1.00 to the
+# Watch and −2.40 to the Ashen Circle (−0.24 at −90).
+act player donate_to_temple --unseen --explain
+assert standing player temple == 9.00
+assert standing player city_watch == -9.00
+assert standing player ashen_circle == -2.40

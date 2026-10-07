@@ -60,6 +60,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - T3 — `map <faction>` (the alignment plane, 21 by 21 cells: the faction's tolerance region, the faction and each character, with a key of distances; `World::distance_to_point`), `matrix [<subject>...] [--csv]` (every observer's disposition score toward each subject), and `curve <knob> [at <x>]` for the world's named curves, or any curve, as a table or at a point (`Curve::points`) (P-53); done 2026-10-07 (#29)
 - T4 — saves: `save <file>` and `restore <file>` in the REPL; a JSON file with its format and version first, the content directory with each file's FNV-1a fingerprint, the journal as commands with their event counts, and the events; `World::saved_journal` and `World::restore` (events replayed without rules, refusals decided again); exact serde for `Fixed`, `Ratio`, ids and alignments; restoring refuses changed content, other versions and saves that don't add up; invariant 11 (P-54); done 2026-10-07 (#30)
 - K0 — design pass for knowledge (DESIGN.md §10): who learns firsthand, ripple through contacts and membership with news in flight, perceived alignment used by every judgement, secret membership and exposure tables; the user's choices D-21 to D-24 (settling X-1), with P-55 to P-58; invariants 12 and 13; Riverhold's knowledge settings in the complete example; done 2026-10-07 (#31)
+- K1 — witnessed acts: `knowledge.model` (`omniscient`, `witnessed`), with Riverhold on `witnessed`; only parties that learn firsthand (witnesses, the parties an act names, and the factions of the characters among them, never through the actor) change their standing; a `reach` query; `act --seen-by <id>,… | --unseen`, and `act --explain` saying who learns; invariant 12's property test as far as K1 goes (P-59); done 2026-10-07 (#32)
 
 ---
 
@@ -77,13 +78,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 5 — Knowledge and rumour
 
-### K1 · Witnessed acts — P2 · Next
-
-`knowledge.model` (`omniscient`, `witnessed`); awareness from who learns firsthand (DESIGN.md §10.1, P-55), scaling each standing effect; `act --seen-by <character>,… | --unseen`. Acceptance examples are written when it starts.
-
-**Validates** (DESIGN.md §12.2): `knowledge.model` is a known model.
-
-### K2 · Ripple through the social graph — P2 · Outline
+### K2 · Ripple through the social graph — P2 · Next
 
 `contacts`, `[knowledge.ripple]`, news in flight delivered by `AdvanceTime`, `NewsArrived`, a `news` query and command; invariant 13 (§10.2, D-22, P-56).
 

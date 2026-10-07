@@ -45,6 +45,7 @@ The schema checks one value at a time. Checks across values, such as whether a f
 
 - `cargo run -q -p factional-cli -- repl`, then `load content/sample` and `help`.
 - `--explain` on `act`, `disposition`, `can-join` and `promote` shows the working.
+- `act <actor> <action> --seen-by <id>,…` (or `--unseen`) says who saw an act. Riverhold's `knowledge.model` is `witnessed`, so only those who learn of it firsthand change their minds; `act --explain` lists who learns and why.
 - `map <faction>` draws who stands where on the alignment plane and the region within the faction's tolerance; `matrix [<subject>...] [--csv]` gives how everyone regards each subject; `curve <knob>`, such as `curve disposition.affinity`, prints a curve as a table.
 - `save <file>` keeps your session; `restore <file>` brings it back, as long as the content hasn't changed since.
 - After editing a file, `reload` in the REPL replays your session on the new content and shows what changed.

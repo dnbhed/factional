@@ -6,8 +6,8 @@
 
 use factional_core::Fixed;
 use factional_reputation::{
-    AXIS_LIMIT, Axis, Balance, ComponentKind, Condition, Consequence, DriftPolicy, Faction, Metric,
-    TableKind, TargetCurve, Toward,
+    AXIS_LIMIT, Axis, Balance, ComponentKind, Condition, Consequence, DriftPolicy, Faction,
+    KnowledgeModel, Metric, TableKind, TargetCurve, Toward,
 };
 use serde_json::{Map, Value, json};
 
@@ -640,6 +640,20 @@ fn balance() -> Value {
         &[],
         Some("How factions regard each other (DESIGN.md §9.4)."),
     );
+    let knowledge = object(
+        [(
+            "model",
+            with_default(
+                one_of(
+                    KnowledgeModel::ALL.map(KnowledgeModel::key),
+                    "Who learns of an act: omniscient (everyone, whoever saw it) or witnessed (the witnesses, the parties it names, and their factions) (DESIGN.md §10.1).",
+                ),
+                defaults.knowledge.key().into(),
+            ),
+        )],
+        &[],
+        Some("Who learns of what (DESIGN.md §10)."),
+    );
     object(
         [
             ("alignment", alignment),
@@ -648,6 +662,7 @@ fn balance() -> Value {
             ("inertia", inertia),
             ("membership", membership),
             ("relations", relations),
+            ("knowledge", knowledge),
         ],
         &[],
         None,

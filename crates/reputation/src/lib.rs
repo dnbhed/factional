@@ -16,6 +16,7 @@ mod distance;
 mod faction;
 mod id;
 mod inertia;
+mod knowledge;
 mod membership;
 mod relation;
 mod shift;
@@ -42,6 +43,7 @@ pub use id::{
     ActionId, CharacterId, FactionId, InvalidId, ModifierId, OutcomeId, ProfileId, RankId,
 };
 pub use inertia::{Inertia, InertiaProfile, Toward};
+pub use knowledge::{KnowledgeModel, Learned, Reached};
 pub use membership::{
     ConflictRule, Consequence, DriftPolicy, JoinAssessment, JoinBlock, LeaveReason, Membership,
     PromotionAssessment, RankCheck, StartingMembership, ToleranceProblem, Tolerances,

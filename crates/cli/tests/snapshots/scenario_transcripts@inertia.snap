@@ -11,6 +11,8 @@ loaded 6 characters from content/sample
 #3 at tick 0: sister_mira's standing with merchant_ava moved from 0.00 to 10.00
 shift = base × scale × inertia, rounded once; sister_mira's inertia profile is hardening
 good: 4.00 × 1.00 × 0.405 (good.toward_good at 85.00) = 1.62, from 85.00 to 86.62
+who learns of it, under the witnessed model, and the standing change due:
+merchant_ava 10.00: learns, as everyone knows of it
 > assert show character sister_mira == sister_mira — Sister Mira — law 35.00, good 86.62 — Lawful Good — member of temple (ordained) since tick 0
 > act player help_stranger --target merchant_ava --explain
 #4 at tick 0: player did help_stranger, targeting merchant_ava
@@ -18,6 +20,8 @@ good: 4.00 × 1.00 × 0.405 (good.toward_good at 85.00) = 1.62, from 85.00 to 86
 #6 at tick 0: player's standing with merchant_ava moved from 0.00 to 10.00
 shift = base × scale × inertia, rounded once; player's inertia profile is steady
 good: 4.00 × 1.00 × 1.00 (steady has no good.toward_good curve) = 4.00, from 0.00 to 4.00
+who learns of it, under the witnessed model, and the standing change due:
+merchant_ava 10.00: learns, as everyone knows of it
 > act captain_hale steal --explain
 #7 at tick 0: captain_hale did steal
 #8 at tick 0: captain_hale's alignment moved from law 75.00, good 30.00 to law 70.00, good 27.45
