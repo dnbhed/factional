@@ -15,8 +15,9 @@ use crate::{
     Learned, LeaveReason, Membership, Metric, ModifierId, ModifierObserver, News, NextHop, Outcome,
     OutcomeId, Part, Party, Perception, ProfileId, PromotionAssessment, RankCheck, RankId, Reached,
     Regard, Relation, RelationSide, RestoreError, Ripple, Role, Rule, SavedCommand, Shift, Spill,
-    StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner, TableProblem, TableSource,
-    TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses, measure,
+    StandingEffects, StandingKey, StandingOwner, TableDecision, TableKind, TableOwner,
+    TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses,
+    measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -1334,6 +1335,9 @@ struct State {
     /// What each party has heard of a character's hidden shifts, at the strength they heard
     /// it; only those who have heard something.
     heard: BTreeMap<(Party, CharacterId), AlignmentDelta>,
+    /// Who outside a faction and its members knows of a secret membership, by character and
+    /// faction (DESIGN.md §10.4).
+    exposed: BTreeMap<(CharacterId, FactionId), BTreeSet<Party>>,
 }
 
 impl State {
@@ -1414,6 +1418,7 @@ impl State {
             news: BTreeMap::new(),
             hidden: BTreeMap::new(),
             heard: BTreeMap::new(),
+            exposed: BTreeMap::new(),
         }
     }
 }
@@ -1941,6 +1946,43 @@ impl World {
                     .expect("clamped to the axes");
                 Ok(faction_moved(faction, from, to))
             }
+            Command::Expose {
+                character,
+                faction,
+                witnesses,
+            } => {
+                self.existing(character, Role::Member)?;
+                self.faction(faction)
+                    .ok_or_else(|| self.unknown_faction(faction))?;
+                self.existing_witnesses(witnesses)?;
+                let membership = self
+                    .state
+                    .memberships
+                    .get(character)
+                    .and_then(|factions| factions.get(faction))
+                    .ok_or_else(|| CommandError::NotAMember {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                    })?;
+                if !membership.secret {
+                    return Err(CommandError::NotSecret {
+                        character: character.clone(),
+                        faction: faction.clone(),
+                    });
+                }
+                let (to, judges) = self.exposure_learners(character, faction, witnesses);
+                let mut changes = vec![Change::MembershipExposed {
+                    character: character.clone(),
+                    faction: faction.clone(),
+                    to: to.clone(),
+                }];
+                let decisions = self.exposure_decisions(character, faction, &judges);
+                changes.extend(self.exposure_consequences(character, &decisions));
+                if let Some(to) = to {
+                    changes.extend(self.exposure_news(character, faction, &to));
+                }
+                Ok(changes)
+            }
             Command::ResolveConflict { character, keep } => {
                 self.existing(character, Role::Member)?;
                 self.faction(keep)
@@ -2354,8 +2396,49 @@ impl World {
                 due,
                 next,
                 shift,
+                exposes: None,
             });
         (witnessed, news)
+    }
+
+    /// Under ripple, news that `character` is secretly in `faction`, on its way from those
+    /// who just learned it, `learned`. Everyone who already knows has heard: the faction,
+    /// its members, the character, and anyone it was exposed to (DESIGN.md §10.4).
+    fn exposure_news(
+        &self,
+        character: &CharacterId,
+        faction: &FactionId,
+        learned: &BTreeSet<Party>,
+    ) -> Option<Change> {
+        if self.content.balance.knowledge != KnowledgeModel::Ripple {
+            return None;
+        }
+        let mut heard = learned.clone();
+        heard.insert(Party::Character(character.clone()));
+        heard.insert(Party::Faction(faction.clone()));
+        heard.extend(
+            self.members(faction)
+                .into_iter()
+                .flatten()
+                .map(|member| Party::Character(member.clone())),
+        );
+        if let Some(exposed) = self
+            .state
+            .exposed
+            .get(&(character.clone(), faction.clone()))
+        {
+            heard.extend(exposed.iter().cloned());
+        }
+        let next = self.next_hop(&heard, learned, 0, self.state.now)?;
+        Some(Change::NewsSent {
+            news: self.events.len() as u64 + 1,
+            actor: character.clone(),
+            heard,
+            due: Vec::new(),
+            next,
+            shift: AlignmentDelta::default(),
+            exposes: Some(faction.clone()),
+        })
     }
 
     /// Where news goes after `learned` heard it at hop `hop` and tick `at`: every contact of
@@ -2416,6 +2499,19 @@ impl World {
             .map(|(party, change)| (party.clone(), change.saturating_mul(arrived.awareness)))
             .collect();
         let shift = news.shift.scaled(arrived.awareness);
+        let mut changes = self.standing_changes(&news.actor, deltas);
+        // News of a secret membership: the factions that just heard judge it.
+        if let Some(secret) = &news.exposes {
+            let judges: BTreeSet<FactionId> = learned
+                .iter()
+                .filter_map(|party| match party {
+                    Party::Faction(faction) => Some(faction.clone()),
+                    Party::Character(_) => None,
+                })
+                .collect();
+            let decisions = self.exposure_decisions(&news.actor, secret, &judges);
+            changes.extend(self.exposure_consequences(&news.actor, &decisions));
+        }
         let arrival = Change::NewsArrived {
             news: id,
             arrived,
@@ -2423,7 +2519,7 @@ impl World {
             next,
             shift,
         };
-        (arrival, self.standing_changes(&news.actor, deltas))
+        (arrival, changes)
     }
 
     /// A character's inertia profile, and its id: their own, or the default. Content checks
@@ -2548,16 +2644,17 @@ impl World {
         let threshold = self.content.balance.conflict_threshold;
         let mut changes = Vec::new();
         for (character, factions) in &self.state.memberships {
-            // A war is only between memberships each side knows of: two open ones
-            // (DESIGN.md §10.4).
-            let factions: Vec<&FactionId> = factions
-                .iter()
-                .filter(|(_, membership)| !membership.secret)
-                .map(|(faction, _)| faction)
-                .collect();
+            let factions: Vec<&FactionId> = factions.keys().collect();
             for (index, a) in factions.iter().enumerate() {
                 for b in &factions[index + 1..] {
-                    let at_war = hostility(&self.state.relations, a, b) <= threshold;
+                    // A war is only between memberships each side knows of (DESIGN.md §10.4).
+                    let known = |by: &FactionId, of: &FactionId| {
+                        self.knows_membership(&Observer::Faction(by.clone()), character, of)
+                            == Some(true)
+                    };
+                    let at_war = hostility(&self.state.relations, a, b) <= threshold
+                        && known(a, b)
+                        && known(b, a);
                     let key = (character.clone(), (*a).clone(), (*b).clone());
                     let pair = ((*a).clone(), (*b).clone());
                     match (at_war, self.state.conflicts.contains_key(&key)) {
@@ -2823,6 +2920,7 @@ impl World {
                 ref due,
                 ref next,
                 shift,
+                ref exposes,
             } => {
                 self.state.news.insert(
                     news,
@@ -2832,9 +2930,32 @@ impl World {
                         due: due.iter().cloned().collect(),
                         next: next.clone(),
                         shift,
+                        exposes: exposes.clone(),
                     },
                 );
             }
+            Change::MembershipExposed {
+                ref character,
+                ref faction,
+                ref to,
+            } => match to {
+                None => {
+                    if let Some(membership) = self
+                        .state
+                        .memberships
+                        .get_mut(character)
+                        .and_then(|factions| factions.get_mut(faction))
+                    {
+                        membership.secret = false;
+                    }
+                }
+                Some(to) => self
+                    .state
+                    .exposed
+                    .entry((character.clone(), faction.clone()))
+                    .or_default()
+                    .extend(to.iter().cloned()),
+            },
             Change::ShiftWitnessed {
                 ref character,
                 shift,
@@ -2855,6 +2976,13 @@ impl World {
                 let actor = self.state.news[&news].actor.clone();
                 for party in learned {
                     self.state.hear(party, &actor, shift);
+                }
+                if let Some(secret) = self.state.news[&news].exposes.clone() {
+                    self.state
+                        .exposed
+                        .entry((actor.clone(), secret))
+                        .or_default()
+                        .extend(learned.iter().cloned());
                 }
                 match next {
                     Some(next) => {
@@ -2908,6 +3036,10 @@ impl World {
                 ref faction,
                 ..
             } => {
+                // Who it was exposed to doesn't outlast the membership.
+                self.state
+                    .exposed
+                    .remove(&(character.clone(), faction.clone()));
                 if let Some(factions) = self.state.memberships.get_mut(character) {
                     factions.remove(faction);
                     if factions.is_empty() {
@@ -3470,6 +3602,30 @@ impl World {
         self.assess(character, faction, true)
     }
 
+    /// How each faction that would learn now that `character` is secretly in `faction`,
+    /// seen by `witnesses`, would decide: its exposed table, for each that `character` is in
+    /// and that's in conflict with `faction` (DESIGN.md §10.4). Those who hear later, under
+    /// ripple, decide when they do. `None` if any is unknown, or the membership isn't
+    /// secret.
+    pub fn assess_exposure(
+        &self,
+        character: &CharacterId,
+        faction: &FactionId,
+        witnesses: &Witnesses,
+    ) -> Option<Vec<TableDecision>> {
+        self.faction(faction)?;
+        if let Witnesses::These(witnesses) = witnesses {
+            for witness in witnesses {
+                self.character(witness)?;
+            }
+        }
+        if !self.state.memberships.get(character)?.get(faction)?.secret {
+            return None;
+        }
+        let (_, judges) = self.exposure_learners(character, faction, witnesses);
+        Some(self.exposure_decisions(character, faction, &judges))
+    }
+
     /// Whether `observer` knows that `character` belongs to `faction`: an open membership is
     /// known to everyone, a secret one only to the faction, its members and the character
     /// (DESIGN.md §10.4). `None` if any is unknown or they're not a member.
@@ -3484,8 +3640,18 @@ impl World {
             Observer::Character(id) => self.character(id).map(|_| ())?,
         }
         let membership = self.state.memberships.get(character)?.get(faction)?;
+        let party = match observer {
+            Observer::Faction(id) => Party::Faction(id.clone()),
+            Observer::Character(id) => Party::Character(id.clone()),
+        };
+        let exposed = self
+            .state
+            .exposed
+            .get(&(character.clone(), faction.clone()))
+            .is_some_and(|to| to.contains(&party));
         Some(
             !membership.secret
+                || exposed
                 || match observer {
                     Observer::Faction(id) => id == faction,
                     Observer::Character(id) => id == character || self.is_member(id, faction),
@@ -3566,47 +3732,167 @@ impl World {
         secretly: bool,
     ) -> Defection {
         let current = &self.content.factions[from];
-        let position = current
-            .rank_position(&membership.rank)
-            .expect("a member's rank is on their faction's ladder");
-        let (current_side, target_side) = (
-            Observer::Faction(from.clone()),
-            Observer::Faction(target.id.clone()),
-        );
-        let measured = |judge: &Observer, against: &Observer| {
-            self.distance_as(judge, against, character)
-                .expect("both exist")
-                .value
-        };
-        let situation = |judge: &Observer| Situation {
-            rank: membership.rank.clone(),
-            rung: position + 1,
-            standing_with_current: self.standing_now(character, &Party::Faction(from.clone())),
-            standing_with_target: self.standing_now(character, &Party::Faction(target.id.clone())),
-            distance_to_target: measured(judge, &target_side),
-            distance_to_current: measured(judge, &current_side),
-            member_tolerance: current.member_tolerance(position),
-        };
-        let table = |kind: TableKind, owner: &Faction, situation: Situation| {
-            let (rules, source) = match (
-                owner.rule_tables.get(&kind),
-                self.content.balance.rule_tables.get(&kind),
-            ) {
-                (Some(own), _) => (own.clone(), TableSource::Faction),
-                (None, Some(world)) => (world.clone(), TableSource::World),
-                (None, None) => (kind.built_in(), TableSource::BuiltIn),
-            };
-            defection::decide(kind, &rules, source, owner, &situation)
-        };
+        let situation =
+            |judge: &FactionId| self.situation(character, membership, from, &target.id, judge);
         Defection {
             from: from.clone(),
             from_name: current.name.clone(),
             relation,
             // Joining in secret leaves no one, so the faction isn't asked (DESIGN.md §10.4).
             deserters: (!secretly)
-                .then(|| table(TableKind::Deserters, current, situation(&current_side))),
-            defectors: table(TableKind::Defectors, target, situation(&target_side)),
+                .then(|| self.table(TableKind::Deserters, current, &situation(from))),
+            defectors: self.table(TableKind::Defectors, target, &situation(&target.id)),
         }
+    }
+
+    /// What a table's conditions are checked against: `membership` of `current`, with
+    /// `target` the other faction, and both distances where `judge` pictures `character`
+    /// (P-57).
+    fn situation(
+        &self,
+        character: &CharacterId,
+        membership: &Membership,
+        current: &FactionId,
+        target: &FactionId,
+        judge: &FactionId,
+    ) -> Situation {
+        let position = self.content.factions[current]
+            .rank_position(&membership.rank)
+            .expect("a member's rank is on their faction's ladder");
+        let judge = Observer::Faction(judge.clone());
+        let measured = |against: &FactionId| {
+            self.distance_as(&judge, &Observer::Faction(against.clone()), character)
+                .expect("both exist")
+                .value
+        };
+        Situation {
+            rank: membership.rank.clone(),
+            rung: position + 1,
+            standing_with_current: self.standing_now(character, &Party::Faction(current.clone())),
+            standing_with_target: self.standing_now(character, &Party::Faction(target.clone())),
+            distance_to_target: measured(target),
+            distance_to_current: measured(current),
+            member_tolerance: self.content.factions[current].member_tolerance(position),
+        }
+    }
+
+    /// How `owner`'s `kind` table decides `situation`: its own table, the world's, or the
+    /// built-in one.
+    fn table(&self, kind: TableKind, owner: &Faction, situation: &Situation) -> TableDecision {
+        let (rules, source) = match (
+            owner.rule_tables.get(&kind),
+            self.content.balance.rule_tables.get(&kind),
+        ) {
+            (Some(own), _) => (own.clone(), TableSource::Faction),
+            (None, Some(world)) => (world.clone(), TableSource::World),
+            (None, None) => (kind.built_in(owner), TableSource::BuiltIn),
+        };
+        defection::decide(kind, &rules, source, owner, situation)
+    }
+
+    /// How each faction in `judges` that `character` belongs to, and that's in conflict
+    /// with `secret`, decides on learning they're secretly in it: its exposed table, by its
+    /// own picture of them (DESIGN.md §10.4, D-24). In id order.
+    fn exposure_decisions(
+        &self,
+        character: &CharacterId,
+        secret: &FactionId,
+        judges: &BTreeSet<FactionId>,
+    ) -> Vec<TableDecision> {
+        judges
+            .iter()
+            .filter(|judge| *judge != secret)
+            .filter(|judge| self.in_conflict(judge, secret) == Some(true))
+            .filter_map(|judge| {
+                let membership = self.state.memberships.get(character)?.get(judge)?;
+                let situation = self.situation(character, membership, judge, secret, judge);
+                Some(self.table(
+                    TableKind::Exposed,
+                    &self.content.factions[judge],
+                    &situation,
+                ))
+            })
+            .collect()
+    }
+
+    /// Who learns now that `character` is secretly in `faction`, seen by `witnesses`:
+    /// `None` for everyone, or those who learn firsthand and didn't know; and the factions
+    /// among them, which judge it (DESIGN.md §10.4).
+    fn exposure_learners(
+        &self,
+        character: &CharacterId,
+        faction: &FactionId,
+        witnesses: &Witnesses,
+    ) -> (Option<BTreeSet<Party>>, BTreeSet<FactionId>) {
+        let knows = |party: &Party| {
+            let observer = match party {
+                Party::Faction(id) => Observer::Faction(id.clone()),
+                Party::Character(id) => Observer::Character(id.clone()),
+            };
+            self.knows_membership(&observer, character, faction) == Some(true)
+        };
+        let to: Option<BTreeSet<Party>> = self
+            .firsthand(character, &[], witnesses)
+            .map(|learners| learners.into_iter().filter(|party| !knows(party)).collect());
+        let judges = match &to {
+            None => self.factions_of(character).into_iter().collect(),
+            Some(to) => to
+                .iter()
+                .filter_map(|party| match party {
+                    Party::Faction(id) => Some(id.clone()),
+                    Party::Character(_) => None,
+                })
+                .collect(),
+        };
+        (to, judges)
+    }
+
+    /// What exposure decisions do: keep, a rung down (out, from the lowest), or out, then
+    /// every standing change they make in one step, so spills add up (DESIGN.md §10.4).
+    fn exposure_consequences(
+        &self,
+        character: &CharacterId,
+        decisions: &[TableDecision],
+    ) -> Vec<Change> {
+        let mut changes = Vec::new();
+        let mut deltas = Deltas::new();
+        for decision in decisions {
+            let judge = &decision.faction;
+            let leave = || Change::LeftFaction {
+                character: character.clone(),
+                faction: judge.clone(),
+                reason: LeaveReason::Exposed,
+            };
+            let standing_change = match decision.verdict {
+                Verdict::Allow { standing_change } => standing_change,
+                Verdict::Demote { standing_change } => {
+                    let ranks = &self.content.factions[judge].ranks;
+                    let rank = &self.state.memberships[character][judge].rank;
+                    let position = self.content.factions[judge]
+                        .rank_position(rank)
+                        .expect("a member's rank is on their faction's ladder");
+                    changes.push(match position.checked_sub(1) {
+                        Some(lower) => Change::RankChanged {
+                            character: character.clone(),
+                            faction: judge.clone(),
+                            from: rank.clone(),
+                            to: ranks[lower].id.clone(),
+                        },
+                        None => leave(),
+                    });
+                    standing_change
+                }
+                Verdict::Expel { standing_change } => {
+                    changes.push(leave());
+                    standing_change
+                }
+                // An exposed table never refuses (content checks it); it changes nothing.
+                Verdict::Refuse { .. } => Fixed::ZERO,
+            };
+            add(&mut deltas, Party::Faction(judge.clone()), standing_change);
+        }
+        changes.extend(self.standing_changes(character, deltas));
+        changes
     }
 
     /// How `observer` regards `subject`: the score, its band and the working (DESIGN.md §8).
@@ -7401,6 +7687,7 @@ mod tests {
                     ],
                     next: next_hop(1, 3, 50, &["nell"]),
                     shift: shift(-5_00, -3_00),
+                    exposes: None,
                 }
             ]
         );
@@ -7883,6 +8170,441 @@ mod tests {
             content.problems()[..],
             [ContentProblem::StartsInConflict { .. }]
         ));
+    }
+
+    /// The secrets world with the sample's exposed table: keep a member with standing 60
+    /// or more at −30, demote a member of rung 2 or more, otherwise expel at −40. Nell has
+    /// joined the Watch openly, so she's a double agent.
+    fn exposing() -> World {
+        let mut content = secrets_content([]);
+        content.balance.rule_tables.insert(
+            TableKind::Exposed,
+            vec![
+                when(
+                    vec![Condition::StandingWithCurrentAtLeast(h(60_00))],
+                    Verdict::Allow {
+                        standing_change: h(-30_00),
+                    },
+                ),
+                when(
+                    vec![Condition::RankAtLeast(RankRef::Rung(2))],
+                    Verdict::Demote {
+                        standing_change: Fixed::ZERO,
+                    },
+                ),
+                when(
+                    Vec::new(),
+                    Verdict::Expel {
+                        standing_change: h(-40_00),
+                    },
+                ),
+            ],
+        );
+        let mut world = World::new(content).expect("valid content");
+        world
+            .execute(Command::JoinFaction {
+                character: id("nell"),
+                faction: faction_id("city_watch"),
+                secretly: false,
+            })
+            .expect("Nell joins the Watch");
+        world
+    }
+
+    fn expose(character: &str, faction: &str, witnesses: Witnesses) -> Command {
+        Command::Expose {
+            character: id(character),
+            faction: faction_id(faction),
+            witnesses,
+        }
+    }
+
+    fn payloads_of(world: &mut World, command: Command) -> Vec<Change> {
+        world
+            .execute(command)
+            .expect("accepted")
+            .into_iter()
+            .map(|event| event.payload)
+            .collect()
+    }
+
+    fn give_watch_standing(world: &mut World, amount: i64) {
+        world
+            .execute(Command::ApplyEffects {
+                source: "test".to_owned(),
+                character: id("nell"),
+                effects: Effects {
+                    alignment: AlignmentDelta::default(),
+                    standing: named(&[("city_watch", amount)], &[]),
+                },
+                witnesses: Witnesses::Everyone,
+            })
+            .expect("accepted");
+    }
+
+    #[test]
+    fn exposing_a_double_agent_lets_the_deceived_factions_table_decide() {
+        // Hale sees that Nell is secretly in the Guild; the Watch learns through him, and it's
+        // at war with the Guild (−80). Nell's standing with the Watch is 0, so the third rule
+        // expels her at −40, which spills +7.20 to the Guild (−80: −0.18) and −4.00 to the
+        // Temple (+60: 0.10).
+        let mut world = exposing();
+        let changes = payloads_of(
+            &mut world,
+            expose("nell", "lantern_guild", seen_by(&["hale"])),
+        );
+        assert_eq!(
+            changes[..2],
+            [
+                Change::MembershipExposed {
+                    character: id("nell"),
+                    faction: faction_id("lantern_guild"),
+                    to: Some(
+                        [
+                            Party::Faction(faction_id("city_watch")),
+                            Party::Character(id("hale"))
+                        ]
+                        .into()
+                    ),
+                },
+                Change::LeftFaction {
+                    character: id("nell"),
+                    faction: faction_id("city_watch"),
+                    reason: LeaveReason::Exposed,
+                },
+            ]
+        );
+        assert_eq!(
+            world.standings(&id("nell")),
+            Some(vec![
+                (Party::Faction(faction_id("city_watch")), h(-40_00)),
+                (Party::Faction(faction_id("lantern_guild")), h(7_20)),
+                (Party::Faction(faction_id("temple")), h(-4_00)),
+            ])
+        );
+        let knows = |observer: Observer| {
+            world.knows_membership(&observer, &id("nell"), &faction_id("lantern_guild"))
+        };
+        assert_eq!(knows(Observer::Character(id("hale"))), Some(true));
+        assert_eq!(
+            knows(Observer::Faction(faction_id("city_watch"))),
+            Some(true)
+        );
+        assert_eq!(knows(Observer::Character(id("player"))), Some(false));
+    }
+
+    #[test]
+    fn assess_exposure_says_how_each_faction_that_learns_at_once_would_decide() {
+        let world = exposing();
+        let decisions = world
+            .assess_exposure(
+                &id("nell"),
+                &faction_id("lantern_guild"),
+                &seen_by(&["hale"]),
+            )
+            .expect("a secret membership");
+        let verdicts: Vec<(&FactionId, &Verdict)> = decisions
+            .iter()
+            .map(|decision| (&decision.faction, &decision.verdict))
+            .collect();
+        assert_eq!(
+            verdicts,
+            [(
+                &faction_id("city_watch"),
+                &Verdict::Expel {
+                    standing_change: h(-40_00)
+                }
+            )]
+        );
+        assert_eq!(
+            world.assess_exposure(
+                &id("nell"),
+                &faction_id("lantern_guild"),
+                &seen_by(&["vex"])
+            ),
+            Some(Vec::new()),
+            "Vex already knows, and isn't in the Watch"
+        );
+        assert_eq!(
+            world.assess_exposure(
+                &id("vex"),
+                &faction_id("lantern_guild"),
+                &seen_by(&["hale"])
+            ),
+            None,
+            "not secret"
+        );
+        assert_eq!(
+            world.assess_exposure(
+                &id("nell"),
+                &faction_id("lantern_guild"),
+                &seen_by(&["ghst"])
+            ),
+            None
+        );
+        assert_eq!(
+            world.assess_exposure(
+                &id("player"),
+                &faction_id("lantern_guild"),
+                &seen_by(&["hale"])
+            ),
+            None,
+            "not a member"
+        );
+    }
+
+    #[test]
+    fn a_kept_double_agent_has_a_war_to_settle() {
+        // With standing 70, the first rule keeps her at −30: the two memberships are now
+        // known to each other, so the war between them opens a conflict for her.
+        let mut world = exposing();
+        give_watch_standing(&mut world, 70_00);
+        let changes = payloads_of(
+            &mut world,
+            expose("nell", "lantern_guild", seen_by(&["hale"])),
+        );
+        assert!(
+            !changes
+                .iter()
+                .any(|change| matches!(change, Change::LeftFaction { .. })),
+            "{changes:?}"
+        );
+        assert!(changes.contains(&Change::MembershipConflict {
+            character: id("nell"),
+            factions: (faction_id("city_watch"), faction_id("lantern_guild")),
+        }));
+        assert_eq!(
+            world.standing(&id("nell"), &Party::Faction(faction_id("city_watch"))),
+            Some(h(40_00))
+        );
+    }
+
+    #[test]
+    fn a_demoted_double_agent_steps_down_a_rung_and_has_a_war_to_settle() {
+        // A sergeant (rung 2) with standing 40: the second rule demotes her to recruit.
+        let mut world = exposing();
+        give_watch_standing(&mut world, 40_00);
+        world
+            .execute(Command::Promote {
+                character: id("nell"),
+                faction: faction_id("city_watch"),
+            })
+            .expect("promoted to sergeant");
+        let changes = payloads_of(
+            &mut world,
+            expose("nell", "lantern_guild", seen_by(&["hale"])),
+        );
+        assert_eq!(
+            changes[1],
+            Change::RankChanged {
+                character: id("nell"),
+                faction: faction_id("city_watch"),
+                from: rank_id("sergeant"),
+                to: rank_id("recruit"),
+            }
+        );
+        assert!(changes.contains(&Change::MembershipConflict {
+            character: id("nell"),
+            factions: (faction_id("city_watch"), faction_id("lantern_guild")),
+        }));
+    }
+
+    #[test]
+    fn demoting_from_the_lowest_rung_expels() {
+        let mut world = exposing();
+        world.content.balance.rule_tables.insert(
+            TableKind::Exposed,
+            vec![when(
+                Vec::new(),
+                Verdict::Demote {
+                    standing_change: Fixed::ZERO,
+                },
+            )],
+        );
+        let changes = payloads_of(
+            &mut world,
+            expose("nell", "lantern_guild", seen_by(&["hale"])),
+        );
+        assert_eq!(
+            changes[1],
+            Change::LeftFaction {
+                character: id("nell"),
+                faction: faction_id("city_watch"),
+                reason: LeaveReason::Exposed,
+            }
+        );
+    }
+
+    #[test]
+    fn exposing_to_everyone_makes_a_membership_open() {
+        let mut world = exposing();
+        let changes = payloads_of(
+            &mut world,
+            expose("nell", "lantern_guild", Witnesses::Everyone),
+        );
+        assert_eq!(
+            changes[0],
+            Change::MembershipExposed {
+                character: id("nell"),
+                faction: faction_id("lantern_guild"),
+                to: None,
+            }
+        );
+        let (_, membership) = world
+            .memberships(&id("nell"))
+            .expect("Nell exists")
+            .find(|(faction, _)| faction.as_str() == "lantern_guild")
+            .expect("still in the Guild");
+        assert!(!membership.secret);
+        assert!(changes.contains(&Change::LeftFaction {
+            character: id("nell"),
+            faction: faction_id("city_watch"),
+            reason: LeaveReason::Exposed,
+        }));
+    }
+
+    #[test]
+    fn a_faction_not_at_war_with_the_secret_one_just_learns() {
+        // Nell is in the Free Company too, which isn't at war with the Guild: it learns, and
+        // does nothing.
+        let mut world = exposing();
+        world
+            .execute(Command::JoinFaction {
+                character: id("nell"),
+                faction: faction_id("free_company"),
+                secretly: false,
+            })
+            .expect("joins the Company");
+        let changes = payloads_of(
+            &mut world,
+            expose("nell", "lantern_guild", Witnesses::Everyone),
+        );
+        let left: Vec<&FactionId> = changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::LeftFaction { faction, .. } => Some(faction),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(left, [&faction_id("city_watch")]);
+    }
+
+    #[test]
+    fn only_a_secret_membership_can_be_exposed() {
+        let mut world = exposing();
+        assert_eq!(
+            refused(
+                &mut world,
+                expose("vex", "lantern_guild", seen_by(&["hale"]))
+            ),
+            CommandError::NotSecret {
+                character: id("vex"),
+                faction: faction_id("lantern_guild"),
+            }
+        );
+        assert_eq!(
+            refused(
+                &mut world,
+                expose("player", "lantern_guild", seen_by(&["hale"]))
+            ),
+            CommandError::NotAMember {
+                character: id("player"),
+                faction: faction_id("lantern_guild"),
+            }
+        );
+        assert!(matches!(
+            refused(
+                &mut world,
+                expose("nell", "lantern_gild", seen_by(&["hale"]))
+            ),
+            CommandError::UnknownFaction { .. }
+        ));
+        assert!(matches!(
+            refused(
+                &mut world,
+                expose("nll", "lantern_guild", seen_by(&["hale"]))
+            ),
+            CommandError::UnknownCharacter { .. }
+        ));
+        assert!(matches!(
+            refused(
+                &mut world,
+                expose("nell", "lantern_guild", seen_by(&["ghst"]))
+            ),
+            CommandError::UnknownCharacter {
+                role: Role::Witness,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn news_of_an_exposure_ripples_and_a_faction_judges_when_it_hears() {
+        // Under ripple, Mole is openly in the Watch and secretly in the Guild. Ava sees him
+        // exposed; three ticks later her contact Nell, in the Watch, hears, and through her the
+        // Watch, which expels him: it's at war with the Guild.
+        let mut ava = character("Ava", 20_00, 10_00);
+        ava.contacts = vec![id("nell")];
+        let mut content = secrets_content([
+            ava,
+            secretly_in(
+                member_of(character("Mole", -20_00, -10_00), &["city_watch"]),
+                "lantern_guild",
+            ),
+        ]);
+        content.balance.knowledge = KnowledgeModel::Ripple;
+        content.balance.ripple = Ripple {
+            strength: vec![h(50)],
+            hop_ticks: 3,
+        };
+        // Nell is in the Watch here, openly, and not in the Guild.
+        let nell = content.characters.get_mut(&id("nell")).expect("Nell");
+        nell.memberships = vec![StartingMembership {
+            faction: faction_id("city_watch"),
+            rank: None,
+            secret: false,
+        }];
+        let mut world = World::new(content).expect("valid content");
+        let changes = payloads_of(
+            &mut world,
+            expose("mole", "lantern_guild", seen_by(&["ava"])),
+        );
+        assert!(
+            !changes
+                .iter()
+                .any(|change| matches!(change, Change::LeftFaction { .. })),
+            "the Watch doesn't know yet: {changes:?}"
+        );
+        let sent: Vec<(u64, Option<&FactionId>)> = changes
+            .iter()
+            .filter_map(|change| match change {
+                Change::NewsSent { news, exposes, .. } => Some((*news, exposes.as_ref())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            sent,
+            [(1, Some(&faction_id("lantern_guild")))],
+            "news of #1, the exposure"
+        );
+        let heard = payloads_of(&mut world, advance(3));
+        assert!(
+            heard.contains(&Change::LeftFaction {
+                character: id("mole"),
+                faction: faction_id("city_watch"),
+                reason: LeaveReason::Exposed,
+            }),
+            "{heard:?}"
+        );
+        assert_eq!(
+            world.knows_membership(
+                &Observer::Character(id("nell")),
+                &id("mole"),
+                &faction_id("lantern_guild")
+            ),
+            Some(true),
+            "Mole is still secretly in the Guild, and Nell heard"
+        );
     }
 
     #[test]
@@ -10954,9 +11676,15 @@ mod tests {
                     }
                 }
             });
+        let exposing = (who(), faction()).prop_map(|(who, faction)| Command::Expose {
+            character: id(who),
+            faction: faction_id(faction),
+            witnesses: Witnesses::Everyone,
+        });
         let command = prop_oneof![
             (0_u64..=1_000).prop_map(advance),
             action,
+            exposing,
             membership,
             relate,
             effects,
@@ -10968,22 +11696,27 @@ mod tests {
     }
 
     /// DESIGN.md §14, invariant 6: no one is in two factions in conflict, except while a
-    /// `MembershipConflict` for that pair is open, or while one of the two memberships is
-    /// secret, so the other faction doesn't know of it.
+    /// `MembershipConflict` for that pair is open, or while one faction doesn't know of the
+    /// other membership.
     fn invariant_6_holds(world: &World) -> bool {
         world.characters().all(|character| {
-            let memberships: Vec<(&FactionId, &Membership)> = world
+            let factions: Vec<&FactionId> = world
                 .memberships(&character.id)
                 .expect("the character exists")
+                .map(|(faction, _)| faction)
                 .collect();
             let open = world
                 .conflicts(&character.id)
                 .expect("the character exists");
-            memberships.iter().enumerate().all(|(i, (a, of_a))| {
-                memberships[i + 1..].iter().all(|(b, of_b)| {
+            let knows = |by: &FactionId, of: &FactionId| {
+                world.knows_membership(&Observer::Faction(by.clone()), &character.id, of)
+                    == Some(true)
+            };
+            factions.iter().enumerate().all(|(i, a)| {
+                factions[i + 1..].iter().all(|b| {
                     !world.in_conflict(a, b).expect("both exist")
-                        || of_a.secret
-                        || of_b.secret
+                        || !knows(a, b)
+                        || !knows(b, a)
                         || open.contains(&((*a).clone(), (*b).clone()))
                 })
             })
@@ -11045,6 +11778,13 @@ mod tests {
                         action,
                         target,
                         scale,
+                        witnesses,
+                    },
+                    Command::Expose {
+                        character, faction, ..
+                    } => Command::Expose {
+                        character,
+                        faction,
                         witnesses,
                     },
                     other => other,

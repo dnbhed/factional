@@ -1,0 +1,31 @@
+# Exposure (K5, DESIGN.md §10.4). Revealing a secret membership is news like an act. When a
+# faction learns that one of its members is secretly in a faction it's at war with, its
+# exposed table decides: keep (and a conflict opens), demote, or expel. Riverhold's keeps a
+# member with standing 60 or more at −30, and otherwise expels at −40.
+
+load content/sample
+
+# The player becomes a double agent: openly in the Free Company, with Ava, and secretly in
+# the Lantern Guild, which then goes to war with the Company. No conflict opens: the
+# Company doesn't know.
+act player steal --scale 4
+join player free_company
+join merchant_ava free_company
+join player lantern_guild --secretly
+relate lantern_guild free_company -60
+
+# Ava sees through it, and the Company learns through her. The player's standing with the
+# Company is 0, so it expels them at −40, which spills +2.40 to the Guild (−60: −0.06).
+expose player lantern_guild --seen-by merchant_ava --explain
+assert standing player free_company == -40.00
+assert standing player lantern_guild == 2.40
+assert show character player == player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild (cutpurse, secretly) since tick 0
+
+# The news goes on from Ava to Hale and Mira, ten ticks later; neither is in a faction at
+# war with the Guild that the player belongs to, so they only learn.
+advance 10
+news
+
+# Revealed to everyone, the membership is open.
+expose player lantern_guild
+assert show character player == player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild (cutpurse) since tick 0

@@ -422,34 +422,57 @@ fn conditions() -> Value {
     })
 }
 
-/// A `defectors` or `deserters` table: `rules`, tried top to bottom.
+/// A `defectors`, `deserters` or `exposed` table: `rules`, tried top to bottom.
 fn rule_table(kind: TableKind) -> Value {
     const REFUSE: &str = "refuse";
-    let mut rule = object(
-        [
-            ("when", json!({ "$ref": "#/$defs/conditions" })),
-            (
-                "then",
-                one_of([kind.allow_key(), REFUSE], "What the rule decides."),
-            ),
-            (
-                "standing_change",
-                within_axis("When letting someone through: the standing it costs, -100 to 100."),
-            ),
-            ("reason", text("When refusing: why.")),
-        ],
-        &["then"],
-        None,
-    );
-    rule["if"] = json!({ "properties": { "then": { "const": REFUSE } } });
-    rule["then"] = json!({ "required": ["reason"], "not": { "required": ["standing_change"] } });
-    rule["else"] = json!({ "not": { "required": ["reason"] } });
+    let outcomes = kind.outcomes().iter().copied();
+    let mut rule = if kind == TableKind::Exposed {
+        object(
+            [
+                ("when", json!({ "$ref": "#/$defs/conditions" })),
+                ("then", one_of(outcomes, "What the rule decides.")),
+                (
+                    "standing_change",
+                    within_axis(
+                        "The change in standing with the faction that found out, -100 to 100.",
+                    ),
+                ),
+            ],
+            &["then"],
+            None,
+        )
+    } else {
+        object(
+            [
+                ("when", json!({ "$ref": "#/$defs/conditions" })),
+                ("then", one_of(outcomes, "What the rule decides.")),
+                (
+                    "standing_change",
+                    within_axis(
+                        "When letting someone through: the standing it costs, -100 to 100.",
+                    ),
+                ),
+                ("reason", text("When refusing: why.")),
+            ],
+            &["then"],
+            None,
+        )
+    };
+    if kind != TableKind::Exposed {
+        rule["if"] = json!({ "properties": { "then": { "const": REFUSE } } });
+        rule["then"] =
+            json!({ "required": ["reason"], "not": { "required": ["standing_change"] } });
+        rule["else"] = json!({ "not": { "required": ["reason"] } });
+    }
     let description = match kind {
         TableKind::Defectors => {
             "Does the faction joined take a member of its enemies? The last rule must have no conditions."
         }
         TableKind::Deserters => {
             "Does each enemy faction someone is in let them go? The last rule must have no conditions."
+        }
+        TableKind::Exposed => {
+            "On learning a member is secretly in a faction it's in conflict with: keep, demote or expel them? \"Current\" is the faction that found out, \"target\" the secret one. The last rule must have no conditions."
         }
     };
     object(
@@ -470,8 +493,8 @@ fn rule_tables() -> Value {
     json!({ "type": "object", "properties": tables })
 }
 
-/// The `defectors` and `deserters` keys, referring to their definitions.
-fn rule_table_keys() -> [(&'static str, Value); 2] {
+/// The `defectors`, `deserters` and `exposed` keys, referring to their definitions.
+fn rule_table_keys() -> [(&'static str, Value); 3] {
     TableKind::ALL.map(|kind| {
         (
             kind.key(),
@@ -613,13 +636,14 @@ fn balance() -> Value {
         &[],
         Some("How hard alignment is to move (DESIGN.md §5.3)."),
     );
-    let [defectors, deserters] = rule_table_keys();
+    let [defectors, deserters, exposed] = rule_table_keys();
     let membership = object(
         [
             ("default_drift", json!({ "$ref": "#/$defs/drift" })),
             ("conflict", conflict()),
             defectors,
             deserters,
+            exposed,
         ],
         &[],
         Some("Joining, leaving and drifting (DESIGN.md §9)."),
@@ -738,7 +762,7 @@ fn rank() -> Value {
 }
 
 fn faction() -> Value {
-    let [defectors, deserters] = rule_table_keys();
+    let [defectors, deserters, exposed] = rule_table_keys();
     object(
         [
             ("name", text("The faction's name, as shown.")),
@@ -789,6 +813,7 @@ fn faction() -> Value {
             ("drift", json!({ "$ref": "#/$defs/drift" })),
             defectors,
             deserters,
+            exposed,
         ],
         &["name", "alignment", "tolerance", "ranks"],
         None,

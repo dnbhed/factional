@@ -8,3 +8,10 @@ secret_members = true
 
 [[city_watch.ranks]]
 id = "recruit"
+
+# A faction's own exposed table, replacing the world's (DESIGN.md §10.4).
+[city_watch.exposed]
+rules = [
+  { when = { rank_at_least = "recruit" }, then = "demote" },
+  { then = "keep" },
+]

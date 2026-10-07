@@ -158,6 +158,7 @@ fn news_of_an_unseen_theft_reaches_hale_and_the_watch_ten_ticks_later() {
             ],
             next: hop(1, 10, 50, &["captain_hale", "sister_mira"]),
             shift: shift(-5_00, -3_00),
+            exposes: None,
         })
     );
     assert_eq!(standings(&advance(&mut world, 5)), Vec::<String>::new());
@@ -260,6 +261,7 @@ fn those_who_learned_firsthand_arent_told_again() {
             due: Vec::new(),
             next: hop(1, 10, 50, &["merchant_ava"]),
             shift: shift(-5_00, -3_00),
+            exposes: None,
         })
     );
     let tick_10 = advance(&mut world, 10);

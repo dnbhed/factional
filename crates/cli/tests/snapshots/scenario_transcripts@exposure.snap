@@ -1,0 +1,42 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/exposure.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --scale 4
+#1 at tick 0: player did steal, at scale 4.00
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -20.00, good -12.00
+> join player free_company
+#3 at tick 0: player joined free_company as a sellsword
+> join merchant_ava free_company
+#4 at tick 0: merchant_ava joined free_company as a sellsword
+> join player lantern_guild --secretly
+#5 at tick 0: player joined lantern_guild as a cutpurse, secretly
+> relate lantern_guild free_company -60
+#6 at tick 0: lantern_guild → free_company changed from 20.00 to -60.00
+#7 at tick 0: free_company → lantern_guild changed from 20.00 to -60.00
+> expose player lantern_guild --seen-by merchant_ava --explain
+#8 at tick 0: free_company, merchant_ava learned that player is secretly in lantern_guild
+#9 at tick 0: player left free_company (exposed as secretly in an enemy)
+#10 at tick 0: player's standing with free_company moved from 0.00 to -40.00
+#11 at tick 0: player's standing with lantern_guild moved from 0.00 to 2.40, with 2.40 spilled from free_company (-40.00 × -0.06; lantern_guild regards it at -60.00)
+#12 at tick 0: news of #8 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10
+free_company's exposed (balance.toml): rule 2, expel, standing -40.00
+  rule 1: standing_with_current_at_least = 60.00? no, standing 0.00
+  rule 2: always
+> assert standing player free_company == -40.00
+> assert standing player lantern_guild == 2.40
+> assert show character player == player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild (cutpurse, secretly) since tick 0
+> advance 10
+#13 at tick 0: time advanced from 0 to 10
+#14 at tick 10: news of #8 reached city_watch, temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 10); on its way to brother_ash: hop 2, at 0.25, arriving at tick 20
+> news
+news of #8: free_company, merchant_ava learned that player is secretly in lantern_guild
+  heard by: city_watch, free_company, lantern_guild, temple, captain_hale, merchant_ava, player, sister_mira, vex
+  on its way to brother_ash: hop 2, at 0.25, arriving at tick 20
+  still due: nothing
+> expose player lantern_guild
+#15 at tick 10: player's membership of lantern_guild is no longer secret
+> assert show character player == player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild (cutpurse) since tick 0
