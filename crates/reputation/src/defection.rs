@@ -4,43 +4,65 @@ use factional_core::{Fixed, suggest};
 
 use crate::{AXIS_LIMIT, Faction, FactionId, RankId};
 
-/// The two rule tables that settle joining an enemy of a faction you're in (DESIGN.md §9.2,
-/// P-10).
+/// The rule tables: two that settle joining an enemy of a faction you're in (DESIGN.md
+/// §9.2, P-10), and one that settles what a faction does on learning a member is secretly
+/// in its enemy (§10.4, D-24).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TableKind {
     /// The target's: will it take someone from its enemy?
     Defectors,
     /// The current faction's: will it let them go?
     Deserters,
+    /// The faction that found out's: keep, demote or expel?
+    Exposed,
 }
 
 impl TableKind {
-    pub const ALL: [TableKind; 2] = [TableKind::Defectors, TableKind::Deserters];
+    pub const ALL: [TableKind; 3] = [
+        TableKind::Defectors,
+        TableKind::Deserters,
+        TableKind::Exposed,
+    ];
 
-    /// Its key in content: `defectors` or `deserters`.
+    /// Its key in content: `defectors`, `deserters` or `exposed`.
     pub fn key(self) -> &'static str {
         match self {
             TableKind::Defectors => "defectors",
             TableKind::Deserters => "deserters",
+            TableKind::Exposed => "exposed",
         }
     }
 
     /// The outcome that lets someone through: `accept` for defectors, `release` for
-    /// deserters.
+    /// deserters, `keep` for exposed.
     pub fn allow_key(self) -> &'static str {
         match self {
             TableKind::Defectors => "accept",
             TableKind::Deserters => "release",
+            TableKind::Exposed => "keep",
+        }
+    }
+
+    /// Every outcome a rule in this table may have, as content writes them.
+    pub fn outcomes(self) -> &'static [&'static str] {
+        match self {
+            TableKind::Defectors => &["accept", "refuse"],
+            TableKind::Deserters => &["release", "refuse"],
+            TableKind::Exposed => &["keep", "demote", "expel"],
         }
     }
 
     /// The table every world starts with: defectors refuses everyone and deserters
-    /// releases everyone, which is exactly D-4.
-    pub fn built_in(self) -> Vec<Rule> {
+    /// releases everyone, which is exactly D-4; exposed expels, at `owner`'s
+    /// `expel_standing_change` (P-58).
+    pub fn built_in(self, owner: &Faction) -> Vec<Rule> {
         let then = match self {
             TableKind::Defectors => Verdict::Refuse { reason: None },
             TableKind::Deserters => Verdict::Allow {
                 standing_change: Fixed::ZERO,
+            },
+            TableKind::Exposed => Verdict::Expel {
+                standing_change: owner.expel_standing_change,
             },
         };
         vec![Rule {
@@ -121,6 +143,10 @@ pub enum Verdict {
     Allow { standing_change: Fixed },
     /// `refuse`; content always gives a reason, the built-in table none.
     Refuse { reason: Option<String> },
+    /// `demote`, in an exposed table: down one rung, or expelled from the lowest.
+    Demote { standing_change: Fixed },
+    /// `expel`, in an exposed table.
+    Expel { standing_change: Fixed },
 }
 
 impl Verdict {
@@ -442,7 +468,9 @@ pub(crate) fn problems(rules: &[Rule], owner: Option<&Faction>) -> Vec<TableProb
                 Condition::CloserToTarget(_) | Condition::OutsideMemberTolerance(_) => {}
             }
         }
-        if let Verdict::Allow { standing_change } = rule.then
+        if let Verdict::Allow { standing_change }
+        | Verdict::Demote { standing_change }
+        | Verdict::Expel { standing_change } = rule.then
             && !(-AXIS_LIMIT..=AXIS_LIMIT).contains(&standing_change)
         {
             problems.push(TableProblem::ValueOutOfRange {
@@ -774,7 +802,7 @@ mod tests {
         let built_in = |kind: TableKind| {
             decide(
                 kind,
-                &kind.built_in(),
+                &kind.built_in(&guild()),
                 TableSource::BuiltIn,
                 &guild(),
                 &vex(),
@@ -788,6 +816,56 @@ mod tests {
             Verdict::Allow {
                 standing_change: Fixed::ZERO
             }
+        );
+        assert_eq!(
+            built_in(TableKind::Exposed).verdict,
+            Verdict::Expel {
+                standing_change: guild().expel_standing_change
+            },
+            "the built-in exposed rule expels at the faction's expel_standing_change"
+        );
+        assert_eq!(
+            TableKind::ALL.map(TableKind::outcomes),
+            [
+                &["accept", "refuse"][..],
+                &["release", "refuse"],
+                &["keep", "demote", "expel"]
+            ]
+        );
+    }
+
+    #[test]
+    fn every_standing_change_is_range_checked_whatever_the_outcome() {
+        let out = Fixed::from_hundredths(100_01);
+        let rules = [
+            rule(
+                Vec::new(),
+                Verdict::Demote {
+                    standing_change: out,
+                },
+            ),
+            rule(
+                Vec::new(),
+                Verdict::Expel {
+                    standing_change: -out,
+                },
+            ),
+            rule(Vec::new(), release(100_01)),
+        ];
+        let keys: Vec<(usize, &str, Fixed)> = problems(&rules, None)
+            .into_iter()
+            .filter_map(|problem| match problem {
+                TableProblem::ValueOutOfRange { rule, key, value } => Some((rule, key, value)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                (0, "standing_change", out),
+                (1, "standing_change", -out),
+                (2, "standing_change", out),
+            ]
         );
     }
 
@@ -809,7 +887,11 @@ mod tests {
         assert_eq!(keys, Condition::KEYS);
         assert_eq!(
             TableKind::ALL.map(|kind| (kind.key(), kind.allow_key())),
-            [("defectors", "accept"), ("deserters", "release")]
+            [
+                ("defectors", "accept"),
+                ("deserters", "release"),
+                ("exposed", "keep")
+            ]
         );
     }
 }

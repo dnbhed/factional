@@ -45,6 +45,7 @@ advance <ticks>                                                                 
 time                                                                                            the current tick
 events [--since <seq>]                                                                          what has happened, oldest first; --since shows only later events
 journal                                                                                         every command issued, and whether it was accepted
+expose <character> <faction> [--seen-by <id>,...] [--explain]                                   reveal that <character> is secretly in <faction>, to everyone or to those who see it
 news                                                                                            news on its way: who has heard of each act, and who hears next, when and how strongly
 calc <a> <op> <b>                                                                               the engine's fixed-point arithmetic; <op> is + - * or /
 curve <curve> [at <x>]                                                                          a curve's value at <x>, or without at, the whole curve; <curve> is a knob, such as disposition.affinity, a number or [[x, y], ...]

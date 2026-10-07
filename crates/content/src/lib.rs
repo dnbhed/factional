@@ -1174,17 +1174,10 @@ fn read_rule(mut rule: Section<'_>, kind: TableKind, report: &mut Report) -> Opt
     let then = rule.text("then", report);
     let standing_change = rule.optional_fixed(STANDING_CHANGE, report);
     let reason = rule.optional_text("reason", report);
+    let outcomes = kind.outcomes();
     let verdict = match then.as_deref() {
         None => None,
-        Some(allow) if allow == kind.allow_key() => {
-            if reason.is_some() {
-                report.error(&rule.path_to("reason"), "only a refusal has a reason");
-            }
-            Some(Verdict::Allow {
-                standing_change: standing_change.unwrap_or_default(),
-            })
-        }
-        Some(REFUSE) => {
+        Some(REFUSE) if outcomes.contains(&REFUSE) => {
             if standing_change.is_some() {
                 report.error(
                     &rule.path_to(STANDING_CHANGE),
@@ -1196,15 +1189,33 @@ fn read_rule(mut rule: Section<'_>, kind: TableKind, report: &mut Report) -> Opt
             }
             Some(Verdict::Refuse { reason })
         }
+        Some(outcome) if outcomes.contains(&outcome) => {
+            if reason.is_some() {
+                report.error(&rule.path_to("reason"), "only a refusal has a reason");
+            }
+            let standing_change = standing_change.unwrap_or_default();
+            Some(match outcome {
+                "demote" => Verdict::Demote { standing_change },
+                "expel" => Verdict::Expel { standing_change },
+                _ => Verdict::Allow { standing_change },
+            })
+        }
         Some(unknown) => {
-            let message = match suggest(unknown, [kind.allow_key(), REFUSE]) {
+            let message = match suggest(unknown, outcomes.iter().copied()) {
                 Some(close) => {
                     format!("unknown outcome '{unknown}' for {kind} (did you mean '{close}'?)")
                 }
-                None => format!(
-                    "unknown outcome '{unknown}' for {kind}: use '{}' or '{REFUSE}'",
-                    kind.allow_key()
-                ),
+                None => {
+                    let quoted: Vec<String> = outcomes
+                        .iter()
+                        .map(|outcome| format!("'{outcome}'"))
+                        .collect();
+                    let (last, rest) = quoted.split_last().expect("every table has outcomes");
+                    format!(
+                        "unknown outcome '{unknown}' for {kind}: use {} or {last}",
+                        rest.join(", ")
+                    )
+                }
             };
             report.error(&rule.path_to("then"), message);
             None
@@ -2056,6 +2067,74 @@ mod tests {
         id = "shadow"
         requires = { standing = 60.0 }
     "#;
+
+    #[test]
+    fn reads_exposed_tables() {
+        let content = balance(
+            r#"
+            [membership.exposed]
+            rules = [
+              { when = { standing_with_current_at_least = 60.0 }, then = "keep", standing_change = -30.0 },
+              { when = { rank_at_least = 2 }, then = "demote" },
+              { then = "expel", standing_change = -40.0 },
+            ]
+            "#,
+        )
+        .expect("valid content");
+        assert_eq!(
+            content.balance.rule_tables[&TableKind::Exposed],
+            [
+                Rule {
+                    when: vec![Condition::StandingWithCurrentAtLeast(h(60_00))],
+                    then: Verdict::Allow {
+                        standing_change: h(-30_00)
+                    },
+                },
+                Rule {
+                    when: vec![Condition::RankAtLeast(RankRef::Rung(2))],
+                    then: Verdict::Demote {
+                        standing_change: Fixed::ZERO
+                    },
+                },
+                Rule {
+                    when: Vec::new(),
+                    then: Verdict::Expel {
+                        standing_change: h(-40_00)
+                    },
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_exposed_table_mistakes_at_their_keys() {
+        assert_eq!(
+            problems(balance(
+                r#"
+                [membership.exposed]
+                rules = [
+                  { then = "refuse", reason = "No." },
+                  { then = "expell" },
+                  { then = "keep", reason = "Fine." },
+                  { then = "expel" },
+                ]
+                "#
+            )),
+            [
+                "balance.toml: membership.exposed.rules[0].then: unknown outcome 'refuse' for exposed: use 'keep', 'demote' or 'expel'",
+                "balance.toml: membership.exposed.rules[1].then: unknown outcome 'expell' for exposed (did you mean 'expel'?)",
+                "balance.toml: membership.exposed.rules[2].reason: only a refusal has a reason",
+            ]
+        );
+        assert_eq!(
+            problems(balance(
+                "[membership.defectors]\nrules = [{ then = \"expel\" }]"
+            )),
+            [
+                "balance.toml: membership.defectors.rules[0].then: unknown outcome 'expel' for defectors: use 'accept' or 'refuse'"
+            ]
+        );
+    }
 
     /// The Lantern Guild with secret members, in a world where news ripples.
     const SECRET_GUILD: &str = r#"

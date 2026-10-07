@@ -92,6 +92,8 @@ pub enum LeaveReason {
     Expelled,
     /// The other side of a war between two of their factions was kept (DESIGN.md §9.4).
     ConflictResolved,
+    /// Found to be secretly in an enemy of the faction (DESIGN.md §10.4).
+    Exposed,
 }
 
 /// `membership.conflict`: what happens when two of a character's factions go to war

@@ -129,6 +129,16 @@ rules = [
   { then = "release", standing_change = -40.0 },
 ]
 
+# When a faction learns that one of its members is secretly in a faction it's in conflict
+# with: "keep" (a membership conflict then opens for them), "demote" or "expel", each with
+# an optional standing change. "Current" is the faction that found out, "target" the secret
+# one (DESIGN.md §10.4).
+[membership.exposed]
+rules = [
+  { when = { standing_with_current_at_least = 60.0 }, then = "keep", standing_change = -30.0 },
+  { then = "expel", standing_change = -40.0 },
+]
+
 [knowledge]
 # Who learns of an act: "omniscient" (everyone, fully and at once, whoever saw it),
 # "witnessed" (only the witnesses, the parties the act names, and the factions of those who

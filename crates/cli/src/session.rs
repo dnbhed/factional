@@ -159,6 +159,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "every command issued, and whether it was accepted",
     ),
     (
+        "expose <character> <faction> [--seen-by <id>,...] [--explain]",
+        "reveal that <character> is secretly in <faction>, to everyone or to those who see it",
+    ),
+    (
         "news",
         "news on its way: who has heard of each act, and who hears next, when and how strongly",
     ),
@@ -310,6 +314,7 @@ impl Session {
             "events" => Ok(self.events(rest)),
             "journal" => Ok(self.journal()),
             "news" => Ok(self.news(rest)),
+            "expose" => Ok(self.expose(rest)),
             "calc" => Ok(calc(rest)),
             "curve" => Ok(charts::curve(self.world.as_ref(), rest)),
             "map" => Ok(self
@@ -1471,6 +1476,80 @@ impl Session {
     }
 
     /// `journal`: every command issued, and whether it was accepted.
+    /// `expose <character> <faction> [--seen-by <id>,...] [--explain]`: reveals a secret
+    /// membership to the witnesses, everyone by default, and shows the events; with
+    /// `--explain`, how each faction that learns now decided (DESIGN.md §10.4).
+    fn expose(&mut self, args: &str) -> Outcome {
+        const USAGE: &str =
+            "expose needs the form: expose <character> <faction> [--seen-by <id>,...] [--explain]";
+        let words: Vec<&str> = args.split_whitespace().collect();
+        let [character, faction, options @ ..] = &words[..] else {
+            return Outcome::Error(USAGE.to_owned());
+        };
+        let (mut seen_by, mut explain) = (None, false);
+        let mut options = options.iter();
+        while let Some(option) = options.next() {
+            match *option {
+                "--explain" if !explain => explain = true,
+                "--seen-by" if seen_by.is_none() => match options.next() {
+                    Some(ids) if !is_flag(ids) => seen_by = Some(*ids),
+                    _ => return Outcome::Error(USAGE.to_owned()),
+                },
+                _ => return Outcome::Error(USAGE.to_owned()),
+            }
+        }
+        let parsed = (|| -> Result<Command, String> {
+            let id = |text: &str| CharacterId::new(text).map_err(|invalid| invalid.to_string());
+            Ok(Command::Expose {
+                character: id(character)?,
+                faction: FactionId::new(faction).map_err(|invalid| invalid.to_string())?,
+                witnesses: match seen_by {
+                    Some(ids) => {
+                        Witnesses::These(ids.split(',').map(id).collect::<Result<_, _>>()?)
+                    }
+                    None => Witnesses::Everyone,
+                },
+            })
+        })();
+        let command = match parsed {
+            Ok(command) => command,
+            Err(message) => return Outcome::Error(message),
+        };
+        let Some(world) = self.world.as_mut() else {
+            return no_world();
+        };
+        let working = match &command {
+            Command::Expose {
+                character,
+                faction,
+                witnesses,
+            } if explain => world
+                .assess_exposure(character, faction, witnesses)
+                .map(|decisions| {
+                    let mut lines = Vec::new();
+                    for decision in &decisions {
+                        lines.extend(describe_table(decision, &decision.faction, faction));
+                    }
+                    if decisions.is_empty() {
+                        lines.push(
+                            "no faction that learns now is at war with it, so none decides"
+                                .to_owned(),
+                        );
+                    }
+                    lines
+                }),
+            _ => None,
+        };
+        match world.execute(command) {
+            Ok(events) => {
+                let mut output: Vec<String> = events.iter().map(describe_event).collect();
+                output.extend(working.into_iter().flatten());
+                Outcome::Output(output.join("\n"))
+            }
+            Err(refusal) => Outcome::Error(refusal.to_string()),
+        }
+    }
+
     /// `news`: each piece of news on its way, with the act it's about, who has heard, where
     /// it goes next, and the standing changes still due (DESIGN.md §10.2).
     fn news(&self, args: &str) -> Outcome {
@@ -1646,6 +1725,18 @@ fn describe_table(table: &TableDecision, current: &FactionId, target: &FactionId
             reason: Some(reason),
         } => format!("refuse, \"{reason}\""),
         Verdict::Refuse { reason: None } => "refuse".to_owned(),
+        Verdict::Demote { standing_change } | Verdict::Expel { standing_change } => {
+            let outcome = if matches!(table.verdict, Verdict::Demote { .. }) {
+                "demote"
+            } else {
+                "expel"
+            };
+            if *standing_change == Fixed::ZERO {
+                outcome.to_owned()
+            } else {
+                format!("{outcome}, standing {standing_change}")
+            }
+        }
     };
     let mut lines = vec![format!(
         "{}'s {} ({source}): rule {}, {verdict}",
@@ -1815,6 +1906,7 @@ fn describe_change(change: &Change) -> String {
                 LeaveReason::Defected => "defected",
                 LeaveReason::Expelled => "expelled",
                 LeaveReason::ConflictResolved => "the war between their factions was settled",
+                LeaveReason::Exposed => "exposed as secretly in an enemy",
             };
             format!("{character} left {faction} ({reason})")
         }
@@ -1932,6 +2024,23 @@ fn describe_change(change: &Change) -> String {
             to,
             score,
         } => format!("{observer} now regards {subject} as {to} (was {from}), at {score}"),
+        Change::MembershipExposed {
+            character,
+            faction,
+            to,
+        } => match to {
+            None => format!("{character}'s membership of {faction} is no longer secret"),
+            Some(to) if to.is_empty() => {
+                format!("no one learned that {character} is secretly in {faction}")
+            }
+            Some(to) => {
+                let to: Vec<String> = to.iter().map(ToString::to_string).collect();
+                format!(
+                    "{} learned that {character} is secretly in {faction}",
+                    to.join(", ")
+                )
+            }
+        },
         Change::ShiftWitnessed {
             character,
             shift,
@@ -2009,6 +2118,11 @@ fn describe_command(command: &Command) -> String {
             source, character, ..
         } => format!("effects from {source} on {character}"),
         Command::Watch { subject } => format!("watch {subject}"),
+        Command::Expose {
+            character,
+            faction,
+            witnesses,
+        } => format!("expose {character} {faction}{}", seen_flags(witnesses)),
         Command::AddModifier {
             id,
             observer,
@@ -3236,6 +3350,74 @@ mod tests {
             session.execute("can-join player lantern_guild --secretly --explain"),
             "either order"
         );
+    }
+
+    #[test]
+    fn expose_reveals_a_secret_membership_and_explains_who_decided() {
+        let mut session = riverhold();
+        for line in [
+            "act player steal --scale 4",
+            "join player free_company",
+            "join merchant_ava free_company",
+            "join player lantern_guild --secretly",
+            "relate lantern_guild free_company -60",
+        ] {
+            session.execute(line).expect("valid");
+        }
+        // Ava learns, and the Free Company through her; it's at war with the Guild, and the
+        // player's standing with it is 0, so the sample's second rule expels at −40, which
+        // spills +2.40 to the Guild (−60: −0.06).
+        assert_eq!(
+            session.execute("expose player lantern_guild --seen-by merchant_ava --explain"),
+            output(
+                "#8 at tick 0: free_company, merchant_ava learned that player is secretly in lantern_guild\n\
+                 #9 at tick 0: player left free_company (exposed as secretly in an enemy)\n\
+                 #10 at tick 0: player's standing with free_company moved from 0.00 to -40.00\n\
+                 #11 at tick 0: player's standing with lantern_guild moved from 0.00 to 2.40, with 2.40 spilled from free_company (-40.00 × -0.06; lantern_guild regards it at -60.00)\n\
+                 #12 at tick 0: news of #8 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10\n\
+                 free_company's exposed (balance.toml): rule 2, expel, standing -40.00\n  \
+                 rule 1: standing_with_current_at_least = 60.00? no, standing 0.00\n  \
+                 rule 2: always"
+            )
+        );
+        assert_eq!(
+            session.execute("expose player lantern_guild --seen-by vex"),
+            output("#13 at tick 0: no one learned that player is secretly in lantern_guild"),
+            "Vex is in the Guild: he knew"
+        );
+        assert_eq!(
+            session.execute("expose vex lantern_guild"),
+            command_error("vex's membership of lantern_guild isn't secret")
+        );
+        assert_eq!(
+            session.execute("expose player city_watch"),
+            command_error("player isn't a member of city_watch")
+        );
+        assert_eq!(
+            session.execute("expose player lantern_guild"),
+            output("#14 at tick 0: player's membership of lantern_guild is no longer secret"),
+            "to everyone; the player is no longer in a faction at war with the Guild"
+        );
+        let Ok(Outcome::Output(journal)) = session.execute("journal") else {
+            panic!("a journal");
+        };
+        assert!(
+            journal.contains("expose player lantern_guild --seen-by merchant_ava — accepted"),
+            "{journal}"
+        );
+        let usage = command_error(
+            "expose needs the form: expose <character> <faction> [--seen-by <id>,...] [--explain]",
+        );
+        for line in [
+            "expose player",
+            "expose player lantern_guild --seen-by",
+            "expose player lantern_guild --explain --explain",
+            "expose player lantern_guild --seen-by vex --seen-by ava",
+            "expose player lantern_guild --unseen",
+            "expose player lantern_guild --seen-by --explain",
+        ] {
+            assert_eq!(session.execute(line), usage, "{line}");
+        }
     }
 
     #[test]
@@ -4836,6 +5018,7 @@ mod tests {
             "time",
             "events [--since <seq>]",
             "journal",
+            "expose <character> <faction> [--seen-by <id>,...] [--explain]",
             "news",
             "calc <a> <op> <b>",
             "curve <curve> [at <x>]",

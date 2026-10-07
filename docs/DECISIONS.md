@@ -404,6 +404,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Standing effects and `by_target` see every membership.** A theft from a secret member still costs standing with their faction, which knows its own; how bad an act is depends on the truth, as in P-61.
   - **The CLI shows secrecy:** `join … --secretly`, `can-join … --secretly`, "(cutpurse, secretly)" in `show` and faction listings, and `--secretly` in the journal.
   - *Why:* secrecy follows from who belongs where, with nothing extra to keep in step until exposure needs it.
+- **P-63 · How exposure is built** (made in K5, 2026-10-07).
+  - **The exposed table is a third rule table,** with the same conditions and its own outcomes (`keep`, `demote`, `expel`, no `refuse` or `reason`), in `membership.exposed` or a faction's own; built in, it expels at the faction's `expel_standing_change`. Each `standing_change` is range-checked like the others.
+  - **Who judges:** each faction that learns, now or as news arrives, that the character is in, and that's in conflict with the secret faction; by its own picture, in id order. Their standing changes are applied in one step, so spills add up.
+  - **`keep` and `demote` lead to a war to settle** because wars now open between memberships each side knows of, which they now do. `demote` from the lowest rung leaves, as `expel` does.
+  - **`MembershipExposed { to }`** lists who learned and didn't know; to everyone, `to` is `None` and the membership becomes open. Who it was exposed to is forgotten when the membership ends.
+  - **Exposure news** is sent from those who learned, past everyone who already knew: the faction, its members, the character and anyone it was exposed to.
+  - **No starting double agent in Riverhold.** Anyone in both the Watch and the Guild, or the Temple and the Circle, starts outside one's member tolerance, which would warn on every load; the `secrets` and `exposure` scenarios make one in play instead.
+  - **`expose` defaults to everyone,** takes `--seen-by`, and `--explain` shows each table that decided at once, from `assess_exposure`.
+  - *Why:* exposure reuses the rule tables, news and wars that already exist, and stays a closed vocabulary (D-20).
 
 ## Open
 

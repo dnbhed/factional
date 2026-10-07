@@ -290,6 +290,48 @@
             "rules"
           ],
           "type": "object"
+        },
+        "exposed": {
+          "additionalProperties": false,
+          "description": "On learning a member is secretly in a faction it's in conflict with: keep, demote or expel them? \"Current\" is the faction that found out, \"target\" the secret one. The last rule must have no conditions.",
+          "properties": {
+            "rules": {
+              "description": "Tried top to bottom until one whose conditions all hold.",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "standing_change": {
+                    "description": "The change in standing with the faction that found out, -100 to 100.",
+                    "maximum": 100.0,
+                    "minimum": -100.0,
+                    "type": "number"
+                  },
+                  "then": {
+                    "description": "What the rule decides.",
+                    "enum": [
+                      "keep",
+                      "demote",
+                      "expel"
+                    ],
+                    "type": "string"
+                  },
+                  "when": {
+                    "$ref": "#/$defs/conditions"
+                  }
+                },
+                "required": [
+                  "then"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "rules"
+          ],
+          "type": "object"
         }
       },
       "type": "object"
@@ -694,6 +736,9 @@
         },
         "deserters": {
           "$ref": "#/$defs/rule_tables/properties/deserters"
+        },
+        "exposed": {
+          "$ref": "#/$defs/rule_tables/properties/exposed"
         }
       },
       "type": "object"

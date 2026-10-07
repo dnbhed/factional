@@ -64,6 +64,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - K2 — ripple: `knowledge.model = "ripple"`, with `[knowledge.ripple]` `strength` (a list per hop, the user's choice over decay and threshold, P-56) and `hop_ticks`, and characters' `contacts`; `NewsSent` and `NewsArrived`, news in flight delivered as time advances, standing scaled by each hop's awareness; Riverhold on `ripple` with DESIGN.md §13's contacts; the `news` query and command; content checks and a warning; invariant 13 and replay, restore and invariant 12 under ripple as property tests (P-60); done 2026-10-07 (#33)
 - K3 — perceived alignment (D-21): everyone judges by their picture of a character, the truth less the shifts they haven't heard of; `ShiftWitnessed`, and the shift carried by news at each hop's strength; `distance` measures the picture, so disposition, joining, promotion and drift follow, and each rule table uses its own faction's picture; drift reviewed as news arrives; `witnesses` on outcomes and effects; the `perceived` query and command, explanations and `map` showing picture against truth; the journal now writes who saw each act and outcome; property tests that everyone pictures the truth under `omniscient` or when everyone saw everything (P-61); done 2026-10-07 (#34)
 - K4 — secret membership (D-23): factions' `secret_members` (needs `witnessed` or `ripple`), secret starting memberships and `JoinFaction { secretly }` with `assess_join_secretly`; a secret membership is known only to the faction, its members and the character, so kinship, joining and wars count only the memberships each side knows of, and a double agent keeps both; invariant 6 amended, with a property test under ripple; `join`/`can-join --secretly`; the Guild and the Circle allow secret members; split from K5 (P-62); done 2026-10-07 (#35)
+- K5 — exposure (D-24): `Expose { character, faction, witnesses }` and `MembershipExposed`, the news of it rippling; the `exposed` rule table (`keep`, `demote`, `expel`; built in, expel) judged by each faction that learns and is at war with the secret one, `LeftFaction { Exposed }`, and wars opening between memberships each side knows of; `assess_exposure`; `expose … [--seen-by] [--explain]`; Riverhold's exposed table, with the double agent made in play rather than at the start (P-63); done 2026-10-07 (#36)
 
 ---
 
@@ -81,13 +82,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 5 — Knowledge and rumour
 
-### K5 · Exposure — P2 · Next
-
-`Expose { character, faction, witnesses }`, news of it rippling, `MembershipExposed`; the `exposed` tables (`keep`, `demote`, `expel`) and `LeftFaction { Exposed }`, with `keep` and `demote` opening a `MembershipConflict`; `knows_membership` counting those it's exposed to; a double agent in Riverhold (§10.4, D-24, P-58). Split from K4 (P-62).
-
 ## Phase 6 — Embedding
 
-### E0 · Choose a host engine and integration route — P3
+### E0 · Choose a host engine and integration route — P3 · Next
 
 Settles X-2.
 

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use factional_core::{Fixed, Tick};
 
 use crate::alignment::{Alignment, AlignmentDelta};
-use crate::id::CharacterId;
+use crate::id::{CharacterId, FactionId};
 use crate::standing::Party;
 
 /// `knowledge.model`: who learns of an act (DESIGN.md §10.1).
@@ -107,6 +107,8 @@ pub struct News {
     /// How the actor's alignment moved, at full strength; each party's picture of them moves
     /// by it × their awareness when they hear (DESIGN.md §10.3).
     pub shift: AlignmentDelta,
+    /// The faction the actor is secretly in, when the news is of that (DESIGN.md §10.4).
+    pub exposes: Option<FactionId>,
     /// Where it goes next.
     pub next: NextHop,
 }

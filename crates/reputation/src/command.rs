@@ -114,6 +114,13 @@ pub enum Command {
         subject: CharacterId,
         id: ModifierId,
     },
+    /// Reveals that `character` is secretly in `faction` to `witnesses`; to everyone, it
+    /// makes the membership open (DESIGN.md §10.4).
+    Expose {
+        character: CharacterId,
+        faction: FactionId,
+        witnesses: Witnesses,
+    },
     /// Starts reporting when anyone's disposition toward `subject` changes band (DESIGN.md
     /// §8.3, P-23).
     Watch { subject: CharacterId },
@@ -291,6 +298,9 @@ pub enum Change {
         /// How the actor's alignment moved, at full strength (DESIGN.md §10.3).
         #[serde(default)]
         shift: AlignmentDelta,
+        /// The faction the actor is secretly in, when the news is of that (DESIGN.md §10.4).
+        #[serde(default)]
+        exposes: Option<FactionId>,
     },
     /// News reached `arrived.parties` and, through them, their factions: everyone in
     /// `learned`. `next` is where it goes on to, if anywhere. Each of them now pictures the
@@ -302,6 +312,13 @@ pub enum Change {
         next: Option<NextHop>,
         #[serde(default)]
         shift: AlignmentDelta,
+    },
+    /// `to` learned that `character` is secretly in `faction`; `None` means everyone, and
+    /// the membership is open from now on (DESIGN.md §10.4).
+    MembershipExposed {
+        character: CharacterId,
+        faction: FactionId,
+        to: Option<BTreeSet<Party>>,
     },
     /// Only `seen_by` learned firsthand that `character`'s alignment moved by `shift`:
     /// everyone else still pictures them where they were (DESIGN.md §10.3).
@@ -360,6 +377,11 @@ pub enum CommandError {
     JoinRefused(Box<JoinAssessment>),
     /// `LeaveFaction` for a faction the character isn't in.
     NotAMember {
+        character: CharacterId,
+        faction: FactionId,
+    },
+    /// `Expose` for a membership that isn't secret.
+    NotSecret {
         character: CharacterId,
         faction: FactionId,
     },
@@ -523,6 +545,9 @@ impl fmt::Display for CommandError {
             ),
             CommandError::NotAMember { character, faction } => {
                 write!(f, "{character} isn't a member of {faction}")
+            }
+            CommandError::NotSecret { character, faction } => {
+                write!(f, "{character}'s membership of {faction} isn't secret")
             }
             CommandError::UnknownOutcome {
                 outcome,
