@@ -29,4 +29,7 @@ pub struct Character {
     pub memberships: Vec<StartingMembership>,
     /// How others regard them at the start; anyone not named starts at 0.
     pub standing: StandingEffects,
+    /// The characters they pass news to, as content lists them. A contact works both ways,
+    /// so it's listed on one side only (DESIGN.md §10.2).
+    pub contacts: Vec<CharacterId>,
 }

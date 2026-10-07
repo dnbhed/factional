@@ -1,10 +1,11 @@
+use std::collections::BTreeSet;
 use std::fmt;
 
 use factional_core::{Envelope, Fixed, Tick, article};
 
 use crate::{
     AXIS_LIMIT, ActionId, Alignment, AlignmentDelta, CharacterId, Effects, FactionId,
-    JoinAssessment, LeaveReason, ModifierId, ModifierObserver, Observer, OutcomeId, Party,
+    JoinAssessment, LeaveReason, ModifierId, ModifierObserver, NextHop, Observer, OutcomeId, Party,
     PromotionAssessment, RankId, Spill, Witnesses,
 };
 
@@ -259,6 +260,25 @@ pub enum Change {
         from: String,
         to: String,
         score: Fixed,
+    },
+    /// News of the act numbered `news` (its `ActionPerformed`) is on its way beyond those
+    /// who learned it firsthand, who are in `heard` with the actor. `due` is the standing
+    /// change still owed to each party the act names that hasn't heard, at full strength
+    /// (DESIGN.md §10.2).
+    NewsSent {
+        news: u64,
+        actor: CharacterId,
+        heard: BTreeSet<Party>,
+        due: Vec<(Party, Fixed)>,
+        next: NextHop,
+    },
+    /// News reached `arrived.parties` and, through them, their factions: everyone in
+    /// `learned`. `next` is where it goes on to, if anywhere.
+    NewsArrived {
+        news: u64,
+        arrived: NextHop,
+        learned: BTreeSet<Party>,
+        next: Option<NextHop>,
     },
 }
 

@@ -1,0 +1,47 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/ripple.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --target captain_hale --seen-by merchant_ava
+#1 at tick 0: player did steal, targeting captain_hale, witnessed by merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10
+> news
+news of #1: player did steal, targeting captain_hale, witnessed by merchant_ava
+  heard by: merchant_ava, player
+  on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10
+  still due: city_watch -10.00, captain_hale -20.00
+> assert standing player == no standing with anyone yet
+> advance 5
+#4 at tick 0: time advanced from 0 to 5
+> assert standing player == no standing with anyone yet
+> advance 5
+#5 at tick 5: time advanced from 5 to 10
+#6 at tick 10: news of #1 reached city_watch, temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 10); on its way to brother_ash: hop 2, at 0.25, arriving at tick 20
+#7 at tick 10: player's standing with city_watch moved from 0.00 to -5.00
+#8 at tick 10: player's standing with lantern_guild moved from 0.00 to 0.90, with 0.90 spilled from city_watch (-5.00 × -0.18; lantern_guild regards it at -80.00)
+#9 at tick 10: player's standing with temple moved from 0.00 to -0.50, with -0.50 spilled from city_watch (-5.00 × 0.10; temple regards it at 60.00)
+#10 at tick 10: player's standing with captain_hale moved from 0.00 to -10.00
+> assert standing player captain_hale == -10.00
+> assert standing player city_watch == -5.00
+> assert standing player lantern_guild == 0.90
+> assert standing player temple == -0.50
+> news
+news of #1: player did steal, targeting captain_hale, witnessed by merchant_ava
+  heard by: city_watch, temple, captain_hale, merchant_ava, player, sister_mira
+  on its way to brother_ash: hop 2, at 0.25, arriving at tick 20
+  still due: nothing
+> advance 10
+#11 at tick 10: time advanced from 10 to 20
+#12 at tick 20: news of #1 reached ashen_circle, brother_ash at 0.25 (hop 2, due at tick 20); it goes no further
+> assert news == no news on its way
+> act player steal --target vex
+#13 at tick 20: player did steal, targeting vex
+#14 at tick 20: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
+#15 at tick 20: player's standing with city_watch moved from -5.00 to -3.20, with 1.80 spilled from lantern_guild (-10.00 × -0.18; city_watch regards it at -80.00)
+#16 at tick 20: player's standing with lantern_guild moved from 0.90 to -9.10
+#17 at tick 20: player's standing with vex moved from 0.00 to -20.00
+> assert news == no news on its way

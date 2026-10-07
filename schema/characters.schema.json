@@ -29,6 +29,15 @@
         "alignment": {
           "$ref": "#/$defs/alignment"
         },
+        "contacts": {
+          "description": "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
+          "items": {
+            "description": "A character's id.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
         "inertia": {
           "description": "Their inertia profile, from balance.toml; left out, the default.",
           "pattern": "^[a-z][a-z0-9_]*$",

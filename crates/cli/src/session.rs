@@ -11,8 +11,8 @@ use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Condition, ConditionCheck, Distance, DriftPolicy, Event, Faction, FactionId,
-    KnowledgeModel, Learned, LeaveReason, ModifierId, ModifierObserver, Observed, Observer,
-    OutcomeId, Party, RankCheck, RankRef, Reached, Shift, StandingEffects, TableDecision,
+    KnowledgeModel, Learned, LeaveReason, ModifierId, ModifierObserver, NextHop, Observed,
+    Observer, OutcomeId, Party, RankCheck, RankRef, Reached, Shift, StandingEffects, TableDecision,
     TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
 };
 
@@ -153,6 +153,10 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "journal",
         "every command issued, and whether it was accepted",
+    ),
+    (
+        "news",
+        "news on its way: who has heard of each act, and who hears next, when and how strongly",
     ),
     (
         "calc <a> <op> <b>",
@@ -300,6 +304,7 @@ impl Session {
             "time" => Ok(self.time()),
             "events" => Ok(self.events(rest)),
             "journal" => Ok(self.journal()),
+            "news" => Ok(self.news(rest)),
             "calc" => Ok(calc(rest)),
             "curve" => Ok(charts::curve(self.world.as_ref(), rest)),
             "map" => Ok(self
@@ -1388,6 +1393,48 @@ impl Session {
     }
 
     /// `journal`: every command issued, and whether it was accepted.
+    /// `news`: each piece of news on its way, with the act it's about, who has heard, where
+    /// it goes next, and the standing changes still due (DESIGN.md §10.2).
+    fn news(&self, args: &str) -> Outcome {
+        if !args.trim().is_empty() {
+            return Outcome::Error("news needs the form: news".to_owned());
+        }
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let described: Vec<String> = world
+            .news()
+            .map(|(id, news)| {
+                let act = world
+                    .events()
+                    .iter()
+                    .find(|event| event.seq == id)
+                    .map(|event| describe_change(&event.payload))
+                    .unwrap_or_default();
+                let heard: Vec<String> = news.heard.iter().map(ToString::to_string).collect();
+                let due: Vec<String> = news
+                    .due
+                    .iter()
+                    .map(|(party, change)| format!("{party} {change}"))
+                    .collect();
+                let due = if due.is_empty() {
+                    "nothing".to_owned()
+                } else {
+                    due.join(", ")
+                };
+                format!(
+                    "news of #{id}: {act}\n  heard by: {}\n  on its way to {}\n  still due: {due}",
+                    heard.join(", "),
+                    describe_hop(&news.next)
+                )
+            })
+            .collect();
+        if described.is_empty() {
+            return Outcome::Output("no news on its way".to_owned());
+        }
+        Outcome::Output(described.join("\n"))
+    }
+
     fn journal(&self) -> Outcome {
         let Some(world) = &self.world else {
             return no_world();
@@ -1475,6 +1522,12 @@ fn describe_reach(reach: &[Reached], model: KnowledgeModel) -> Vec<String> {
         "who learns of it, under the {} model, and the standing change due:",
         model.key()
     )];
+    // Under ripple, news may reach them later (DESIGN.md §10.2).
+    let later = if model == KnowledgeModel::Ripple {
+        " for now"
+    } else {
+        ""
+    };
     described.extend(reach.iter().map(|reached| {
         let how = match (&reached.learned, &reached.party) {
             (Some(Learned::Everyone), _) => "learns, as everyone knows of it".to_owned(),
@@ -1484,10 +1537,10 @@ fn describe_reach(reach: &[Reached], model: KnowledgeModel) -> Vec<String> {
                 format!("learns through {member}, a member who learned firsthand")
             }
             (None, Party::Character(_)) => {
-                "doesn't learn, not having seen it; no change".to_owned()
+                format!("doesn't learn, not having seen it; no change{later}")
             }
             (None, Party::Faction(_)) => {
-                "doesn't learn, as no member learned firsthand; no change".to_owned()
+                format!("doesn't learn, as no member learned firsthand; no change{later}")
             }
         };
         format!("{} {}: {how}", reached.party, reached.change)
@@ -1583,9 +1636,31 @@ fn describe_check(check: &ConditionCheck, current: &FactionId, target: &FactionI
     format!("{} = {value}? {held}, {observed}", check.condition.key())
 }
 
+/// `captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10`.
+fn describe_hop(hop: &NextHop) -> String {
+    let parties: Vec<&str> = hop.parties.iter().map(CharacterId::as_str).collect();
+    format!(
+        "{}: hop {}, at {}, arriving at tick {}",
+        parties.join(", "),
+        hop.hop,
+        hop.awareness,
+        hop.at
+    )
+}
+
 /// `#1 at tick 0: time advanced from 0 to 5`.
 pub(crate) fn describe_event(event: &Event) -> String {
-    let what = match &event.payload {
+    format!(
+        "#{} at tick {}: {}",
+        event.seq,
+        event.tick,
+        describe_change(&event.payload)
+    )
+}
+
+/// What a change says happened: `time advanced from 0 to 5`.
+fn describe_change(change: &Change) -> String {
+    match change {
         Change::TimeAdvanced { from, to } => format!("time advanced from {from} to {to}"),
         Change::ActionPerformed {
             actor,
@@ -1738,6 +1813,28 @@ pub(crate) fn describe_event(event: &Event) -> String {
             to,
             score,
         } => format!("{observer} now regards {subject} as {to} (was {from}), at {score}"),
+        Change::NewsSent { news, next, .. } => {
+            format!("news of #{news} is on its way to {}", describe_hop(next))
+        }
+        Change::NewsArrived {
+            news,
+            arrived,
+            learned,
+            next,
+        } => {
+            let learned: Vec<String> = learned.iter().map(ToString::to_string).collect();
+            let onward = match next {
+                Some(next) => format!("on its way to {}", describe_hop(next)),
+                None => "it goes no further".to_owned(),
+            };
+            format!(
+                "news of #{news} reached {} at {} (hop {}, due at tick {}); {onward}",
+                learned.join(", "),
+                arrived.awareness,
+                arrived.hop,
+                arrived.at
+            )
+        }
         Change::AlignmentChanged {
             character,
             from,
@@ -1747,8 +1844,7 @@ pub(crate) fn describe_event(event: &Event) -> String {
             axes(*from),
             axes(*to)
         ),
-    };
-    format!("#{} at tick {}: {what}", event.seq, event.tick)
+    }
 }
 
 /// A command written the way it's typed in the CLI.
@@ -2613,27 +2709,29 @@ mod tests {
     #[test]
     fn act_takes_who_saw_it() {
         let mut session = riverhold();
-        // Riverhold's knowledge model is witnessed: Hale didn't see it, so he and the Watch
-        // don't know (DESIGN.md §10.1).
+        // Hale didn't see it, so he and the Watch don't know yet; Ava's news will reach him
+        // ten ticks later (DESIGN.md §10).
         assert_eq!(
             session.execute("act player steal --target captain_hale --seen-by vex,merchant_ava"),
             output(
                 "#1 at tick 0: player did steal, targeting captain_hale, witnessed by merchant_ava, vex\n\
-                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00"
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00\n\
+                 #3 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10"
             )
         );
         assert_eq!(
             session.execute("act player steal --target captain_hale --seen-by captain_hale"),
             output(
-                "#3 at tick 0: player did steal, targeting captain_hale, witnessed by captain_hale\n\
-                 #4 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00\n\
-                 #5 at tick 0: player's standing with city_watch moved from 0.00 to -10.00\n\
-                 #6 at tick 0: player's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)\n\
-                 #7 at tick 0: player's standing with temple moved from 0.00 to -1.00, with -1.00 spilled from city_watch (-10.00 × 0.10; temple regards it at 60.00)\n\
-                 #8 at tick 0: player's standing with captain_hale moved from 0.00 to -20.00"
+                "#4 at tick 0: player did steal, targeting captain_hale, witnessed by captain_hale\n\
+                 #5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00\n\
+                 #6 at tick 0: player's standing with city_watch moved from 0.00 to -10.00\n\
+                 #7 at tick 0: player's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #8 at tick 0: player's standing with temple moved from 0.00 to -1.00, with -1.00 spilled from city_watch (-10.00 × 0.10; temple regards it at 60.00)\n\
+                 #9 at tick 0: player's standing with captain_hale moved from 0.00 to -20.00\n\
+                 #10 at tick 0: news of #4 is on its way to merchant_ava: hop 1, at 0.50, arriving at tick 10"
             )
         );
-        // The Temple learns of a donation to it, seen or not.
+        // The Temple learns of a donation to it, seen or not, and tells its members.
         assert_eq!(
             riverhold().execute("act player donate_to_temple --unseen"),
             output(
@@ -2641,7 +2739,8 @@ mod tests {
                  #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law 0.00, good 3.00\n\
                  #3 at tick 0: player's standing with ashen_circle moved from 0.00 to -2.40, with -2.40 spilled from temple (10.00 × -0.24; ashen_circle regards it at -90.00)\n\
                  #4 at tick 0: player's standing with city_watch moved from 0.00 to 1.00, with 1.00 spilled from temple (10.00 × 0.10; city_watch regards it at 60.00)\n\
-                 #5 at tick 0: player's standing with temple moved from 0.00 to 10.00"
+                 #5 at tick 0: player's standing with temple moved from 0.00 to 10.00\n\
+                 #6 at tick 0: news of #1 is on its way to sister_mira: hop 1, at 0.50, arriving at tick 10"
             )
         );
         assert_eq!(
@@ -2662,7 +2761,7 @@ mod tests {
             "shift = base × scale × inertia, rounded once; player's inertia profile is steady",
             "law: -5.00 × 1.00 × 1.00 (steady has no law.toward_chaotic curve) = -5.00, from 0.00 to -5.00",
             "good: -3.00 × 1.00 × 1.00 (steady has no good.toward_evil curve) = -3.00, from 0.00 to -3.00",
-            "who learns of it, under the witnessed model, and the standing change due:",
+            "who learns of it, under the ripple model, and the standing change due:",
         ];
         let explained = |line: &str| working_of(&mut riverhold(), line);
         assert_eq!(
@@ -2670,8 +2769,8 @@ mod tests {
             [
                 &steal[..],
                 &[
-                    "city_watch -10.00: doesn't learn, as no member learned firsthand; no change",
-                    "captain_hale -20.00: doesn't learn, not having seen it; no change",
+                    "city_watch -10.00: doesn't learn, as no member learned firsthand; no change for now",
+                    "captain_hale -20.00: doesn't learn, not having seen it; no change for now",
                 ],
             ]
             .concat()
@@ -2703,9 +2802,58 @@ mod tests {
             [
                 "shift = base × scale × inertia, rounded once; player's inertia profile is steady",
                 "good: 3.00 × 1.00 × 1.00 (steady has no good.toward_good curve) = 3.00, from 0.00 to 3.00",
-                "who learns of it, under the witnessed model, and the standing change due:",
+                "who learns of it, under the ripple model, and the standing change due:",
                 "temple 10.00: learns, as the act names it",
             ]
+        );
+    }
+
+    #[test]
+    fn news_shows_what_is_on_its_way_and_advance_delivers_it() {
+        let mut session = riverhold();
+        assert_eq!(session.execute("news"), output("no news on its way"));
+        let _ = session.execute("act player steal --target captain_hale --seen-by merchant_ava");
+        assert_eq!(
+            session.execute("news"),
+            output(
+                "news of #1: player did steal, targeting captain_hale, witnessed by merchant_ava\n  \
+                 heard by: merchant_ava, player\n  \
+                 on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10\n  \
+                 still due: city_watch -10.00, captain_hale -20.00"
+            )
+        );
+        // DESIGN.md §10.2's worked example.
+        assert_eq!(
+            session.execute("advance 10"),
+            output(
+                "#4 at tick 0: time advanced from 0 to 10\n\
+                 #5 at tick 10: news of #1 reached city_watch, temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 10); on its way to brother_ash: hop 2, at 0.25, arriving at tick 20\n\
+                 #6 at tick 10: player's standing with city_watch moved from 0.00 to -5.00\n\
+                 #7 at tick 10: player's standing with lantern_guild moved from 0.00 to 0.90, with 0.90 spilled from city_watch (-5.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #8 at tick 10: player's standing with temple moved from 0.00 to -0.50, with -0.50 spilled from city_watch (-5.00 × 0.10; temple regards it at 60.00)\n\
+                 #9 at tick 10: player's standing with captain_hale moved from 0.00 to -10.00"
+            )
+        );
+        assert_eq!(
+            session.execute("news"),
+            output(
+                "news of #1: player did steal, targeting captain_hale, witnessed by merchant_ava\n  \
+                 heard by: city_watch, temple, captain_hale, merchant_ava, player, sister_mira\n  \
+                 on its way to brother_ash: hop 2, at 0.25, arriving at tick 20\n  \
+                 still due: nothing"
+            )
+        );
+        assert_eq!(
+            session.execute("advance 10"),
+            output(
+                "#10 at tick 10: time advanced from 10 to 20\n\
+                 #11 at tick 20: news of #1 reached ashen_circle, brother_ash at 0.25 (hop 2, due at tick 20); it goes no further"
+            )
+        );
+        assert_eq!(session.execute("news"), output("no news on its way"));
+        assert_eq!(
+            session.execute("news now"),
+            command_error("news needs the form: news")
         );
     }
 
@@ -3311,7 +3459,7 @@ mod tests {
             [
                 "shift = base × scale × inertia, rounded once; sister_mira's inertia profile is hardening",
                 "good: 4.00 × 1.00 × 0.405 (good.toward_good at 85.00) = 1.62, from 85.00 to 86.62",
-                "who learns of it, under the witnessed model, and the standing change due:",
+                "who learns of it, under the ripple model, and the standing change due:",
                 "merchant_ava 10.00: learns, as everyone knows of it",
             ]
         );
@@ -3346,7 +3494,7 @@ mod tests {
                 "shift = base × scale × target × inertia, rounded once; captain_hale's inertia profile is hardening",
                 "law: -10.00 × 1.00 × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 1.00 (hardening has no law.toward_chaotic curve) = -6.20, from 75.00 to 68.80",
                 "good: -15.00 × 1.00 × 0.84 (by_target.good at vex's -20.00) × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 0.85 (good.toward_evil at 30.00) = -6.64, from 30.00 to 23.36",
-                "who learns of it, under the witnessed model, and the standing change due:",
+                "who learns of it, under the ripple model, and the standing change due:",
                 "lantern_guild -40.00: learns, as everyone knows of it",
                 "vex -100.00: learns, as everyone knows of it",
             ]
@@ -3361,7 +3509,7 @@ mod tests {
                 "shift = base × scale × target × inertia, rounded once; player's inertia profile is steady",
                 "law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00",
                 "good: -15.00 × 1.00 × 0.44 (by_target.good at brother_ash's -70.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -6.60, from 0.00 to -6.60",
-                "who learns of it, under the witnessed model, and the standing change due:",
+                "who learns of it, under the ripple model, and the standing change due:",
                 "ashen_circle -40.00: learns, as everyone knows of it",
                 "brother_ash -100.00: learns, as everyone knows of it",
             ]
@@ -4304,6 +4452,7 @@ mod tests {
             "time",
             "events [--since <seq>]",
             "journal",
+            "news",
             "calc <a> <op> <b>",
             "curve <curve> [at <x>]",
             "map <faction>",

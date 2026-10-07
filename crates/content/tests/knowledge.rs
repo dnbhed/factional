@@ -1,5 +1,5 @@
-//! Who learns of an act in Riverhold, whose `knowledge.model` is `witnessed` (DESIGN.md
-//! §10.1, P-55). Expected values are worked out by hand from §7.1: a change with the Watch
+//! Who learns of an act firsthand, in Riverhold under the `witnessed` knowledge model
+//! (DESIGN.md §10.1, P-55). Expected values are worked out by hand from §7.1: a change with the Watch
 //! spills × 0.10 to the Temple (+60) and × −0.18 to the Guild (−80); one with the Temple
 //! spills × 0.10 to the Watch (+60) and × −0.24 to the Ashen Circle (−90).
 
@@ -12,9 +12,13 @@ use factional_reputation::{
     Reached, Witnesses, World,
 };
 
+/// Riverhold, under the witnessed model: news goes no further than those who learn of it
+/// firsthand.
 fn sample() -> Content {
-    load_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/sample"))
-        .expect("the sample content is valid")
+    let mut content = load_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/sample"))
+        .expect("the sample content is valid");
+    content.balance.knowledge = KnowledgeModel::Witnessed;
+    content
 }
 
 fn riverhold() -> World {
@@ -78,11 +82,6 @@ fn in_free_company(content: Content, members: &[&str]) -> World {
             .expect("joins");
     }
     world
-}
-
-#[test]
-fn riverhold_uses_the_witnessed_model() {
-    assert_eq!(sample().balance.knowledge, KnowledgeModel::Witnessed);
 }
 
 #[test]

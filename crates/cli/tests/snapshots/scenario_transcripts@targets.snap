@@ -14,7 +14,7 @@ loaded 6 characters from content/sample
 shift = base × scale × target × inertia, rounded once; player's inertia profile is steady
 law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00
 good: -15.00 × 1.00 × 0.44 (by_target.good at brother_ash's -70.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -6.60, from 0.00 to -6.60
-who learns of it, under the witnessed model, and the standing change due:
+who learns of it, under the ripple model, and the standing change due:
 ashen_circle -40.00: learns, as everyone knows of it
 brother_ash -100.00: learns, as everyone knows of it
 > assert show character player == player — The Player — law -10.00, good -6.60 — True Neutral
@@ -30,7 +30,7 @@ loaded 6 characters from content/sample
 shift = base × scale × target × inertia, rounded once; player's inertia profile is steady
 law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00
 good: -15.00 × 1.00 × 1.425 (by_target.good at sister_mira's 85.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -21.38, from 0.00 to -21.38
-who learns of it, under the witnessed model, and the standing change due:
+who learns of it, under the ripple model, and the standing change due:
 temple -40.00: learns, as everyone knows of it
 sister_mira -100.00: learns, as everyone knows of it
 > load content/sample
@@ -44,7 +44,7 @@ loaded 6 characters from content/sample
 shift = base × scale × target × inertia, rounded once; captain_hale's inertia profile is hardening
 law: -10.00 × 1.00 × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 1.00 (hardening has no law.toward_chaotic curve) = -6.20, from 75.00 to 68.80
 good: -15.00 × 1.00 × 0.84 (by_target.good at vex's -20.00) × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 0.85 (good.toward_evil at 30.00) = -6.64, from 30.00 to 23.36
-who learns of it, under the witnessed model, and the standing change due:
+who learns of it, under the ripple model, and the standing change due:
 lantern_guild -40.00: learns, as everyone knows of it
 vex -100.00: learns, as everyone knows of it
 > assert show character captain_hale == captain_hale — Captain Hale — law 68.80, good 23.36 — Lawful Neutral — member of city_watch (captain) since tick 0

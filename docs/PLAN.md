@@ -61,6 +61,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - T4 — saves: `save <file>` and `restore <file>` in the REPL; a JSON file with its format and version first, the content directory with each file's FNV-1a fingerprint, the journal as commands with their event counts, and the events; `World::saved_journal` and `World::restore` (events replayed without rules, refusals decided again); exact serde for `Fixed`, `Ratio`, ids and alignments; restoring refuses changed content, other versions and saves that don't add up; invariant 11 (P-54); done 2026-10-07 (#30)
 - K0 — design pass for knowledge (DESIGN.md §10): who learns firsthand, ripple through contacts and membership with news in flight, perceived alignment used by every judgement, secret membership and exposure tables; the user's choices D-21 to D-24 (settling X-1), with P-55 to P-58; invariants 12 and 13; Riverhold's knowledge settings in the complete example; done 2026-10-07 (#31)
 - K1 — witnessed acts: `knowledge.model` (`omniscient`, `witnessed`), with Riverhold on `witnessed`; only parties that learn firsthand (witnesses, the parties an act names, and the factions of the characters among them, never through the actor) change their standing; a `reach` query; `act --seen-by <id>,… | --unseen`, and `act --explain` saying who learns; invariant 12's property test as far as K1 goes (P-59); done 2026-10-07 (#32)
+- K2 — ripple: `knowledge.model = "ripple"`, with `[knowledge.ripple]` `strength` (a list per hop, the user's choice over decay and threshold, P-56) and `hop_ticks`, and characters' `contacts`; `NewsSent` and `NewsArrived`, news in flight delivered as time advances, standing scaled by each hop's awareness; Riverhold on `ripple` with DESIGN.md §13's contacts; the `news` query and command; content checks and a warning; invariant 13 and replay, restore and invariant 12 under ripple as property tests (P-60); done 2026-10-07 (#33)
 
 ---
 
@@ -78,11 +79,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 5 — Knowledge and rumour
 
-### K2 · Ripple through the social graph — P2 · Next
-
-`contacts`, `[knowledge.ripple]`, news in flight delivered by `AdvanceTime`, `NewsArrived`, a `news` query and command; invariant 13 (§10.2, D-22, P-56).
-
-### K3 · Perceived alignment — P2 · Outline
+### K3 · Perceived alignment — P2 · Next
 
 Perceived alignment in public and private offsets, used by affinity, joining, rank tolerance, the rule tables and drift; `witnesses` on outcomes and effects; a `perceived` query and command, and `map` showing perception against truth; invariant 12 (§10.3, D-21, P-57).
 
