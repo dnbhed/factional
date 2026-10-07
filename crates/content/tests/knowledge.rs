@@ -78,6 +78,7 @@ fn in_free_company(content: Content, members: &[&str]) -> World {
             .execute(Command::JoinFaction {
                 character: character(member),
                 faction: faction("free_company"),
+                secretly: false,
             })
             .expect("joins");
     }
@@ -237,6 +238,10 @@ fn an_act_everyone_sees_reaches_everyone() {
 fn the_omniscient_model_ignores_witnesses() {
     let mut content = sample();
     content.balance.knowledge = KnowledgeModel::Omniscient;
+    // Nothing can be secret when everyone knows everything.
+    for faction in content.factions.values_mut() {
+        faction.secret_members = false;
+    }
     let mut world = World::new(content).expect("valid content");
     assert_eq!(
         standing_changes(

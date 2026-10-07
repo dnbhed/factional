@@ -771,6 +771,13 @@ fn faction() -> Value {
                 ),
             ),
             (
+                "secret_members",
+                with_default(
+                    json!({ "type": "boolean", "description": "Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4)." }),
+                    false.into(),
+                ),
+            ),
+            (
                 "ranks",
                 json!({
                     "type": "array",
@@ -793,6 +800,13 @@ fn character() -> Value {
         [
             ("faction", id("The faction's id.")),
             ("rank", id("A rank on its ladder; left out, the lowest.")),
+            (
+                "secret",
+                with_default(
+                    json!({ "type": "boolean", "description": "Whether they start in it secretly, known only to the faction, its members and themself. The faction must allow secret members (DESIGN.md §10.4)." }),
+                    false.into(),
+                ),
+            ),
         ],
         &["faction"],
         None,

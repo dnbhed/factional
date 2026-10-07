@@ -27,6 +27,9 @@ pub struct Faction {
     pub drift: Option<DriftPolicy>,
     /// The change in an expelled member's standing with the faction.
     pub expel_standing_change: Fixed,
+    /// Whether characters may belong to it secretly, unknown to anyone outside it
+    /// (DESIGN.md §10.4, D-23).
+    pub secret_members: bool,
 }
 
 /// One rung of a faction's ladder (DESIGN.md §7.2, P-9).

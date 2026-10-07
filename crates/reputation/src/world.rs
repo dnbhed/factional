@@ -302,6 +302,14 @@ pub enum ContentProblem {
         index: usize,
         contact: CharacterId,
     },
+    /// A faction allows secret members in a world where everyone knows everything.
+    SecretMembersNeedKnowledge(FactionId),
+    /// A secret starting membership in a faction that doesn't allow secret members.
+    SecretMembershipNotAllowed {
+        character: CharacterId,
+        index: usize,
+        faction: FactionId,
+    },
 }
 
 /// What names an inertia profile.
@@ -433,13 +441,21 @@ impl Content {
                 problems
             });
         let values = &self.relation_values();
+        // A secret membership isn't known to the other faction, so only two open ones can be
+        // in conflict (DESIGN.md §10.4).
         let starts_in_conflict = self.characters.values().flat_map(|character| {
-            let listed: Vec<&FactionId> = character.factions().collect();
+            let listed: Vec<(&FactionId, bool)> = character
+                .memberships
+                .iter()
+                .map(|membership| (&membership.faction, membership.secret))
+                .collect();
             listed
                 .iter()
                 .enumerate()
-                .filter_map(|(index, &faction)| {
-                    listed[..index].iter().find_map(|&other| {
+                .filter(|(_, (_, secret))| !secret)
+                .filter_map(|(index, &(faction, _))| {
+                    let open = listed[..index].iter().filter(|(_, secret)| !secret);
+                    open.map(|(other, _)| *other).find_map(|other| {
                         let relation = hostility(values, other, faction);
                         (relation <= self.balance.conflict_threshold && other != faction).then(
                             || ContentProblem::StartsInConflict {
@@ -549,6 +565,29 @@ impl Content {
         }
         if ripple.hop_ticks == 0 {
             problems.push(ContentProblem::NoHopTicks);
+        }
+        if self.balance.knowledge == KnowledgeModel::Omniscient {
+            problems.extend(
+                self.factions
+                    .values()
+                    .filter(|faction| faction.secret_members)
+                    .map(|faction| ContentProblem::SecretMembersNeedKnowledge(faction.id.clone())),
+            );
+        }
+        for character in self.characters.values() {
+            for (index, membership) in character.memberships.iter().enumerate() {
+                let allowed = self
+                    .factions
+                    .get(&membership.faction)
+                    .is_none_or(|faction| faction.secret_members);
+                if membership.secret && !allowed {
+                    problems.push(ContentProblem::SecretMembershipNotAllowed {
+                        character: character.id.clone(),
+                        index,
+                        faction: membership.faction.clone(),
+                    });
+                }
+            }
         }
         // Each pair listed so far, and who listed it last: a contact works both ways, so
         // listing a pair again is a problem, on whichever side, reported where it comes later
@@ -1099,6 +1138,13 @@ impl fmt::Display for ContentProblem {
                 "{value} is stronger than the hop before it, {before}: news only weakens as it travels"
             ),
             ContentProblem::NoHopTicks => f.write_str("a hop takes at least 1 tick"),
+            ContentProblem::SecretMembersNeedKnowledge(_) => f.write_str(
+                "secret members need knowledge.model witnessed or ripple: under omniscient, everyone knows everything",
+            ),
+            ContentProblem::SecretMembershipNotAllowed { faction, .. } => write!(
+                f,
+                "{faction} doesn't allow secret members: set secret_members = true on it"
+            ),
             ContentProblem::UnknownContact {
                 contact,
                 suggestion,
@@ -1336,6 +1382,7 @@ impl State {
                             Membership {
                                 since: Tick::default(),
                                 rank,
+                                secret: membership.secret,
                             },
                         ))
                     });
@@ -1694,10 +1741,14 @@ impl World {
                 changes.extend(news);
                 Ok(changes)
             }
-            Command::JoinFaction { character, faction } => {
+            Command::JoinFaction {
+                character,
+                faction,
+                secretly,
+            } => {
                 self.existing(character, Role::Member)?;
                 let assessment = self
-                    .assess_join(character, faction)
+                    .assess(character, faction, *secretly)
                     .ok_or_else(|| self.unknown_faction(faction))?;
                 if !assessment.allowed() {
                     return Err(CommandError::JoinRefused(Box::new(assessment)));
@@ -1713,12 +1764,18 @@ impl World {
                 let mut joining = Deltas::new();
                 for defection in &assessment.defections {
                     let from = &defection.from;
-                    changes.push(Change::LeftFaction {
-                        character: character.clone(),
-                        faction: from.clone(),
-                        reason: LeaveReason::Defected,
-                    });
-                    if let Verdict::Allow { standing_change } = defection.deserters.verdict {
+                    // A secret join leaves no one; the deserters table wasn't asked.
+                    if defection.deserters.is_some() {
+                        changes.push(Change::LeftFaction {
+                            character: character.clone(),
+                            faction: from.clone(),
+                            reason: LeaveReason::Defected,
+                        });
+                    }
+                    if let Some(Verdict::Allow { standing_change }) =
+                        defection.deserters.as_ref().map(|table| &table.verdict)
+                    {
+                        let standing_change = *standing_change;
                         let mut leaving = Deltas::new();
                         add(&mut leaving, Party::Faction(from.clone()), standing_change);
                         changes.extend(self.standing_changes(character, leaving));
@@ -1735,6 +1792,7 @@ impl World {
                     character: character.clone(),
                     faction: faction.clone(),
                     rank,
+                    secret: *secretly,
                 });
                 changes.extend(self.standing_changes(character, joining));
                 Ok(changes)
@@ -2490,7 +2548,13 @@ impl World {
         let threshold = self.content.balance.conflict_threshold;
         let mut changes = Vec::new();
         for (character, factions) in &self.state.memberships {
-            let factions: Vec<&FactionId> = factions.keys().collect();
+            // A war is only between memberships each side knows of: two open ones
+            // (DESIGN.md §10.4).
+            let factions: Vec<&FactionId> = factions
+                .iter()
+                .filter(|(_, membership)| !membership.secret)
+                .map(|(faction, _)| faction)
+                .collect();
             for (index, a) in factions.iter().enumerate() {
                 for b in &factions[index + 1..] {
                     let at_war = hostility(&self.state.relations, a, b) <= threshold;
@@ -2808,6 +2872,7 @@ impl World {
                 ref character,
                 ref faction,
                 ref rank,
+                secret,
             } => {
                 let since = event.tick;
                 self.state
@@ -2819,6 +2884,7 @@ impl World {
                         Membership {
                             since,
                             rank: rank.clone(),
+                            secret,
                         },
                     );
             }
@@ -3393,6 +3459,40 @@ impl World {
         })
     }
 
+    /// Whether `character` may join `faction` in secret now, and every reason they can't
+    /// (DESIGN.md §10.4). No one leaves, so only `faction`'s defectors table is asked about
+    /// the enemy memberships it knows of. `None` if either is unknown.
+    pub fn assess_join_secretly(
+        &self,
+        character: &CharacterId,
+        faction: &FactionId,
+    ) -> Option<JoinAssessment> {
+        self.assess(character, faction, true)
+    }
+
+    /// Whether `observer` knows that `character` belongs to `faction`: an open membership is
+    /// known to everyone, a secret one only to the faction, its members and the character
+    /// (DESIGN.md §10.4). `None` if any is unknown or they're not a member.
+    pub fn knows_membership(
+        &self,
+        observer: &Observer,
+        character: &CharacterId,
+        faction: &FactionId,
+    ) -> Option<bool> {
+        match observer {
+            Observer::Faction(id) => self.faction(id).map(|_| ())?,
+            Observer::Character(id) => self.character(id).map(|_| ())?,
+        }
+        let membership = self.state.memberships.get(character)?.get(faction)?;
+        Some(
+            !membership.secret
+                || match observer {
+                    Observer::Faction(id) => id == faction,
+                    Observer::Character(id) => id == character || self.is_member(id, faction),
+                },
+        )
+    }
+
     /// Whether `character` may join `faction` now, and every reason they can't, with how the
     /// rule tables decided for each faction they're in that's its enemy (DESIGN.md §9.1,
     /// §9.2). `None` if either is unknown.
@@ -3401,6 +3501,17 @@ impl World {
         character: &CharacterId,
         faction: &FactionId,
     ) -> Option<JoinAssessment> {
+        self.assess(character, faction, false)
+    }
+
+    /// `assess_join`, or with `secretly`, `assess_join_secretly`. Only the enemy memberships
+    /// the faction knows of count (DESIGN.md §10.4).
+    fn assess(
+        &self,
+        character: &CharacterId,
+        faction: &FactionId,
+        secretly: bool,
+    ) -> Option<JoinAssessment> {
         let found = self.faction(faction)?;
         let distance = self.distance(&Observer::Faction(faction.clone()), character)?;
         let tolerance = found.tolerances.tolerance();
@@ -3408,19 +3519,27 @@ impl World {
         if self.is_member(character, faction) {
             blocks.push(JoinBlock::AlreadyMember);
         }
+        if secretly && !found.secret_members {
+            blocks.push(JoinBlock::NoSecretMembers);
+        }
         if distance.value > tolerance {
             blocks.push(JoinBlock::OutsideTolerance {
                 distance: distance.value,
                 tolerance,
             });
         }
+        let judge = Observer::Faction(faction.clone());
         let current = self.state.memberships.get(character).into_iter().flatten();
         let defections = current
             .filter(|(member_of, _)| *member_of != faction)
+            .filter(|(member_of, _)| {
+                self.knows_membership(&judge, character, member_of) == Some(true)
+            })
             .filter_map(|(member_of, membership)| {
                 let relation = hostility(&self.state.relations, member_of, faction);
-                (relation <= self.content.balance.conflict_threshold)
-                    .then(|| self.defection(character, membership, member_of, found, relation))
+                (relation <= self.content.balance.conflict_threshold).then(|| {
+                    self.defection(character, membership, member_of, found, relation, secretly)
+                })
             })
             .collect();
         Some(JoinAssessment {
@@ -3444,6 +3563,7 @@ impl World {
         from: &FactionId,
         target: &Faction,
         relation: Fixed,
+        secretly: bool,
     ) -> Defection {
         let current = &self.content.factions[from];
         let position = current
@@ -3482,7 +3602,9 @@ impl World {
             from: from.clone(),
             from_name: current.name.clone(),
             relation,
-            deserters: table(TableKind::Deserters, current, situation(&current_side)),
+            // Joining in secret leaves no one, so the faction isn't asked (DESIGN.md §10.4).
+            deserters: (!secretly)
+                .then(|| table(TableKind::Deserters, current, situation(&current_side))),
             defectors: table(TableKind::Defectors, target, situation(&target_side)),
         }
     }
@@ -3505,7 +3627,12 @@ impl World {
                 vec![id.clone()],
             ),
         };
-        let subject_factions = self.factions_of(subject);
+        // Only the subject's memberships the observer knows of (DESIGN.md §10.4).
+        let subject_factions: Vec<FactionId> = self
+            .factions_of(subject)
+            .into_iter()
+            .filter(|faction| self.knows_membership(observer, subject, faction) == Some(true))
+            .collect();
         let kinship: Vec<Part> = observer_factions
             .iter()
             .flat_map(|from| {
@@ -3768,6 +3895,7 @@ mod tests {
             _ => ("The Free Company", 60_00, 80_00),
         };
         Faction {
+            secret_members: false,
             id: faction_id(id),
             name: name.to_owned(),
             alignment: Alignment::new(h(law), h(good)).expect("in range"),
@@ -4675,6 +4803,7 @@ mod tests {
         character.memberships = factions
             .iter()
             .map(|f| StartingMembership {
+                secret: false,
                 faction: faction_id(f),
                 rank: None,
             })
@@ -4685,6 +4814,7 @@ mod tests {
     /// A character starting in `faction` as `rank`.
     fn ranked(mut character: Character, faction: &str, rank: &str) -> Character {
         character.memberships = vec![StartingMembership {
+            secret: false,
             faction: faction_id(faction),
             rank: Some(rank_id(rank)),
         }];
@@ -4697,6 +4827,7 @@ mod tests {
 
     fn join(character: &str, faction: &str) -> Command {
         Command::JoinFaction {
+            secretly: false,
             character: id(character),
             faction: faction_id(faction),
         }
@@ -4818,6 +4949,7 @@ mod tests {
                 seq: 10,
                 tick: Tick(3),
                 payload: Change::JoinedFaction {
+                    secret: false,
                     character: id("player"),
                     faction: faction_id("lantern_guild"),
                     rank: rank_id("cutpurse"),
@@ -5277,7 +5409,18 @@ mod tests {
             (&faction_id("lantern_guild"), h(-80_00))
         );
         assert_eq!(
-            (defection.deserters.source, defection.deserters.allows()),
+            (
+                defection
+                    .deserters
+                    .as_ref()
+                    .expect("the deserters table decides")
+                    .source,
+                defection
+                    .deserters
+                    .as_ref()
+                    .expect("the deserters table decides")
+                    .allows()
+            ),
             (TableSource::BuiltIn, true)
         );
         assert_eq!(
@@ -7463,7 +7606,14 @@ mod tests {
         assert_eq!(assessment.distance.value, h(35_09));
         let defection = &assessment.defections[0];
         assert_eq!(
-            (&defection.deserters.verdict, &defection.defectors.verdict),
+            (
+                &defection
+                    .deserters
+                    .as_ref()
+                    .expect("the deserters table decides")
+                    .verdict,
+                &defection.defectors.verdict
+            ),
             (
                 &Verdict::Allow {
                     standing_change: h(-40_00)
@@ -7474,6 +7624,265 @@ mod tests {
             )
         );
         assert!(assessment.allowed());
+    }
+
+    /// A secret starting membership.
+    fn secretly_in(mut character: Character, faction: &str) -> Character {
+        character.memberships.push(StartingMembership {
+            faction: faction_id(faction),
+            rank: None,
+            secret: true,
+        });
+        character
+    }
+
+    /// The sample rule tables, under the witnessed model, with a Lantern Guild that allows
+    /// secret members. Vex is openly in the Guild, Hale openly in the Watch; Nell, reformed
+    /// at 35 / 10, is secretly in the Guild.
+    fn secrets_content(more: impl IntoIterator<Item = Character>) -> Content {
+        let mut content = defectors_content(
+            [
+                member_of(character("Vex", -55_00, -20_00), &["lantern_guild"]),
+                member_of(character("Hale", 75_00, 30_00), &["city_watch"]),
+                secretly_in(character("Nell", 35_00, 10_00), "lantern_guild"),
+                character("Player", 0, 0),
+            ]
+            .into_iter()
+            .chain(more),
+        );
+        content.balance.knowledge = KnowledgeModel::Witnessed;
+        content
+            .factions
+            .get_mut(&faction_id("lantern_guild"))
+            .expect("the Guild")
+            .secret_members = true;
+        content
+    }
+
+    fn secrets_world() -> World {
+        World::new(secrets_content([])).expect("valid content")
+    }
+
+    fn join_secretly(character: &str, faction: &str) -> Command {
+        Command::JoinFaction {
+            character: id(character),
+            faction: faction_id(faction),
+            secretly: true,
+        }
+    }
+
+    #[test]
+    fn a_secret_membership_is_known_to_the_faction_its_members_and_the_character() {
+        let world = secrets_world();
+        let knows = |observer: Observer, character: &str| {
+            world.knows_membership(&observer, &id(character), &faction_id("lantern_guild"))
+        };
+        let guild = || Observer::Faction(faction_id("lantern_guild"));
+        let watch = || Observer::Faction(faction_id("city_watch"));
+        let who = |name: &str| Observer::Character(id(name));
+        assert_eq!(knows(guild(), "nell"), Some(true));
+        assert_eq!(knows(who("vex"), "nell"), Some(true), "a fellow member");
+        assert_eq!(knows(who("nell"), "nell"), Some(true));
+        assert_eq!(knows(watch(), "nell"), Some(false));
+        assert_eq!(knows(who("hale"), "nell"), Some(false));
+        assert_eq!(knows(who("player"), "nell"), Some(false));
+        assert_eq!(knows(watch(), "vex"), Some(true), "an open membership");
+        assert_eq!(knows(guild(), "player"), None, "not a member");
+        assert_eq!(knows(who("ghost"), "nell"), None);
+    }
+
+    #[test]
+    fn kinship_counts_only_the_memberships_the_observer_knows_of() {
+        let world = secrets_world();
+        let kinship = |observer: Observer| {
+            world
+                .disposition(&observer, &id("nell"))
+                .expect("both exist")
+                .components
+                .iter()
+                .find(|component| component.kind == ComponentKind::Kinship)
+                .expect("kinship")
+                .value
+        };
+        assert_eq!(kinship(Observer::Character(id("hale"))), Fixed::ZERO);
+        assert_eq!(
+            kinship(Observer::Faction(faction_id("city_watch"))),
+            Fixed::ZERO
+        );
+        assert_eq!(
+            kinship(Observer::Character(id("vex"))),
+            Balance::DEFAULT_SAME_FACTION,
+            "Vex knows they share the Guild"
+        );
+    }
+
+    #[test]
+    fn a_double_agent_joins_an_enemy_that_doesnt_know_and_keeps_both() {
+        // Nell, secretly in the Guild, joins the Watch openly, 35.09 away: the Watch sees no
+        // enemy membership, so no table is asked and no one leaves.
+        let mut world = secrets_world();
+        let events = world
+            .execute(Command::JoinFaction {
+                character: id("nell"),
+                faction: faction_id("city_watch"),
+                secretly: false,
+            })
+            .expect("accepted");
+        let payloads: Vec<Change> = events.into_iter().map(|event| event.payload).collect();
+        assert_eq!(
+            payloads,
+            [Change::JoinedFaction {
+                character: id("nell"),
+                faction: faction_id("city_watch"),
+                rank: rank_id("recruit"),
+                secret: false,
+            }],
+            "no defection and no war: the Watch doesn't know"
+        );
+        assert_eq!(
+            world.factions_of(&id("nell")),
+            [faction_id("city_watch"), faction_id("lantern_guild")]
+        );
+        assert_eq!(world.conflicts(&id("nell")), Some(Vec::new()));
+    }
+
+    #[test]
+    fn joining_secretly_asks_only_the_joining_factions_defectors_table() {
+        // Mole, openly in the Watch at −20 / −10, joins the Guild secretly, 40.00 away. The
+        // Guild knows of the Watch membership: its defectors table finds Mole closer to it
+        // (40.00 against 90.31) and accepts at −10. The Watch isn't asked, and Mole leaves no
+        // one; the Watch regards the Guild at −80, so −10 spills +1.80 to it.
+        let mut world = World::new(secrets_content([member_of(
+            character("Mole", -20_00, -10_00),
+            &["city_watch"],
+        )]))
+        .expect("valid content");
+        let assessment = world
+            .assess_join_secretly(&id("mole"), &faction_id("lantern_guild"))
+            .expect("both exist");
+        assert_eq!(assessment.defections.len(), 1);
+        assert_eq!(
+            assessment.defections[0].deserters, None,
+            "the Watch isn't asked"
+        );
+        assert!(assessment.allowed());
+        let events = world
+            .execute(join_secretly("mole", "lantern_guild"))
+            .expect("accepted");
+        let payloads: Vec<Change> = events.into_iter().map(|event| event.payload).collect();
+        assert_eq!(
+            payloads[0],
+            Change::JoinedFaction {
+                character: id("mole"),
+                faction: faction_id("lantern_guild"),
+                rank: rank_id("cutpurse"),
+                secret: true,
+            }
+        );
+        assert!(
+            !payloads
+                .iter()
+                .any(|change| matches!(change, Change::LeftFaction { .. })),
+            "{payloads:?}"
+        );
+        assert_eq!(
+            world.standing(&id("mole"), &Party::Faction(faction_id("lantern_guild"))),
+            Some(h(-10_00))
+        );
+        assert_eq!(world.conflicts(&id("mole")), Some(Vec::new()));
+        assert_eq!(
+            world.knows_membership(
+                &Observer::Faction(faction_id("city_watch")),
+                &id("mole"),
+                &faction_id("lantern_guild")
+            ),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn only_a_faction_with_secret_members_can_be_joined_secretly() {
+        let mut world = secrets_world();
+        let CommandError::JoinRefused(assessment) =
+            refused(&mut world, join_secretly("player", "free_company"))
+        else {
+            panic!("refused as a join");
+        };
+        assert_eq!(assessment.blocks, [JoinBlock::NoSecretMembers]);
+        assert_eq!(
+            assessment.reasons(),
+            ["The Free Company has no secret members"]
+        );
+        let assessment = world
+            .assess_join(&id("player"), &faction_id("free_company"))
+            .expect("both exist");
+        assert!(assessment.allowed(), "openly, the player may join");
+    }
+
+    #[test]
+    fn a_war_opens_no_conflict_over_a_membership_the_other_side_doesnt_know_of() {
+        // Nell (secretly) and Vex (openly) are in the Guild; both join the Free Company,
+        // which then goes to war with the Guild. Only Vex's two memberships are known to
+        // both sides.
+        let mut world = secrets_world();
+        for who in ["nell", "vex"] {
+            world
+                .execute(Command::JoinFaction {
+                    character: id(who),
+                    faction: faction_id("free_company"),
+                    secretly: false,
+                })
+                .expect("accepted");
+        }
+        let events = world
+            .execute(set("lantern_guild", "free_company", -60_00, true))
+            .expect("accepted");
+        let opened: Vec<&CharacterId> = events
+            .iter()
+            .filter_map(|event| match &event.payload {
+                Change::MembershipConflict { character, .. } => Some(character),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(opened, [&id("vex")]);
+    }
+
+    #[test]
+    fn secret_members_are_checked_against_the_knowledge_model() {
+        let mut content = secrets_content([]);
+        content.balance.knowledge = KnowledgeModel::Omniscient;
+        assert!(
+            content
+                .problems()
+                .contains(&ContentProblem::SecretMembersNeedKnowledge(faction_id(
+                    "lantern_guild"
+                )))
+        );
+        let mut content =
+            secrets_content([secretly_in(character("Spy", 70_00, 20_00), "city_watch")]);
+        content.balance.knowledge = KnowledgeModel::Ripple;
+        assert_eq!(
+            content.problems(),
+            [ContentProblem::SecretMembershipNotAllowed {
+                character: id("spy"),
+                index: 0,
+                faction: faction_id("city_watch"),
+            }]
+        );
+        // Starting openly in the Watch and secretly in its enemy the Guild is fine.
+        let content = secrets_content([secretly_in(
+            member_of(character("Mole", -20_00, -10_00), &["city_watch"]),
+            "lantern_guild",
+        )]);
+        assert_eq!(content.problems(), []);
+        let content = secrets_content([member_of(
+            character("Mole", -20_00, -10_00),
+            &["city_watch", "lantern_guild"],
+        )]);
+        assert!(matches!(
+            content.problems()[..],
+            [ContentProblem::StartsInConflict { .. }]
+        ));
     }
 
     #[test]
@@ -9228,6 +9637,7 @@ mod tests {
             30_00,
         );
         vex.memberships.push(StartingMembership {
+            secret: false,
             faction: faction_id("free_company"),
             rank: None,
         });
@@ -9376,6 +9786,7 @@ mod tests {
         );
         if !joins_later {
             kit.memberships.push(StartingMembership {
+                secret: false,
                 faction: faction_id("free_company"),
                 rank: None,
             });
@@ -9450,6 +9861,7 @@ mod tests {
     fn leaving_ends_only_the_leavers_conflict() {
         let mut kit = member_of(character("Kit", -30_00, -10_00), &["lantern_guild"]);
         kit.memberships.push(StartingMembership {
+            secret: false,
             faction: faction_id("free_company"),
             rank: None,
         });
@@ -9966,6 +10378,7 @@ mod tests {
 
     fn joined(character: &str, faction: &str, rank: &str) -> Change {
         Change::JoinedFaction {
+            secret: false,
             character: id(character),
             faction: faction_id(faction),
             rank: rank_id(rank),
@@ -10012,7 +10425,10 @@ mod tests {
             panic!("one enemy membership: {:?}", assessment.defections);
         };
         // The Guild releases him on outside_member_tolerance (rule 2)...
-        let deserters = &defection.deserters;
+        let deserters = defection
+            .deserters
+            .as_ref()
+            .expect("the deserters table decides");
         assert_eq!(
             (deserters.source, deserters.fired(), &deserters.verdict),
             (TableSource::World, 1, &accept(0))
@@ -10094,7 +10510,11 @@ mod tests {
             .assess_join(&id("ash"), &faction_id("temple"))
             .expect("both exist");
         assert_eq!(
-            assessment.defections[0].deserters.source,
+            assessment.defections[0]
+                .deserters
+                .as_ref()
+                .expect("the deserters table decides")
+                .source,
             TableSource::Faction
         );
         assert_eq!(
@@ -10236,6 +10656,8 @@ mod tests {
                 .expect("both exist")
                 .defections[0]
                 .deserters
+                .as_ref()
+                .expect("the deserters table decides")
                 .tried[0]
                 .checks[0]
                 .clone()
@@ -10454,13 +10876,19 @@ mod tests {
                 Just("nowhere")
             ]
         };
-        let membership = (any::<bool>(), who(), faction()).prop_map(|(joining, who, faction)| {
-            if joining {
-                join(who, faction)
-            } else {
-                leave(who, faction)
-            }
-        });
+        let membership = (any::<bool>(), any::<bool>(), who(), faction()).prop_map(
+            |(joining, secretly, who, faction)| {
+                if joining {
+                    Command::JoinFaction {
+                        character: id(who),
+                        faction: faction_id(faction),
+                        secretly,
+                    }
+                } else {
+                    leave(who, faction)
+                }
+            },
+        );
         let relate = (
             faction(),
             faction(),
@@ -10537,6 +10965,29 @@ mod tests {
             modifying
         ];
         proptest::collection::vec(command, 0..30)
+    }
+
+    /// DESIGN.md §14, invariant 6: no one is in two factions in conflict, except while a
+    /// `MembershipConflict` for that pair is open, or while one of the two memberships is
+    /// secret, so the other faction doesn't know of it.
+    fn invariant_6_holds(world: &World) -> bool {
+        world.characters().all(|character| {
+            let memberships: Vec<(&FactionId, &Membership)> = world
+                .memberships(&character.id)
+                .expect("the character exists")
+                .collect();
+            let open = world
+                .conflicts(&character.id)
+                .expect("the character exists");
+            memberships.iter().enumerate().all(|(i, (a, of_a))| {
+                memberships[i + 1..].iter().all(|(b, of_b)| {
+                    !world.in_conflict(a, b).expect("both exist")
+                        || of_a.secret
+                        || of_b.secret
+                        || open.contains(&((*a).clone(), (*b).clone()))
+                })
+            })
+        })
     }
 
     /// Whether every faction and character pictures every character as they truly are.
@@ -10643,6 +11094,12 @@ mod tests {
             .expect("Nell")
             .contacts = vec![id("vex")];
         content.balance.knowledge = model;
+        // Secret members need a world where not everyone knows everything.
+        content
+            .factions
+            .get_mut(&faction_id("lantern_guild"))
+            .expect("the Guild")
+            .secret_members = model != KnowledgeModel::Omniscient;
         content.balance.ripple = Ripple {
             strength: vec![h(50), h(25)],
             hop_ticks: 3,
@@ -10682,10 +11139,23 @@ mod tests {
             prop_assert_eq!(&world.events, &events);
         }
 
-        /// DESIGN.md §14, invariant 12, as far as K1 goes: with every act seen by everyone,
-        /// `witnessed` gives exactly the events `omniscient` does.
+        /// DESIGN.md §14, invariant 12: with every act seen by everyone and no secret
+        /// memberships, `witnessed` and `ripple` give exactly the events `omniscient` does,
+        /// and everyone pictures everyone as they are.
         #[test]
         fn acts_everyone_sees_give_the_same_events_under_witnessed(commands in commands()) {
+            // With no secret memberships: under omniscient, there can be none.
+            let commands: Vec<Command> = commands
+                .into_iter()
+                .map(|command| match command {
+                    Command::JoinFaction { character, faction, .. } => Command::JoinFaction {
+                        character,
+                        faction,
+                        secretly: false,
+                    },
+                    other => other,
+                })
+                .collect();
             let witnessed = run_in(KnowledgeModel::Witnessed, &commands);
             let rippling = run_in(KnowledgeModel::Ripple, &commands);
             let omniscient = run_in(KnowledgeModel::Omniscient, &commands);
@@ -10829,22 +11299,17 @@ mod tests {
         fn no_one_is_in_two_factions_in_conflict_without_an_open_conflict(
             commands in commands()
         ) {
-            let world = run(&commands);
-            for character in world.characters() {
-                let factions: Vec<&FactionId> = world
-                    .memberships(&character.id)
-                    .expect("the character exists")
-                    .map(|(faction, _)| faction)
-                    .collect();
-                let open = world.conflicts(&character.id).expect("the character exists");
-                for (i, a) in factions.iter().enumerate() {
-                    for b in &factions[i + 1..] {
-                        if world.in_conflict(a, b).expect("both exist") {
-                            prop_assert!(open.contains(&((*a).clone(), (*b).clone())));
-                        }
-                    }
-                }
-            }
+            prop_assert!(invariant_6_holds(&run(&commands)));
+        }
+
+        /// Invariant 6 with secret members (DESIGN.md §10.4): under ripple, where the Guild
+        /// allows them, a pair in conflict is fine while one faction doesn't know of the other
+        /// membership.
+        #[test]
+        fn a_double_agent_is_in_two_factions_in_conflict_only_while_one_is_secret(
+            commands in seen_commands()
+        ) {
+            prop_assert!(invariant_6_holds(&run_in(KnowledgeModel::Ripple, &commands)));
         }
 
         /// DESIGN.md §8.3: with no hysteresis, the band remembered for a watched subject is

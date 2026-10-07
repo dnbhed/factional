@@ -4,6 +4,7 @@
 name = "The City Watch"
 alignment = { law = 70.0, good = 20.0 }
 tolerance = 40.0
+secret_members = true
 
 [[city_watch.ranks]]
 id = "recruit"

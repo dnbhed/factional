@@ -15,8 +15,8 @@ characters                                                                      
 show character <id>                                                                             a character's alignment and its label
 factions                                                                                        list the factions, with their tolerances and members
 show faction <id>                                                                               a faction's alignment, label, tolerances and members
-can-join <character> <faction> [--explain]                                                      whether <character> may join <faction> now, and why not
-join <character> <faction>                                                                      <character> joins <faction>, if they may
+can-join <character> <faction> [--secretly] [--explain]                                         whether <character> may join <faction> now, openly or in secret, and why not
+join <character> <faction> [--secretly]                                                         <character> joins <faction>, if they may; --secretly, known only to the faction and its members
 leave <character> <faction>                                                                     <character> leaves <faction>
 ranks <faction>                                                                                 a faction's rank ladder, lowest first
 promote <character> <faction> [--explain]                                                       move <character> up a rank, if the next rank's requirements hold

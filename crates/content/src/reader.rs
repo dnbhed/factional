@@ -180,6 +180,18 @@ impl<'t> Section<'t> {
         whole
     }
 
+    /// `true` or `false` that may be left out; `None` if it's absent or wrong (a wrong one is
+    /// reported).
+    pub(crate) fn optional_flag(&mut self, key: &'static str, report: &mut Report) -> Option<bool> {
+        match self.get(key)? {
+            Value::Boolean(flag) => Some(*flag),
+            _ => {
+                report.error(&self.path_to(key), "expected true or false");
+                None
+            }
+        }
+    }
+
     /// A number that may be left out; `None` if it's absent or wrong (a wrong one is reported).
     pub(crate) fn optional_fixed(
         &mut self,

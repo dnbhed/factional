@@ -276,6 +276,10 @@ fn an_act_everyone_sees_moves_every_picture() {
 fn under_the_omniscient_model_everyone_pictures_the_truth() {
     let mut content = sample();
     content.balance.knowledge = KnowledgeModel::Omniscient;
+    // Nothing can be secret when everyone knows everything.
+    for faction in content.factions.values_mut() {
+        faction.secret_members = false;
+    }
     let mut world = World::new(content).expect("valid content");
     let changes = run(
         &mut world,

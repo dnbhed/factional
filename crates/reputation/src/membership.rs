@@ -66,6 +66,9 @@ pub struct Membership {
     pub since: Tick,
     /// Their rung on the faction's ladder.
     pub rank: RankId,
+    /// Whether it's secret: known only to the faction, its members and the character
+    /// (DESIGN.md §10.4).
+    pub secret: bool,
 }
 
 /// A faction a character starts in, as `characters.toml` lists it.
@@ -74,6 +77,8 @@ pub struct StartingMembership {
     pub faction: FactionId,
     /// Their starting rank; `None` means the lowest rung.
     pub rank: Option<RankId>,
+    /// Whether they start in it secretly (DESIGN.md §10.4).
+    pub secret: bool,
 }
 
 /// Why a character left a faction.
@@ -251,6 +256,8 @@ impl PromotionAssessment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JoinBlock {
     AlreadyMember,
+    /// Joining secretly a faction that has no secret members (DESIGN.md §10.4).
+    NoSecretMembers,
     /// Further from the faction than its tolerance.
     OutsideTolerance {
         distance: Fixed,
@@ -287,6 +294,9 @@ impl JoinAssessment {
             JoinBlock::AlreadyMember => {
                 format!("{} is already a member of {}", self.character, self.faction)
             }
+            JoinBlock::NoSecretMembers => {
+                format!("{} has no secret members", self.faction_name)
+            }
             JoinBlock::OutsideTolerance {
                 distance,
                 tolerance,
@@ -296,8 +306,10 @@ impl JoinAssessment {
             ),
         });
         let refusals = self.defections.iter().flat_map(|defection| {
-            [&defection.deserters, &defection.defectors]
-                .into_iter()
+            defection
+                .deserters
+                .iter()
+                .chain([&defection.defectors])
                 .filter_map(move |table| {
                     let Verdict::Refuse { reason } = &table.verdict else {
                         return None;

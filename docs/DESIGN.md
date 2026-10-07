@@ -490,7 +490,7 @@ Worked example: Vex, a fence of the Guild, joins the Free Company, and the two f
 
 By default every character and faction knows about every act immediately (`knowledge.model = "omniscient"`). `PerformAction` carries `witnesses` (everyone, these characters, or nobody), and from K1 a `witnessed` world uses them.
 
-Phase 5 replaces that with knowledge that has to travel. It was designed in K0 and is built in four steps: who learns firsthand (K1), how news spreads (K2), judging by what you know (K3), and secret membership (K4).
+Phase 5 replaces that with knowledge that has to travel. It was designed in K0 and is built in five steps: who learns firsthand (K1), how news spreads (K2), judging by what you know (K3), secret membership (K4), and exposure (K5).
 
 **The whole idea in one paragraph.** An act is news. The people who saw it learn it fully; their factions learn it through them; news then passes from person to person along declared contacts and through factions to their members, weaker at each hop and taking time at each one, until it has gone as far as the world lets it. Everyone who learns of an act updates their picture of the actor, their *perceived alignment*, by what they learned, at the strength they learned it, and anyone the act's standing effects name changes their standing by the same fraction. From K3 everyone judges by their own picture (D-21): disposition, joining, promotion and drift. A faction that allows it can have secret members, whom other factions don't know about until they're exposed (D-23, D-24).
 
@@ -571,13 +571,13 @@ So a secretly corrupt captain keeps his rank until the Watch hears of it. With �
 
 **Under `omniscient`, everyone perceives the truth,** so this changes nothing for worlds that don't opt in.
 
-### 10.4 Secret membership and double agents (K4, D-19, D-23, D-24, P-58)
+### 10.4 Secret membership and double agents (K4, K5, D-19, D-23, D-24, P-58)
 
 **Opting in.** A faction allows secret members with `secret_members = true` (D-23). Joining it can then be secret (`JoinFaction { …, secretly: true }`), and so can a starting membership (`{ faction = "lantern_guild", secret = true }`). Secrecy means nothing if everyone knows everything, so `secret_members` needs a `witnessed` or `ripple` world.
 
 **Who knows.** An open membership is known to everyone. A secret one is known to the faction, its members and the character, and to anyone it has been exposed to (below). Everyone else judges by the memberships they know of:
 
-- **Kinship** (§8.1) counts only memberships the observer knows of.
+- **Kinship** (§8.1) counts only memberships the observer knows of. A character always knows their own, so their own secret factions shape how they regard others.
 - **Joining** (§9.2) checks only the enemy memberships the joining faction knows of. A secret Guild fence can join the Watch: the Watch sees no enemy membership, so no `defectors` table applies.
 - **A double agent doesn't leave.** Joining an enemy of a faction you're secretly in keeps that membership, and its `deserters` table doesn't apply: you're its agent. Joining secretly never leaves anyone either. The joining faction still applies its `defectors` table to the enemy memberships it knows of.
 - **War** (§9.4) opens a `MembershipConflict` only between memberships each side knows of. Invariant 6 allows the rest.
@@ -629,7 +629,8 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | `ResolveConflict { character, keep }` | M9 | quests, dialogue |
 | `AddModifier`, `RemoveModifier` | M10 | status, characteristics |
 | `Watch`, `Unwatch` | D3 | the host |
-| `JoinFaction { …, secretly }`, `Expose { character, faction, witnesses }` | K4 | dialogue, quests, stealth |
+| `JoinFaction { …, secretly }` | K4 | dialogue, quests |
+| `Expose { character, faction, witnesses }` | K5 | dialogue, quests, stealth |
 | `witnesses` on `ApplyOutcome` and `ApplyEffects` | K3 | quests |
 
 ### 11.2 Events (out)
@@ -643,7 +644,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | Drift | `ProbationStarted`, `ProbationCleared`, `ProbationExpired`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
 | Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict`, `MembershipConflictEnded` |
 | Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierRemoved`, `ModifierExpired` |
-| Knowledge | `NewsSent`, `NewsArrived` (K2), `ShiftWitnessed` (K3), `MembershipExposed` and `LeftFaction { Exposed }` (K4) |
+| Knowledge | `NewsSent`, `NewsArrived` (K2), `ShiftWitnessed` (K3), `JoinedFaction { secret }` (K4), `MembershipExposed` and `LeftFaction { Exposed }` (K5) |
 
 ### 11.3 Queries (read)
 
@@ -659,6 +660,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 - `news`: each piece of news on its way, with who has heard, its next hop and the standing changes still due (K2)
 - `perceived`: an observer's perceived alignment of a character, with the shifts it's made of (K3)
 - `knows_membership`: whether an observer knows of a membership (K4)
+- `assess_join_secretly`: whether a secret join would be accepted, asking only the joining faction's `defectors` table (K4)
 
 `World::replay(content, events)` rebuilds a world from its event log without running any rules: what saves are built on. `saved_journal()` gives each journal entry's command and how many events it produced, and `World::restore(content, journal, events)` rebuilds a world and its journal from them (T4, P-54).
 
@@ -725,7 +727,7 @@ This table lists every knob: where it lives, its default, and the increment that
 | `knowledge.ripple.strength`, `.hop_ticks` | balance.toml | `[0.5, 0.25, 0.1]`, 1 | K2 |
 | character `contacts` | characters.toml | none | K2 |
 | faction `secret_members`; a starting membership's `secret` | factions.toml, characters.toml | false | K4 |
-| `membership.exposed`, per-faction override | balance.toml, factions.toml | expel, at the faction's `expel_standing_change` | K4 |
+| `membership.exposed`, per-faction override | balance.toml, factions.toml | expel, at the faction's `expel_standing_change` | K5 |
 
 ### 12.1 Content layout (P-18)
 
@@ -772,7 +774,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 (done) |
 | A starting member outside their member tolerance | warning | M1 (done) |
 | A relation names two different factions that exist; each direction is set at most once; values within ±100; `conflict_threshold` within ±100 | error | M2 (done) |
-| No character starts in two factions that are in conflict (invariant 6), unless one membership is secret (K4) | error | M2 (done) |
+| No character starts in two factions that are in conflict (invariant 6), unless one membership is secret | error | M2 (done), K4 (done) |
 | Standing names factions and characters that exist; values within ±100; `leave_standing_change` within ±100 | error | M3 (done) |
 | A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung; rank standing requirements within ±100, tolerances ≥ 0 | error | M5 (done) |
 | A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 (done) |
@@ -785,8 +787,8 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | `strength` lists at least one hop, each within 0.01–1.00 and none stronger than the one before; `hop_ticks` a whole number ≥ 1 | error | K2 (done) |
 | Contacts name characters that exist, not themselves, each pair once whichever side declares it | error | K2 (done) |
 | Contacts in a world whose model isn't `ripple` | warning | K2 (done) |
-| `secret_members` only in a `witnessed` or `ripple` world; a secret starting membership only in a faction that allows them | error | K4 |
-| `exposed` tables: as for the M7 tables, with the outcomes `keep`, `demote` and `expel` | error | K4 |
+| `secret_members` only in a `witnessed` or `ripple` world; a secret starting membership only in a faction that allows them | error | K4 (done) |
+| `exposed` tables: as for the M7 tables, with the outcomes `keep`, `demote` and `expel` | error | K5 |
 | A faction no starting character is within joining tolerance of, naming the nearest and their distance (P-51) | warning | T1 (done) |
 
 ### 12.3 Designer workflow
@@ -800,6 +802,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working. On `act` it includes who learns of the act and why (K1).
 - `act … --seen-by <id>,…` or `--unseen` to say who saw an act; without either, everyone did (K1).
 - `news` in the REPL for what's on its way: who has heard of each act, who hears next, when and how strongly, and the standing changes still due (K2).
+- `join <character> <faction> --secretly` and `can-join … --secretly` for secret membership (K4).
 - `perceived <observer> <subject>` for where the observer pictures someone, and why; `outcome … --seen-by <id>,…` or `--unseen` to say who saw a quest's result (K3).
 - `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
 - `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
@@ -878,7 +881,7 @@ Every example in this document and in PLAN.md uses this world. It lives in `cont
 
 - The model is `ripple`: news arrives at 0.50, 0.25, then 0.10, ten ticks a hop (§10.2).
 - Contacts: `merchant_ava` ↔ `captain_hale`, `merchant_ava` ↔ `sister_mira`, `sister_mira` ↔ `brother_ash`.
-- The Lantern Guild and the Ashen Circle allow secret members. `membership.exposed` keeps a member with standing 60 or more at −30, and otherwise expels at −40 (§10.4).
+- The Lantern Guild and the Ashen Circle allow secret members (K4). From K5, `membership.exposed` keeps a member with standing 60 or more at −30, and otherwise expels at −40, and Riverhold gains a double agent (§10.4).
 
 ## 14. Invariants
 

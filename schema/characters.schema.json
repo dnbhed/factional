@@ -57,6 +57,11 @@
                 "description": "A rank on its ladder; left out, the lowest.",
                 "pattern": "^[a-z][a-z0-9_]*$",
                 "type": "string"
+              },
+              "secret": {
+                "default": false,
+                "description": "Whether they start in it secretly, known only to the faction, its members and themself. The faction must allow secret members (DESIGN.md §10.4).",
+                "type": "boolean"
               }
             },
             "required": [
