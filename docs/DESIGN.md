@@ -915,7 +915,7 @@ scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/sna
 ```
 
 - **Dependencies point one way:** core ← reputation ← content ← cli.
-- **Future modules** (quests, combat and the rest) become sibling crates. They depend on core and talk to reputation only through §11.
+- **Future modules** (quests, combat and the rest) become sibling crates. They talk to reputation only through §11. `factional-quests` also reads reputation's content, to check itself at load (§17, P-64).
 - **A host-engine adapter** waits until a game needs a host (X-2, left open in E0). That would be a Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for Unity, Unreal or others.
 
 ## 16. Completeness across modules (D-20)
@@ -926,11 +926,7 @@ A world loads only if it is complete in principle. This module's part is the loa
 
 Each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage. A world whose quests contradict each other at some reachable stage doesn't load.
 
-What "reconcile" means exactly, and how to check it without exploring every combination of stages, is for the quest module's design pass (Q0, X-4). The questions to settle there:
-
-- **Which factions a quest affects.** Directly, through the effects of its outcomes. Indirectly, through spillover to factions related to those, and through war and membership changes.
-- **What it means for a quest to conflict with another faction's questline at a stage.** For example, an outcome that harms faction B while B's questline at that stage needs the player's standing with B to have risen; or two questlines whose stages require memberships that the faction rules make impossible to hold together.
-- **How to check it.** Every reachable combination of stages across all questlines explodes quickly. Stages probably need declared preconditions and effects that can be checked faction by faction, or pair by pair.
+What "reconcile" means, and how loading checks it without exploring every combination of stages, was settled in Q0 (D-25 to D-27, settling X-4): §17 has the design. In short, a choice in one questline that could permanently close a stage of another must say so, and loading finds every such choice from conservative bounds, pair by pair.
 
 ### 16.2 What it asks of this module now
 
@@ -943,3 +939,79 @@ A quest checker can only reconcile what it can see without running the game. So 
 - **Runtime changes come only through commands** (§11), so another module can know every way this module's state can change.
 
 A feature that would make an effect's reach impossible to compute from content, such as computed effects or script hooks, conflicts with D-20. It needs the user's agreement before it's built.
+
+## 17. Quests (designed in Q0; D-25 to D-27, P-64, P-65)
+
+The quest module is a sibling crate, `factional-quests`. It reads this module's content and sends it commands, like any other module (§11, D-15). This section is its design; Q1 onwards builds it.
+
+### 17.1 Questlines, stages and choices (D-25)
+
+A questline belongs to a faction, its giver, and is a list of stages. Each stage has requirements and one or more choices; each choice has effects and says which stage comes next, or that the questline ends. Choices only lead forward, so a questline is a tree of paths with no loops, and what's reachable is easy to work out.
+
+```toml
+[watch_oath]
+name = "The Watch's Oath"
+giver = "city_watch"
+
+[[watch_oath.stages]]
+id = "patrol"
+requires = { standing = { city_watch = 0.0 }, not_member = ["lantern_guild"] }
+choices = [
+  { id = "report", outcome = "turned_in_vex", next = "oath" },
+  { id = "look_away", outcome = "took_a_bribe", next = "end" },
+]
+
+[[watch_oath.stages]]
+id = "oath"
+requires = { standing = { city_watch = 10.0 } }
+choices = [{ id = "swear", effects = { join = ["city_watch"] }, next = "end" }]
+```
+
+- **Requirements** come from a closed vocabulary, all about the character doing the quest: `standing` (at least, with a faction or character), `member` and `not_member`, `rank_at_least` in a faction, `within_tolerance` of a faction (as it perceives them, §10.3), and `done` (another questline's stage or choice, `questline.stage` or `questline.stage.choice`).
+- **Effects** are an outcome from `outcomes.toml`, or the same kinds inline. The vocabulary grows from today's alignment and standing to `join`, `leave`, `promote`, `demote` and `relation` (a shift between two factions), all sent to this module as commands. Nothing is computed or scripted (§16.2).
+- **The quest module keeps who has done what:** each character's progress, as its own events. This module never sees quests, only the commands they send.
+
+### 17.2 Reconciling: every lockout is declared (D-26)
+
+A choice **locks out** a stage of another questline if, in the worst case, its effects can make one of that stage's requirements false for good: false, and nothing else in the content can make it true again. Choices with consequences are allowed, such as joining the Watch closing the Guild's story. Accidental ones aren't: every lockout a choice can cause must be declared on it, as `locks = ["guild_heist.vault"]`, or the world doesn't load. A declared lock that can't actually happen is a warning, so stale declarations get noticed.
+
+What counts as for good, requirement by requirement (P-64):
+
+| Requirement | Made false by a choice that… | For good unless… |
+| --- | --- | --- |
+| `standing` with a party | lowers it (directly, or by spillover) below the threshold | some action, which can be repeated, can raise it again (directly or by spillover) |
+| `member` of a faction | leaves or is expelled from it, or starts a war between it and another faction of the character's | never undone: rejoining depends on too much to prove |
+| `rank_at_least` | demotes, or ends the membership | never undone |
+| `within_tolerance` | shifts alignment away | some action can move each axis it needs back, with inertia that never stops it |
+| `not_member` | joins | always undone: leaving always succeeds |
+| `done` of another questline | (only that questline's own other choices) | not a lockout: the requirement already names the questline |
+
+Within one questline, choices exclude each other by design and need no declaration. Every stage must still be reachable along some path of its own questline, or it's dead content and an error.
+
+### 17.3 Checking it: conservative bounds (D-27, P-65)
+
+Loading never plays the game out. For each choice it works out bounds from content alone:
+
+- **Standing:** the most each party's standing can fall, adding the choice's direct effects and their spillover. Spillover is bounded over the whole range the relations can reach, since quests can shift relations.
+- **Memberships:** which it can end, directly or through a war it can start.
+- **Alignment:** how far each axis can move.
+- **Relations:** what it can change.
+
+Then each choice is checked against each stage of every other questline, pair by pair: O(choices × stages × requirements), with no combinations of stages. The bounds over-estimate, so the check may report a lockout that couldn't really happen; the designer declares it, and that's the price of a check that always finishes. What's recoverable is worked out once per world: which parties' standing some action can raise, and which axes some action can move both ways.
+
+**Worked example** (illustrative; the quests aren't in Riverhold yet). The Ashen Circle's questline has a choice `set_them_at_war` whose effects shift the Temple and the Watch to −60. A character in both could then lose one membership in the conflict that opens, so it locks out every stage that needs membership of the Temple or the Watch, such as the Temple's `ordination`. Undeclared, loading reports:
+
+> quests.toml: circle_rite.stages[0].choices[1]: may lock out temple_vows.ordination: it can start a war between temple and city_watch, ending the membership of temple that the stage needs; declare it in locks
+
+By contrast, the Guild's `burn_the_records`, at −40 with the Watch, doesn't lock out `watch_oath.oath` (Watch standing 10): `report_crime`, an action, can raise standing with the Watch again, so the loss isn't for good.
+
+### 17.4 What's built when
+
+| Increment | Builds |
+| --- | --- |
+| Q1 | `factional-quests` and `quests.toml`: questlines, stages, choices and requirements, with every reference and range checked; the CLI lists them |
+| Q2 | The wider effect vocabulary (`join`, `leave`, `promote`, `demote`, `relation`), as outcomes and inline effects |
+| Q3 | Reachability within a questline: no dead stages |
+| Q4 | The bounds and the lockout check, with `locks` declarations and stale-lock warnings |
+| Q5 | Playing quests: starting them, making choices and progress, as commands and events, in the CLI |
+
