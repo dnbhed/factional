@@ -226,13 +226,15 @@ pub struct Defection {
     pub from_name: String,
     /// The more hostile of the two directions between the factions.
     pub relation: Fixed,
-    pub deserters: TableDecision,
+    /// `None` when joining secretly: no one leaves, so the faction isn't asked (DESIGN.md
+    /// §10.4).
+    pub deserters: Option<TableDecision>,
     pub defectors: TableDecision,
 }
 
 impl Defection {
     pub fn allowed(&self) -> bool {
-        self.deserters.allows() && self.defectors.allows()
+        self.deserters.as_ref().is_none_or(TableDecision::allows) && self.defectors.allows()
     }
 }
 
@@ -478,6 +480,7 @@ mod tests {
             tolerance: None,
         };
         Faction {
+            secret_members: false,
             id: FactionId::new("lantern_guild").expect("valid"),
             name: "The Lantern Guild".to_owned(),
             alignment: Alignment::new(h(-60_00), h(-10_00)).expect("in range"),

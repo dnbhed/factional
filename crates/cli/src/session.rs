@@ -11,9 +11,9 @@ use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Condition, ConditionCheck, Distance, DriftPolicy, Event, Faction, FactionId,
-    KnowledgeModel, Learned, LeaveReason, ModifierId, ModifierObserver, NextHop, Observed,
-    Observer, OutcomeId, Party, RankCheck, RankRef, Reached, Shift, StandingEffects, TableDecision,
-    TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
+    KnowledgeModel, Learned, LeaveReason, Membership, ModifierId, ModifierObserver, NextHop,
+    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Reached, Shift, StandingEffects,
+    TableDecision, TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -54,12 +54,12 @@ const COMMANDS: &[(&str, &str)] = &[
         "a faction's alignment, label, tolerances and members",
     ),
     (
-        "can-join <character> <faction> [--explain]",
-        "whether <character> may join <faction> now, and why not",
+        "can-join <character> <faction> [--secretly] [--explain]",
+        "whether <character> may join <faction> now, openly or in secret, and why not",
     ),
     (
-        "join <character> <faction>",
-        "<character> joins <faction>, if they may",
+        "join <character> <faction> [--secretly]",
+        "<character> joins <faction>, if they may; --secretly, known only to the faction and its members",
     ),
     (
         "leave <character> <faction>",
@@ -825,12 +825,21 @@ impl Session {
     /// `can-join <character> <faction> [--explain]`: whether the character may join now, from
     /// the engine's assessment, and with `--explain`, its working.
     fn can_join(&self, args: &str) -> Outcome {
-        const USAGE: &str = "can-join needs the form: can-join <character> <faction> [--explain]";
-        let (character, faction, explain) = match args.split_whitespace().collect::<Vec<_>>()[..] {
-            [character, faction] => (character, faction, false),
-            [character, faction, "--explain"] => (character, faction, true),
-            _ => return Outcome::Error(USAGE.to_owned()),
+        const USAGE: &str =
+            "can-join needs the form: can-join <character> <faction> [--secretly] [--explain]";
+        let words: Vec<&str> = args.split_whitespace().collect();
+        let [character, faction, options @ ..] = &words[..] else {
+            return Outcome::Error(USAGE.to_owned());
         };
+        let (character, faction) = (*character, *faction);
+        let (mut secretly, mut explain) = (false, false);
+        for option in options {
+            match *option {
+                "--secretly" if !secretly => secretly = true,
+                "--explain" if !explain => explain = true,
+                _ => return Outcome::Error(USAGE.to_owned()),
+            }
+        }
         let Some(world) = &self.world else {
             return no_world();
         };
@@ -845,9 +854,12 @@ impl Session {
             let ids: Vec<&str> = world.factions().map(|f| f.id.as_str()).collect();
             return Outcome::Error(format!("unknown faction '{faction}'{}", hint(faction, ids)));
         };
-        let assessment = world
-            .assess_join(&character.id, &faction.id)
-            .expect("both were found");
+        let assessment = if secretly {
+            world.assess_join_secretly(&character.id, &faction.id)
+        } else {
+            world.assess_join(&character.id, &faction.id)
+        }
+        .expect("both were found");
         let verdict = if assessment.allowed() { "yes" } else { "no" };
         if !explain {
             let why = if assessment.allowed() {
@@ -876,7 +888,7 @@ impl Session {
                 "leaving {}, in conflict with {} ({})",
                 defection.from, faction.id, defection.relation
             ));
-            for table in [&defection.deserters, &defection.defectors] {
+            for table in defection.deserters.iter().chain([&defection.defectors]) {
                 explained.extend(describe_table(table, &defection.from, &faction.id));
             }
         }
@@ -892,11 +904,19 @@ impl Session {
     /// `join <character> <faction>` or `leave <character> <faction>`: the engine decides, and
     /// the events or its refusal are shown.
     fn membership(&mut self, args: &str, joining: bool) -> Outcome {
-        let name = if joining { "join" } else { "leave" };
-        let [character, faction] = args.split_whitespace().collect::<Vec<_>>()[..] else {
-            return Outcome::Error(format!(
-                "{name} needs the form: {name} <character> <faction>"
-            ));
+        let (character, faction, secretly) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [character, faction] => (character, faction, false),
+            [character, faction, "--secretly"] if joining => (character, faction, true),
+            _ if joining => {
+                return Outcome::Error(
+                    "join needs the form: join <character> <faction> [--secretly]".to_owned(),
+                );
+            }
+            _ => {
+                return Outcome::Error(
+                    "leave needs the form: leave <character> <faction>".to_owned(),
+                );
+            }
         };
         let character = match CharacterId::new(character) {
             Ok(id) => id,
@@ -910,7 +930,11 @@ impl Session {
             return no_world();
         };
         let command = if joining {
-            Command::JoinFaction { character, faction }
+            Command::JoinFaction {
+                character,
+                faction,
+                secretly,
+            }
         } else {
             Command::LeaveFaction { character, faction }
         };
@@ -1702,6 +1726,15 @@ fn describe_hop(hop: &NextHop) -> String {
     )
 }
 
+/// A member's rank, and whether they belong secretly: `cutpurse, secretly`.
+fn rank_of(membership: &Membership) -> String {
+    if membership.secret {
+        format!("{}, secretly", membership.rank)
+    } else {
+        membership.rank.to_string()
+    }
+}
+
 /// `, witnessed by merchant_ava, vex`, or nothing when everyone saw it.
 fn witnessed_by(witnesses: &Witnesses) -> String {
     match witnesses {
@@ -1760,9 +1793,11 @@ fn describe_change(change: &Change) -> String {
             character,
             faction,
             rank,
+            secret,
         } => format!(
-            "{character} joined {faction} as {} {rank}",
-            article(rank.as_str())
+            "{character} joined {faction} as {} {rank}{}",
+            article(rank.as_str()),
+            if *secret { ", secretly" } else { "" }
         ),
         Change::RankChanged {
             character,
@@ -1954,7 +1989,14 @@ fn describe_change(change: &Change) -> String {
 fn describe_command(command: &Command) -> String {
     match command {
         Command::AdvanceTime { ticks } => format!("advance {ticks}"),
-        Command::JoinFaction { character, faction } => format!("join {character} {faction}"),
+        Command::JoinFaction {
+            character,
+            faction,
+            secretly,
+        } => format!(
+            "join {character} {faction}{}",
+            if *secretly { " --secretly" } else { "" }
+        ),
         Command::Promote { character, faction } => format!("promote {character} {faction}"),
         Command::Demote { character, faction } => format!("demote {character} {faction}"),
         Command::LeaveFaction { character, faction } => format!("leave {character} {faction}"),
@@ -2229,7 +2271,7 @@ fn describe_faction(world: &World, faction: &Faction) -> String {
                 .expect("a member of the world")
                 .find(|(member_of, _)| **member_of == faction.id)
                 .expect("a member of this faction");
-            format!("{member} ({})", membership.rank)
+            format!("{member} ({})", rank_of(membership))
         })
         .collect();
     let members = if members.is_empty() {
@@ -2333,7 +2375,8 @@ fn describe(world: &World, character: &Character) -> String {
         .map(|(faction, membership)| {
             format!(
                 "{faction} ({}) since tick {}",
-                membership.rank, membership.since
+                rank_of(membership),
+                membership.since
             )
         })
         .collect();
@@ -3129,6 +3172,73 @@ mod tests {
     }
 
     #[test]
+    fn join_and_can_join_take_secretly() {
+        let mut session = riverhold();
+        // −20 / −12: 40.01 from the Guild (law Δ40, good Δ2 × 0.5), 90.35 from the Watch
+        // (law Δ90, good Δ32 × 0.25). The Guild has secret members; the Watch doesn't.
+        let _ = session.execute("act player steal --scale 4");
+        assert_eq!(
+            session.execute("can-join player city_watch --secretly"),
+            output(
+                "no: The City Watch has no secret members; 90.35 from The City Watch, tolerance is 40.00"
+            )
+        );
+        assert_eq!(
+            session.execute("can-join player lantern_guild --secretly"),
+            output("yes: 40.01 from The Lantern Guild, tolerance is 45.00")
+        );
+        assert_eq!(
+            session.execute("join player lantern_guild --secretly"),
+            output("#3 at tick 0: player joined lantern_guild as a cutpurse, secretly")
+        );
+        assert_eq!(
+            session.execute("show character player"),
+            output(
+                "player — The Player — law -20.00, good -12.00 — True Neutral — member of lantern_guild (cutpurse, secretly) since tick 0"
+            )
+        );
+        let Ok(Outcome::Output(guild)) = session.execute("show faction lantern_guild") else {
+            panic!("the Guild exists");
+        };
+        assert!(
+            guild.ends_with("members: player (cutpurse, secretly), vex (fence)"),
+            "{guild}"
+        );
+        let Ok(Outcome::Output(journal)) = session.execute("journal") else {
+            panic!("a journal");
+        };
+        assert!(
+            journal.ends_with("2. join player lantern_guild --secretly — accepted"),
+            "{journal}"
+        );
+        for (line, usage) in [
+            (
+                "join player lantern_guild --secret",
+                "join needs the form: join <character> <faction> [--secretly]",
+            ),
+            (
+                "leave player lantern_guild --secretly",
+                "leave needs the form: leave <character> <faction>",
+            ),
+            (
+                "can-join player lantern_guild --secretly --secretly",
+                "can-join needs the form: can-join <character> <faction> [--secretly] [--explain]",
+            ),
+            (
+                "can-join player lantern_guild --explain --explain",
+                "can-join needs the form: can-join <character> <faction> [--secretly] [--explain]",
+            ),
+        ] {
+            assert_eq!(session.execute(line), command_error(usage), "{line}");
+        }
+        assert_eq!(
+            session.execute("can-join player lantern_guild --explain --secretly"),
+            session.execute("can-join player lantern_guild --secretly --explain"),
+            "either order"
+        );
+    }
+
+    #[test]
     fn act_reports_the_worlds_refusals() {
         let mut session = riverhold();
         for (line, message) in [
@@ -3540,7 +3650,7 @@ mod tests {
         for (line, usage) in [
             (
                 "join player",
-                "join needs the form: join <character> <faction>",
+                "join needs the form: join <character> <faction> [--secretly]",
             ),
             (
                 "leave a b c",
@@ -3548,11 +3658,11 @@ mod tests {
             ),
             (
                 "can-join player",
-                "can-join needs the form: can-join <character> <faction> [--explain]",
+                "can-join needs the form: can-join <character> <faction> [--secretly] [--explain]",
             ),
             (
                 "can-join player temple --why",
-                "can-join needs the form: can-join <character> <faction> [--explain]",
+                "can-join needs the form: can-join <character> <faction> [--secretly] [--explain]",
             ),
         ] {
             assert_eq!(session.execute(line), command_error(usage), "{line}");
@@ -4708,8 +4818,8 @@ mod tests {
             "distance <observer> <subject> [--explain]",
             "perceived <observer> <subject>",
             "disposition <observer> <subject> [--explain]",
-            "can-join <character> <faction> [--explain]",
-            "join <character> <faction>",
+            "can-join <character> <faction> [--secretly] [--explain]",
+            "join <character> <faction> [--secretly]",
             "leave <character> <faction>",
             "ranks <faction>",
             "promote <character> <faction> [--explain]",

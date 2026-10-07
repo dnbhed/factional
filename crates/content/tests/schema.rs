@@ -13,10 +13,7 @@ use serde_json::Value;
 /// path, with the increment that will read them. `*` in a path stands for every table, such
 /// as every character. The schema leaves them out, since loading refuses them; this list
 /// says so rather than letting them through unnoticed.
-const NOT_READ_YET: [(&str, &str, &str); 2] = [
-    ("balance", "membership.exposed", "K4"),
-    ("factions", "*.secret_members", "K4"),
-];
+const NOT_READ_YET: [(&str, &str, &str); 1] = [("balance", "membership.exposed", "K5")];
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

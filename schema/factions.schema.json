@@ -197,6 +197,11 @@
           "minItems": 1,
           "type": "array"
         },
+        "secret_members": {
+          "default": false,
+          "description": "Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4).",
+          "type": "boolean"
+        },
         "tolerance": {
           "description": "How close to the faction's alignment someone must be to join it.",
           "minimum": 0.0,

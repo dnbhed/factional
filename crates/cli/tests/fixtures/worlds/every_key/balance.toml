@@ -1,6 +1,9 @@
 # Settings that neither content/sample nor docs/examples/riverhold uses, so the schema test
 # (crates/content/tests/schema.rs) sees every key the schema names in a world that loads.
 
+[knowledge]
+model = "witnessed"
+
 [inertia.profiles.stubborn]
 law.toward_lawful = 0.5
 law.toward_chaotic = [[-100.0, 1.0], [100.0, 0.5]]

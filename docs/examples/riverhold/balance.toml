@@ -109,7 +109,7 @@ rules = [
 # with: "keep" (a membership conflict then opens for them), "demote" or "expel", each with
 # an optional standing change. The same conditions as above, with "current" the faction
 # that found out and "target" the secret one. Built in: expel, at the faction's
-# expel_standing_change. (K4)
+# expel_standing_change. (K5)
 rules = [
   { when = { standing_with_current_at_least = 60.0 }, then = "keep", standing_change = -30.0 },
   { then = "expel", standing_change = -40.0 },

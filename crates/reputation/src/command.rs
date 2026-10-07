@@ -31,6 +31,10 @@ pub enum Command {
     JoinFaction {
         character: CharacterId,
         faction: FactionId,
+        /// Joining in secret, which only a faction with secret members allows; a secret
+        /// join never leaves another faction (DESIGN.md §10.4).
+        #[serde(default)]
+        secretly: bool,
     },
     /// Moves `character` up one rung in `faction`, if the next rank's requirements hold. Only
     /// ever on request: meeting them never promotes anyone by itself (D-17).
@@ -144,6 +148,9 @@ pub enum Change {
         faction: FactionId,
         /// The rung they start on: the faction's lowest.
         rank: RankId,
+        /// Whether they joined in secret.
+        #[serde(default)]
+        secret: bool,
     },
     RankChanged {
         character: CharacterId,

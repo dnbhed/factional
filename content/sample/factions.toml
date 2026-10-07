@@ -90,6 +90,8 @@ weights = { law = 1.0, good = 0.5 }
 tolerance = 45.0
 member_tolerance = 60.0
 drift = { policy = "flag" }
+# Members may belong secretly, known only to the Guild and its members (DESIGN.md §10.4).
+secret_members = true
 
 [[lantern_guild.ranks]]
 id = "cutpurse"
@@ -128,6 +130,7 @@ tolerance = 30.0
 member_tolerance = 40.0
 # Stray from the Circle's path and you're out.
 drift = { policy = "expel" }
+secret_members = true
 
 # The Circle replaces balance.toml's deserters table with its own: no one leaves.
 [ashen_circle.deserters]

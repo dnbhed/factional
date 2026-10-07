@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc be978f5e041172599db382009cbb52361f6df49f633ebe39ce07e1f15d2611ac # shrinks to commands = [JoinFaction { character: CharacterId("vex"), faction: FactionId("free_company") }, JoinFaction { character: CharacterId("vex"), faction: FactionId("lantern_guild") }]
 cc afae61ae84de940f3ce05debaab29ab432acbdacdf81e07bcf4d865bcf986629 # shrinks to commands = [PerformAction { actor: CharacterId("player"), action: ActionId("steal"), target: Some(CharacterId("vex")), scale: Fixed(0.01), witnesses: Everyone }]
+cc 9d3a635dcb4862d181752be389d370937d71984124bff3ae1ab248408e3ac0e2 # shrinks to commands = [JoinFaction { character: CharacterId("vex"), faction: FactionId("lantern_guild"), secretly: true }]

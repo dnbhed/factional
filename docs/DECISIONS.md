@@ -364,7 +364,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Outcomes and `ApplyEffects` get `witnesses`,** default everyone, for their alignment shifts.
   - **No forgetting yet.** Fading private offsets back to public is the lever if memory grows, left until a host needs it (E1).
   - *Why:* memory grows only with the reach of unwitnessed acts, and under `omniscient` there's nothing extra at all.
-- **P-58 · How secret membership works** (made in K0, 2026-10-07; built in K4).
+- **P-58 · How secret membership works** (made in K0, 2026-10-07; built in K4, exposure in K5).
   - **`secret_members` needs `witnessed` or `ripple`;** under `omniscient` it's an error, since nothing can be secret.
   - **A double agent keeps both memberships.** Joining an enemy of a faction you're secretly in doesn't leave it and skips its `deserters` table; joining secretly leaves no one. Tables only consider memberships their faction knows of.
   - **Exposure is all or nothing:** any arrival of the news counts, unlike an act's partial awareness.
@@ -396,6 +396,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Everyone knows themself,** so a character's picture of themself is the truth.
   - **Explanations show both:** `distance`, `disposition` and `can-join --explain` add where the subject truly is when it isn't where they're pictured; `map` draws the faction's picture and notes the truth; `perceived` gives the working.
   - *Why:* D-21 everywhere through one function, with nothing to keep in step and worlds that don't opt in unchanged.
+- **P-62 · How secret membership is built** (made in K4, 2026-10-07).
+  - **K4 is split:** secrecy now, exposure (the `Expose` command, its news, the `exposed` tables and `LeftFaction { Exposed }`) in K5, with Riverhold's double agent, who only matters once they can be found out.
+  - **Knowing is worked out, not stored:** a membership is known to everyone if open; if secret, to the faction, anyone who's a member of it now, and the character. K5 adds those it's exposed to.
+  - **`assess_join_secretly` beside `assess_join`.** A secret join asks only the joining faction's `defectors` table about the enemy memberships it knows of, so `Defection.deserters` is `None` there, and it leaves no one.
+  - **Only open memberships go to war:** a war opens a `MembershipConflict` only between two open memberships, and only two open starting memberships can break invariant 6.
+  - **Standing effects and `by_target` see every membership.** A theft from a secret member still costs standing with their faction, which knows its own; how bad an act is depends on the truth, as in P-61.
+  - **The CLI shows secrecy:** `join … --secretly`, `can-join … --secretly`, "(cutpurse, secretly)" in `show` and faction listings, and `--secretly` in the journal.
+  - *Why:* secrecy follows from who belongs where, with nothing extra to keep in step until exposure needs it.
 
 ## Open
 

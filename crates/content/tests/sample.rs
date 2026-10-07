@@ -303,6 +303,7 @@ fn the_player_must_turn_thief_to_join_the_lantern_guild() {
     let join = || Command::JoinFaction {
         character: character("player"),
         faction: guild.clone(),
+        secretly: false,
     };
     let steal = || Command::PerformAction {
         actor: character("player"),
@@ -382,12 +383,14 @@ fn a_guild_thief_is_turned_away_by_the_watch_on_both_counts() {
         .execute(Command::JoinFaction {
             character: character("player"),
             faction: faction_id("lantern_guild"),
+            secretly: false,
         })
         .expect("40.01 is within 45.00");
     let refusal = world
         .execute(Command::JoinFaction {
             character: character("player"),
             faction: faction_id("city_watch"),
+            secretly: false,
         })
         .expect_err("too far, and an enemy");
     // The Guild would let a cutpurse go, but the Watch's last defectors rule refuses: the

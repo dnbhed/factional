@@ -345,6 +345,15 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             | ContentProblem::MutualContact {
                 character, index, ..
             } => (CHARACTERS_FILE, format!("{character}.contacts[{index}]")),
+            ContentProblem::SecretMembersNeedKnowledge(faction) => {
+                (FACTIONS_FILE, format!("{faction}.secret_members"))
+            }
+            ContentProblem::SecretMembershipNotAllowed {
+                character, index, ..
+            } => (
+                CHARACTERS_FILE,
+                format!("{character}.memberships[{index}].secret"),
+            ),
         };
         Diagnostic {
             file: file.to_owned(),
@@ -847,12 +856,13 @@ fn read_memberships(
                 }
             },
         };
+        let secret = membership.optional_flag("secret", report).unwrap_or(false);
         membership.finish(report);
-        factions.push(
-            faction
-                .zip(rank)
-                .map(|(faction, rank)| StartingMembership { faction, rank }),
-        );
+        factions.push(faction.zip(rank).map(|(faction, rank)| StartingMembership {
+            faction,
+            rank,
+            secret,
+        }));
     }
     factions.into_iter().collect()
 }
@@ -978,8 +988,12 @@ fn read_faction(id: FactionId, fields: &toml::Table, report: &mut Report) -> Opt
             None
         }
     });
+    let secret_members = section
+        .optional_flag("secret_members", report)
+        .unwrap_or(false);
     section.finish(report);
     Some(Faction {
+        secret_members,
         id,
         name: name?,
         alignment: alignment?,
@@ -2042,6 +2056,104 @@ mod tests {
         id = "shadow"
         requires = { standing = 60.0 }
     "#;
+
+    /// The Lantern Guild with secret members, in a world where news ripples.
+    const SECRET_GUILD: &str = r#"
+        [lantern_guild]
+        name = "The Lantern Guild"
+        alignment = { law = -60.0, good = -10.0 }
+        tolerance = 45.0
+        secret_members = true
+
+        [[lantern_guild.ranks]]
+        id = "cutpurse"
+    "#;
+
+    fn secret_world(
+        model: &str,
+        characters: &str,
+        relations: Option<&str>,
+    ) -> Result<Content, ContentError> {
+        parse_content(Sources {
+            balance: Some(&format!("[knowledge]\nmodel = \"{model}\"")),
+            factions: Some(&format!("{SECRET_GUILD}\n{WATCH}")),
+            characters: Some(characters),
+            relations,
+            ..Sources::default()
+        })
+    }
+
+    #[test]
+    fn reads_secret_members_and_secret_memberships() {
+        let content = secret_world(
+            "ripple",
+            &format!(
+                "{VEX}memberships = [{{ faction = \"lantern_guild\", secret = true }}, {{ faction = \"city_watch\" }}]\n"
+            ),
+            None,
+        )
+        .expect("valid content");
+        let faction = |id| &content.factions[&FactionId::new(id).expect("valid id")];
+        assert!(faction("lantern_guild").secret_members);
+        assert!(!faction("city_watch").secret_members, "false when left out");
+        let vex = &content.characters[&CharacterId::new("vex").expect("valid id")];
+        let secret: Vec<bool> = vex.memberships.iter().map(|m| m.secret).collect();
+        assert_eq!(secret, [true, false]);
+    }
+
+    #[test]
+    fn reports_secret_membership_mistakes_at_their_keys() {
+        let guild = SECRET_GUILD.replace("secret_members = true", "secret_members = \"yes\"");
+        assert_eq!(
+            problems(factions(&guild)),
+            ["factions.toml: lantern_guild.secret_members: expected true or false"]
+        );
+        assert_eq!(
+            problems(secret_world(
+                "ripple",
+                &format!("{VEX}memberships = [{{ faction = \"lantern_guild\", secret = 1 }}]\n"),
+                None
+            )),
+            ["characters.toml: vex.memberships[0].secret: expected true or false"]
+        );
+        assert_eq!(
+            problems(secret_world("omniscient", VEX, None)),
+            [
+                "factions.toml: lantern_guild.secret_members: secret members need knowledge.model witnessed or ripple: under omniscient, everyone knows everything"
+            ]
+        );
+        assert_eq!(
+            problems(secret_world(
+                "ripple",
+                &format!("{VEX}memberships = [{{ faction = \"city_watch\", secret = true }}]\n"),
+                None
+            )),
+            [
+                "characters.toml: vex.memberships[0].secret: city_watch doesn't allow secret members: set secret_members = true on it"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_character_may_start_secretly_in_an_enemy_of_their_faction() {
+        let war = "[[relation]]\nbetween = [\"city_watch\", \"lantern_guild\"]\nvalue = -80.0\n";
+        let both = |secret: bool| {
+            secret_world(
+                "ripple",
+                &format!(
+                    "{VEX}memberships = [{{ faction = \"city_watch\" }}, {{ faction = \"lantern_guild\", secret = {secret} }}]\n"
+                ),
+                Some(war),
+            )
+        };
+        assert!(both(true).is_ok(), "the Watch doesn't know");
+        assert_eq!(
+            problems(both(false)),
+            [
+                "characters.toml: vex.memberships[1].faction: vex can't start in both city_watch and lantern_guild: they're in conflict (-80.00)"
+            ]
+        );
+    }
 
     #[test]
     fn reads_factions_with_their_weights() {
