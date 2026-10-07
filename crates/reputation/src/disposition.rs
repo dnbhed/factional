@@ -265,7 +265,8 @@ pub struct Component {
 
 /// Who a disposition modifier is for (DESIGN.md §8.1). Everyone comes first, then factions,
 /// then characters.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ModifierObserver {
     Everyone,
     /// The faction, and every character in it.

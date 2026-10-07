@@ -25,7 +25,9 @@ mod world;
 pub use action::{Action, TargetCurve, Witnesses};
 pub use alignment::{AXIS_LIMIT, Alignment, AlignmentDelta, Axis, AxisOutOfRange};
 pub use character::Character;
-pub use command::{Change, Command, CommandError, Event, JournalEntry, Role};
+pub use command::{
+    Change, Command, CommandError, Event, JournalEntry, RestoreError, Role, SavedCommand,
+};
 pub use defection::{
     Condition, ConditionCheck, Defection, Observed, RankRef, Rule, RuleTried, TableDecision,
     TableKind, TableOwner, TableProblem, TableSource, Verdict,

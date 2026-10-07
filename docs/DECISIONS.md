@@ -108,6 +108,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - *Why:* listeners and UIs can read them without context, and replaying them needs no rules.
 - **P-16 · The journal of commands drives the what-if tools; the event log plus snapshots drives saves.**
   - *Why:* designers want to re-run history under new numbers, but players' saves must not change when the numbers do.
+  - T4 builds saves from the event log alone, with no snapshot yet, and restores them only onto unchanged content (P-54).
 - **P-17 · The player is an ordinary character.**
   - *Why:* NPC-to-NPC relationships come free, and there's one code path to test.
 - **P-18 · Content is TOML.**
@@ -329,6 +330,16 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Named curves:** `disposition.affinity`, `standing.spillover`, every inertia profile's four directions and every action's three `by_target` curves. One left out is shown as 1.00 everywhere, since that's what the engine uses. A table lists every point and every multiple of 10 between the first and last.
   - *Why:* the shapes behind tuning are visible at a glance, from the engine's own measures and curves.
 
+- **P-54 · How saves work** (made in T4, 2026-10-07; settles X-3, and the four choices marked † were the user's).
+  - **† JSON while the game is in development,** a binary encoding for a finished game (T5). What a save holds is kept apart from how it's written, so T5 adds an encoding, not a new format.
+  - **† Content by name and fingerprint:** the directory as it was loaded, and each content file's FNV-1a 64-bit hash, or null for a missing file. It's taken from exactly the text that was loaded, so editing a file after loading can't slip into a save. It notices edits; it doesn't resist tampering.
+  - **† Changed content is refused,** naming each changed file. `load` and `reload` are the way to put a session on new numbers.
+  - **† Events only, no snapshot.** Accepted commands replay their events without running rules (P-16).
+  - **The journal is saved as each command with its event count,** or as refused. A refusal's reason isn't saved; restoring decides that command again at the same point in history, which changes nothing, and refuses the save if it's accepted now. The journal comes back exactly, without saving the large join and promotion assessments.
+  - **The file starts with `format` and `version`** (1), and a save with another version is refused, naming both. A save that doesn't add up (event counts, out-of-order events, a refusal that isn't one) is refused too.
+  - **Values are written exactly:** numbers as text such as `"-12.50"`, multipliers as fractions such as `"81/200"`, enums in snake_case. Reading checks ids and alignment ranges. Content still only accepts numbers as numbers.
+  - *Why:* a session can be kept and resumed exactly, a save never quietly mixes old history with new numbers, and the format can move to binary without changing what it means.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.
@@ -337,7 +348,7 @@ None right now. A new question gets the next free number, starting at O-5.
 
 - **X-1 · Perceived alignment.** Whether observers judge a character by what they know of them rather than by their true alignment, and how. Settled in K0.
 - **X-2 · Host engine and integration route.** A Bevy plugin, or a C ABI for Godot, Unity or Unreal. Settled in E0.
-- **X-3 · Save format and versioning.** Settled in T4.
+- **X-3 · Save format and versioning.** Settled in T4 by the user's choices; see P-54.
 - **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Which factions a quest affects, directly and through spillover, war and membership; what counts as a conflict with another faction's questline at a stage; and how to check this without exploring every combination of stages. Settled in Q0, the quest module's design pass (DESIGN.md §16.1).
 - **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). Two candidates, chosen between in U0:
   - **Web frontend:** one frontend, shipped both as a desktop app through Tauri and in a browser through a wasm build of the engine. Mature form generators and graph editors (React Flow, Svelte Flow) suit questlines. The cost is two languages and a JSON boundary.

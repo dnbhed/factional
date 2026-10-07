@@ -1,0 +1,26 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/saves.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --target merchant_ava
+#1 at tick 0: player did steal, targeting merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00
+> watch player
+#4 at tick 0: now watching player (10 observers)
+> save target/saves.scenario.json
+saved 2 commands and 4 events to target/saves.scenario.json
+> act player steal --target merchant_ava
+#5 at tick 0: player did steal, targeting merchant_ava
+#6 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
+#7 at tick 0: player's standing with merchant_ava moved from -20.00 to -40.00
+> assert show character player == player — The Player — law -10.00, good -6.00 — True Neutral
+> restore target/saves.scenario.json
+restored target/saves.scenario.json: content/sample at tick 0, with 2 commands and 4 events
+> assert show character player == player — The Player — law -5.00, good -3.00 — True Neutral
+> journal
+1. act player steal --target merchant_ava — accepted
+2. watch player — accepted

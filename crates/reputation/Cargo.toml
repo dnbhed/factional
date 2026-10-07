@@ -8,9 +8,11 @@ publish.workspace = true
 
 [dependencies]
 factional-core = { path = "../core" }
+serde = { version = "1.0.229", features = ["derive"] }
 
 [lints]
 workspace = true
 
 [dev-dependencies]
 proptest = "1.11.0"
+serde_json = "1.0.151"

@@ -1,0 +1,17 @@
+# Saving and restoring a session (T4). A save holds the journal and the events, and names the
+# content they were played on with a fingerprint of each file; restoring rebuilds the world
+# from the events, and refuses if the content has changed since.
+
+load content/sample
+act player steal --target merchant_ava
+watch player
+save target/saves.scenario.json
+
+# Played on past the save...
+act player steal --target merchant_ava
+assert show character player == player — The Player — law -10.00, good -6.00 — True Neutral
+
+# ...and back to it.
+restore target/saves.scenario.json
+assert show character player == player — The Player — law -5.00, good -3.00 — True Neutral
+journal

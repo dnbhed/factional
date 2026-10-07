@@ -52,7 +52,8 @@ impl TargetCurve {
 /// Who saw an act (D-7). Under the omniscient knowledge model everyone learns of every act
 /// whoever saw it, so this has no effect until K1; it's carried now so the API doesn't
 /// change then.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Witnesses {
     #[default]
     Everyone,

@@ -76,8 +76,9 @@ pub struct StartingMembership {
     pub rank: Option<RankId>,
 }
 
-/// Why a character left a faction. Conflict resolution arrives with M9.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Why a character left a faction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LeaveReason {
     Voluntary,
     /// To join an enemy of the faction (DESIGN.md §9.2).

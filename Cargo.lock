@@ -295,6 +295,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "serde",
+ "serde_json",
  "strsim",
  "toml",
 ]
@@ -305,6 +306,8 @@ version = "0.1.0"
 dependencies = [
  "factional-core",
  "proptest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

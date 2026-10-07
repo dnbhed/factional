@@ -542,7 +542,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 - `events_since`: the events after a sequence number (P-33)
 - `journal`: every command issued, and whether it was accepted
 
-`World::replay(content, events)` rebuilds a world from its event log without running any rules: what saves are built on.
+`World::replay(content, events)` rebuilds a world from its event log without running any rules: what saves are built on. `saved_journal()` gives each journal entry's command and how many events it produced, and `World::restore(content, journal, events)` rebuilds a world and its journal from them (T4, P-54).
 
 ### 11.4 How the future modules plug in
 
@@ -570,7 +570,7 @@ let d = world.disposition(Observer::Character(hale), player);    // d.score, d.b
 ### 11.5 The journal and the event log (P-16)
 
 - The **journal** is the commands as they were issued. Replaying it against changed content answers "what would have happened with these numbers?" It's the designer's what-if tool (T2).
-- The **event log** is what happened, with the resolved values. Replaying it reproduces state exactly, whatever the content says now. Saves are built on it (T4).
+- The **event log** is what happened, with the resolved values. Replaying it reproduces state exactly, whatever the content says now. Saves are built on it (T4): a save holds the journal and the events, names its content directory with a fingerprint of each file, and is restored only onto that content unchanged (P-54).
 
 ## 12. Tuning surface (D-12)
 
@@ -673,6 +673,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working.
 - `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
 - `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
+- `save <file>` and `restore <file>` in the REPL to keep a session and come back to it (T4, P-54).
 - `map <faction>` to draw the alignment plane, law across and good up: the cells within the faction's tolerance, the faction, and every character, with each one's distance in a key (T3, P-53).
 - `matrix [<subject>...] [--csv]` for every observer's disposition toward each subject, or with `--csv`, to get them into a spreadsheet (T3).
 
@@ -757,6 +758,7 @@ Each invariant has a property test (`proptest`) over random content and random c
 8. Inertia never reverses the direction of a shift.
 9. Band lookup is total and monotone: a higher score never lands in a lower band.
 10. A curve's value always stays within the range of its own y values.
+11. Restoring a save gives the same world: the same state, events and journal (T4).
 
 ## 15. Crates (P-25)
 

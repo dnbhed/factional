@@ -7,6 +7,8 @@ input_file: scenarios/help.scenario
 help                                                                 list these commands
 quit                                                                 leave the REPL, or end a script early
 load <dir>                                                           load the content files in <dir>, such as content/sample, as a new world
+save <file>                                                          write this session, and which content it's on, to <file>
+restore <file>                                                       go back to the session saved in <file>, if its content hasn't changed
 reload                                                               re-read the loaded content, replay this session's commands on it, and show what changed
 validate <dir>                                                       check the content files in <dir> as load would, without loading them
 characters                                                           list the loaded characters

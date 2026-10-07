@@ -29,7 +29,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1 → Q0 → U0`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → E0 → E1 → T5 → Q0 → U0`
 
 ## Done
 
@@ -58,6 +58,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - T1 — `factional validate <dir>` (every problem and warning as `load` gives them, a summary line, exit 1 if it wouldn't load) and `validate <dir>` in the REPL; the warning for a faction no one starts within tolerance of, naming the nearest; "a rank no one can reach" dropped (P-51); `factional schema [<file>]`, a JSON Schema per content file built from the engine's own keys, enumerations, ranges and defaults, checked in under `schema/` and tested both ways against the sample, the complete example and the fixtures; `content/README.md`; done 2026-10-06 (#27)
 - T2 — `factional compare <scenario> --content A --against B`: the scenario's one load swapped, asserts run unchecked, then each character's changed alignment, standings and memberships and watchers' changed dispositions as `A → B`, and the first event where the runs diverge; `reload` in the REPL, replaying the whole journal on the re-read content and changing nothing unless every command comes out as before (P-52); done 2026-10-07 (#28)
 - T3 — `map <faction>` (the alignment plane, 21 by 21 cells: the faction's tolerance region, the faction and each character, with a key of distances; `World::distance_to_point`), `matrix [<subject>...] [--csv]` (every observer's disposition score toward each subject), and `curve <knob> [at <x>]` for the world's named curves, or any curve, as a table or at a point (`Curve::points`) (P-53); done 2026-10-07 (#29)
+- T4 — saves: `save <file>` and `restore <file>` in the REPL; a JSON file with its format and version first, the content directory with each file's FNV-1a fingerprint, the journal as commands with their event counts, and the events; `World::saved_journal` and `World::restore` (events replayed without rules, refusals decided again); exact serde for `Fixed`, `Ratio`, ids and alignments; restoring refuses changed content, other versions and saves that don't add up; invariant 11 (P-54); done 2026-10-07 (#30)
 
 ---
 
@@ -69,31 +70,13 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 4 — Designer tooling and persistence
 
-### T4 · Saves — P2 · Next
+### T5 · Binary saves — P3 · Outline
 
-**Why:** P-16 and X-3. A game needs to save and resume, and a designer wants to keep a session to come back to.
-
-**Scope**
-
-- **`save <file>`** in the REPL writes the session: a format version, the content it was loaded from, and the event log and journal.
-- **`restore <file>`** reads it back: it loads the content and rebuilds the world with `World::replay`, which runs no rules (P-16), then restores the journal.
-- **The engine's events and commands become serialisable,** with serde derives in `factional-reputation`. Nothing in the engine does I/O; the CLI reads and writes the file.
-- **Settle with the user before starting (X-3):**
-  - the file format: JSON, TOML, or a binary format;
-  - whether a save holds the content itself, or names its directory with a fingerprint of the files;
-  - what restoring does when the content has changed since: refuse, or replay the journal as `reload` does (P-52);
-  - whether to store a snapshot of the state as well as the events, or rebuild from events alone.
-
-**Acceptance**
-
-1. After `load content/sample`, two thefts and `watch player`, `save` then `restore` in a new session gives the same `events`, `journal`, `show character player` and `disposition captain_hale player`.
-2. A save starts with its format version, and restoring one with a version this build doesn't know is refused, naming both versions.
-3. Restoring a save whose content has changed since does what the decision above says, and says so.
-4. A property test: after random commands, saving and restoring gives identical answers to every query (DESIGN.md §14).
+The user's choice for a finished game (P-54): a compact binary encoding of the same save, beside JSON, with the format and version still readable first. Comes after embedding (E0, E1), once a host engine shows what it needs.
 
 ## Phase 5 — Knowledge and rumour
 
-### K0 · Design pass: witnesses, ripple, perceived alignment — P2
+### K0 · Design pass: witnesses, ripple, perceived alignment — P2 · Next
 
 A design section and its decisions, agreed before K1 starts. It settles X-1, and designs the double agents that D-19 asks for.
 
