@@ -51,9 +51,10 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-21 · Everyone judges by what they know** (agreed 2026-10-07 in K0; settles X-1). Each observer has a perceived alignment of each character: their starting alignment, moved by every shift the observer has learned of, at the strength they learned it. Disposition, joining, promotion and drift all use the judging party's perception. Under `omniscient` that's the truth, so worlds that don't opt in are unchanged (DESIGN.md §10.3).
 - **D-22 · News takes time to travel** (agreed 2026-10-07 in K0). Under `ripple`, each hop takes ticks and weakens the news. News in flight is part of the world's state, arrives as time advances, and is saved. A faction hears when any member does, and passes news on to its members (§10.2).
 - **D-23 · A faction opts in to secret members** (agreed 2026-10-07 in K0). Only a faction that allows it can be joined secretly. A secret membership is known to the faction and its members; everyone else judges by the memberships they know of, which is what makes a double agent possible (§10.4).
-- **D-25 · A questline is stages with choices** (agreed 2026-10-07 in Q0). Each stage has requirements and one or more choices; each choice has effects and leads to a later stage or the end. No loops, so reachability stays easy to compute (DESIGN.md §17.1).
-- **D-26 · Reconciling means every lockout is declared** (agreed 2026-10-07 in Q0; settles X-4). A choice that could make another questline's stage unreachable for good must declare it in `locks`; an undeclared lockout is a load error. Choices with consequences stay allowed; accidental ones don't load (§17.2).
+- **D-25 · A quest is stages with choices; a questline chains quests** (agreed 2026-10-07 in Q0). Each stage has requirements and one or more choices; each choice has effects and leads to a later stage or the end. No loops, so reachability stays easy to compute. A questline is an ordered chain of quests, each needing the one before it finished; a quest can also stand alone (DESIGN.md §17.1).
+- **D-26 · Reconciling means every lockout is declared** (agreed 2026-10-07 in Q0; settles X-4). A choice that could make another quest's stage unreachable for good must declare it in `locks`; an undeclared lockout is a load error. Choices with consequences stay allowed; accidental ones don't load (§17.2).
 - **D-27 · Loading checks it with conservative bounds** (agreed 2026-10-07 in Q0). The worst each choice can do is worked out from content alone and checked against each stage, pair by pair: it always finishes, and may ask the designer to declare a lockout that couldn't really happen (§17.3).
+- **D-28 · Quests and questlines belong to a faction, a character or no one** (agreed 2026-10-07 in Q0, at the user's direction). There are faction quests and questlines, and ones outside the factions: an optional `giver` names a faction or a character, or is left out for the world's own. Every quest is reconciled with every other, whoever owns it (§17.1).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
 ## Proposed — 2026-10-04
@@ -418,20 +419,21 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - *Why:* exposure reuses the rule tables, news and wars that already exist, and stays a closed vocabulary (D-20).
 - **P-64 · The quest model** (made in Q0, 2026-10-07; built from Q1).
   - **A sibling crate, `factional-quests`,** depending on core and on this module: it reads this module's content to check itself at load, and changes the world only through commands (§11). It keeps each character's progress as its own events.
-  - **Requirements are a closed vocabulary about the character doing the quest:** `standing`, `member`, `not_member`, `rank_at_least`, `within_tolerance` (by the faction's picture) and `done`.
+  - **Requirements are a closed vocabulary about the character doing the quest:** `standing`, `member`, `not_member`, `rank_at_least`, `within_tolerance` (by the faction's picture) and `done` (a quest, stage or choice).
+  - **Two files:** `quests.toml` and `questlines.toml`. A questline's order is a `done` on the quest before, added for the designer; a quest in a questline belongs to its giver unless it names its own.
   - **Effects are this module's commands as data:** today's alignment and standing, plus `join`, `leave`, `promote`, `demote` and `relation`, as outcomes or inline.
   - **For good means nothing in the content can undo it.**
     - **Standing** is undone if some action, which can be repeated, can raise it.
     - **Alignment** is undone if some action moves each axis back, with inertia that never stops it.
     - **A lost membership or rank** is never counted as undone, since proving a way back in is too involved; a designer declares those.
     - **Joining** is always undone, since leaving always succeeds.
-    - **A requirement on another questline's progress** names that questline, so it's a declared dependency, not a lockout.
-  - **A declared lock that can't happen is a warning,** and every stage must be reachable within its own questline (an error otherwise).
+    - **A requirement on another quest's progress** names that quest, so it's a declared dependency, not a lockout.
+  - **A declared lock that can't happen is a warning,** and every stage must be reachable within its quest, and every quest within its questline (an error otherwise).
   - *Why:* lockouts that matter, such as lost memberships, wars and irreversible drift, get declared, while the everyday give and take of standing doesn't drown designers in declarations.
 - **P-65 · How the lockout check works** (made in Q0, 2026-10-07; built in Q4).
   - **Per choice, once:** the most each party's standing can fall, directly and by one hop of spillover, bounded over every relation the content can reach; the memberships it can end, directly or through a war; how far each axis can move; the relations it can change.
   - **Per world, once:** which parties' standing some action can raise, and which axes some action can move both ways.
-  - **Then each choice against each stage of every other questline,** requirement by requirement: O(choices × stages × requirements), never combinations of stages.
+  - **Then each choice against each stage of every other quest,** requirement by requirement: O(choices × stages × requirements), never combinations of stages.
   - *Why:* it always finishes, in time that grows with the content, not with the ways it can be played.
 
 ## Open
@@ -443,7 +445,7 @@ None right now. A new question gets the next free number, starting at O-5.
 - **X-1 · Perceived alignment.** Whether observers judge a character by what they know of them rather than by their true alignment, and how. Settled in K0 by the user's choice: D-21, with P-57 for how.
 - **X-2 · Host engine and integration route.** A Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for any engine. In E0 (2026-10-07) the user chose not yet: the module stays engine-agnostic until a game needs a host, and the host adapter (E1) and binary saves (T5) wait for it.
 - **X-3 · Save format and versioning.** Settled in T4 by the user's choices; see P-54.
-- **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Settled in Q0 by the user's choices: D-25 to D-27, with P-64 and P-65 for how (DESIGN.md §17).
+- **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Settled in Q0 by the user's choices: D-25 to D-28, with P-64 and P-65 for how (DESIGN.md §17).
 - **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). Two candidates, chosen between in U0:
   - **Web frontend:** one frontend, shipped both as a desktop app through Tauri and in a browser through a wasm build of the engine. Mature form generators and graph editors (React Flow, Svelte Flow) suit questlines. The cost is two languages and a JSON boundary.
   - **egui (eframe):** all Rust, using the engine's types directly; also runs in a browser through wasm. Fastest to build, with node graphs from `egui-snarl`. The cost is a utilitarian look and more hand-drawn UI.
