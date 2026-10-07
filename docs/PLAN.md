@@ -23,13 +23,14 @@ This is the queue of increments for the reputation & factions module.
 | **In progress** | Being built on a branch. |
 | **Done** | Shipped; compressed to one line under Done. |
 | **Blocked (O-n)** | Waiting on an open decision. |
+| **Deferred (X-n)** | Waiting on a decision the user has chosen to leave until later. |
 | **Outline** | Detail and acceptance examples get written when the increment nears the front of the queue. |
 
 ## Order
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → E1 → T5 → Q0 → U0`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → U0 → E1 → T5`
 
 ## Done
 
@@ -65,6 +66,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - K3 — perceived alignment (D-21): everyone judges by their picture of a character, the truth less the shifts they haven't heard of; `ShiftWitnessed`, and the shift carried by news at each hop's strength; `distance` measures the picture, so disposition, joining, promotion and drift follow, and each rule table uses its own faction's picture; drift reviewed as news arrives; `witnesses` on outcomes and effects; the `perceived` query and command, explanations and `map` showing picture against truth; the journal now writes who saw each act and outcome; property tests that everyone pictures the truth under `omniscient` or when everyone saw everything (P-61); done 2026-10-07 (#34)
 - K4 — secret membership (D-23): factions' `secret_members` (needs `witnessed` or `ripple`), secret starting memberships and `JoinFaction { secretly }` with `assess_join_secretly`; a secret membership is known only to the faction, its members and the character, so kinship, joining and wars count only the memberships each side knows of, and a double agent keeps both; invariant 6 amended, with a property test under ripple; `join`/`can-join --secretly`; the Guild and the Circle allow secret members; split from K5 (P-62); done 2026-10-07 (#35)
 - K5 — exposure (D-24): `Expose { character, faction, witnesses }` and `MembershipExposed`, the news of it rippling; the `exposed` rule table (`keep`, `demote`, `expel`; built in, expel) judged by each faction that learns and is at war with the secret one, `LeftFaction { Exposed }`, and wars opening between memberships each side knows of; `assess_exposure`; `expose … [--seen-by] [--explain]`; Riverhold's exposed table, with the double agent made in play rather than at the start (P-63); done 2026-10-07 (#36)
+- E0 — host engine: the user chose not yet, so X-2 stays deferred and the module stays engine-agnostic; E1 and T5, which need a host, wait at the end of the queue, and Q0 is next; done 2026-10-07 (#37)
 
 ---
 
@@ -76,7 +78,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 4 — Designer tooling and persistence
 
-### T5 · Binary saves — P3 · Outline
+### T5 · Binary saves — P3 · Deferred (X-2)
 
 The user's choice for a finished game (P-54): a compact binary encoding of the same save, beside JSON, with the format and version still readable first. Comes after embedding (E0, E1), once a host engine shows what it needs.
 
@@ -84,15 +86,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 6 — Embedding
 
-### E0 · Choose a host engine and integration route — P3 · Next
+### E1 · Host adapter — P3 · Deferred (X-2)
 
-Settles X-2.
-
-### E1 · Host adapter — P3
+Waits until a game needs a host; then a host is chosen and E1 builds its adapter (X-2).
 
 ## Beyond this module
 
-### Q0 · Quest module design pass: reconciling questlines across factions — P3
+### Q0 · Quest module design pass: reconciling questlines across factions — P3 · Next
 
 The quest module comes after this one. Its first step is a design pass that settles X-4: what it means for a faction's quests and questlines to reconcile with every other faction they affect, and those factions' questlines, at every stage, and how the loader checks it (D-20, DESIGN.md §16). No quest content loads until that check exists.
 
