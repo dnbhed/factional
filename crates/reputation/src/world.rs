@@ -2895,6 +2895,17 @@ impl World {
         })
     }
 
+    /// How far a point on the alignment plane is from `faction` now, as it measures
+    /// characters (DESIGN.md §6): for drawing who could join. `None` for an unknown faction.
+    pub fn distance_to_point(&self, faction: &FactionId, point: Alignment) -> Option<Fixed> {
+        let weights = self
+            .faction(faction)?
+            .weights
+            .unwrap_or(self.content.balance.default_weights);
+        let from = self.faction_alignment(faction)?;
+        Some(measure(from, point, weights, self.content.balance.metric))
+    }
+
     /// How far `subject` is from `observer`, as the observer sees it: measured with the
     /// observer's weights and the world's metric (DESIGN.md §6). `None` if either is unknown.
     pub fn distance(&self, observer: &Observer, subject: &CharacterId) -> Option<Distance> {
@@ -5900,6 +5911,34 @@ mod tests {
         assert_eq!(
             empty[0].to_string(),
             "no one starts within Temple of the Dawn's tolerance of 35.00: there are no characters"
+        );
+    }
+
+    #[test]
+    fn measures_a_point_on_the_plane_as_a_faction_sees_it() {
+        let world = riverhold();
+        let watch = faction_id("city_watch");
+        // The Watch at 70 / 20 weighs good by a quarter: Hale's 75 / 30 is √(5² + 2.5²).
+        let hale = Alignment::new(h(75_00), h(30_00)).expect("in range");
+        assert_eq!(world.distance_to_point(&watch, hale), Some(h(5_59)));
+        // Ava's 20 / 10 is √(50² + 2.5²) = 50.06, as distance measures Ava herself.
+        let ava = Alignment::new(h(20_00), h(10_00)).expect("in range");
+        assert_eq!(world.distance_to_point(&watch, ava), Some(h(50_06)));
+        assert_eq!(
+            world
+                .distance(&Observer::Faction(watch.clone()), &id("ava"))
+                .map(|distance| distance.value),
+            Some(h(50_06))
+        );
+        // The Free Company has no weights of its own: the default, 1 and 1.
+        let origin = Alignment::new(h(0), h(0)).expect("in range");
+        assert_eq!(
+            world.distance_to_point(&faction_id("free_company"), origin),
+            Some(h(10_00))
+        );
+        assert_eq!(
+            world.distance_to_point(&faction_id("nowhere"), origin),
+            None
         );
     }
 

@@ -321,6 +321,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Labels:** `compare` labels each side with its directory as typed; `reload` with `before` and `after`. Both use `A → B` for a changed value.
   - *Why:* a designer sees what a change does in play, in one place, and never ends up in a session that differs from the one they played without being told.
 
+- **P-53 · How `map`, `matrix` and named curves show a world** (made in T3, 2026-10-07).
+  - **The map is 21 by 21 cells, 10 apart,** from −100 to 100 on each axis, law across and good up, rows labelled every 50. A character or faction goes in the nearest cell, halves away from zero.
+  - **A cell is within the region when its centre is,** measured as the faction measures characters (a new `World::distance_to_point` query, using its current alignment, weights and the world's metric). Exactly at the tolerance is within, as for joining.
+  - **Marks:** `@` the faction, `+` within, `.` outside, a letter per character in id order (A–Z, then a–z, then `?`), and `*` for a cell holding more than one, with a key line saying who. The key gives each character's exact distance and whether they're within.
+  - **`matrix` rows are observers, factions first,** each in id order, and columns the subjects named (every character by default). Scores only; `disposition --explain` has the working. An observer's view of themselves is `—`, or blank in CSV.
+  - **Named curves:** `disposition.affinity`, `standing.spillover`, every inertia profile's four directions and every action's three `by_target` curves. One left out is shown as 1.00 everywhere, since that's what the engine uses. A table lists every point and every multiple of 10 between the first and last.
+  - *Why:* the shapes behind tuning are visible at a glance, from the engine's own measures and curves.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

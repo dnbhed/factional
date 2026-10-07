@@ -1,0 +1,92 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/charts.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> map city_watch
+The City Watch (city_watch): law 70.00, good 20.00, tolerance 40.00
+ 100 . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . E + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+  50 . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + B + +
+     . . . . . . . . . . . . . + + + + @ + + +
+     . . . . . . . . . . . . C . + + + + + + +
+   0 . . . . . . . . . . D . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+     . . . . F . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+ -50 . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . A + + + + + + +
+     . . . . . . . . . . . . . . + + + + + + +
+     . . . . . . . . . . . . . . . + + + + + .
+-100 . . . . . . . . . . . . . . . + + + + + .
+     -100               law                100
+@ The City Watch, + within its tolerance, . outside; law runs across, good up
+A brother_ash: 50.31 away, outside
+B captain_hale: 5.59 away, within
+C merchant_ava: 50.06 away, outside
+D player: 70.18 away, outside
+E sister_mira: 38.59 away, within
+F vex: 125.40 away, outside
+> matrix player vex
+observer       player     vex
+ashen_circle    -7.20   -1.02
+city_watch      -3.64  -63.36
+free_company    47.92   49.74
+lantern_guild   -0.08   99.11
+temple          -7.64  -17.38
+brother_ash     -5.12  -12.26
+captain_hale    -5.49  -65.21
+merchant_ava    31.37   -7.42
+player              —    1.23
+sister_mira    -11.40  -27.96
+vex              1.23       —
+> matrix player --csv
+observer,player
+ashen_circle,-7.20
+city_watch,-3.64
+free_company,47.92
+lantern_guild,-0.08
+temple,-7.64
+brother_ash,-5.12
+captain_hale,-5.49
+merchant_ava,31.37
+player,
+sister_mira,-11.40
+vex,1.23
+> curve disposition.affinity
+disposition.affinity:
+       x        y
+    0.00    50.00  point
+   10.00    41.67
+   20.00    33.33
+   30.00    25.00
+   40.00    16.67
+   50.00     8.33
+   60.00     0.00  point
+   70.00    -3.57
+   80.00    -7.14
+   90.00   -10.71
+  100.00   -14.29
+  110.00   -17.86
+  120.00   -21.43
+  130.00   -25.00
+  140.00   -28.57
+  150.00   -32.14
+  160.00   -35.71
+  170.00   -39.29
+  180.00   -42.86
+  190.00   -46.43
+  200.00   -50.00  point
+> assert curve disposition.affinity at 130 == -25.00
+> assert curve inertia.hardening.good.toward_good at 50 == 0.65
+> assert curve inertia.steady.law.toward_lawful == inertia.steady.law.toward_lawful: left out, so 1.00 everywhere
+> assert curve disposition.affinty == error: unknown curve 'disposition.affinty' (did you mean 'disposition.affinity'?)

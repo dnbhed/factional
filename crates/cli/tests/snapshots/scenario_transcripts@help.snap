@@ -43,7 +43,9 @@ time                                                                 the current
 events [--since <seq>]                                               what has happened, oldest first; --since shows only later events
 journal                                                              every command issued, and whether it was accepted
 calc <a> <op> <b>                                                    the engine's fixed-point arithmetic; <op> is + - * or /
-curve <curve> at <x>                                                 a curve's value at <x>; <curve> is a number or [[x, y], ...]
+curve <curve> [at <x>]                                               a curve's value at <x>, or without at, the whole curve; <curve> is a knob, such as disposition.affinity, a number or [[x, y], ...]
+map <faction>                                                        the alignment plane: who stands where, and the cells within <faction>'s tolerance
+matrix [<subject>...] [--csv]                                        every observer's disposition toward each subject (default: every character)
 echo <text>                                                          print <text>
 fail <message>                                                       fail with <message>; for testing scripts
 assert <command> == <expected>                                       check that <command>'s result is exactly <expected>

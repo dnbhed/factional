@@ -1,0 +1,13 @@
+# Ada is exactly at the Ring's tolerance; Bo stands where the Ring does; Cy is in a corner.
+
+[ada]
+name = "Ada"
+alignment = { law = 30.0, good = 0.0 }
+
+[bo]
+name = "Bo"
+alignment = { law = 0.0, good = 0.0 }
+
+[cy]
+name = "Cy"
+alignment = { law = -100.0, good = 100.0 }

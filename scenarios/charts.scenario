@@ -1,0 +1,21 @@
+# Pictures of a world for tuning (T3): who could join a faction, how everyone regards someone,
+# and what a curve does across its range.
+
+load content/sample
+
+# The plane, law across and good up: @ is the Watch, + its tolerance region, and each letter
+# a character, named in the key below. Good counts for a quarter with the Watch, so its region
+# runs the height of the plane.
+map city_watch
+
+# Every observer's disposition toward the player and Vex; --csv gives the same for a
+# spreadsheet.
+matrix player vex
+matrix player --csv
+
+# A named knob as a table, then at one point: 50 at 0, 0 at 60, -50 at 200 (DESIGN.md §8.1).
+curve disposition.affinity
+assert curve disposition.affinity at 130 == -25.00
+assert curve inertia.hardening.good.toward_good at 50 == 0.65
+assert curve inertia.steady.law.toward_lawful == inertia.steady.law.toward_lawful: left out, so 1.00 everywhere
+assert curve disposition.affinty == error: unknown curve 'disposition.affinty' (did you mean 'disposition.affinity'?)
