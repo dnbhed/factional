@@ -3,11 +3,13 @@
 //! a regression test (DECISIONS.md P-27).
 
 mod check;
+mod compare;
 mod repl;
 mod script;
 mod session;
 
 pub use check::validate;
+pub use compare::compare;
 pub use repl::run_repl;
 pub use script::{RunFailure, run_script};
 pub use session::{Outcome, ScriptError, Session, help_text};

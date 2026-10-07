@@ -1,0 +1,14 @@
+# Reloading (T2): `reload` re-reads the content last loaded, replays this session's commands
+# on it, and says what changed. Edit a file in the loaded directory between commands to try
+# it. If the content no longer loads, or a command comes out differently, nothing changes.
+# From the shell, `factional compare <scenario> --content A --against B` runs a whole scenario
+# on two worlds instead.
+
+load content/sample
+act player steal --target merchant_ava
+watch player
+# Nothing was edited, so the replay comes out the same.
+reload
+assert standing player == merchant_ava: -20.00
+assert time == tick 0
+journal

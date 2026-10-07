@@ -1,0 +1,7 @@
+# The player steals from Merchant Ava twice. Used by `factional compare` tests; the assert
+# holds for content/sample, and compare runs it without checking, so other content can
+# disagree with it.
+load content/sample
+act player steal --target merchant_ava
+act player steal --target merchant_ava
+assert show character player == player — The Player — law -10.00, good -6.00 — True Neutral

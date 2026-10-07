@@ -45,4 +45,6 @@ The schema checks one value at a time. Checks across values, such as whether a f
 
 - `cargo run -q -p factional-cli -- repl`, then `load content/sample` and `help`.
 - `--explain` on `act`, `disposition`, `can-join` and `promote` shows the working.
+- After editing a file, `reload` in the REPL replays your session on the new content and shows what changed.
+- `cargo run -q -p factional-cli -- compare <scenario> --content A --against B` runs a scenario on two versions of a world and shows what came out differently. The scenario must load exactly one world; that load is what's swapped.
 - [`scenarios/`](../scenarios) holds scripted sessions to replay with `factional run`.

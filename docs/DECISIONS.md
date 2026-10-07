@@ -313,6 +313,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`schema` with no file lists the files,** one per line, rather than printing six schemas at once.
   - *Why:* a designer can check a world, and get help writing one, without the REPL, and neither tool can quietly disagree with what the engine loads.
 
+- **P-52 · How compare and reload work** (made in T2, 2026-10-07; the two choices marked † were the user's).
+  - **What's compared:** each character's law, good, standings and memberships with rank, and each watcher's score and band toward the subjects they watch. Values missing on one side show as `0.00`, `no` or `not watched`. Then the first event where the two logs differ, from each side, or `no event` where one ran out.
+  - **† `compare` needs a scenario that loads exactly one world,** and swaps that load. Any other count is refused, saying how many it found.
+  - **`compare` doesn't check asserts,** since the two worlds are expected to disagree, and a command that fails is part of what's compared, not a reason to stop. A mistake in the scenario itself, such as an unknown command, stops it and names the side.
+  - **† `reload` keeps the old world unless the whole session replays the same way.** Every journal entry is replayed, refused ones too, and each must be accepted or refused as before; the first that isn't is reported, and nothing changes. So after a reload the journal is the same commands with the same outcomes. Content that no longer loads also changes nothing.
+  - **Labels:** `compare` labels each side with its directory as typed; `reload` with `before` and `after`. Both use `A → B` for a changed value.
+  - *Why:* a designer sees what a change does in play, in one place, and never ends up in a session that differs from the one they played without being told.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

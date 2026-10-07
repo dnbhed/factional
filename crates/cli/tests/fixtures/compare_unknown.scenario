@@ -1,0 +1,3 @@
+# A scenario with a mistake in it, for `factional compare`.
+load content/sample
+frobnicate
