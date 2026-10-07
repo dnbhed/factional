@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use crate::check::{check, validate};
+use crate::compare::report;
 
 use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
 use factional_reputation::{
@@ -19,6 +20,10 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "load <dir>",
         "load the content files in <dir>, such as content/sample, as a new world",
+    ),
+    (
+        "reload",
+        "re-read the loaded content, replay this session's commands on it, and show what changed",
     ),
     (
         "validate <dir>",
@@ -206,6 +211,8 @@ pub struct Session {
     /// Relative paths, as in `load content/sample`, are resolved against this.
     base_dir: PathBuf,
     world: Option<World>,
+    /// The directory the world was loaded from, as typed, for `reload`.
+    loaded: Option<String>,
 }
 
 impl Default for Session {
@@ -220,7 +227,13 @@ impl Session {
         Session {
             base_dir: base_dir.into(),
             world: None,
+            loaded: None,
         }
+    }
+
+    /// The loaded world, if there is one.
+    pub(crate) fn world(&self) -> Option<&World> {
+        self.world.as_ref()
     }
 
     /// Runs one command line.
@@ -231,6 +244,7 @@ impl Session {
             "quit" => Ok(Outcome::Quit),
             "load" => Ok(self.load(rest)),
             "validate" => Ok(self.validate(rest)),
+            "reload" => Ok(self.reload()),
             "characters" => Ok(self.characters()),
             "show" => Ok(self.show(rest)),
             "factions" => Ok(self.factions()),
@@ -302,6 +316,7 @@ impl Session {
                     "characters"
                 };
                 self.world = Some(checked.world);
+                self.loaded = Some(dir.to_owned());
                 let summary = format!("loaded {count} {noun} from {dir}");
                 let warnings = checked
                     .warnings
@@ -311,6 +326,52 @@ impl Session {
             }
             Err(problems) => Outcome::Error(problems.join("\n")),
         }
+    }
+
+    /// `reload`: re-reads the directory last loaded, replays every command in the journal on
+    /// the new world, and reports what changed. If the content no longer loads, or any
+    /// command's acceptance differs from before, nothing changes (P-52).
+    fn reload(&mut self) -> Outcome {
+        let (Some(world), Some(dir)) = (&self.world, &self.loaded) else {
+            return no_world();
+        };
+        let checked = match check(&self.base_dir.join(dir)) {
+            Ok(checked) => checked,
+            Err(problems) => return Outcome::Error(problems.join("\n")),
+        };
+        let mut replayed = checked.world;
+        for (index, entry) in world.journal().iter().enumerate() {
+            let now = replayed.execute(entry.command.clone());
+            let changed = match (&entry.result, &now) {
+                (Ok(()), Err(refusal)) => {
+                    Some(format!("it was accepted, but now it's refused: {refusal}"))
+                }
+                (Err(refusal), Ok(_)) => {
+                    Some(format!("it was refused ({refusal}), but now it's accepted"))
+                }
+                _ => None,
+            };
+            if let Some(changed) = changed {
+                return Outcome::Error(format!(
+                    "reload stopped at command {}, {}: {changed}. Nothing has changed.",
+                    index + 1,
+                    describe_command(&entry.command)
+                ));
+            }
+        }
+        let commands = match world.journal().len() {
+            1 => "1 command".to_owned(),
+            count => format!("{count} commands"),
+        };
+        let summary = format!("reloaded {dir} and replayed {commands}");
+        let warnings = checked
+            .warnings
+            .iter()
+            .map(|warning| format!("warning: {warning}"));
+        let changes = report(("before", world), ("after", &replayed));
+        let output = lines(std::iter::once(summary).chain(warnings).chain(changes));
+        self.world = Some(replayed);
+        Outcome::Output(output)
     }
 
     /// `validate <dir>`: what `load <dir>` would report, and a summary, without loading it.
@@ -1402,7 +1463,7 @@ fn describe_check(check: &ConditionCheck, current: &FactionId, target: &FactionI
 }
 
 /// `#1 at tick 0: time advanced from 0 to 5`.
-fn describe_event(event: &Event) -> String {
+pub(crate) fn describe_event(event: &Event) -> String {
     let what = match &event.payload {
         Change::TimeAdvanced { from, to } => format!("time advanced from {from} to {to}"),
         Change::ActionPerformed {
@@ -2013,7 +2074,7 @@ pub(crate) fn is_blank_or_comment(line: &str) -> bool {
 }
 
 /// Splits a line into its command name and the rest of the line.
-fn split_command(line: &str) -> (&str, &str) {
+pub(crate) fn split_command(line: &str) -> (&str, &str) {
     let line = line.trim();
     match line.split_once(char::is_whitespace) {
         Some((name, rest)) => (name, rest.trim_start()),
@@ -2022,7 +2083,7 @@ fn split_command(line: &str) -> (&str, &str) {
 }
 
 /// Splits `<command> == <expected>` at the first ` == `. A trailing ` ==` expects an empty result.
-fn split_assert(spec: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_assert(spec: &str) -> Option<(&str, &str)> {
     spec.split_once(" == ")
         .or_else(|| spec.strip_suffix(" ==").map(|command| (command, "")))
 }

@@ -671,8 +671,8 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `curve [[0, 1.0], [100, 0.5]] at 25` in the REPL to try a curve's shape before using it.
 - `factional run scenarios/<name>.scenario` to replay a scripted playthrough.
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working.
-- `factional compare <scenario> --content A --against B` to see what new numbers change (T2).
-- `reload` in the REPL to re-read the content and replay the session.
+- `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
+- `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
 - `map <faction>` to draw the alignment plane and who could join (T3), and `matrix --csv` to get dispositions into a spreadsheet.
 
 ## 13. The sample world: Riverhold

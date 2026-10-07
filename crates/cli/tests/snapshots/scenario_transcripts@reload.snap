@@ -1,0 +1,21 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/reload.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --target merchant_ava
+#1 at tick 0: player did steal, targeting merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: player's standing with merchant_ava moved from 0.00 to -20.00
+> watch player
+#4 at tick 0: now watching player (10 observers)
+> reload
+reloaded content/sample and replayed 2 commands
+no differences
+> assert standing player == merchant_ava: -20.00
+> assert time == tick 0
+> journal
+1. act player steal --target merchant_ava — accepted
+2. watch player — accepted
