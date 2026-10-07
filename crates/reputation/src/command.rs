@@ -9,7 +9,8 @@ use crate::{
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Command {
     /// Moves time forward. The host's game loop sends it; the engine never reads a clock.
     AdvanceTime { ticks: u64 },
@@ -111,7 +112,8 @@ pub enum Command {
 
 /// What changed, carried in an [`Event`]. Events hold absolute before-and-after values, so
 /// they read without context and replay without rules (P-15).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Change {
     TimeAdvanced {
         from: Tick,
@@ -355,6 +357,52 @@ pub enum CommandError {
     AlreadyWatched { subject: CharacterId },
     /// `Unwatch` for a subject not watched.
     NotWatched { subject: CharacterId },
+}
+
+/// One journal entry as a save keeps it (T4, P-54): the command, and how many events it
+/// produced if it was accepted, or `None` if it was refused. A refusal's reason isn't kept;
+/// restoring works it out again at the same point in history.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SavedCommand {
+    pub command: Command,
+    pub events: Option<usize>,
+}
+
+/// Why a save can't be restored onto its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RestoreError {
+    /// The content itself has problems.
+    Content(Vec<crate::ContentProblem>),
+    /// The journal's accepted commands account for a different number of events.
+    EventCount { journal: usize, events: usize },
+    /// An event's number isn't its place in the log, counting from 1.
+    OutOfSequence { expected: u64, found: u64 },
+    /// A command saved as refused is accepted by the restored world. `index` is its place in
+    /// the journal, from 0.
+    NotRefused { index: usize },
+}
+
+impl fmt::Display for RestoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RestoreError::Content(problems) => {
+                let problems: Vec<String> = problems.iter().map(ToString::to_string).collect();
+                write!(f, "the content has problems: {}", problems.join("; "))
+            }
+            RestoreError::EventCount { journal, events } => write!(
+                f,
+                "the journal accounts for {journal} events, but the save holds {events}"
+            ),
+            RestoreError::OutOfSequence { expected, found } => {
+                write!(f, "event #{found} is where event #{expected} should be")
+            }
+            RestoreError::NotRefused { index } => write!(
+                f,
+                "command {} was refused when it was saved, but is accepted now",
+                index + 1
+            ),
+        }
+    }
 }
 
 /// One command as it was issued, and whether the world accepted it (P-16).

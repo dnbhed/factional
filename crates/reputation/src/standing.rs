@@ -7,7 +7,8 @@ use crate::{ActionId, AlignmentDelta, CharacterId, FactionId, OutcomeId};
 
 /// Who holds a standing toward a character: a faction or another character (DESIGN.md §7.1).
 /// Factions come before characters, each in id order.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Party {
     Faction(FactionId),
     Character(CharacterId),
@@ -25,7 +26,7 @@ impl fmt::Display for Party {
 /// Part of a standing change that spilled over from a change with another faction
 /// (DESIGN.md §7.1, P-13): `amount` is `change × multiplier`, rounded once, where the
 /// multiplier is `standing.spillover` at how this faction regards `from`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Spill {
     /// The faction whose standing changed directly.
     pub from: FactionId,
@@ -58,7 +59,7 @@ pub enum StandingKey {
 
 /// Standing changes toward a character, by named party, as content writes them:
 /// `standing = { factions = { city_watch = -20.0 }, characters = { captain_hale = -10.0 } }`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StandingEffects {
     pub factions: BTreeMap<FactionId, Fixed>,
     pub characters: BTreeMap<CharacterId, Fixed>,
@@ -92,7 +93,7 @@ pub struct ActionStanding {
 
 /// What an outcome or another module changes about a character: alignment, as an action
 /// would move it, and standing (P-26).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Effects {
     pub alignment: AlignmentDelta,
     pub standing: StandingEffects,

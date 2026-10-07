@@ -28,10 +28,32 @@ impl Axis {
 }
 
 /// Where a character or faction sits morally, on two sliding axes (DESIGN.md §5).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "Axes")]
 pub struct Alignment {
     law: Fixed,
     good: Fixed,
+}
+
+/// An alignment as a save writes it, checked when it's read back.
+#[derive(serde::Deserialize)]
+struct Axes {
+    law: Fixed,
+    good: Fixed,
+}
+
+impl TryFrom<Axes> for Alignment {
+    type Error = String;
+
+    fn try_from(axes: Axes) -> Result<Alignment, String> {
+        Alignment::new(axes.law, axes.good).map_err(|problems| {
+            let problems: Vec<String> = problems
+                .iter()
+                .map(|problem| format!("{} {problem}", problem.axis.key()))
+                .collect();
+            problems.join("; ")
+        })
+    }
 }
 
 /// An axis value outside −100.00 to 100.00.
@@ -103,7 +125,7 @@ impl Alignment {
 
 /// How far an act moves each axis before anything scales it, such as stealing's law −5.00,
 /// good −3.00 (DESIGN.md §5.2). An axis the act doesn't touch is 0.00.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AlignmentDelta {
     pub law: Fixed,
     pub good: Fixed,

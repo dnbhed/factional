@@ -2,8 +2,10 @@
 //! that name the file and the key path (DESIGN.md §12.1).
 
 mod reader;
+mod save;
 mod schema;
 
+pub use save::{Fingerprint, Restored, SAVE_VERSION, SaveError, fingerprint_of, restore, save};
 pub use schema::{SCHEMA_FILES, schema, schema_text};
 
 use std::collections::BTreeMap;
@@ -59,8 +61,9 @@ const ACTIONS_FILE: &str = "actions.toml";
 const RELATIONS_FILE: &str = "relations.toml";
 const OUTCOMES_FILE: &str = "outcomes.toml";
 
-/// Reads and validates the content files in `dir`.
-pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
+/// Reads and validates the content files in `dir`, with a fingerprint of exactly what was
+/// read, for saves (T4).
+pub fn load_dir_fingerprinted(dir: &Path) -> Result<(Content, Fingerprint), ContentError> {
     let unreadable = |error: io::Error| ContentError {
         diagnostics: vec![Diagnostic {
             file: dir.display().to_string(),
@@ -88,14 +91,28 @@ pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
     let actions = read(ACTIONS_FILE)?;
     let outcomes = read(OUTCOMES_FILE)?;
     let relations = read(RELATIONS_FILE)?;
-    parse_content(Sources {
+    let fingerprint = Fingerprint::of([
+        (BALANCE_FILE, balance.as_deref()),
+        (FACTIONS_FILE, factions.as_deref()),
+        (CHARACTERS_FILE, characters.as_deref()),
+        (ACTIONS_FILE, actions.as_deref()),
+        (OUTCOMES_FILE, outcomes.as_deref()),
+        (RELATIONS_FILE, relations.as_deref()),
+    ]);
+    let content = parse_content(Sources {
         balance: balance.as_deref(),
         factions: factions.as_deref(),
         characters: characters.as_deref(),
         actions: actions.as_deref(),
         relations: relations.as_deref(),
         outcomes: outcomes.as_deref(),
-    })
+    })?;
+    Ok((content, fingerprint))
+}
+
+/// Reads and validates the content files in `dir`.
+pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
+    load_dir_fingerprinted(dir).map(|(content, _)| content)
 }
 
 /// Validates content from the text of its files, reporting every problem at once: each

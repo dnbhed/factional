@@ -3,6 +3,7 @@ use std::ops::{Add, Mul, Neg, Sub};
 use std::str::FromStr;
 
 use serde::de::{self, Deserialize, Deserializer, Visitor};
+use serde::{Serialize, Serializer};
 
 /// A signed number with exactly two decimal places, stored as a whole number of hundredths.
 /// All rule arithmetic uses it, never floats, so results are identical on every machine
@@ -202,13 +203,35 @@ impl fmt::Display for ParseFixedError {
 
 impl std::error::Error for ParseFixedError {}
 
-impl<'de> Deserialize<'de> for Fixed {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Fixed, D::Error> {
-        deserializer.deserialize_any(FixedVisitor)
+impl Serialize for Fixed {
+    /// As exact text, such as `"-12.75"`, for saves (T4).
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
     }
 }
 
-struct FixedVisitor;
+impl<'de> Deserialize<'de> for Fixed {
+    /// A number, as content writes it, or exact text, as a save writes it.
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Fixed, D::Error> {
+        deserializer.deserialize_any(FixedVisitor { text: true })
+    }
+}
+
+/// A number only, never text: for content, where `"1.0"` in quotes is a mistake.
+pub(crate) struct Number(pub(crate) Fixed);
+
+impl<'de> Deserialize<'de> for Number {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Number, D::Error> {
+        deserializer
+            .deserialize_any(FixedVisitor { text: false })
+            .map(Number)
+    }
+}
+
+struct FixedVisitor {
+    /// Whether exact text, such as `"12.50"`, is accepted.
+    text: bool,
+}
 
 impl Visitor<'_> for FixedVisitor {
     type Value = Fixed;
@@ -229,6 +252,15 @@ impl Visitor<'_> for FixedVisitor {
     /// parses exactly. No float arithmetic happens anywhere (DESIGN.md §4.1).
     fn visit_f64<E: de::Error>(self, value: f64) -> Result<Fixed, E> {
         value.to_string().parse().map_err(E::custom)
+    }
+
+    /// Exact text, such as `"12.50"`, where it's accepted.
+    fn visit_str<E: de::Error>(self, text: &str) -> Result<Fixed, E> {
+        if self.text {
+            text.parse().map_err(E::custom)
+        } else {
+            Err(E::invalid_type(de::Unexpected::Str(text), &self))
+        }
     }
 }
 
@@ -424,6 +456,20 @@ mod tests {
         assert_eq!(div_round(0, -7), 0);
     }
 
+    // Saves (T4)
+
+    #[test]
+    fn saves_as_exact_text_and_reads_it_back() {
+        let json = |value: Fixed| serde_json::to_string(&value).expect("serialises");
+        assert_eq!(json(h(-1275)), "\"-12.75\"");
+        assert_eq!(json(h(0)), "\"0.00\"");
+        assert_eq!(json(h(i64::MAX)), "\"92233720368547758.07\"");
+        let read = |text: &str| serde_json::from_str::<Fixed>(text).map_err(|e| e.to_string());
+        assert_eq!(read("\"-12.75\""), Ok(h(-1275)));
+        assert!(read("\"1.234\"").is_err(), "more than two decimals");
+        assert!(read("\"twelve\"").is_err());
+    }
+
     // TOML
 
     #[derive(Debug, serde::Deserialize)]
@@ -472,12 +518,24 @@ mod tests {
     }
 
     #[test]
-    fn rejects_toml_values_that_are_not_numbers() {
-        let error = from_toml("x = \"12.5\"").unwrap_err();
+    fn content_numbers_are_numbers_not_text() {
+        // Saves write a value as text, so `Fixed` reads text; content never does.
+        #[derive(serde::Deserialize)]
+        struct Content {
+            x: Number,
+        }
+        let read = |text: &str| {
+            toml::from_str::<Content>(text)
+                .map(|doc| doc.x.0)
+                .map_err(|error| error.message().to_owned())
+        };
+        assert_eq!(read("x = 12.5"), Ok(h(1250)));
+        let error = read("x = \"12.5\"").unwrap_err();
         assert!(
             error.contains("expected a number with at most 2 decimal places"),
             "{error}"
         );
+        assert_eq!(from_toml("x = \"12.5\""), Ok(h(1250)));
     }
 
     // Properties
@@ -492,6 +550,12 @@ mod tests {
     }
 
     proptest! {
+        #[test]
+        fn every_value_survives_a_save_exactly(hundredths in any::<i64>()) {
+            let text = serde_json::to_string(&h(hundredths)).expect("serialises");
+            prop_assert_eq!(serde_json::from_str::<Fixed>(&text).ok(), Some(h(hundredths)));
+        }
+
         #[test]
         fn display_then_parse_gives_back_the_same_value(x in any_fixed()) {
             prop_assert_eq!(x.to_string().parse::<Fixed>(), Ok(x));

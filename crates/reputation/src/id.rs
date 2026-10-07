@@ -49,6 +49,21 @@ macro_rules! id_type {
                 f.write_str(&self.0)
             }
         }
+
+        impl serde::Serialize for $name {
+            /// As the id's text, for saves (T4).
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(&self.0)
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $name {
+            /// Text that must be a valid id.
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<$name, D::Error> {
+                let text = String::deserialize(deserializer)?;
+                $name::new(&text).map_err(serde::de::Error::custom)
+            }
+        }
     };
 }
 

@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::de::{self, Deserialize, Deserializer, IntoDeserializer, SeqAccess, Visitor};
 
+use crate::fixed::Number;
 use crate::{Fixed, Ratio};
 
 /// A piecewise-linear map from one number to another: the shape of most tuning knobs
@@ -177,7 +178,8 @@ impl<'de> Visitor<'de> for CurveVisitor {
         let mut points = Vec::new();
         // Each point is read as a list and its length checked here: reading straight into a
         // pair would let TOML drop a third number without a word.
-        while let Some(values) = seq.next_element::<Vec<Fixed>>()? {
+        while let Some(values) = seq.next_element::<Vec<Number>>()? {
+            let values: Vec<Fixed> = values.into_iter().map(|Number(value)| value).collect();
             match values[..] {
                 [x, y] => points.push((x, y)),
                 _ => {
@@ -213,6 +215,18 @@ mod tests {
     /// `[[0, 1.00], [50, 0.70], [100, 0.30]]`, from PLAN.md F2.
     fn falloff() -> Curve {
         curve(&[(0, 100), (5000, 70), (10000, 30)])
+    }
+
+    #[test]
+    fn a_curve_in_content_is_numbers_not_text() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Doc {
+            #[allow(dead_code)]
+            c: Curve,
+        }
+        assert!(toml::from_str::<Doc>("c = [[0, 1.0], [10, 2.0]]").is_ok());
+        assert!(toml::from_str::<Doc>("c = [[\"0\", \"1.0\"], [\"10\", \"2.0\"]]").is_err());
+        assert!(toml::from_str::<Doc>("c = \"0.5\"").is_err());
     }
 
     #[test]

@@ -1,8 +1,10 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use factional_content::Fingerprint;
+
 use crate::charts;
-use crate::check::{check, validate};
+use crate::check::{check, count, validate};
 use crate::compare::report;
 
 use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
@@ -21,6 +23,14 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "load <dir>",
         "load the content files in <dir>, such as content/sample, as a new world",
+    ),
+    (
+        "save <file>",
+        "write this session, and which content it's on, to <file>",
+    ),
+    (
+        "restore <file>",
+        "go back to the session saved in <file>, if its content hasn't changed",
     ),
     (
         "reload",
@@ -220,8 +230,10 @@ pub struct Session {
     /// Relative paths, as in `load content/sample`, are resolved against this.
     base_dir: PathBuf,
     world: Option<World>,
-    /// The directory the world was loaded from, as typed, for `reload`.
+    /// The directory the world was loaded from, as typed, for `reload` and `save`.
     loaded: Option<String>,
+    /// Exactly what was read from it, for `save`.
+    fingerprint: Fingerprint,
 }
 
 impl Default for Session {
@@ -237,6 +249,7 @@ impl Session {
             base_dir: base_dir.into(),
             world: None,
             loaded: None,
+            fingerprint: Fingerprint::default(),
         }
     }
 
@@ -254,6 +267,8 @@ impl Session {
             "load" => Ok(self.load(rest)),
             "validate" => Ok(self.validate(rest)),
             "reload" => Ok(self.reload()),
+            "save" => Ok(self.save(rest)),
+            "restore" => Ok(self.restore(rest)),
             "characters" => Ok(self.characters()),
             "show" => Ok(self.show(rest)),
             "factions" => Ok(self.factions()),
@@ -334,6 +349,7 @@ impl Session {
                 };
                 self.world = Some(checked.world);
                 self.loaded = Some(dir.to_owned());
+                self.fingerprint = checked.fingerprint;
                 let summary = format!("loaded {count} {noun} from {dir}");
                 let warnings = checked
                     .warnings
@@ -388,7 +404,57 @@ impl Session {
         let changes = report(("before", world), ("after", &replayed));
         let output = lines(std::iter::once(summary).chain(warnings).chain(changes));
         self.world = Some(replayed);
+        self.fingerprint = checked.fingerprint;
         Outcome::Output(output)
+    }
+
+    /// `save <file>`: writes the session, with the content it was loaded from, to `file`
+    /// (T4, P-54).
+    fn save(&self, file: &str) -> Outcome {
+        if file.is_empty() {
+            return Outcome::Error("save needs the form: save <file>".to_owned());
+        }
+        let (Some(world), Some(dir)) = (&self.world, &self.loaded) else {
+            return no_world();
+        };
+        let text = factional_content::save(world, dir, &self.fingerprint);
+        if let Err(error) = std::fs::write(self.base_dir.join(file), text) {
+            return Outcome::Error(format!("cannot write {file}: {error}"));
+        }
+        Outcome::Output(format!(
+            "saved {} and {} to {file}",
+            count(world.journal().len(), "command"),
+            count(world.events().len(), "event")
+        ))
+    }
+
+    /// `restore <file>`: replaces the session with the one saved in `file`, if its content
+    /// is still exactly as it was (T4, P-54).
+    fn restore(&mut self, file: &str) -> Outcome {
+        if file.is_empty() {
+            return Outcome::Error("restore needs the form: restore <file>".to_owned());
+        }
+        let text = match std::fs::read_to_string(self.base_dir.join(file)) {
+            Ok(text) => text,
+            Err(error) => return Outcome::Error(format!("cannot read {file}: {error}")),
+        };
+        match factional_content::restore(&text, &self.base_dir) {
+            Ok(restored) => {
+                let world = restored.world;
+                let summary = format!(
+                    "restored {file}: {} at tick {}, with {} and {}",
+                    restored.dir,
+                    world.now(),
+                    count(world.journal().len(), "command"),
+                    count(world.events().len(), "event")
+                );
+                self.world = Some(world);
+                self.loaded = Some(restored.dir);
+                self.fingerprint = restored.fingerprint;
+                Outcome::Output(summary)
+            }
+            Err(error) => Outcome::Error(error.to_string()),
+        }
     }
 
     /// `validate <dir>`: what `load <dir>` would report, and a summary, without loading it.

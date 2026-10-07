@@ -13,9 +13,10 @@ use crate::{
     Consequence, Defection, Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction,
     FactionId, Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, LeaveReason,
     Membership, Metric, ModifierId, ModifierObserver, Outcome, OutcomeId, Part, Party, ProfileId,
-    PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide, Role, Rule, Shift,
-    Spill, StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner, TableProblem,
-    TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses, measure,
+    PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide, RestoreError, Role,
+    Rule, SavedCommand, Shift, Spill, StandingEffects, StandingKey, StandingOwner, TableKind,
+    TableOwner, TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights,
+    Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -1003,7 +1004,8 @@ impl fmt::Display for ContentWarning {
 
 /// Who is doing the judging: a faction, or a character. Factions come before characters,
 /// each in id order.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Observer {
     Faction(FactionId),
     Character(CharacterId),
@@ -1058,6 +1060,8 @@ pub struct World {
     state: State,
     events: Vec<Event>,
     journal: Vec<JournalEntry>,
+    /// For each journal entry, how many events it produced; `None` if it was refused.
+    produced: Vec<Option<usize>>,
 }
 
 /// Everything that changes during play. Events are the only thing that changes it.
@@ -1159,6 +1163,7 @@ impl World {
             content,
             events: Vec::new(),
             journal: Vec::new(),
+            produced: Vec::new(),
         })
     }
 
@@ -1172,6 +1177,70 @@ impl World {
         Ok(world)
     }
 
+    /// The journal as a save keeps it: each command, with how many events it produced if it
+    /// was accepted (T4, P-54).
+    pub fn saved_journal(&self) -> Vec<SavedCommand> {
+        self.journal
+            .iter()
+            .zip(&self.produced)
+            .map(|(entry, events)| SavedCommand {
+                command: entry.command.clone(),
+                events: *events,
+            })
+            .collect()
+    }
+
+    /// Rebuilds a world from a save: its content, its journal and its events. Accepted
+    /// commands replay their events, running no rules (P-16); a refused command is decided
+    /// again at the same point, to recover its reason, and must still be refused.
+    pub fn restore(
+        content: Content,
+        journal: &[SavedCommand],
+        events: &[Event],
+    ) -> Result<World, RestoreError> {
+        let mut world = World::new(content).map_err(RestoreError::Content)?;
+        let accounted = journal
+            .iter()
+            .filter_map(|saved| saved.events)
+            .fold(0_usize, usize::saturating_add);
+        if accounted != events.len() {
+            return Err(RestoreError::EventCount {
+                journal: accounted,
+                events: events.len(),
+            });
+        }
+        for (expected, event) in (1..).zip(events) {
+            if event.seq != expected {
+                return Err(RestoreError::OutOfSequence {
+                    expected,
+                    found: event.seq,
+                });
+            }
+        }
+        let mut next = 0;
+        for (index, saved) in journal.iter().enumerate() {
+            let result = match saved.events {
+                Some(count) => {
+                    for event in &events[next..next + count] {
+                        world.apply(event.clone());
+                    }
+                    next += count;
+                    Ok(())
+                }
+                None => match world.decide(&saved.command) {
+                    Ok(_) => return Err(RestoreError::NotRefused { index }),
+                    Err(refusal) => Err(refusal),
+                },
+            };
+            world.journal.push(JournalEntry {
+                command: saved.command.clone(),
+                result,
+            });
+            world.produced.push(saved.events);
+        }
+        Ok(world)
+    }
+
     /// Runs a command. Refused: nothing changes, and the error says why. Accepted: the events
     /// it produced, already applied. Either way the journal records it.
     pub fn execute(&mut self, command: Command) -> Result<Vec<Event>, CommandError> {
@@ -1181,7 +1250,13 @@ impl World {
             result: decided.as_ref().map(|_| ()).map_err(Clone::clone),
         });
         let mut emitted = Vec::new();
-        let decided = decided?;
+        let decided = match decided {
+            Ok(decided) => decided,
+            Err(refusal) => {
+                self.produced.push(None);
+                return Err(refusal);
+            }
+        };
         // The command's own changes first; then, from the state they leave, any band changes
         // watched subjects are owed (DESIGN.md §8.3).
         let mut moved_characters = BTreeSet::new();
@@ -1260,6 +1335,7 @@ impl World {
         for change in self.band_changes() {
             emitted.push(self.record(change));
         }
+        self.produced.push(Some(emitted.len()));
         Ok(emitted)
     }
 
@@ -5942,6 +6018,143 @@ mod tests {
         );
     }
 
+    // Saves (T4)
+
+    /// A world with an accepted theft, a refused advance and a watch.
+    fn played() -> World {
+        let mut world = riverhold();
+        world
+            .execute(act("player", "steal", Some("ava"), 1_00))
+            .expect("accepted");
+        let _ = world.execute(advance(0));
+        world
+            .execute(Command::Watch {
+                subject: id("player"),
+            })
+            .expect("accepted");
+        world
+    }
+
+    #[test]
+    fn a_save_keeps_each_accepted_commands_event_count() {
+        let world = played();
+        let saved = world.saved_journal();
+        let theft = world
+            .events()
+            .iter()
+            .take_while(|event| !matches!(event.payload, Change::Watched { .. }))
+            .count();
+        assert_eq!(
+            saved,
+            [
+                SavedCommand {
+                    command: act("player", "steal", Some("ava"), 1_00),
+                    events: Some(theft),
+                },
+                SavedCommand {
+                    command: advance(0),
+                    events: None,
+                },
+                SavedCommand {
+                    command: Command::Watch {
+                        subject: id("player")
+                    },
+                    events: Some(world.events().len() - theft),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn restoring_a_save_rebuilds_the_world_and_its_journal() {
+        let world = played();
+        let restored = World::restore(
+            world.content.clone(),
+            &world.saved_journal(),
+            world.events(),
+        )
+        .expect("restores");
+        assert_eq!(restored.state, world.state);
+        assert_eq!(restored.events(), world.events());
+        assert_eq!(
+            restored.journal(),
+            world.journal(),
+            "the refusal's reason, too"
+        );
+        assert_eq!(restored.saved_journal(), world.saved_journal());
+    }
+
+    #[test]
+    fn restoring_refuses_a_save_that_doesnt_add_up() {
+        let world = played();
+        let (content, journal, events) = (
+            world.content.clone(),
+            world.saved_journal(),
+            world.events().to_vec(),
+        );
+        let total = events.len();
+        let error = World::restore(content.clone(), &journal, &events[..total - 1]).unwrap_err();
+        assert_eq!(
+            error,
+            RestoreError::EventCount {
+                journal: total,
+                events: total - 1
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "the journal accounts for {total} events, but the save holds {}",
+                total - 1
+            )
+        );
+        let mut shuffled = events.clone();
+        shuffled.swap(0, 1);
+        assert_eq!(
+            World::restore(content.clone(), &journal, &shuffled).unwrap_err(),
+            RestoreError::OutOfSequence {
+                expected: 1,
+                found: 2
+            }
+        );
+        // A refusal the world would accept: the save can't be what this content produced.
+        let mut tampered = journal.clone();
+        tampered[1].command = advance(3);
+        let error = World::restore(content, &tampered, &events).unwrap_err();
+        assert_eq!(error, RestoreError::NotRefused { index: 1 });
+        assert_eq!(
+            error.to_string(),
+            "command 2 was refused when it was saved, but is accepted now"
+        );
+    }
+
+    #[test]
+    fn saves_read_as_plain_json_and_check_what_they_read() {
+        let change = Change::AlignmentChanged {
+            character: id("player"),
+            from: Alignment::new(h(0), h(0)).expect("in range"),
+            to: Alignment::new(h(-5_00), h(-3_00)).expect("in range"),
+        };
+        let json = serde_json::to_string(&change).expect("serialises");
+        assert_eq!(
+            json,
+            r#"{"alignment_changed":{"character":"player","from":{"law":"0.00","good":"0.00"},"to":{"law":"-5.00","good":"-3.00"}}}"#
+        );
+        let bad_id = json.replace("\"player\"", "\"The Player\"");
+        assert!(
+            serde_json::from_str::<Change>(&bad_id).is_err(),
+            "an invalid id"
+        );
+        let out_of_range = json.replace("\"-5.00\"", "\"-500.00\"");
+        let error = serde_json::from_str::<Change>(&out_of_range).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("law -500.00 is outside -100.00..100.00"),
+            "{error}"
+        );
+    }
+
     #[test]
     fn distance_needs_an_observer_and_a_subject_that_exist() {
         let world = riverhold();
@@ -9142,6 +9355,27 @@ mod tests {
             prop_assert!(world.execute(advance(0)).is_err());
             prop_assert_eq!(&world.state, &state);
             prop_assert_eq!(&world.events, &events);
+        }
+
+        /// DESIGN.md §14, invariant 11: restoring a save gives the same world.
+        #[test]
+        fn restoring_a_save_gives_the_same_world(commands in commands()) {
+            let world = run(&commands);
+            let restored = World::restore(world.content.clone(), &world.saved_journal(), world.events())
+                .expect("restores");
+            prop_assert_eq!(&restored.state, &world.state);
+            prop_assert_eq!(restored.events(), world.events());
+            prop_assert_eq!(restored.journal(), world.journal());
+        }
+
+        #[test]
+        fn every_saved_command_and_event_reads_back_exactly(commands in commands()) {
+            let world = run(&commands);
+            let saved = (world.saved_journal(), world.events().to_vec());
+            let json = serde_json::to_string(&saved).expect("serialises");
+            let read: (Vec<SavedCommand>, Vec<Event>) =
+                serde_json::from_str(&json).expect("reads back");
+            prop_assert_eq!(read, saved);
         }
 
         #[test]

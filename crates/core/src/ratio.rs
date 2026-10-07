@@ -50,6 +50,30 @@ impl Ratio {
     }
 }
 
+impl serde::Serialize for Ratio {
+    /// As `numerator/denominator`, such as `"81/200"`, for saves (T4).
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&format_args!("{}/{}", self.numerator, self.denominator))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Ratio {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Ratio, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        let parts = text
+            .split_once('/')
+            .and_then(|(n, d)| Some((n.parse::<i128>().ok()?, d.parse::<i128>().ok()?)));
+        match parts {
+            Some((numerator, denominator)) if denominator > 0 => {
+                Ok(Ratio::new(numerator, denominator))
+            }
+            _ => Err(serde::de::Error::custom(format!(
+                "'{text}' isn't a fraction like 81/200 with a positive denominator"
+            ))),
+        }
+    }
+}
+
 impl fmt::Display for Ratio {
     /// Exactly, with two to four decimals, such as `0.58` or `0.405`; a value that needs more
     /// is shown to four, marked `≈`, such as `≈0.3333`.
@@ -147,6 +171,23 @@ mod tests {
             }
         }
         assert!(overflowed, "i64::MAX⁵ can't fit in i128");
+    }
+
+    #[test]
+    fn saves_as_a_fraction_in_lowest_terms() {
+        let json = serde_json::to_string(&Ratio::new(405, 1000)).expect("serialises");
+        assert_eq!(json, "\"81/200\"");
+        let read = |text: &str| serde_json::from_str::<Ratio>(text).ok();
+        assert_eq!(read("\"81/200\""), Some(Ratio::new(81, 200)));
+        assert_eq!(
+            read("\"-2/4\""),
+            Some(Ratio::new(-1, 2)),
+            "put in lowest terms"
+        );
+        assert_eq!(read("\"1/0\""), None, "no denominator of 0");
+        assert_eq!(read("\"1/-2\""), None, "the denominator is positive");
+        assert_eq!(read("\"half\""), None);
+        assert_eq!(read("\"1\""), None);
     }
 
     #[test]

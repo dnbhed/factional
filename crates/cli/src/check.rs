@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use factional_content::Fingerprint;
 use factional_reputation::World;
 
 /// A content directory that would load: its world, how much is in it, and its warnings.
@@ -11,17 +12,20 @@ pub(crate) struct Checked {
     /// Characters, factions, actions, relations and outcomes.
     pub(crate) counts: [usize; 5],
     pub(crate) warnings: Vec<String>,
+    /// Exactly what was read, for saves.
+    pub(crate) fingerprint: Fingerprint,
 }
 
 /// Reads and checks the content in `path`; every problem, one per line, if it wouldn't load.
 pub(crate) fn check(path: &Path) -> Result<Checked, Vec<String>> {
-    let content = factional_content::load_dir(path).map_err(|error| {
-        error
-            .diagnostics
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-    })?;
+    let (content, fingerprint) =
+        factional_content::load_dir_fingerprinted(path).map_err(|error| {
+            error
+                .diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })?;
     let counts = [
         content.characters.len(),
         content.factions.len(),
@@ -41,6 +45,7 @@ pub(crate) fn check(path: &Path) -> Result<Checked, Vec<String>> {
         world,
         counts,
         warnings,
+        fingerprint,
     })
 }
 
@@ -84,7 +89,7 @@ pub fn validate(base: &Path, dir: &str) -> (String, bool) {
 }
 
 /// `n` of `noun`, such as `1 character` or `6 characters`.
-fn count(n: usize, noun: &str) -> String {
+pub(crate) fn count(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("1 {noun}")
     } else {

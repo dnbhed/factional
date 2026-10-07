@@ -2,7 +2,19 @@ use std::fmt;
 
 /// A moment in abstract game time. The host advances it and decides how long a tick is; the
 /// engine never reads a clock (DESIGN.md §2, P-20).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(transparent)]
 pub struct Tick(pub u64);
 
 impl fmt::Display for Tick {
@@ -13,7 +25,7 @@ impl fmt::Display for Tick {
 
 /// Something that happened, with its place in the world's history: `seq` counts events from
 /// 1, and `tick` is the time when it happened (DESIGN.md §11.2).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Envelope<P> {
     pub seq: u64,
     pub tick: Tick,
@@ -23,6 +35,25 @@ pub struct Envelope<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_event_saves_as_its_number_tick_and_payload() {
+        let event = Envelope {
+            seq: 3,
+            tick: Tick(5),
+            payload: "joined",
+        };
+        let json = serde_json::to_string(&event).expect("serialises");
+        assert_eq!(json, r#"{"seq":3,"tick":5,"payload":"joined"}"#);
+        assert_eq!(
+            serde_json::from_str::<Envelope<String>>(&json).ok(),
+            Some(Envelope {
+                seq: 3,
+                tick: Tick(5),
+                payload: "joined".to_owned(),
+            })
+        );
+    }
 
     #[test]
     fn a_tick_displays_as_its_number() {
