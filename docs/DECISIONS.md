@@ -48,6 +48,10 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - For the quest module, each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage. A world whose quests contradict each other at some reachable stage doesn't load.
   - It binds this module now: effects and rules stay declarative data, so their reach can be computed without running the game (DESIGN.md §16.2).
   - Any design that would break this needs the user's explicit agreement first.
+- **D-21 · Everyone judges by what they know** (agreed 2026-10-07 in K0; settles X-1). Each observer has a perceived alignment of each character: their starting alignment, moved by every shift the observer has learned of, at the strength they learned it. Disposition, joining, promotion and drift all use the judging party's perception. Under `omniscient` that's the truth, so worlds that don't opt in are unchanged (DESIGN.md §10.3).
+- **D-22 · News takes time to travel** (agreed 2026-10-07 in K0). Under `ripple`, each hop takes ticks and weakens the news. News in flight is part of the world's state, arrives as time advances, and is saved. A faction hears when any member does, and passes news on to its members (§10.2).
+- **D-23 · A faction opts in to secret members** (agreed 2026-10-07 in K0). Only a faction that allows it can be joined secretly. A secret membership is known to the faction and its members; everyone else judges by the memberships they know of, which is what makes a double agent possible (§10.4).
+- **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
 ## Proposed — 2026-10-04
 
@@ -339,6 +343,35 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The file starts with `format` and `version`** (1), and a save with another version is refused, naming both. A save that doesn't add up (event counts, out-of-order events, a refusal that isn't one) is refused too.
   - **Values are written exactly:** numbers as text such as `"-12.50"`, multipliers as fractions such as `"81/200"`, enums in snake_case. Reading checks ids and alignment ranges. Content still only accepts numbers as numbers.
   - *Why:* a session can be kept and resumed exactly, a save never quietly mixes old history with new numbers, and the format can move to binary without changing what it means.
+- **P-55 · Who learns firsthand** (made in K0, 2026-10-07; built in K1).
+  - **The witnesses are complete.** `These(…)` means exactly those characters; the target learns only if listed, so a pickpocketed merchant who didn't notice doesn't know. This replaces the plan's earlier "the witnesses and the target".
+  - **Parties an act names directly always learn,** since the act is addressed to them (a donation to the Temple). So do the parties an outcome or `ApplyEffects` names, since a quest has already decided their minds change.
+  - **A faction learns through its members** at no cost: it knows what its best-informed member knows, when they know it.
+  - **The actor knows but isn't a source,** so an unseen deed doesn't reach the actor's own factions through them.
+  - **Spillover follows the faction's change** whether or not the other faction heard of the act.
+  - **An act seen by everyone emits no news events,** so existing worlds and scenarios are unchanged.
+  - *Why:* the host knows who noticed; this needs no new knobs, and a faction's standing still moves when a member sees something.
+- **P-56 · How ripple travels** (made in K0, 2026-10-07; built in K2).
+  - **Contacts** are declared on one character and work both ways. With membership (faction to members, one hop) they're the whole graph: relations between factions don't carry news.
+  - **One `decay`, one `hop_ticks`, one `threshold`** for the world (0.50, 1, 0.10). Each party learns once, at its first and strongest arrival.
+  - **Awareness is an exact fraction,** and each value it scales is rounded once.
+  - **Delivery** is on `AdvanceTime`, oldest first, ordered by tick, news, then factions before characters by id. `NewsArrived` records each arrival and what's next on its way, so replay and saves need no rules.
+  - *Why:* the fewest knobs that give distance, delay and a horizon; per-contact strengths can come later if designers need them.
+- **P-57 · How perceived alignment is kept and used** (made in K0, 2026-10-07; built in K3).
+  - **Start + public + private.** Starting alignments are public. A shift everyone learns of moves the subject's one public offset; a shift only some learn of moves a private offset for each observer that learned it, stored only where it's non-zero.
+  - **Each table judges by its own faction's picture:** `defectors` by the faction being joined, `deserters` and `exposed` by the faction deciding. Labels and inertia use the truth.
+  - **Drift reviews follow the faction's picture,** not the true alignment.
+  - **Outcomes and `ApplyEffects` get `witnesses`,** default everyone, for their alignment shifts.
+  - **No forgetting yet.** Fading private offsets back to public is the lever if memory grows, left until a host needs it (E1).
+  - *Why:* memory grows only with the reach of unwitnessed acts, and under `omniscient` there's nothing extra at all.
+- **P-58 · How secret membership works** (made in K0, 2026-10-07; built in K4).
+  - **`secret_members` needs `witnessed` or `ripple`;** under `omniscient` it's an error, since nothing can be secret.
+  - **A double agent keeps both memberships.** Joining an enemy of a faction you're secretly in doesn't leave it and skips its `deserters` table; joining secretly leaves no one. Tables only consider memberships their faction knows of.
+  - **Exposure is all or nothing:** any arrival of the news counts, unlike an act's partial awareness.
+  - **`keep` and `demote` open a `MembershipConflict`,** because the two memberships are now known to each other; the conflict rule or a quest settles it. `expel` leaves with `LeftFaction { reason: Exposed }`.
+  - **The built-in `exposed` rule expels at the faction's `expel_standing_change`,** like drift's `expel`.
+  - **Leaving a secret membership stays secret.**
+  - *Why:* it reuses the M7 tables and M9 conflicts rather than adding new mechanisms, and every outcome is a closed vocabulary (D-20).
 
 ## Open
 
@@ -346,7 +379,7 @@ None right now. A new question gets the next free number, starting at O-5.
 
 ## Deferred
 
-- **X-1 · Perceived alignment.** Whether observers judge a character by what they know of them rather than by their true alignment, and how. Settled in K0.
+- **X-1 · Perceived alignment.** Whether observers judge a character by what they know of them rather than by their true alignment, and how. Settled in K0 by the user's choice: D-21, with P-57 for how.
 - **X-2 · Host engine and integration route.** A Bevy plugin, or a C ABI for Godot, Unity or Unreal. Settled in E0.
 - **X-3 · Save format and versioning.** Settled in T4 by the user's choices; see P-54.
 - **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Which factions a quest affects, directly and through spillover, war and membership; what counts as a conflict with another faction's questline at a stage; and how to check this without exploring every combination of stages. Settled in Q0, the quest module's design pass (DESIGN.md §16.1).

@@ -44,6 +44,10 @@ The module does not decide what anyone does (AI), run quests (they report their 
 | **Outcome** | A named bundle of effects applied directly. This is how a quest's result arrives, both before and after a quest module exists. |
 | **Effect** | One atomic change: shift alignment, change standing, change a relation, promote, and so on. |
 | **Tick** | One unit of abstract time, advanced by the host. |
+| **Awareness** | How well a party knows of a piece of news, 0–1. Seeing it is 1; hearsay is less (§10). |
+| **Contacts** | The characters someone passes news to, declared in content. With shared membership they make the social graph news ripples through. |
+| **Perceived alignment** | What an observer believes a character's alignment to be: where they started, moved by every shift the observer has learned of (§10.3). |
+| **Secret membership** | Belonging to a faction, which allows it, without anyone outside it knowing until it's exposed (§10.4). |
 
 ## 4. Numbers and curves
 
@@ -282,7 +286,7 @@ tolerance = 25.0          # captains are held to a stricter standard
 
 | Component | When the observer is a character | When the observer is a faction |
 | --- | --- | --- |
-| **affinity** | `disposition.affinity` curve applied to the distance, using the observer's weights | the same, using the faction's alignment and weights |
+| **affinity** | `disposition.affinity` curve applied to the distance, using the observer's weights and, from K3, the observer's perceived alignment of the subject (§10.3) | the same, using the faction's alignment and weights |
 | **standing** | the observer's personal standing toward the subject | the subject's standing with the faction |
 | **kinship** | the sum of relation(F → G) over every pairing of an observer faction F with a subject faction G; a faction they share counts as `disposition.same_faction` (default +50) | the same, with the faction itself as the only F |
 | **faction opinion** | the sum of the subject's standing with each of the observer's factions: the NPC partly adopts their factions' view | not used |
@@ -353,7 +357,7 @@ A faction has:
 `JoinFaction` succeeds when the character:
 
 - isn't already a member;
-- is within tolerance (distance ≤ `tolerance`);
+- is within tolerance (distance ≤ `tolerance`), as the faction perceives them from K3 (§10.3);
 - is let go by each enemy faction they're in, and taken by this one (§9.2).
 
 A refusal lists every failing check with its numbers:
@@ -440,7 +444,7 @@ The drift policy applies when a member's distance to their faction exceeds their
 | `demote` | Down one rank immediately, then checked again. A member already on the lowest rung is expelled. |
 | `expel` | `LeftFaction { reason: Expelled }`, applying `expel_standing_change` (default −20). |
 
-Drift is checked whenever the member's alignment, the faction's alignment, or a tolerance changes. Probation expiry is checked when time advances.
+Drift is checked whenever the member's alignment, the faction's alignment, or a tolerance changes; from K3, whenever the faction's perceived alignment of the member changes (§10.3). Probation expiry is checked when time advances.
 
 How it applies (P-47):
 
@@ -482,22 +486,128 @@ How it applies (P-49):
 Worked example: Vex, a fence of the Guild, joins the Free Company, and the two fall to −60. A conflict opens. `resolve vex lantern_guild` leaves the Company: −10.00 there, which spills +0.60 to the Guild (−0.06 at −60).
 - The exact standing consequences of leaving are settled when M9 comes up.
 
-## 10. Knowledge (D-7)
+## 10. Knowledge (D-7, D-21–D-24)
 
-For now every character and faction knows about every action immediately (`knowledge.model = "omniscient"`). Two things are already in place so this can change later without touching the API:
+So far every character and faction knows about every act immediately (`knowledge.model = "omniscient"`). Two seams are already in place: `PerformAction` carries `witnesses` (everyone, these characters, or nobody), and every standing effect is multiplied by `awareness(party)`, which is 1.00 under the omniscient model.
 
-- `PerformAction` carries `witnesses`: everyone, these characters, or nobody.
-- Every standing effect of an action is multiplied by `awareness(party, event)`, which is 1.00 under the omniscient model. That function is the seam later models replace.
+Phase 5 replaces that with knowledge that has to travel. It was designed in K0 and is built in four steps: who learns firsthand (K1), how news spreads (K2), judging by what you know (K3), and secret membership (K4).
 
-Planned for Phase 5, after its own design pass (K0):
+**The whole idea in one paragraph.** An act is news. The people who saw it learn it fully; their factions learn it through them; news then passes from person to person along declared contacts and through factions to their members, weaker at each hop and taking time at each one, until it's too faint to matter. Everyone who learns of an act updates their picture of the actor, their *perceived alignment*, by what they learned, at the strength they learned it, and anyone the act's standing effects name changes their standing by the same fraction. From K3 everyone judges by their own picture (D-21): disposition, joining, promotion and drift. A faction that allows it can have secret members, whom other factions don't know about until they're exposed (D-23, D-24).
 
-- **`witnessed`:** only the witnesses and the target learn of the act.
-- **`ripple`:** news spreads from the witnesses through a social graph made of designer-declared connections between characters plus shared faction membership.
-  - It loses strength at each hop, takes ticks to travel, and stops below a threshold.
-  - Effects scale with awareness, so hearsay counts for less than seeing it.
-  - It's deterministic: breadth-first, with ties broken by id.
-- **Secret membership and double agents (D-19):** an opt-in option to belong to a faction without its enemies knowing. It's designed in K0 and built in K4, because secrecy only means something once factions can be unaware of things.
-- **Still to settle in K0 (X-1):** whether observers judge a character's alignment by what they know about them, and what that costs in memory in a large world.
+### 10.1 Models and awareness (K1, P-55)
+
+`knowledge.model` is one of:
+
+| Model | Who learns of an act |
+| --- | --- |
+| `omniscient` | Everyone, fully and at once. The default, and exactly today's behaviour. |
+| `witnessed` | Only those who learn firsthand (below). |
+| `ripple` | Those who learn firsthand, then everyone the news reaches through the social graph (§10.2). |
+
+**Awareness** is how well a party knows of a piece of news, from 0 (not at all) to 1 (as if they'd seen it). It's computed exactly, as a fraction, and every value it scales is rounded once (P-1).
+
+**Who learns firsthand,** at awareness 1:
+
+- **The witnesses.** `Everyone` means every character and faction. `These(…)` means exactly those characters, and the target only if listed: someone pickpocketed without noticing doesn't know. `Nobody` means no one.
+- **The parties an act names directly,** such as the Temple in `donate_to_temple`'s `standing = { factions = { temple = 10.0 } }`. The act is addressed to them.
+- **Every faction of a character who learned firsthand,** through that member. A faction knows what its best-informed member knows, at the same moment and the same strength.
+
+**The actor** always knows the truth about themself, but isn't a source: their own deed doesn't reach their factions through them. A captain who takes a bribe unseen doesn't tell the Watch.
+
+**Standing effects scale with awareness.** Each party an act's standing effects name (its target, the target's factions as they were when it happened, and named parties) changes by `change × awareness` when it learns of the act, rounded once and spilling as usual (§7.1). Spillover follows the faction's change, whether or not the other faction has heard of the act: it's reacting to the faction, not to the deed. A party that never learns never changes.
+
+**Outcomes and effects** (`ApplyOutcome`, `ApplyEffects`) come from a quest or another module, which has already decided whose mind changes, so the parties they name always know. From K3 they also carry `witnesses` (default everyone), for who learns of their alignment shift.
+
+**An act seen by everyone emits no news events,** under any model. Content that never uses witnesses behaves exactly as it does today.
+
+### 10.2 Ripple (K2, D-22, P-56)
+
+The **social graph** is built from content, so its reach is known before the game runs (§16):
+
+- **Contacts.** A character lists the characters they talk to: `contacts = ["captain_hale", "sister_mira"]`. A contact works both ways, so it's declared on one side only.
+- **Membership.** A faction hears from each of its members at no cost (§10.1), and passes news on to all its members as one hop.
+
+**How news travels:**
+
+- From each party that has just learned, the news goes one hop to each neighbour that hasn't heard it yet, arriving `knowledge.ripple.hop_ticks` later at `awareness × knowledge.ripple.decay`.
+- It stops at a hop whose awareness would be below `knowledge.ripple.threshold`. With the defaults (decay 0.50, threshold 0.10) that's three hops: 1.00, 0.50, 0.25, 0.125.
+- Each party learns a piece of news once, the first time it reaches them. With one decay for every hop, the first arrival is always the strongest.
+- **News in flight is state.** It's delivered as time advances (`AdvanceTime`), oldest first, so a single long advance carries news several hops. Each arrival is recorded in a `NewsArrived` event, with who learned, at what awareness, and what is now on its way, so replay rebuilds the news in flight without running rules, and saves carry it (P-54).
+- **Order.** Arrivals are taken by tick, then by news (the act's sequence number), then factions before characters, each in id order. Each arrival's standing changes follow its `NewsArrived` event.
+- Once nothing more is on its way, the news is forgotten. What people learned stays in their pictures and standings.
+
+**Worked example.** In Riverhold, Ava's contacts are Hale and Mira, and Mira's include Brother Ash. Hop ticks are 10. The player picks Captain Hale's pocket at tick 0, seen only by Merchant Ava (`steal` costs the target 20 and the target's factions 10).
+
+1. **Tick 0.** The player's alignment moves to −5.00 / −3.00. Ava learns at 1.00, but `steal` names no standing for her. Hale doesn't know yet, so nothing else changes. On its way: Hale and Mira, at 0.50.
+2. **Tick 10.** Hale and Mira learn at 0.50, and through them the Watch and the Temple. Hale's standing toward the player drops by 20 × 0.50 = 10.00 and the Watch's by 10 × 0.50 = 5.00, which spills +0.90 to the Lantern Guild (it regards the Watch at −80: −0.18) and −0.50 to the Temple (+60: 0.10). All four now picture the player at −2.50 / −1.50. On its way: Ash, at 0.25.
+3. **Tick 20.** Ash learns at 0.25, and through him the Ashen Circle; they picture the player at −1.25 / −0.75. Ash's only other neighbours have heard, so the news stops. Vex, the Guild and the Free Company never hear of it.
+
+### 10.3 Perceived alignment (K3, D-21, P-57)
+
+Settles X-1. Every observer, character or faction, has a **perceived alignment** of each character:
+
+```
+perceived(observer, subject) = clamp( starting alignment + Σ shift × awareness, −100, +100 )
+```
+
+summed over the subject's shifts the observer has learned of, each axis rounded once per shift. A shift is the change as applied, after inertia and clamping, so a party that saw everything perceives the truth. A character's starting alignment is public: it's who they are when the world begins. A faction's alignment is always public.
+
+**Everyone judges by what they know** (D-21). Wherever a rule measures a character's distance to someone, it uses that someone's perceived alignment of the character:
+
+| Rule | Whose picture |
+| --- | --- |
+| Affinity (§8.1) | the observer's |
+| Joining's tolerance check (§9.1) | the faction being joined |
+| `defectors` conditions (§9.2) | the faction being joined |
+| `deserters` conditions | the faction being left |
+| A rank's tolerance (§7.2) | the faction |
+| Drift (§9.3) | the faction: a member is reviewed when the faction's picture of them moves, not their true alignment |
+
+The `distance` query takes an observer, so it uses theirs too. Labels and inertia use the true alignment, since they're about the character, not anyone's view of them.
+
+So a secretly corrupt captain keeps his rank until the Watch hears of it. With §9.3's numbers: if Brother Ash's good deed is seen only by its target, and the news never reaches a member of the Ashen Circle, the Circle still pictures him 40.00 away and keeps him. If it reaches the Circle at full strength, the Circle's review expels him then, as in §9.3.
+
+**Under `omniscient`, everyone perceives the truth,** so this changes nothing for worlds that don't opt in.
+
+### 10.4 Secret membership and double agents (K4, D-19, D-23, D-24, P-58)
+
+**Opting in.** A faction allows secret members with `secret_members = true` (D-23). Joining it can then be secret (`JoinFaction { …, secretly: true }`), and so can a starting membership (`{ faction = "lantern_guild", secret = true }`). Secrecy means nothing if everyone knows everything, so `secret_members` needs a `witnessed` or `ripple` world.
+
+**Who knows.** An open membership is known to everyone. A secret one is known to the faction, its members and the character, and to anyone it has been exposed to (below). Everyone else judges by the memberships they know of:
+
+- **Kinship** (§8.1) counts only memberships the observer knows of.
+- **Joining** (§9.2) checks only the enemy memberships the joining faction knows of. A secret Guild fence can join the Watch: the Watch sees no enemy membership, so no `defectors` table applies.
+- **A double agent doesn't leave.** Joining an enemy of a faction you're secretly in keeps that membership, and its `deserters` table doesn't apply: you're its agent. Joining secretly never leaves anyone either. The joining faction still applies its `defectors` table to the enemy memberships it knows of.
+- **War** (§9.4) opens a `MembershipConflict` only between memberships each side knows of. Invariant 6 allows the rest.
+
+**Exposure.** `Expose { character, faction, witnesses }` reveals a secret membership to the witnesses. It's news like an act: their factions learn through them, and under `ripple` it spreads (learning a membership is all or nothing, so any arrival counts). `MembershipExposed` records who learned.
+
+**When a faction learns that one of its members is secretly in a faction it's in conflict with** (either direction at or below `conflict_threshold`), its `exposed` rule table decides (D-24). It works like `defectors` and `deserters` (§9.2): the same conditions, with "current" the faction that found out and "target" the secret faction, judged by the current faction's picture. Outcomes, each with an optional `standing_change` toward the current faction:
+
+- `keep`: they stay, and the two memberships are now known to each other, so a `MembershipConflict` opens (§9.4) for them, a quest or the conflict rule to settle;
+- `demote`: down one rung, as drift's `demote` does, and the conflict opens as for `keep`; on the lowest rung, expelled instead;
+- `expel`: `LeftFaction { reason: Exposed }`.
+
+A faction's own table replaces the world's `membership.exposed`. Built in: `expel`, costing the faction's `expel_standing_change`. Leaving a secret membership stays secret.
+
+**Worked example.** Riverhold's `membership.exposed` keeps a member with standing 60 or more at −30, and otherwise expels at −40. Say Corin is a Watch sergeant with standing 35, and secretly a Lantern Guild cutpurse. `expose corin lantern_guild --seen-by captain_hale`: Hale learns, and through him the Watch, which is in conflict with the Guild (−80). The second rule decides: `LeftFaction { reason: Exposed }` from the Watch, then −40.00 with it, which spills +7.20 to the Guild (−0.18) and −4.00 to the Temple (0.10).
+
+### 10.5 Memory in a large world (P-57)
+
+X-1 also asked what this costs. Nothing is stored per observer for what everyone knows, and nothing per act once its news has stopped:
+
+- **Pictures** are kept as offsets from the starting alignment, in two tiers. A shift everyone learns of goes into the subject's **public** offset, one per character. A shift only some learn of goes into a **private** offset for each observer that learned it, kept only for observer–subject pairs that have one. Perceived = start + public + private.
+- So under `omniscient`, or with every act seen by everyone, there are no private offsets at all. Otherwise the private store grows with the reach of unwitnessed acts, which the threshold bounds: three hops by default.
+- **News in flight** holds the act's facts (actor, target, shift, the standing changes it carries) and who has heard, and is dropped when it stops.
+- **Secret memberships** keep the set of outsiders each has been exposed to.
+
+If private offsets grow too large for a host, letting them fade back to the public picture over time is the natural next step. It's not planned until a host shows the need (E1).
+
+### 10.6 What it keeps
+
+- **Completeness (D-20).** The graph, the decay and the threshold are content, so who can ever hear of what is computable at load time (§16.2). Every `exposed` table ends with a rule that decides.
+- **Determinism.** Breadth-first in a fixed order, with exact fractions and one rounding per value.
+- **Replay and saves.** News, pictures and exposures change only through events, so replaying the event log rebuilds them, and a save restores them (P-15, P-54).
 
 ## 11. API for other modules (D-15, P-14, P-15)
 
@@ -517,6 +627,8 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | `ResolveConflict { character, keep }` | M9 | quests, dialogue |
 | `AddModifier`, `RemoveModifier` | M10 | status, characteristics |
 | `Watch`, `Unwatch` | D3 | the host |
+| `JoinFaction { …, secretly }`, `Expose { character, faction, witnesses }` | K4 | dialogue, quests, stealth |
+| `witnesses` on `ApplyOutcome` and `ApplyEffects` | K3 | quests |
 
 ### 11.2 Events (out)
 
@@ -529,6 +641,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | Drift | `ProbationStarted`, `ProbationCleared`, `ProbationExpired`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
 | Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict`, `MembershipConflictEnded` |
 | Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierRemoved`, `ModifierExpired` |
+| Knowledge | `NewsArrived` (K2), `MembershipExposed` and `LeftFaction { Exposed }` (K4) |
 
 ### 11.3 Queries (read)
 
@@ -541,6 +654,9 @@ The module exposes commands, events and queries, and nothing else. Other modules
 - `now`: the current tick
 - `events_since`: the events after a sequence number (P-33)
 - `journal`: every command issued, and whether it was accepted
+- `news`: what's on its way, to whom and when (K2)
+- `perceived`: an observer's perceived alignment of a character, with the shifts it's made of (K3)
+- `knows_membership`: whether an observer knows of a membership (K4)
 
 `World::replay(content, events)` rebuilds a world from its event log without running any rules: what saves are built on. `saved_journal()` gives each journal entry's command and how many events it produced, and `World::restore(content, journal, events)` rebuilds a world and its journal from them (T4, P-54).
 
@@ -604,6 +720,10 @@ This table lists every knob: where it lives, its default, and the increment that
 | faction `drift`, `expel_standing_change`; `membership.default_drift` | factions.toml, balance.toml | `flag`; −20 | M8 |
 | `membership.conflict` (`resolve`, `auto_after_ticks`) | balance.toml | resolved by the host or a quest | M9 |
 | `knowledge.model` | balance.toml | `omniscient` | K1 |
+| `knowledge.ripple.decay`, `.hop_ticks`, `.threshold` | balance.toml | 0.50, 1, 0.10 | K2 |
+| character `contacts` | characters.toml | none | K2 |
+| faction `secret_members`; a starting membership's `secret` | factions.toml, characters.toml | false | K4 |
+| `membership.exposed`, per-faction override | balance.toml, factions.toml | expel, at the faction's `expel_standing_change` | K4 |
 
 ### 12.1 Content layout (P-18)
 
@@ -650,7 +770,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 (done) |
 | A starting member outside their member tolerance | warning | M1 (done) |
 | A relation names two different factions that exist; each direction is set at most once; values within ±100; `conflict_threshold` within ±100 | error | M2 (done) |
-| No character starts in two factions that are in conflict (invariant 6) | error | M2 (done) |
+| No character starts in two factions that are in conflict (invariant 6), unless one membership is secret (K4) | error | M2 (done) |
 | Standing names factions and characters that exist; values within ±100; `leave_standing_change` within ±100 | error | M3 (done) |
 | A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung; rank standing requirements within ±100, tolerances ≥ 0 | error | M5 (done) |
 | A starting member below their rank's standing requirement; a rank tolerance looser than the faction's | warning | M5 (done) |
@@ -660,6 +780,11 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 (done) |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is a whole number ≥ 0, and only with `ask` | error | M9 (done) |
 | `knowledge.model` is a known model | error | K1 |
+| `decay` within 0–1; `threshold` within 0.01–1; `hop_ticks` a whole number ≥ 1 | error | K2 |
+| Contacts name characters that exist, not themselves, each pair once whichever side declares it | error | K2 |
+| `[knowledge.ripple]` or contacts in a world whose model isn't `ripple` | warning | K2 |
+| `secret_members` only in a `witnessed` or `ripple` world; a secret starting membership only in a faction that allows them | error | K4 |
+| `exposed` tables: as for the M7 tables, with the outcomes `keep`, `demote` and `expel` | error | K4 |
 | A faction no starting character is within joining tolerance of, naming the nearest and their distance (P-51) | warning | T1 (done) |
 
 ### 12.3 Designer workflow
@@ -744,6 +869,12 @@ Every example in this document and in PLAN.md uses this world. It lives in `cont
 | `fined_by_watch` | city_watch −20; captain_hale personally −10 |
 | `rescued_merchant` | good +6; merchant_ava +30; city_watch +10 |
 
+**Knowledge** (from K1; designed in K0)
+
+- The model is `ripple`, with decay 0.50, threshold 0.10 and 10 ticks a hop (§10.2).
+- Contacts: `merchant_ava` ↔ `captain_hale`, `merchant_ava` ↔ `sister_mira`, `sister_mira` ↔ `brother_ash`.
+- The Lantern Guild and the Ashen Circle allow secret members. `membership.exposed` keeps a member with standing 60 or more at −30, and otherwise expels at −40 (§10.4).
+
 ## 14. Invariants
 
 Each invariant has a property test (`proptest`) over random content and random command sequences. Adding an invariant means adding its test.
@@ -753,12 +884,14 @@ Each invariant has a property test (`proptest`) over random content and random c
 3. The same content and the same commands give identical events.
 4. Replaying the event log from the initial state reproduces the state exactly.
 5. Queries never mutate: asking for a disposition twice gives the same answer and leaves the same state.
-6. No character is a member of two factions in conflict, except while a `MembershipConflict` for that pair is unresolved.
+6. No character is a member of two factions in conflict, except while a `MembershipConflict` for that pair is unresolved, or while one faction doesn't know of the other membership (K4).
 7. Every member holds a rank that exists on their faction's ladder.
 8. Inertia never reverses the direction of a shift.
 9. Band lookup is total and monotone: a higher score never lands in a lower band.
 10. A curve's value always stays within the range of its own y values.
 11. Restoring a save gives the same world: the same state, events and journal (T4).
+12. Knowledge only ever hides: with every act and outcome seen by everyone and no secret memberships, `witnessed` and `ripple` give exactly the events `omniscient` does, and every awareness is within 0…1 (K1–K3).
+13. News always stops: each party learns a piece of news at most once, and none is still on its way more than `hop_ticks` × the number of hops the threshold allows after it began (K2).
 
 ## 15. Crates (P-25)
 
@@ -795,7 +928,8 @@ What "reconcile" means exactly, and how to check it without exploring every comb
 A quest checker can only reconcile what it can see without running the game. So everything quests may depend on here must stay declarative:
 
 - **Effects are data.** Actions and outcomes are bundles of declared effects (P-26), never code or scripts. Which factions an effect can touch is computable from content alone, spillover included, because spillover follows the declared relations and curve.
-- **Rules are data.** Drift policies, defector and deserter tables, and conflict resolution are closed vocabularies in content, so their possible results can be enumerated.
+- **Rules are data.** Drift policies, defector, deserter and exposure tables, and conflict resolution are closed vocabularies in content, so their possible results can be enumerated.
+- **Who can hear of what is data.** Contacts, membership and the ripple settings are content, so the parties an act can ever reach are computable without running the game (§10.6).
 - **Every rule decides.** A rule table always ends with a rule that decides (P-32), so no state is left without an answer.
 - **Runtime changes come only through commands** (§11), so another module can know every way this module's state can change.
 
