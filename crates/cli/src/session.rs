@@ -80,8 +80,8 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     ("outcomes", "list the outcomes, such as quest results"),
     (
-        "outcome <outcome> <character>",
-        "apply an outcome's effects to <character>",
+        "outcome <outcome> <character> [--seen-by <id>,... | --unseen]",
+        "apply an outcome's effects to <character>; --seen-by says who saw it (default everyone)",
     ),
     (
         "relations [<faction>]",
@@ -102,6 +102,10 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "distance <observer> <subject> [--explain]",
         "how far <subject> is from <observer>, a faction or character, as the observer sees it",
+    ),
+    (
+        "perceived <observer> <subject>",
+        "where <observer> pictures <subject>: the truth, less what it hasn't heard of",
     ),
     (
         "modify <observer|everyone> <subject> <id> <amount> [--until <tick>]",
@@ -277,6 +281,7 @@ impl Session {
             "show" => Ok(self.show(rest)),
             "factions" => Ok(self.factions()),
             "distance" => Ok(self.distance(rest)),
+            "perceived" => Ok(self.perceived(rest)),
             "disposition" => Ok(self.disposition(rest)),
             "watch" => Ok(self.watch(rest, true)),
             "unwatch" => Ok(self.watch(rest, false)),
@@ -720,10 +725,23 @@ impl Session {
 
     /// `outcome <outcome> <character>`: applies an outcome, as a quest module would.
     fn outcome(&mut self, args: &str) -> Outcome {
-        let [outcome, character] = args.split_whitespace().collect::<Vec<_>>()[..] else {
-            return Outcome::Error(
-                "outcome needs the form: outcome <outcome> <character>".to_owned(),
-            );
+        const USAGE: &str =
+            "outcome needs the form: outcome <outcome> <character> [--seen-by <id>,... | --unseen]";
+        let (outcome, character, seen_by) = match args.split_whitespace().collect::<Vec<_>>()[..] {
+            [outcome, character] => (outcome, character, None),
+            [outcome, character, "--unseen"] => (outcome, character, Some(None)),
+            [outcome, character, "--seen-by", ids] if !is_flag(ids) => {
+                (outcome, character, Some(Some(ids)))
+            }
+            _ => return Outcome::Error(USAGE.to_owned()),
+        };
+        let witnesses = match seen_by {
+            None => Witnesses::Everyone,
+            Some(None) => Witnesses::Nobody,
+            Some(Some(ids)) => match ids.split(',').map(CharacterId::new).collect() {
+                Ok(ids) => Witnesses::These(ids),
+                Err(invalid) => return Outcome::Error(invalid.to_string()),
+            },
         };
         let outcome = match OutcomeId::new(outcome) {
             Ok(id) => id,
@@ -736,7 +754,11 @@ impl Session {
         let Some(world) = self.world.as_mut() else {
             return no_world();
         };
-        match world.execute(Command::ApplyOutcome { outcome, character }) {
+        match world.execute(Command::ApplyOutcome {
+            outcome,
+            character,
+            witnesses,
+        }) {
             Ok(events) => Outcome::Output(lines(events.iter().map(describe_event))),
             Err(refusal) => Outcome::Error(refusal.to_string()),
         }
@@ -848,7 +870,7 @@ impl Session {
                 assessment.tolerance
             ),
         ];
-        explained.extend(working(distance, faction.id.as_str()));
+        explained.extend(working(distance, faction.id.as_str(), &character.id));
         for defection in &assessment.defections {
             explained.push(format!(
                 "leaving {}, in conflict with {} ({})",
@@ -948,7 +970,7 @@ impl Session {
                     );
                     explained.push(line);
                     explained.extend(
-                        working(distance, query.observer_id)
+                        working(distance, query.observer_id, &query.subject)
                             .into_iter()
                             .map(|working| format!("  {working}")),
                     );
@@ -1018,8 +1040,40 @@ impl Session {
             measured.value,
             measured.metric.key()
         )];
-        explained.extend(working(&measured, query.observer_id));
+        explained.extend(working(&measured, query.observer_id, &query.subject));
         Outcome::Output(explained.join("\n"))
+    }
+
+    /// `perceived <observer> <subject>`: where the observer pictures the subject, and how
+    /// that comes from the truth (DESIGN.md §10.3).
+    fn perceived(&self, args: &str) -> Outcome {
+        if args.split_whitespace().count() != 2 {
+            return Outcome::Error(
+                "perceived needs the form: perceived <observer> <subject>".to_owned(),
+            );
+        }
+        let (world, query) = match self.judgement("perceived", args) {
+            Ok(found) => found,
+            Err(failed) => return failed,
+        };
+        let perception = world
+            .perceived(&query.observer, &query.subject)
+            .expect("both were found");
+        let (observer, subject) = (query.observer_id, &query.subject);
+        if perception.perceived == perception.truth {
+            return Outcome::Output(format!(
+                "{observer} pictures {subject} as they are: {}",
+                axes(perception.truth)
+            ));
+        }
+        let delta = |delta: AlignmentDelta| format!("law {}, good {}", delta.law, delta.good);
+        Outcome::Output(format!(
+            "{observer} pictures {subject} at {}: truly {}, less {} not everyone has heard of, plus {} {observer} has heard of",
+            axes(perception.perceived),
+            axes(perception.truth),
+            delta(perception.hidden),
+            delta(perception.heard)
+        ))
     }
 
     /// Reads `<observer> <subject> [--explain]` for `command` and finds both in the world:
@@ -1648,6 +1702,30 @@ fn describe_hop(hop: &NextHop) -> String {
     )
 }
 
+/// `, witnessed by merchant_ava, vex`, or nothing when everyone saw it.
+fn witnessed_by(witnesses: &Witnesses) -> String {
+    match witnesses {
+        Witnesses::Everyone => String::new(),
+        Witnesses::Nobody => ", witnessed by nobody".to_owned(),
+        Witnesses::These(ids) => {
+            let ids: Vec<&str> = ids.iter().map(CharacterId::as_str).collect();
+            format!(", witnessed by {}", ids.join(", "))
+        }
+    }
+}
+
+/// ` --seen-by merchant_ava,vex` or ` --unseen`, as typed, or nothing when everyone saw it.
+fn seen_flags(witnesses: &Witnesses) -> String {
+    match witnesses {
+        Witnesses::Everyone => String::new(),
+        Witnesses::Nobody => " --unseen".to_owned(),
+        Witnesses::These(ids) => {
+            let ids: Vec<&str> = ids.iter().map(CharacterId::as_str).collect();
+            format!(" --seen-by {}", ids.join(","))
+        }
+    }
+}
+
 /// `#1 at tick 0: time advanced from 0 to 5`.
 pub(crate) fn describe_event(event: &Event) -> String {
     format!(
@@ -1676,15 +1754,7 @@ fn describe_change(change: &Change) -> String {
             if *scale != Fixed::ONE {
                 what += &format!(", at scale {scale}");
             }
-            match witnesses {
-                Witnesses::Everyone => {}
-                Witnesses::Nobody => what += ", witnessed by nobody",
-                Witnesses::These(ids) => {
-                    let ids: Vec<&str> = ids.iter().map(CharacterId::as_str).collect();
-                    what += &format!(", witnessed by {}", ids.join(", "));
-                }
-            }
-            what
+            what + &witnessed_by(witnesses)
         }
         Change::JoinedFaction {
             character,
@@ -1742,11 +1812,25 @@ fn describe_change(change: &Change) -> String {
             }
             moved
         }
-        Change::OutcomeApplied { outcome, character } => {
-            format!("outcome {outcome} applied to {character}")
+        Change::OutcomeApplied {
+            outcome,
+            character,
+            witnesses,
+        } => {
+            format!(
+                "outcome {outcome} applied to {character}{}",
+                witnessed_by(witnesses)
+            )
         }
-        Change::EffectsApplied { source, character } => {
-            format!("effects from {source} applied to {character}")
+        Change::EffectsApplied {
+            source,
+            character,
+            witnesses,
+        } => {
+            format!(
+                "effects from {source} applied to {character}{}",
+                witnessed_by(witnesses)
+            )
         }
         Change::Watched { subject, bands } => {
             format!("now watching {subject} ({} observers)", bands.len())
@@ -1813,6 +1897,24 @@ fn describe_change(change: &Change) -> String {
             to,
             score,
         } => format!("{observer} now regards {subject} as {to} (was {from}), at {score}"),
+        Change::ShiftWitnessed {
+            character,
+            shift,
+            seen_by,
+        } => {
+            let moved = format!("law {}, good {}", shift.law, shift.good);
+            if seen_by.is_empty() {
+                format!(
+                    "no one saw {character}'s alignment move by {moved}; everyone else pictures them as before"
+                )
+            } else {
+                let seen_by: Vec<String> = seen_by.iter().map(ToString::to_string).collect();
+                format!(
+                    "only {} learned that {character}'s alignment moved by {moved}; everyone else pictures them as before",
+                    seen_by.join(", ")
+                )
+            }
+        }
         Change::NewsSent { news, next, .. } => {
             format!("news of #{news} is on its way to {}", describe_hop(next))
         }
@@ -1821,6 +1923,7 @@ fn describe_change(change: &Change) -> String {
             arrived,
             learned,
             next,
+            ..
         } => {
             let learned: Vec<String> = learned.iter().map(ToString::to_string).collect();
             let onward = match next {
@@ -1855,7 +1958,11 @@ fn describe_command(command: &Command) -> String {
         Command::Promote { character, faction } => format!("promote {character} {faction}"),
         Command::Demote { character, faction } => format!("demote {character} {faction}"),
         Command::LeaveFaction { character, faction } => format!("leave {character} {faction}"),
-        Command::ApplyOutcome { outcome, character } => format!("outcome {outcome} {character}"),
+        Command::ApplyOutcome {
+            outcome,
+            character,
+            witnesses,
+        } => format!("outcome {outcome} {character}{}", seen_flags(witnesses)),
         Command::ApplyEffects {
             source, character, ..
         } => format!("effects from {source} on {character}"),
@@ -1903,7 +2010,7 @@ fn describe_command(command: &Command) -> String {
             action,
             target,
             scale,
-            ..
+            witnesses,
         } => {
             let mut typed = format!("act {actor} {action}");
             if let Some(target) = target {
@@ -1912,7 +2019,7 @@ fn describe_command(command: &Command) -> String {
             if *scale != Fixed::ONE {
                 typed += &format!(" --scale {scale}");
             }
-            typed
+            typed + &seen_flags(witnesses)
         }
     }
 }
@@ -2162,8 +2269,9 @@ struct Judgement<'a> {
     explain: bool,
 }
 
-/// The lines that explain a distance: each axis, then whose weights were used.
-fn working(distance: &Distance, observer: &str) -> [String; 3] {
+/// The lines that explain a distance: each axis, whose weights were used, and where the
+/// subject truly is, if the observer pictures them elsewhere.
+fn working(distance: &Distance, observer: &str, subject: &CharacterId) -> Vec<String> {
     let axis = |axis: Axis| {
         format!(
             "{}: {} vs {}, gap {}, weight {}",
@@ -2178,11 +2286,18 @@ fn working(distance: &Distance, observer: &str) -> [String; 3] {
         WeightsFrom::Own => format!("{observer}'s own"),
         WeightsFrom::Default => "the default (alignment.default_weights)".to_owned(),
     };
-    [
+    let mut lines = vec![
         axis(Axis::Law),
         axis(Axis::Good),
         format!("weights: {weights}"),
-    ]
+    ];
+    if distance.subject != distance.truth {
+        lines.push(format!(
+            "that's where {observer} pictures {subject}; {subject} is truly at {}",
+            axes(distance.truth)
+        ));
+    }
+    lines
 }
 
 /// The world's bands in a line: `unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly`.
@@ -2634,6 +2749,32 @@ mod tests {
     }
 
     #[test]
+    fn the_journal_says_who_saw_each_act_and_outcome() {
+        let mut session = riverhold();
+        for line in [
+            "act player steal --target captain_hale --seen-by vex,merchant_ava",
+            "act player steal --unseen",
+            "act player help_stranger --target vex --scale 2",
+            "outcome rescued_merchant player --unseen",
+            "outcome fined_by_watch player --seen-by vex",
+            "outcome fined_by_watch player",
+        ] {
+            session.execute(line).expect("valid");
+        }
+        assert_eq!(
+            session.execute("journal"),
+            output(
+                "1. act player steal --target captain_hale --seen-by merchant_ava,vex — accepted\n\
+                 2. act player steal --unseen — accepted\n\
+                 3. act player help_stranger --target vex --scale 2.00 — accepted\n\
+                 4. outcome rescued_merchant player --unseen — accepted\n\
+                 5. outcome fined_by_watch player --seen-by vex — accepted\n\
+                 6. outcome fined_by_watch player — accepted"
+            )
+        );
+    }
+
+    #[test]
     fn loading_starts_a_new_world() {
         let mut session = riverhold();
         session.execute("advance 5").expect("valid");
@@ -2716,19 +2857,21 @@ mod tests {
             output(
                 "#1 at tick 0: player did steal, targeting captain_hale, witnessed by merchant_ava, vex\n\
                  #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00\n\
-                 #3 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10"
+                 #3 at tick 0: only lantern_guild, merchant_ava, vex learned that player's alignment moved by law -5.00, good -3.00; everyone else pictures them as before\n\
+                 #4 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10"
             )
         );
         assert_eq!(
             session.execute("act player steal --target captain_hale --seen-by captain_hale"),
             output(
-                "#4 at tick 0: player did steal, targeting captain_hale, witnessed by captain_hale\n\
-                 #5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00\n\
-                 #6 at tick 0: player's standing with city_watch moved from 0.00 to -10.00\n\
-                 #7 at tick 0: player's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)\n\
-                 #8 at tick 0: player's standing with temple moved from 0.00 to -1.00, with -1.00 spilled from city_watch (-10.00 × 0.10; temple regards it at 60.00)\n\
-                 #9 at tick 0: player's standing with captain_hale moved from 0.00 to -20.00\n\
-                 #10 at tick 0: news of #4 is on its way to merchant_ava: hop 1, at 0.50, arriving at tick 10"
+                "#5 at tick 0: player did steal, targeting captain_hale, witnessed by captain_hale\n\
+                 #6 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00\n\
+                 #7 at tick 0: only city_watch, captain_hale learned that player's alignment moved by law -5.00, good -3.00; everyone else pictures them as before\n\
+                 #8 at tick 0: player's standing with city_watch moved from 0.00 to -10.00\n\
+                 #9 at tick 0: player's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #10 at tick 0: player's standing with temple moved from 0.00 to -1.00, with -1.00 spilled from city_watch (-10.00 × 0.10; temple regards it at 60.00)\n\
+                 #11 at tick 0: player's standing with captain_hale moved from 0.00 to -20.00\n\
+                 #12 at tick 0: news of #5 is on its way to merchant_ava: hop 1, at 0.50, arriving at tick 10"
             )
         );
         // The Temple learns of a donation to it, seen or not, and tells its members.
@@ -2737,10 +2880,11 @@ mod tests {
             output(
                 "#1 at tick 0: player did donate_to_temple, witnessed by nobody\n\
                  #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law 0.00, good 3.00\n\
-                 #3 at tick 0: player's standing with ashen_circle moved from 0.00 to -2.40, with -2.40 spilled from temple (10.00 × -0.24; ashen_circle regards it at -90.00)\n\
-                 #4 at tick 0: player's standing with city_watch moved from 0.00 to 1.00, with 1.00 spilled from temple (10.00 × 0.10; city_watch regards it at 60.00)\n\
-                 #5 at tick 0: player's standing with temple moved from 0.00 to 10.00\n\
-                 #6 at tick 0: news of #1 is on its way to sister_mira: hop 1, at 0.50, arriving at tick 10"
+                 #3 at tick 0: only temple learned that player's alignment moved by law 0.00, good 3.00; everyone else pictures them as before\n\
+                 #4 at tick 0: player's standing with ashen_circle moved from 0.00 to -2.40, with -2.40 spilled from temple (10.00 × -0.24; ashen_circle regards it at -90.00)\n\
+                 #5 at tick 0: player's standing with city_watch moved from 0.00 to 1.00, with 1.00 spilled from temple (10.00 × 0.10; city_watch regards it at 60.00)\n\
+                 #6 at tick 0: player's standing with temple moved from 0.00 to 10.00\n\
+                 #7 at tick 0: news of #1 is on its way to sister_mira: hop 1, at 0.50, arriving at tick 10"
             )
         );
         assert_eq!(
@@ -2826,12 +2970,12 @@ mod tests {
         assert_eq!(
             session.execute("advance 10"),
             output(
-                "#4 at tick 0: time advanced from 0 to 10\n\
-                 #5 at tick 10: news of #1 reached city_watch, temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 10); on its way to brother_ash: hop 2, at 0.25, arriving at tick 20\n\
-                 #6 at tick 10: player's standing with city_watch moved from 0.00 to -5.00\n\
-                 #7 at tick 10: player's standing with lantern_guild moved from 0.00 to 0.90, with 0.90 spilled from city_watch (-5.00 × -0.18; lantern_guild regards it at -80.00)\n\
-                 #8 at tick 10: player's standing with temple moved from 0.00 to -0.50, with -0.50 spilled from city_watch (-5.00 × 0.10; temple regards it at 60.00)\n\
-                 #9 at tick 10: player's standing with captain_hale moved from 0.00 to -10.00"
+                "#5 at tick 0: time advanced from 0 to 10\n\
+                 #6 at tick 10: news of #1 reached city_watch, temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 10); on its way to brother_ash: hop 2, at 0.25, arriving at tick 20\n\
+                 #7 at tick 10: player's standing with city_watch moved from 0.00 to -5.00\n\
+                 #8 at tick 10: player's standing with lantern_guild moved from 0.00 to 0.90, with 0.90 spilled from city_watch (-5.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #9 at tick 10: player's standing with temple moved from 0.00 to -0.50, with -0.50 spilled from city_watch (-5.00 × 0.10; temple regards it at 60.00)\n\
+                 #10 at tick 10: player's standing with captain_hale moved from 0.00 to -10.00"
             )
         );
         assert_eq!(
@@ -2846,8 +2990,8 @@ mod tests {
         assert_eq!(
             session.execute("advance 10"),
             output(
-                "#10 at tick 10: time advanced from 10 to 20\n\
-                 #11 at tick 20: news of #1 reached ashen_circle, brother_ash at 0.25 (hop 2, due at tick 20); it goes no further"
+                "#11 at tick 10: time advanced from 10 to 20\n\
+                 #12 at tick 20: news of #1 reached ashen_circle, brother_ash at 0.25 (hop 2, due at tick 20); it goes no further"
             )
         );
         assert_eq!(session.execute("news"), output("no news on its way"));
@@ -2855,6 +2999,133 @@ mod tests {
             session.execute("news now"),
             command_error("news needs the form: news")
         );
+    }
+
+    #[test]
+    fn perceived_shows_how_someone_pictures_a_character_and_why() {
+        let mut session = riverhold();
+        let _ = session.execute("act player steal --target captain_hale --seen-by merchant_ava");
+        assert_eq!(
+            session.execute("perceived captain_hale player"),
+            output(
+                "captain_hale pictures player at law 0.00, good 0.00: truly law -5.00, good -3.00, less law -5.00, good -3.00 not everyone has heard of, plus law 0.00, good 0.00 captain_hale has heard of"
+            )
+        );
+        assert_eq!(
+            session.execute("perceived merchant_ava player"),
+            output("merchant_ava pictures player as they are: law -5.00, good -3.00")
+        );
+        assert_eq!(
+            session.execute("perceived player player"),
+            output("player pictures player as they are: law -5.00, good -3.00")
+        );
+        let _ = session.execute("advance 10");
+        assert_eq!(
+            session.execute("perceived city_watch player"),
+            output(
+                "city_watch pictures player at law -2.50, good -1.50: truly law -5.00, good -3.00, less law -5.00, good -3.00 not everyone has heard of, plus law -2.50, good -1.50 city_watch has heard of"
+            )
+        );
+        assert_eq!(
+            session.execute("perceived captian_hale player"),
+            command_error("unknown observer 'captian_hale' (did you mean 'captain_hale'?)")
+        );
+        assert_eq!(
+            session.execute("perceived captain_hale city_watch"),
+            command_error("a perceived's subject must be a character")
+        );
+        assert_eq!(
+            session.execute("perceived captain_hale"),
+            command_error("perceived needs the form: perceived <observer> <subject>")
+        );
+        assert_eq!(
+            session.execute("perceived captain_hale player --explain"),
+            command_error("perceived needs the form: perceived <observer> <subject>")
+        );
+    }
+
+    #[test]
+    fn distance_and_disposition_say_when_they_measure_a_picture() {
+        let mut session = riverhold();
+        let _ = session.execute("act player steal --target captain_hale --seen-by merchant_ava");
+        // Hale pictures 0 / 0: 75.37 away (law Δ75, good Δ30 × 0.25), not the true 80.42.
+        assert_eq!(
+            session.execute("distance captain_hale player --explain"),
+            output(
+                "captain_hale → player: 75.37 (euclidean)\n\
+                 law: 75.00 vs 0.00, gap 75.00, weight 1.00\n\
+                 good: 30.00 vs 0.00, gap 30.00, weight 0.25\n\
+                 weights: captain_hale's own\n\
+                 that's where captain_hale pictures player; player is truly at law -5.00, good -3.00"
+            )
+        );
+        assert_eq!(
+            session.execute("distance merchant_ava player --explain"),
+            output(
+                "merchant_ava → player: 28.18 (euclidean)\n\
+                 law: 20.00 vs -5.00, gap 25.00, weight 1.00\n\
+                 good: 10.00 vs -3.00, gap 13.00, weight 1.00\n\
+                 weights: the default (alignment.default_weights)"
+            ),
+            "Ava saw it, so she pictures the truth"
+        );
+        let Ok(Outcome::Output(explained)) =
+            session.execute("disposition captain_hale player --explain")
+        else {
+            panic!("disposition succeeds");
+        };
+        assert!(
+            explained.contains(
+                "\n  that's where captain_hale pictures player; player is truly at law -5.00, good -3.00\n"
+            ),
+            "{explained}"
+        );
+    }
+
+    #[test]
+    fn outcome_takes_who_saw_it() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("outcome rescued_merchant player --unseen"),
+            output(
+                "#1 at tick 0: outcome rescued_merchant applied to player, witnessed by nobody\n\
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law 0.00, good 6.00\n\
+                 #3 at tick 0: only city_watch, merchant_ava learned that player's alignment moved by law 0.00, good 6.00; everyone else pictures them as before\n\
+                 #4 at tick 0: player's standing with city_watch moved from 0.00 to 10.00\n\
+                 #5 at tick 0: player's standing with lantern_guild moved from 0.00 to -1.80, with -1.80 spilled from city_watch (10.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #6 at tick 0: player's standing with temple moved from 0.00 to 1.00, with 1.00 spilled from city_watch (10.00 × 0.10; temple regards it at 60.00)\n\
+                 #7 at tick 0: player's standing with merchant_ava moved from 0.00 to 30.00\n\
+                 #8 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10"
+            )
+        );
+        assert_eq!(
+            session.execute("outcome fined_by_watch player --seen-by vex"),
+            output(
+                "#9 at tick 0: outcome fined_by_watch applied to player, witnessed by vex\n\
+                 #10 at tick 0: player's standing with city_watch moved from 10.00 to -10.00\n\
+                 #11 at tick 0: player's standing with lantern_guild moved from -1.80 to 1.80, with 3.60 spilled from city_watch (-20.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #12 at tick 0: player's standing with temple moved from 1.00 to -1.00, with -2.00 spilled from city_watch (-20.00 × 0.10; temple regards it at 60.00)\n\
+                 #13 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00"
+            ),
+            "a fine moves no alignment, so there's nothing for anyone to picture"
+        );
+        assert_eq!(
+            session.execute("outcome rescued_merchant player --seen-by merchant_av"),
+            command_error("unknown witness 'merchant_av' (did you mean 'merchant_ava'?)")
+        );
+        let usage = command_error(
+            "outcome needs the form: outcome <outcome> <character> [--seen-by <id>,... | --unseen]",
+        );
+        for line in [
+            "outcome rescued_merchant",
+            "outcome rescued_merchant player --seen-by",
+            "outcome rescued_merchant player --unseen --unseen",
+            "outcome rescued_merchant player --unseen --seen-by vex",
+            "outcome rescued_merchant player --seen-by --unseen",
+            "outcome rescued_merchant player vex",
+        ] {
+            assert_eq!(session.execute(line), usage, "{line}");
+        }
     }
 
     #[test]
@@ -3887,7 +4158,7 @@ mod tests {
             ),
             (
                 "outcome fined_by_watch",
-                "outcome needs the form: outcome <outcome> <character>",
+                "outcome needs the form: outcome <outcome> <character> [--seen-by <id>,... | --unseen]",
             ),
         ] {
             assert_eq!(session.execute(line), command_error(usage), "{line}");
@@ -3923,6 +4194,7 @@ mod tests {
             payload: Change::EffectsApplied {
                 source: "quest:lost_relic".to_owned(),
                 character: CharacterId::new("player").expect("valid id"),
+                witnesses: Witnesses::Everyone,
             },
         };
         assert_eq!(
@@ -3932,6 +4204,7 @@ mod tests {
         let command = Command::ApplyEffects {
             source: "quest:lost_relic".to_owned(),
             character: CharacterId::new("player").expect("valid id"),
+            witnesses: Witnesses::Everyone,
             effects: Effects::default(),
         };
         assert_eq!(
@@ -4433,6 +4706,7 @@ mod tests {
             "factions",
             "show faction <id>",
             "distance <observer> <subject> [--explain]",
+            "perceived <observer> <subject>",
             "disposition <observer> <subject> [--explain]",
             "can-join <character> <faction> [--explain]",
             "join <character> <faction>",
@@ -4442,7 +4716,7 @@ mod tests {
             "demote <character> <faction>",
             "standing <subject> [<party>]",
             "outcomes",
-            "outcome <outcome> <character>",
+            "outcome <outcome> <character> [--seen-by <id>,... | --unseen]",
             "relations [<faction>]",
             "relate <from> <to> <value> [--one-way]",
             "relate <from> <to> --by <n> [--one-way]",

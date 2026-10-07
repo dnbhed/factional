@@ -1,0 +1,41 @@
+# Judging by what you know (K3, DESIGN.md §10.3). Everyone pictures a character from where
+# they started, moved by every shift they've heard of, at the strength they heard it: the
+# truth, less what they haven't heard. Disposition, joining, promotion, the rule tables and
+# drift all use the judge's picture.
+
+load content/sample
+
+# The player picks Hale's pocket, seen only by Ava. She pictures the truth; Hale doesn't.
+act player steal --target captain_hale --seen-by merchant_ava
+assert perceived merchant_ava player == merchant_ava pictures player as they are: law -5.00, good -3.00
+perceived captain_hale player
+# So Hale measures 0 / 0: 75.37 away, not the true 80.42.
+distance captain_hale player --explain
+assert distance captain_hale player == 75.37
+
+# Ten ticks on, the news reaches Hale at 0.50: he pictures −2.50 / −1.50, 77.90 away.
+advance 10
+perceived captain_hale player
+assert distance captain_hale player == 77.90
+
+# Three thefts no one sees: the player is truly −20 / −12 now, but the Lantern Guild,
+# which never heard of any of them, still pictures 0 / 0, 60.21 away, so it won't take
+# them, though they're truly 40.01 away, within its tolerance of 45.
+act player steal --unseen
+act player steal --unseen
+act player steal --unseen
+assert show character player == player — The Player — law -20.00, good -12.00 — True Neutral
+can-join player lantern_guild --explain
+map lantern_guild
+
+# Brother Ash rescues Ava five times, unseen: he's truly 25 / −40, 40.02 from the Ashen
+# Circle, past its member tolerance of 40. Only Ava and the Watch, whom the rescue names,
+# know; the Circle never hears, so it keeps him.
+outcome rescued_merchant brother_ash --unseen
+outcome rescued_merchant brother_ash --unseen
+outcome rescued_merchant brother_ash --unseen
+outcome rescued_merchant brother_ash --unseen
+outcome rescued_merchant brother_ash --unseen
+advance 100
+assert perceived ashen_circle brother_ash == ashen_circle pictures brother_ash at law 25.00, good -70.00: truly law 25.00, good -40.00, less law 0.00, good 30.00 not everyone has heard of, plus law 0.00, good 0.00 ashen_circle has heard of
+journal

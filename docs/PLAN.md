@@ -62,6 +62,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - K0 — design pass for knowledge (DESIGN.md §10): who learns firsthand, ripple through contacts and membership with news in flight, perceived alignment used by every judgement, secret membership and exposure tables; the user's choices D-21 to D-24 (settling X-1), with P-55 to P-58; invariants 12 and 13; Riverhold's knowledge settings in the complete example; done 2026-10-07 (#31)
 - K1 — witnessed acts: `knowledge.model` (`omniscient`, `witnessed`), with Riverhold on `witnessed`; only parties that learn firsthand (witnesses, the parties an act names, and the factions of the characters among them, never through the actor) change their standing; a `reach` query; `act --seen-by <id>,… | --unseen`, and `act --explain` saying who learns; invariant 12's property test as far as K1 goes (P-59); done 2026-10-07 (#32)
 - K2 — ripple: `knowledge.model = "ripple"`, with `[knowledge.ripple]` `strength` (a list per hop, the user's choice over decay and threshold, P-56) and `hop_ticks`, and characters' `contacts`; `NewsSent` and `NewsArrived`, news in flight delivered as time advances, standing scaled by each hop's awareness; Riverhold on `ripple` with DESIGN.md §13's contacts; the `news` query and command; content checks and a warning; invariant 13 and replay, restore and invariant 12 under ripple as property tests (P-60); done 2026-10-07 (#33)
+- K3 — perceived alignment (D-21): everyone judges by their picture of a character, the truth less the shifts they haven't heard of; `ShiftWitnessed`, and the shift carried by news at each hop's strength; `distance` measures the picture, so disposition, joining, promotion and drift follow, and each rule table uses its own faction's picture; drift reviewed as news arrives; `witnesses` on outcomes and effects; the `perceived` query and command, explanations and `map` showing picture against truth; the journal now writes who saw each act and outcome; property tests that everyone pictures the truth under `omniscient` or when everyone saw everything (P-61); done 2026-10-07 (#34)
 
 ---
 
@@ -79,11 +80,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 5 — Knowledge and rumour
 
-### K3 · Perceived alignment — P2 · Next
-
-Perceived alignment in public and private offsets, used by affinity, joining, rank tolerance, the rule tables and drift; `witnesses` on outcomes and effects; a `perceived` query and command, and `map` showing perception against truth; invariant 12 (§10.3, D-21, P-57).
-
-### K4 · Secret membership and double agents — P2 · Outline
+### K4 · Secret membership and double agents — P2 · Next
 
 `secret_members`, secret starting memberships and `JoinFaction { secretly }`; known memberships for kinship, joining and conflicts; `Expose`, `MembershipExposed`, the `exposed` tables and `LeftFaction { Exposed }`; invariant 6 amended; a double agent in Riverhold (§10.4, D-19, D-23, D-24, P-58).
 

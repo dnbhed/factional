@@ -131,7 +131,59 @@ pub struct AlignmentDelta {
     pub good: Fixed,
 }
 
+impl AlignmentDelta {
+    /// How far `from` moved to get to `to`.
+    pub fn between(from: Alignment, to: Alignment) -> AlignmentDelta {
+        AlignmentDelta {
+            law: to.law() - from.law(),
+            good: to.good() - from.good(),
+        }
+    }
+
+    /// Whether it moves neither axis.
+    pub fn is_zero(self) -> bool {
+        self == AlignmentDelta::default()
+    }
+
+    /// Both deltas together. Each axis of a delta between two alignments is within ±200,
+    /// and sums of them stay far inside what a `Fixed` holds.
+    pub fn plus(self, other: AlignmentDelta) -> AlignmentDelta {
+        AlignmentDelta {
+            law: self.law + other.law,
+            good: self.good + other.good,
+        }
+    }
+
+    /// The opposite delta.
+    pub fn negated(self) -> AlignmentDelta {
+        AlignmentDelta {
+            law: -self.law,
+            good: -self.good,
+        }
+    }
+
+    /// Each axis × `by`, rounded once.
+    pub fn scaled(self, by: Fixed) -> AlignmentDelta {
+        AlignmentDelta {
+            law: self.law.saturating_mul(by),
+            good: self.good.saturating_mul(by),
+        }
+    }
+}
+
 impl Alignment {
+    /// This alignment moved by `delta`, each axis stopping at its ends.
+    pub fn offset(self, delta: AlignmentDelta) -> Alignment {
+        let axis = |position: Fixed, by: Fixed| {
+            position
+                .checked_add(by)
+                .unwrap_or(by)
+                .clamp(-AXIS_LIMIT, AXIS_LIMIT)
+        };
+        Alignment::new(axis(self.law(), delta.law), axis(self.good(), delta.good))
+            .expect("clamped to the axes")
+    }
+
     /// This alignment moved by `delta` × `scale` with `inertia`: each axis's shift is
     /// computed exactly and rounded once, then the axis is clamped to −100.00…100.00
     /// (DESIGN.md §5.2).
@@ -361,6 +413,41 @@ mod tests {
         assert_eq!(
             aligned(99_00, 98_00).shifted(redeem, h(1_00), &steady()),
             aligned(100_00, 100_00)
+        );
+    }
+
+    fn delta(law: i64, good: i64) -> AlignmentDelta {
+        AlignmentDelta {
+            law: h(law),
+            good: h(good),
+        }
+    }
+
+    #[test]
+    fn deltas_measure_add_scale_and_offset_alignments() {
+        assert_eq!(
+            AlignmentDelta::between(aligned(-5_00, 10_00), aligned(20_00, -3_00)),
+            delta(25_00, -13_00)
+        );
+        assert_eq!(
+            delta(25_00, -13_00).plus(delta(-5_00, 3_00)),
+            delta(20_00, -10_00)
+        );
+        assert_eq!(delta(25_00, -13_00).negated(), delta(-25_00, 13_00));
+        // −5.00 × 0.25 is −1.25 exactly; −3.00 × 0.25 is −0.75; 1.25 × 0.5 rounds to 0.63.
+        assert_eq!(delta(-5_00, -3_00).scaled(h(25)), delta(-1_25, -75));
+        assert_eq!(delta(1_25, 0).scaled(h(50)), delta(63, 0));
+        assert!(AlignmentDelta::default().is_zero());
+        assert!(!delta(1, 0).is_zero());
+        assert!(!delta(0, -1).is_zero());
+        assert_eq!(
+            aligned(90_00, -95_00).offset(delta(20_00, -10_00)),
+            aligned(100_00, -100_00),
+            "each axis stops at its end"
+        );
+        assert_eq!(
+            aligned(10_00, 10_00).offset(delta(-5_00, 3_00)),
+            aligned(5_00, 13_00)
         );
     }
 

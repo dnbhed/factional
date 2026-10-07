@@ -43,7 +43,7 @@ pub use id::{
     ActionId, CharacterId, FactionId, InvalidId, ModifierId, OutcomeId, ProfileId, RankId,
 };
 pub use inertia::{Inertia, InertiaProfile, Toward};
-pub use knowledge::{KnowledgeModel, Learned, News, NextHop, Reached, Ripple};
+pub use knowledge::{KnowledgeModel, Learned, News, NextHop, Perception, Reached, Ripple};
 pub use membership::{
     ConflictRule, Consequence, DriftPolicy, JoinAssessment, JoinBlock, LeaveReason, Membership,
     PromotionAssessment, RankCheck, StartingMembership, ToleranceProblem, Tolerances,

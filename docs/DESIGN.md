@@ -550,7 +550,9 @@ Settles X-1. Every observer, character or faction, has a **perceived alignment**
 perceived(observer, subject) = clamp( starting alignment + Σ shift × awareness, −100, +100 )
 ```
 
-summed over the subject's shifts the observer has learned of, each axis rounded once per shift. A shift is the change as applied, after inertia and clamping, so a party that saw everything perceives the truth. A character's starting alignment is public: it's who they are when the world begins. A faction's alignment is always public.
+summed over the subject's shifts the observer has learned of, each axis rounded once per shift. A shift is the change as applied, after inertia and clamping, so a party that saw everything perceives the truth. A character's starting alignment is public: it's who they are when the world begins. A faction's alignment is always public. Everyone knows themself.
+
+How it's kept (P-61): an act, outcome or `ApplyEffects` whose shift not everyone saw emits `ShiftWitnessed`, naming those who learned it firsthand, and under ripple the news carries the shift on, each `NewsArrived` with the shift at its hop's awareness. So a picture is computed as the truth, less the subject's shifts not everyone has heard of, plus what the observer has heard of them, each axis stopping at its ends. Replay and saves rebuild every picture from the events.
 
 **Everyone judges by what they know** (D-21). Wherever a rule measures a character's distance to someone, it uses that someone's perceived alignment of the character:
 
@@ -563,7 +565,7 @@ summed over the subject's shifts the observer has learned of, each axis rounded 
 | A rank's tolerance (§7.2) | the faction |
 | Drift (§9.3) | the faction: a member is reviewed when the faction's picture of them moves, not their true alignment |
 
-The `distance` query takes an observer, so it uses theirs too. Labels and inertia use the true alignment, since they're about the character, not anyone's view of them.
+The `distance` query takes an observer, so it uses theirs too, and `distance`, `disposition` and `can-join --explain` say where the subject truly is when the observer pictures them elsewhere. `perceived <observer> <subject>` shows the working, and `map` draws each character where the faction pictures them. Labels, inertia and an action's `by_target` curves use the true alignment, since they're about the character, not anyone's view of them.
 
 So a secretly corrupt captain keeps his rank until the Watch hears of it. With §9.3's numbers: if Brother Ash's good deed is seen only by its target, and the news never reaches a member of the Ashen Circle, the Circle still pictures him 40.00 away and keeps him. If it reaches the Circle at full strength, the Circle's review expels him then, as in §9.3.
 
@@ -596,8 +598,8 @@ A faction's own table replaces the world's `membership.exposed`. Built in: `expe
 
 X-1 also asked what this costs. Nothing is stored per observer for what everyone knows, and nothing per act once its news has stopped:
 
-- **Pictures** are kept as offsets from the starting alignment, in two tiers. A shift everyone learns of goes into the subject's **public** offset, one per character. A shift only some learn of goes into a **private** offset for each observer that learned it, kept only for observer–subject pairs that have one. Perceived = start + public + private.
-- So under `omniscient`, or with every act seen by everyone, there are no private offsets at all. Otherwise the private store grows with the reach of unwitnessed acts, which the strength list bounds: three hops by default.
+- **Pictures** are kept as two stores beside the true alignment: for each character, the sum of their shifts not everyone has heard of; and for each observer–subject pair where the observer has heard some of those, what it heard. Perceived = truth − hidden + heard. That's the same as the starting alignment plus a public offset plus a private one, and costs the same (P-61).
+- So under `omniscient`, or with every act seen by everyone, both stores stay empty. Otherwise the per-pair store grows with the reach of unwitnessed acts, which the strength list bounds: three hops by default. Entries that come back to zero are dropped.
 - **News in flight** holds the act's facts (actor, target, shift, the standing changes it carries) and who has heard, and is dropped when it stops.
 - **Secret memberships** keep the set of outsiders each has been exposed to.
 
@@ -641,7 +643,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | Drift | `ProbationStarted`, `ProbationCleared`, `ProbationExpired`, `MemberOutOfTolerance`, `MemberBackInTolerance` |
 | Faction changes | `FactionAlignmentChanged`, `RelationChanged`, `MembershipConflict`, `MembershipConflictEnded` |
 | Disposition | `Watched`, `Unwatched`, `DispositionBandChanged`, `ModifierAdded`, `ModifierRemoved`, `ModifierExpired` |
-| Knowledge | `NewsSent`, `NewsArrived` (K2), `MembershipExposed` and `LeftFaction { Exposed }` (K4) |
+| Knowledge | `NewsSent`, `NewsArrived` (K2), `ShiftWitnessed` (K3), `MembershipExposed` and `LeftFaction { Exposed }` (K4) |
 
 ### 11.3 Queries (read)
 
@@ -798,6 +800,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working. On `act` it includes who learns of the act and why (K1).
 - `act … --seen-by <id>,…` or `--unseen` to say who saw an act; without either, everyone did (K1).
 - `news` in the REPL for what's on its way: who has heard of each act, who hears next, when and how strongly, and the standing changes still due (K2).
+- `perceived <observer> <subject>` for where the observer pictures someone, and why; `outcome … --seen-by <id>,…` or `--unseen` to say who saw a quest's result (K3).
 - `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
 - `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
 - `save <file>` and `restore <file>` in the REPL to keep a session and come back to it (T4, P-54).

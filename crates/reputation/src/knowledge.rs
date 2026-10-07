@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use factional_core::{Fixed, Tick};
 
+use crate::alignment::{Alignment, AlignmentDelta};
 use crate::id::CharacterId;
 use crate::standing::Party;
 
@@ -103,8 +104,24 @@ pub struct News {
     /// The standing change still due to each party the act names that hasn't heard yet, at
     /// full strength; it's scaled by their awareness when they do.
     pub due: BTreeMap<Party, Fixed>,
+    /// How the actor's alignment moved, at full strength; each party's picture of them moves
+    /// by it × their awareness when they hear (DESIGN.md §10.3).
+    pub shift: AlignmentDelta,
     /// Where it goes next.
     pub next: NextHop,
+}
+
+/// What a party believes a character's alignment to be, with its working (DESIGN.md
+/// §10.3): the truth, less the shifts not everyone has heard of, plus what this party has
+/// heard of them, each axis stopping at its ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Perception {
+    pub truth: Alignment,
+    /// The character's shifts that not everyone has heard of, added together.
+    pub hidden: AlignmentDelta,
+    /// What this party has heard of those, at the strength they heard it.
+    pub heard: AlignmentDelta,
+    pub perceived: Alignment,
 }
 
 /// How a party learned of an act firsthand (DESIGN.md §10.1, P-55).

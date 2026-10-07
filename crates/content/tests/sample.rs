@@ -259,6 +259,7 @@ fn hale_thinks_ill_of_a_fined_thief() {
         .execute(Command::ApplyOutcome {
             outcome: OutcomeId::new("fined_by_watch").expect("valid id"),
             character: character("player"),
+            witnesses: Witnesses::Everyone,
         })
         .expect("accepted");
     let hale = Observer::Character(character("captain_hale"));
@@ -467,6 +468,7 @@ fn riverholds_acts_and_outcomes_change_standing() {
         .execute(Command::ApplyOutcome {
             outcome: OutcomeId::new("fined_by_watch").expect("valid id"),
             character: character("player"),
+            witnesses: Witnesses::Everyone,
         })
         .expect("accepted");
     // −20.00 from the fine, on top of +1.80 spilled from robbing a Guild member (P-46).
@@ -579,6 +581,7 @@ fn promotion_in_riverhold_needs_the_next_ranks_requirements() {
         .execute(Command::ApplyOutcome {
             outcome: OutcomeId::new("fenced_the_crown_jewels").expect("valid id"),
             character: character("vex"),
+            witnesses: Witnesses::Everyone,
         })
         .expect("accepted");
     world

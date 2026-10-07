@@ -23,12 +23,13 @@ promote <character> <faction> [--explain]                                       
 demote <character> <faction>                                                                    move <character> down a rank
 standing <subject> [<party>]                                                                    how factions and characters regard <subject> from what has passed between them
 outcomes                                                                                        list the outcomes, such as quest results
-outcome <outcome> <character>                                                                   apply an outcome's effects to <character>
+outcome <outcome> <character> [--seen-by <id>,... | --unseen]                                   apply an outcome's effects to <character>; --seen-by says who saw it (default everyone)
 relations [<faction>]                                                                           how factions regard each other, or just <faction>, with bands and conflicts
 relate <from> <to> <value> [--one-way]                                                          set how <from> and <to> regard each other; --one-way sets only <from> → <to>
 relate <from> <to> --by <n> [--one-way]                                                         shift a relation by <n>, stopping at -100 and 100
 disposition <observer> <subject> [--explain]                                                    how <observer>, a faction or character, regards <subject>: a score and its band
 distance <observer> <subject> [--explain]                                                       how far <subject> is from <observer>, a faction or character, as the observer sees it
+perceived <observer> <subject>                                                                  where <observer> pictures <subject>: the truth, less what it hasn't heard of
 modify <observer|everyone> <subject> <id> <amount> [--until <tick>]                             put a modifier on how <observer> regards <subject>, as another module would
 unmodify <subject> <id>                                                                         take a modifier off <subject>
 modifiers <subject>                                                                             the modifiers on how <subject> is seen

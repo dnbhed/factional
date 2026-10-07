@@ -63,15 +63,21 @@ pub enum Command {
         mutual: bool,
     },
     /// Applies a named outcome from content to `character`, such as a quest's result (P-26).
+    /// `witnesses` says who learns of its alignment shift besides the parties it names
+    /// (DESIGN.md §10.1); everyone, unless said otherwise.
     ApplyOutcome {
         outcome: OutcomeId,
         character: CharacterId,
+        #[serde(default)]
+        witnesses: Witnesses,
     },
     /// Applies effects sent directly by another module; `source` says which, for the record.
     ApplyEffects {
         source: String,
         character: CharacterId,
         effects: Effects,
+        #[serde(default)]
+        witnesses: Witnesses,
     },
     /// Sets `faction`'s alignment, then reviews its members (DESIGN.md §9.1, §9.3).
     SetFactionAlignment {
@@ -164,11 +170,15 @@ pub enum Change {
     OutcomeApplied {
         outcome: OutcomeId,
         character: CharacterId,
+        #[serde(default)]
+        witnesses: Witnesses,
     },
     /// Effects from another module were applied; their changes follow.
     EffectsApplied {
         source: String,
         character: CharacterId,
+        #[serde(default)]
+        witnesses: Witnesses,
     },
     /// How `from` regards `to` changed.
     RelationChanged {
@@ -271,14 +281,27 @@ pub enum Change {
         heard: BTreeSet<Party>,
         due: Vec<(Party, Fixed)>,
         next: NextHop,
+        /// How the actor's alignment moved, at full strength (DESIGN.md §10.3).
+        #[serde(default)]
+        shift: AlignmentDelta,
     },
     /// News reached `arrived.parties` and, through them, their factions: everyone in
-    /// `learned`. `next` is where it goes on to, if anywhere.
+    /// `learned`. `next` is where it goes on to, if anywhere. Each of them now pictures the
+    /// actor moved by `shift`, the actor's shift at the hop's awareness.
     NewsArrived {
         news: u64,
         arrived: NextHop,
         learned: BTreeSet<Party>,
         next: Option<NextHop>,
+        #[serde(default)]
+        shift: AlignmentDelta,
+    },
+    /// Only `seen_by` learned firsthand that `character`'s alignment moved by `shift`:
+    /// everyone else still pictures them where they were (DESIGN.md §10.3).
+    ShiftWitnessed {
+        character: CharacterId,
+        shift: AlignmentDelta,
+        seen_by: BTreeSet<Party>,
     },
 }
 

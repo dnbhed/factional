@@ -100,13 +100,14 @@ fn a_theft_seen_only_by_a_bystander_changes_no_standing() {
         .map(|event| match event.payload {
             Change::ActionPerformed { .. } => "performed",
             Change::AlignmentChanged { .. } => "alignment",
+            Change::ShiftWitnessed { .. } => "witnessed",
             _ => "other",
         })
         .collect();
     assert_eq!(
         kinds,
-        ["performed", "alignment"],
-        "Hale didn't notice, so neither he nor the Watch knows"
+        ["performed", "alignment", "witnessed"],
+        "Hale didn't notice, so neither he nor the Watch knows: no standing changes"
     );
 }
 
