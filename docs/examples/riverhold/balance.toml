@@ -104,8 +104,28 @@ rules = [
   { then = "release", standing_change = -40.0 },
 ]
 
+[membership.exposed]
+# When a faction learns that one of its members is secretly in a faction it's in conflict
+# with: "keep" (a membership conflict then opens for them), "demote" or "expel", each with
+# an optional standing change. The same conditions as above, with "current" the faction
+# that found out and "target" the secret one. Built in: expel, at the faction's
+# expel_standing_change. (K4)
+rules = [
+  { when = { standing_with_current_at_least = 60.0 }, then = "keep", standing_change = -30.0 },
+  { then = "expel", standing_change = -40.0 },
+]
+
 
 [knowledge]
-# Who learns of an act: "omniscient" (everyone, at once). "witnessed" and "ripple" are
-# designed in K0. (K1)
-model = "omniscient"
+# Who learns of an act: "omniscient" (everyone, fully and at once), "witnessed" (only
+# those who saw it, the parties it names, and their factions) or "ripple" (then onward,
+# through contacts and factions). (K1, K2)
+model = "ripple"
+
+[knowledge.ripple]
+# Each hop multiplies the news's strength by this... (K2)
+decay = 0.5
+# ...takes this many ticks per hop...
+hop_ticks = 10
+# ...and stops at a hop whose strength would be below this.
+threshold = 0.1

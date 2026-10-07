@@ -9,10 +9,16 @@ use std::path::{Path, PathBuf};
 use factional_content::{SCHEMA_FILES, Sources, parse_content, schema, schema_text};
 use serde_json::Value;
 
-/// Settings in `docs/examples/riverhold` that the engine doesn't read yet, by file and key,
-/// with the increment that will read them. The schema leaves them out, since loading refuses
-/// them; this list says so rather than letting them through unnoticed.
-const NOT_READ_YET: [(&str, &str, &str); 1] = [("balance", "knowledge", "K1")];
+/// Settings in `docs/examples/riverhold` that the engine doesn't read yet, by file and key
+/// path, with the increment that will read them. `*` in a path stands for every table, such
+/// as every character. The schema leaves them out, since loading refuses them; this list
+/// says so rather than letting them through unnoticed.
+const NOT_READ_YET: [(&str, &str, &str); 4] = [
+    ("balance", "knowledge", "K1"),
+    ("balance", "membership.exposed", "K4"),
+    ("factions", "*.secret_members", "K4"),
+    ("characters", "*.contacts", "K2"),
+];
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -180,13 +186,28 @@ fn violations(schema: &Value, data: &Value) -> Vec<String> {
 /// The complete example's text, without the settings the engine doesn't read yet.
 fn riverhold_as_read(file: &str) -> Value {
     let mut data = json("docs/examples/riverhold", file);
-    for (_, key, _) in NOT_READ_YET.iter().filter(|(owner, ..)| *owner == file) {
-        data.as_object_mut()
-            .expect("a table")
-            .remove(*key)
-            .expect("the setting is there");
+    for (_, path, _) in NOT_READ_YET.iter().filter(|(owner, ..)| *owner == file) {
+        let steps: Vec<&str> = path.split('.').collect();
+        assert!(remove(&mut data, &steps) > 0, "{file}: {path} is there");
     }
     data
+}
+
+/// Removes the setting at `steps` from `data`, where `*` is every table, and says how many
+/// it removed.
+fn remove(data: &mut Value, steps: &[&str]) -> usize {
+    match steps {
+        [] => 0,
+        [last] => usize::from(
+            data.as_object_mut()
+                .and_then(|table| table.remove(*last))
+                .is_some(),
+        ),
+        ["*", rest @ ..] => data.as_object_mut().map_or(0, |table| {
+            table.values_mut().map(|value| remove(value, rest)).sum()
+        }),
+        [step, rest @ ..] => data.get_mut(*step).map_or(0, |value| remove(value, rest)),
+    }
 }
 
 #[test]
@@ -290,9 +311,10 @@ fn the_sample_world_matches_the_schema() {
 #[test]
 fn the_complete_example_matches_the_schema_but_for_settings_not_read_yet() {
     let (_, unknown) = keys("docs/examples/riverhold");
-    let expected: Vec<String> = NOT_READ_YET
+    let unknown: BTreeSet<String> = unknown.into_iter().collect();
+    let expected: BTreeSet<String> = NOT_READ_YET
         .iter()
-        .map(|(file, key, _)| format!("{file}: {key}"))
+        .map(|(file, path, _)| format!("{file}: {path}"))
         .collect();
     assert_eq!(unknown, expected, "settings the schema doesn't name");
     for file in SCHEMA_FILES {

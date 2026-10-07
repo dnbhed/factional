@@ -28,6 +28,8 @@ alignment = { law = 35.0, good = 85.0 }
 inertia = "hardening"
 memberships = [{ faction = "temple", rank = "ordained" }]
 standing = { factions = { temple = 40.0 } }
+# She ministers to Brother Ash, hoping to turn him. (K2)
+contacts = ["brother_ash"]
 
 [vex]
 name = "Vex"
@@ -38,6 +40,9 @@ standing = { factions = { lantern_guild = 30.0 } }
 [merchant_ava]
 name = "Merchant Ava"
 alignment = { law = 20.0, good = 10.0 }
+# Who this character passes news on to. A contact works both ways, so it's declared on one
+# side only. (K2)
+contacts = ["captain_hale", "sister_mira"]
 
 [brother_ash]
 name = "Brother Ash"

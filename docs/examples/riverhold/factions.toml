@@ -63,6 +63,9 @@ weights = { law = 1.0, good = 0.5 }
 tolerance = 45.0
 member_tolerance = 60.0
 drift = { policy = "flag" }
+# Members may belong secretly, unknown to anyone outside the Guild until they're exposed.
+# A starting membership says so with `secret = true`. (K4)
+secret_members = true
 
 [[lantern_guild.ranks]]
 id = "cutpurse"
@@ -100,6 +103,7 @@ weights = { law = 0.25, good = 1.0 }
 tolerance = 30.0
 member_tolerance = 40.0
 drift = { policy = "expel" }
+secret_members = true
 
 # A faction can replace balance.toml's defectors or deserters rules with its own, and may
 # name its ranks in them. The Circle lets no one go to its enemies. (M7)
