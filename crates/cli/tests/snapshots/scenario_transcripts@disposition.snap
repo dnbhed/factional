@@ -59,6 +59,7 @@ bands: unfriendly ≤ -25.00 < neutral ≤ 25.00 < friendly
 > assert disposition player temple == error: a disposition's subject must be a character
 > load crates/cli/tests/fixtures/worlds/hostile
 loaded 1 character from crates/cli/tests/fixtures/worlds/hostile
+warning: factions.toml: temple.tolerance: no one starts within Temple of the Dawn's tolerance of 35.00: the nearest is brother_ash, 150.02 away
 > disposition temple brother_ash --explain
 temple → brother_ash: -32.15 (hostile)
 affinity: -32.15 × 1.00 = -32.15, at distance 150.02 (euclidean)

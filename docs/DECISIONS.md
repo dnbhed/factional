@@ -303,6 +303,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **They add up, then clamp to ±100,** like kinship. `--explain` names each modifier that counted, with its observer.
   - **Commands, not content.** Modifiers come from other modules at runtime, so their checks are refusals, not load errors, as for `ApplyEffects` (P-39).
   - *Why:* other modules can colour how someone is seen for a while, in a way that explains itself and expires on its own.
+- **P-51 · How validation and the JSON Schema work** (made in T1, 2026-10-06).
+  - **`validate` shares `load`'s checks,** through one function, so the two always report the same problems and warnings. It prints them, then a summary line, all to stdout, and exits 0 if the world would load and 1 if not. Warnings alone don't fail it.
+  - **"No one starts within tolerance" counts every starting character,** members included, against the faction's joining tolerance. It names the nearest, with the lower id on a tie, so the designer can see how far off the faction is. A faction whose only member has drifted out warns twice, once for each problem.
+  - **"A rank no one can reach" is dropped.** Under the rules every rank is reachable in principle: standing requirements are within ±100, and standing can always be raised by outcomes and effects; rank tolerances are at least 0, and alignment can always be moved by actions. A rank no starting member meets is normal for a ladder, so it isn't worth a warning.
+  - **The schema is built from the engine's own lists,** such as the drift policies, metrics, conditions and inertia directions, with ranges from the same constants as the checks and defaults from `Balance::default()`. It's written out to `schema/`, and a test fails if those files are stale.
+  - **The schema checks one value at a time.** Checks across values, such as references and increasing band edges, are `validate`'s; the schema's descriptions say what they are.
+  - **Keeping it in step is tested both ways.** Every key in `content/sample` and `docs/examples/riverhold` must be in the schema, except the settings the engine doesn't read yet, which the test lists by name (now only `knowledge`, for K1). Every key the schema names must be used by a world that loads; `crates/cli/tests/fixtures/worlds/every_key` holds the few that the sample and the example don't use.
+  - **`schema` with no file lists the files,** one per line, rather than printing six schemas at once.
+  - *Why:* a designer can check a world, and get help writing one, without the REPL, and neither tool can quietly disagree with what the engine loads.
 
 ## Open
 

@@ -47,3 +47,4 @@ player — The Player — law -20.00, good -12.00 — True Neutral — member of
 > load crates/cli/tests/fixtures/worlds/reformed
 loaded 1 character from crates/cli/tests/fixtures/worlds/reformed
 warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00
+warning: factions.toml: lantern_guild.tolerance: no one starts within The Lantern Guild's tolerance of 45.00: the nearest is vex, 95.52 away

@@ -1,3 +1,4 @@
+#:schema ../../schema/relations.schema.json
 # How Riverhold's factions regard each other, -100 to 100 (DESIGN.md §9.4, §13).
 #
 # Each [[relation]] is one entry:

@@ -22,3 +22,5 @@ workspace = true
 
 [dev-dependencies]
 insta = { version = "1.49.0", features = ["glob"] }
+jsonschema = { version = "0.58.6", default-features = false }
+serde_json = "1.0.151"

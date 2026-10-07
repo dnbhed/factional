@@ -13,4 +13,4 @@ These files show every content file and setting the design describes (DESIGN.md 
 | [actions.toml](actions.toml) | What characters can do, and its effect on alignment and standing | A3 |
 | [outcomes.toml](outcomes.toml) | Named bundles of effects, such as a quest's result | M3 |
 
-A test (`crates/content/tests/examples.rs`) checks that every file here is valid TOML.
+Two tests keep these files honest. `crates/content/tests/examples.rs` checks that every file is valid TOML. `crates/content/tests/schema.rs` checks that, without the settings the engine doesn't read yet, the files load and match the JSON Schema; it lists those settings by name, so each one's arrival is noticed.

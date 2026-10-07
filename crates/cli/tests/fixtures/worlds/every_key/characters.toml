@@ -1,0 +1,5 @@
+[captain_hale]
+name = "Captain Hale"
+alignment = { law = 75.0, good = 30.0 }
+inertia = "stubborn"
+memberships = [{ faction = "city_watch" }]

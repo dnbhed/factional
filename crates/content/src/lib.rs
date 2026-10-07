@@ -2,6 +2,9 @@
 //! that name the file and the key path (DESIGN.md §12.1).
 
 mod reader;
+mod schema;
+
+pub use schema::{SCHEMA_FILES, schema, schema_text};
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -344,6 +347,11 @@ pub fn warnings(content: &Content) -> Vec<Diagnostic> {
             ContentWarning::RankToleranceLooser { faction, index, .. } => Diagnostic {
                 file: FACTIONS_FILE.to_owned(),
                 key: Some(format!("{faction}.ranks[{index}].tolerance")),
+                message: warning.to_string(),
+            },
+            ContentWarning::NoOneWithinTolerance { faction, .. } => Diagnostic {
+                file: FACTIONS_FILE.to_owned(),
+                key: Some(format!("{faction}.tolerance")),
                 message: warning.to_string(),
             },
         })
@@ -2076,7 +2084,9 @@ mod tests {
         assert_eq!(
             found,
             [
-                "characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00"
+                "characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00",
+                // Vex is the only character, so no one starts within the guild's tolerance.
+                "factions.toml: lantern_guild.tolerance: no one starts within The Lantern Guild's tolerance of 45.00: the nearest is vex, 95.52 away",
             ]
         );
         let faithful = world(

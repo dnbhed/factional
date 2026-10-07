@@ -1,6 +1,8 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::check::{check, validate};
+
 use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
@@ -17,6 +19,10 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "load <dir>",
         "load the content files in <dir>, such as content/sample, as a new world",
+    ),
+    (
+        "validate <dir>",
+        "check the content files in <dir> as load would, without loading them",
     ),
     ("characters", "list the loaded characters"),
     (
@@ -224,6 +230,7 @@ impl Session {
             "help" => Ok(Outcome::Output(help_text())),
             "quit" => Ok(Outcome::Quit),
             "load" => Ok(self.load(rest)),
+            "validate" => Ok(self.validate(rest)),
             "characters" => Ok(self.characters()),
             "show" => Ok(self.show(rest)),
             "factions" => Ok(self.factions()),
@@ -286,31 +293,33 @@ impl Session {
         if dir.is_empty() {
             return Outcome::Error("load needs the form: load <dir>".to_owned());
         }
-        match factional_content::load_dir(&self.base_dir.join(dir)) {
-            Ok(content) => {
-                let count = content.characters.len();
+        match check(&self.base_dir.join(dir)) {
+            Ok(checked) => {
+                let count = checked.counts[0];
                 let noun = if count == 1 {
                     "character"
                 } else {
                     "characters"
                 };
-                let warnings = factional_content::warnings(&content);
-                match World::new(content) {
-                    Ok(world) => {
-                        self.world = Some(world);
-                        let summary = format!("loaded {count} {noun} from {dir}");
-                        let warnings = warnings.iter().map(|warning| format!("warning: {warning}"));
-                        Outcome::Output(lines(std::iter::once(summary).chain(warnings)))
-                    }
-                    // The loader reports every problem a world would refuse, so this means
-                    // the two disagree: show it rather than hide it.
-                    Err(problems) => {
-                        Outcome::Error(lines(problems.iter().map(ToString::to_string)))
-                    }
-                }
+                self.world = Some(checked.world);
+                let summary = format!("loaded {count} {noun} from {dir}");
+                let warnings = checked
+                    .warnings
+                    .iter()
+                    .map(|warning| format!("warning: {warning}"));
+                Outcome::Output(lines(std::iter::once(summary).chain(warnings)))
             }
-            Err(error) => Outcome::Error(error.to_string()),
+            Err(problems) => Outcome::Error(problems.join("\n")),
         }
+    }
+
+    /// `validate <dir>`: what `load <dir>` would report, and a summary, without loading it.
+    fn validate(&self, dir: &str) -> Outcome {
+        if dir.is_empty() {
+            return Outcome::Error("validate needs the form: validate <dir>".to_owned());
+        }
+        let (report, _) = validate(&self.base_dir, dir);
+        Outcome::Output(report.trim_end().to_owned())
     }
 
     /// `characters`: every loaded character, one per line, in id order.
@@ -2201,6 +2210,37 @@ mod tests {
     }
 
     #[test]
+    fn validate_reports_on_a_world_without_loading_it() {
+        let mut session = riverhold();
+        assert_eq!(
+            session.execute("validate crates/cli/tests/fixtures/worlds/broken"),
+            output(
+                "error: characters.toml: hale: missing 'alignment'\n\
+                 error: characters.toml: hale: unknown key 'alignmnet' (did you mean 'alignment'?)\n\
+                 error: characters.toml: vex.alignment.law: 120.00 is outside -100.00..100.00\n\
+                 crates/cli/tests/fixtures/worlds/broken doesn't load: 3 problems"
+            )
+        );
+        assert_eq!(
+            session.execute("validate crates/cli/tests/fixtures/worlds/stern"),
+            output(
+                "crates/cli/tests/fixtures/worlds/stern loads: 1 character, 0 factions, 0 actions, 0 relations and 0 outcomes"
+            )
+        );
+        assert_eq!(
+            session.execute("show character vex"),
+            output(
+                "vex — Vex — law -55.00, good -20.00 — Chaotic Neutral — member of lantern_guild (fence) since tick 0"
+            ),
+            "the world already loaded stays"
+        );
+        assert_eq!(
+            run("validate"),
+            command_error("validate needs the form: validate <dir>")
+        );
+    }
+
+    #[test]
     fn load_needs_a_directory() {
         assert_eq!(
             run("load"),
@@ -2838,7 +2878,8 @@ mod tests {
             session.execute("load crates/cli/tests/fixtures/worlds/reformed"),
             output(
                 "loaded 1 character from crates/cli/tests/fixtures/worlds/reformed\n\
-                 warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00"
+                 warning: characters.toml: vex.memberships[0]: vex starts 95.52 from The Lantern Guild, outside its member tolerance of 60.00\n\
+                 warning: factions.toml: lantern_guild.tolerance: no one starts within The Lantern Guild's tolerance of 45.00: the nearest is vex, 95.52 away"
             )
         );
         assert_eq!(

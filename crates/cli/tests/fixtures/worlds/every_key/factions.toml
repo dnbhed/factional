@@ -1,0 +1,9 @@
+# One faction, so the world loads.
+
+[city_watch]
+name = "The City Watch"
+alignment = { law = 70.0, good = 20.0 }
+tolerance = 40.0
+
+[[city_watch.ranks]]
+id = "recruit"

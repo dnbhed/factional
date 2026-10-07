@@ -1,3 +1,4 @@
+#:schema ../../schema/outcomes.schema.json
 # Riverhold's outcomes: named bundles of effects applied to a character at once, such as a
 # quest's result (DESIGN.md §7.1, P-26). Apply one with `outcome <outcome> <character>`.
 #

@@ -1,0 +1,15 @@
+# Hale is 11.18 from the Watch. The nearest anyone comes to the Circle is Vex, √(30² + 40²) =
+# 50.00 away, beyond its tolerance of 30.00.
+
+[player]
+name = "The Player"
+alignment = { law = 0.0, good = 0.0 }
+
+[captain_hale]
+name = "Captain Hale"
+alignment = { law = 75.0, good = 30.0 }
+memberships = [{ faction = "city_watch" }]
+
+[vex]
+name = "Vex"
+alignment = { law = -10.0, good = -40.0 }

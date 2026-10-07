@@ -1,0 +1,15 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/validate.scenario
+---
+> assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 3 outcomes
+> validate crates/cli/tests/fixtures/worlds/lonely
+warning: factions.toml: ashen_circle.tolerance: no one starts within The Ashen Circle's tolerance of 30.00: the nearest is vex, 50.00 away
+crates/cli/tests/fixtures/worlds/lonely loads, with 1 warning: 3 characters, 2 factions, 0 actions, 0 relations and 0 outcomes
+> validate crates/cli/tests/fixtures/worlds/broken
+error: characters.toml: hale: missing 'alignment'
+error: characters.toml: hale: unknown key 'alignmnet' (did you mean 'alignment'?)
+error: characters.toml: vex.alignment.law: 120.00 is outside -100.00..100.00
+crates/cli/tests/fixtures/worlds/broken doesn't load: 3 problems
+> assert characters == error: no world is loaded yet: use load <dir> first

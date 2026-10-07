@@ -1,0 +1,4 @@
+[salute]
+alignment = { law = 1.0 }
+standing = { characters = { captain_hale = 2.0 } }
+by_target.law = [[-100.0, 0.5], [100.0, 1.5]]

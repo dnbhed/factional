@@ -1,0 +1,426 @@
+{
+  "$defs": {
+    "alignment": {
+      "additionalProperties": false,
+      "description": "Where they stand on the two axes.",
+      "properties": {
+        "good": {
+          "description": "Evil (-100) to good (100).",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "law": {
+          "description": "Chaotic (-100) to lawful (100).",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "law",
+        "good"
+      ],
+      "type": "object"
+    },
+    "conditions": {
+      "additionalProperties": false,
+      "description": "The conditions, all of which must hold; left out, the rule always applies.",
+      "properties": {
+        "closer_to_target": {
+          "description": "Whether you're nearer the faction you're joining than the one you're leaving.",
+          "type": "boolean"
+        },
+        "outside_member_tolerance": {
+          "description": "Whether you've drifted past your tolerance in the faction you're leaving.",
+          "type": "boolean"
+        },
+        "rank_at_least": {
+          "description": "Your rung in the faction you're leaving is at least this: 1 the lowest, or in a faction's own tables, one of its rank ids.",
+          "oneOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            }
+          ]
+        },
+        "rank_below": {
+          "description": "Your rung in the faction you're leaving is below this: 1 the lowest, or in a faction's own tables, one of its rank ids.",
+          "oneOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            }
+          ]
+        },
+        "standing_with_current_at_least": {
+          "description": "Your standing with the faction you're leaving is at least this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "standing_with_current_below": {
+          "description": "Your standing with the faction you're leaving is below this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "standing_with_target_at_least": {
+          "description": "Your standing with the faction you're joining is at least this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "standing_with_target_below": {
+          "description": "Your standing with the faction you're joining is below this, -100 to 100.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "drift": {
+      "additionalProperties": false,
+      "description": "What a faction does when a member's alignment moves them past their member tolerance (DESIGN.md §9.3).",
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "grace_ticks"
+              ]
+            },
+            {
+              "required": [
+                "then"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "policy": {
+            "const": "probation"
+          }
+        }
+      },
+      "properties": {
+        "grace_ticks": {
+          "description": "For probation: how long they have to come back.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "policy": {
+          "description": "What happens when a member drifts past their tolerance.",
+          "enum": [
+            "ignore",
+            "flag",
+            "demote",
+            "expel",
+            "probation"
+          ],
+          "type": "string"
+        },
+        "then": {
+          "description": "For probation: what happens if they're still out once the grace has passed.",
+          "enum": [
+            "demote",
+            "expel"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy"
+      ],
+      "then": {
+        "required": [
+          "grace_ticks",
+          "then"
+        ]
+      },
+      "type": "object"
+    },
+    "faction": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "$ref": "#/$defs/alignment"
+        },
+        "defectors": {
+          "$ref": "#/$defs/rule_tables/properties/defectors"
+        },
+        "deserters": {
+          "$ref": "#/$defs/rule_tables/properties/deserters"
+        },
+        "drift": {
+          "$ref": "#/$defs/drift"
+        },
+        "expel_standing_change": {
+          "default": -20.0,
+          "description": "The change in standing with the faction when it expels someone.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "leave_standing_change": {
+          "default": 0.0,
+          "description": "The change in standing with the faction when someone leaves of their own accord.",
+          "maximum": 100.0,
+          "minimum": -100.0,
+          "type": "number"
+        },
+        "member_tolerance": {
+          "description": "How far a member may drift before it matters; at least the tolerance, which it defaults to.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "name": {
+          "description": "The faction's name, as shown.",
+          "type": "string"
+        },
+        "ranks": {
+          "description": "The rank ladder, lowest first; new members start on the first rung.",
+          "items": {
+            "$ref": "#/$defs/rank"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "tolerance": {
+          "description": "How close to the faction's alignment someone must be to join it.",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "weights": {
+          "$ref": "#/$defs/weights"
+        }
+      },
+      "required": [
+        "name",
+        "alignment",
+        "tolerance",
+        "ranks"
+      ],
+      "type": "object"
+    },
+    "rank": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "The rank's id, such as sergeant.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "requires": {
+          "additionalProperties": false,
+          "description": "What a promotion to this rank needs.",
+          "properties": {
+            "standing": {
+              "description": "The standing with the faction a promotion to this rank needs.",
+              "maximum": 100.0,
+              "minimum": -100.0,
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "tolerance": {
+          "description": "A stricter tolerance for this rank than the faction's member tolerance.",
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "rule_tables": {
+      "properties": {
+        "defectors": {
+          "additionalProperties": false,
+          "description": "Does the faction joined take a member of its enemies? The last rule must have no conditions.",
+          "properties": {
+            "rules": {
+              "description": "Tried top to bottom until one whose conditions all hold.",
+              "items": {
+                "additionalProperties": false,
+                "else": {
+                  "not": {
+                    "required": [
+                      "reason"
+                    ]
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "then": {
+                      "const": "refuse"
+                    }
+                  }
+                },
+                "properties": {
+                  "reason": {
+                    "description": "When refusing: why.",
+                    "type": "string"
+                  },
+                  "standing_change": {
+                    "description": "When letting someone through: the standing it costs, -100 to 100.",
+                    "maximum": 100.0,
+                    "minimum": -100.0,
+                    "type": "number"
+                  },
+                  "then": {
+                    "description": "What the rule decides.",
+                    "enum": [
+                      "accept",
+                      "refuse"
+                    ],
+                    "type": "string"
+                  },
+                  "when": {
+                    "$ref": "#/$defs/conditions"
+                  }
+                },
+                "required": [
+                  "then"
+                ],
+                "then": {
+                  "not": {
+                    "required": [
+                      "standing_change"
+                    ]
+                  },
+                  "required": [
+                    "reason"
+                  ]
+                },
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "rules"
+          ],
+          "type": "object"
+        },
+        "deserters": {
+          "additionalProperties": false,
+          "description": "Does each enemy faction someone is in let them go? The last rule must have no conditions.",
+          "properties": {
+            "rules": {
+              "description": "Tried top to bottom until one whose conditions all hold.",
+              "items": {
+                "additionalProperties": false,
+                "else": {
+                  "not": {
+                    "required": [
+                      "reason"
+                    ]
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "then": {
+                      "const": "refuse"
+                    }
+                  }
+                },
+                "properties": {
+                  "reason": {
+                    "description": "When refusing: why.",
+                    "type": "string"
+                  },
+                  "standing_change": {
+                    "description": "When letting someone through: the standing it costs, -100 to 100.",
+                    "maximum": 100.0,
+                    "minimum": -100.0,
+                    "type": "number"
+                  },
+                  "then": {
+                    "description": "What the rule decides.",
+                    "enum": [
+                      "release",
+                      "refuse"
+                    ],
+                    "type": "string"
+                  },
+                  "when": {
+                    "$ref": "#/$defs/conditions"
+                  }
+                },
+                "required": [
+                  "then"
+                ],
+                "then": {
+                  "not": {
+                    "required": [
+                      "standing_change"
+                    ]
+                  },
+                  "required": [
+                    "reason"
+                  ]
+                },
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "rules"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "weights": {
+      "additionalProperties": false,
+      "description": "How much each axis counts when judging distance, 0 to 1, at least one above 0.",
+      "properties": {
+        "good": {
+          "description": "0 to 1.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "law": {
+          "description": "0 to 1.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "law",
+        "good"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "$ref": "#/$defs/faction"
+  },
+  "description": "The factions, each a table keyed by its id (DESIGN.md §9). Factions and characters share one set of ids.",
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "title": "factions.toml",
+  "type": "object"
+}
