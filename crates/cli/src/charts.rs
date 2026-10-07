@@ -31,7 +31,8 @@ fn letter(index: usize) -> char {
 }
 
 /// `map <faction>`: the alignment plane, law across and good up, marking the cells within
-/// the faction's tolerance, the faction, and each character, with a key (P-53).
+/// the faction's tolerance, the faction, and each character where it pictures them, with a
+/// key (P-53, DESIGN.md §10.3).
 pub(crate) fn map(world: &World, args: &str) -> Outcome {
     let id = match args.split_whitespace().collect::<Vec<_>>()[..] {
         [id] => id,
@@ -57,25 +58,37 @@ pub(crate) fn map(world: &World, args: &str) -> Outcome {
     place(at, '@');
     let observer = Observer::Faction(faction.id.clone());
     let mut key = Vec::new();
+    // Each character where the faction pictures them (DESIGN.md §10.3).
     for (index, character) in world.characters().enumerate() {
         let mark = letter(index);
-        place(
-            world
-                .alignment(&character.id)
-                .expect("a character has an alignment"),
-            mark,
-        );
-        let distance = world
+        let measured = world
             .distance(&observer, &character.id)
-            .expect("both exist")
-            .value;
+            .expect("both exist");
+        place(measured.subject, mark);
+        let distance = measured.value;
         let within = if distance <= tolerance {
             "within"
         } else {
             "outside"
         };
+        let pictured = if measured.subject == measured.truth {
+            String::new()
+        } else {
+            let axes = |alignment: Alignment| {
+                format!(
+                    "law {}, good {}",
+                    alignment.on(factional_reputation::Axis::Law),
+                    alignment.on(factional_reputation::Axis::Good)
+                )
+            };
+            format!(
+                "; pictured at {}, truly {}",
+                axes(measured.subject),
+                axes(measured.truth)
+            )
+        };
         key.push(format!(
-            "{mark} {}: {distance} away, {within}",
+            "{mark} {}: {distance} away, {within}{pictured}",
             character.id
         ));
     }
@@ -432,6 +445,29 @@ mod tests {
             "{map}"
         );
         assert!(map.contains("\nD player: 70.18 away, outside\n"), "{map}");
+    }
+
+    #[test]
+    fn map_places_each_character_where_the_faction_pictures_them() {
+        let mut session = session("content/sample");
+        // Three thefts no one saw: the player is truly at −15 / −9, but the Guild still
+        // pictures 0 / 0, 60.21 away (law Δ60, good Δ10 × 0.5).
+        for _ in 0..3 {
+            run(&mut session, "act player steal --unseen");
+        }
+        let map = run(&mut session, "map lantern_guild");
+        assert_eq!(row(&map, 0)[10], 'D', "{map}");
+        assert_eq!(
+            row(&map, -10)[8],
+            '+',
+            "not where the player truly is, which is within the Guild's tolerance"
+        );
+        assert!(
+            map.contains(
+                "\nD player: 60.21 away, outside; pictured at law 0.00, good 0.00, truly law -15.00, good -9.00\n"
+            ),
+            "{map}"
+        );
     }
 
     #[test]

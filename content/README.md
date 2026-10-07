@@ -47,6 +47,7 @@ The schema checks one value at a time. Checks across values, such as whether a f
 - `--explain` on `act`, `disposition`, `can-join` and `promote` shows the working.
 - `act <actor> <action> --seen-by <id>,…` (or `--unseen`) says who saw an act. At first only those who learn of it firsthand change their minds; `act --explain` lists who learns and why.
 - Riverhold's `knowledge.model` is `ripple`: news of an act some didn't see travels on along characters' `contacts` and through factions, ten ticks a hop, weaker each time. `news` shows what's on its way; `advance` delivers it.
+- Everyone judges by what they know: `perceived <observer> <subject>` shows where someone pictures a character and why, and `--explain` on `distance`, `disposition` and `can-join` says when that isn't where they truly are. `outcome <outcome> <character> --seen-by <id>,…` (or `--unseen`) says who saw a quest's result.
 - `map <faction>` draws who stands where on the alignment plane and the region within the faction's tolerance; `matrix [<subject>...] [--csv]` gives how everyone regards each subject; `curve <knob>`, such as `curve disposition.affinity`, prints a curve as a table.
 - `save <file>` keeps your session; `restore <file>` brings it back, as long as the content hasn't changed since.
 - After editing a file, `reload` in the REPL replays your session on the new content and shows what changed.

@@ -8,7 +8,8 @@ loaded 6 characters from content/sample
 > act player steal --target captain_hale --seen-by merchant_ava --explain
 #1 at tick 0: player did steal, targeting captain_hale, witnessed by merchant_ava
 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
-#3 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10
+#3 at tick 0: only merchant_ava learned that player's alignment moved by law -5.00, good -3.00; everyone else pictures them as before
+#4 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10
 shift = base × scale × inertia, rounded once; player's inertia profile is steady
 law: -5.00 × 1.00 × 1.00 (steady has no law.toward_chaotic curve) = -5.00, from 0.00 to -5.00
 good: -3.00 × 1.00 × 1.00 (steady has no good.toward_evil curve) = -3.00, from 0.00 to -3.00
@@ -18,13 +19,14 @@ captain_hale -20.00: doesn't learn, not having seen it; no change for now
 > assert show character player == player — The Player — law -5.00, good -3.00 — True Neutral
 > assert standing player == no standing with anyone yet
 > act player steal --target captain_hale --seen-by captain_hale --explain
-#4 at tick 0: player did steal, targeting captain_hale, witnessed by captain_hale
-#5 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
-#6 at tick 0: player's standing with city_watch moved from 0.00 to -10.00
-#7 at tick 0: player's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)
-#8 at tick 0: player's standing with temple moved from 0.00 to -1.00, with -1.00 spilled from city_watch (-10.00 × 0.10; temple regards it at 60.00)
-#9 at tick 0: player's standing with captain_hale moved from 0.00 to -20.00
-#10 at tick 0: news of #4 is on its way to merchant_ava: hop 1, at 0.50, arriving at tick 10
+#5 at tick 0: player did steal, targeting captain_hale, witnessed by captain_hale
+#6 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
+#7 at tick 0: only city_watch, captain_hale learned that player's alignment moved by law -5.00, good -3.00; everyone else pictures them as before
+#8 at tick 0: player's standing with city_watch moved from 0.00 to -10.00
+#9 at tick 0: player's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)
+#10 at tick 0: player's standing with temple moved from 0.00 to -1.00, with -1.00 spilled from city_watch (-10.00 × 0.10; temple regards it at 60.00)
+#11 at tick 0: player's standing with captain_hale moved from 0.00 to -20.00
+#12 at tick 0: news of #5 is on its way to merchant_ava: hop 1, at 0.50, arriving at tick 10
 shift = base × scale × inertia, rounded once; player's inertia profile is steady
 law: -5.00 × 1.00 × 1.00 (steady has no law.toward_chaotic curve) = -5.00, from -5.00 to -10.00
 good: -3.00 × 1.00 × 1.00 (steady has no good.toward_evil curve) = -3.00, from -3.00 to -6.00
@@ -36,12 +38,13 @@ captain_hale -20.00: learns, having seen it
 > assert standing player lantern_guild == 1.80
 > assert standing player temple == -1.00
 > act player donate_to_temple --unseen --explain
-#11 at tick 0: player did donate_to_temple, witnessed by nobody
-#12 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -10.00, good -3.00
-#13 at tick 0: player's standing with ashen_circle moved from 0.00 to -2.40, with -2.40 spilled from temple (10.00 × -0.24; ashen_circle regards it at -90.00)
-#14 at tick 0: player's standing with city_watch moved from -10.00 to -9.00, with 1.00 spilled from temple (10.00 × 0.10; city_watch regards it at 60.00)
-#15 at tick 0: player's standing with temple moved from -1.00 to 9.00
-#16 at tick 0: news of #11 is on its way to sister_mira: hop 1, at 0.50, arriving at tick 10
+#13 at tick 0: player did donate_to_temple, witnessed by nobody
+#14 at tick 0: player's alignment moved from law -10.00, good -6.00 to law -10.00, good -3.00
+#15 at tick 0: only temple learned that player's alignment moved by law 0.00, good 3.00; everyone else pictures them as before
+#16 at tick 0: player's standing with ashen_circle moved from 0.00 to -2.40, with -2.40 spilled from temple (10.00 × -0.24; ashen_circle regards it at -90.00)
+#17 at tick 0: player's standing with city_watch moved from -10.00 to -9.00, with 1.00 spilled from temple (10.00 × 0.10; city_watch regards it at 60.00)
+#18 at tick 0: player's standing with temple moved from -1.00 to 9.00
+#19 at tick 0: news of #13 is on its way to sister_mira: hop 1, at 0.50, arriving at tick 10
 shift = base × scale × inertia, rounded once; player's inertia profile is steady
 good: 3.00 × 1.00 × 1.00 (steady has no good.toward_good curve) = 3.00, from -6.00 to -3.00
 who learns of it, under the ripple model, and the standing change due:

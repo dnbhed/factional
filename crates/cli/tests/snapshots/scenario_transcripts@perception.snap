@@ -1,0 +1,149 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/perception.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> act player steal --target captain_hale --seen-by merchant_ava
+#1 at tick 0: player did steal, targeting captain_hale, witnessed by merchant_ava
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00
+#3 at tick 0: only merchant_ava learned that player's alignment moved by law -5.00, good -3.00; everyone else pictures them as before
+#4 at tick 0: news of #1 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 10
+> assert perceived merchant_ava player == merchant_ava pictures player as they are: law -5.00, good -3.00
+> perceived captain_hale player
+captain_hale pictures player at law 0.00, good 0.00: truly law -5.00, good -3.00, less law -5.00, good -3.00 not everyone has heard of, plus law 0.00, good 0.00 captain_hale has heard of
+> distance captain_hale player --explain
+captain_hale → player: 75.37 (euclidean)
+law: 75.00 vs 0.00, gap 75.00, weight 1.00
+good: 30.00 vs 0.00, gap 30.00, weight 0.25
+weights: captain_hale's own
+that's where captain_hale pictures player; player is truly at law -5.00, good -3.00
+> assert distance captain_hale player == 75.37
+> advance 10
+#5 at tick 0: time advanced from 0 to 10
+#6 at tick 10: news of #1 reached city_watch, temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 10); on its way to brother_ash: hop 2, at 0.25, arriving at tick 20
+#7 at tick 10: player's standing with city_watch moved from 0.00 to -5.00
+#8 at tick 10: player's standing with lantern_guild moved from 0.00 to 0.90, with 0.90 spilled from city_watch (-5.00 × -0.18; lantern_guild regards it at -80.00)
+#9 at tick 10: player's standing with temple moved from 0.00 to -0.50, with -0.50 spilled from city_watch (-5.00 × 0.10; temple regards it at 60.00)
+#10 at tick 10: player's standing with captain_hale moved from 0.00 to -10.00
+> perceived captain_hale player
+captain_hale pictures player at law -2.50, good -1.50: truly law -5.00, good -3.00, less law -5.00, good -3.00 not everyone has heard of, plus law -2.50, good -1.50 captain_hale has heard of
+> assert distance captain_hale player == 77.90
+> act player steal --unseen
+#11 at tick 10: player did steal, witnessed by nobody
+#12 at tick 10: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00
+#13 at tick 10: no one saw player's alignment move by law -5.00, good -3.00; everyone else pictures them as before
+> act player steal --unseen
+#14 at tick 10: player did steal, witnessed by nobody
+#15 at tick 10: player's alignment moved from law -10.00, good -6.00 to law -15.00, good -9.00
+#16 at tick 10: no one saw player's alignment move by law -5.00, good -3.00; everyone else pictures them as before
+> act player steal --unseen
+#17 at tick 10: player did steal, witnessed by nobody
+#18 at tick 10: player's alignment moved from law -15.00, good -9.00 to law -20.00, good -12.00
+#19 at tick 10: no one saw player's alignment move by law -5.00, good -3.00; everyone else pictures them as before
+> assert show character player == player — The Player — law -20.00, good -12.00 — True Neutral
+> can-join player lantern_guild --explain
+player → lantern_guild: no
+distance 60.21 (euclidean), tolerance 45.00
+law: -60.00 vs 0.00, gap 60.00, weight 1.00
+good: -10.00 vs 0.00, gap 10.00, weight 0.50
+weights: lantern_guild's own
+that's where lantern_guild pictures player; player is truly at law -20.00, good -12.00
+refused: 60.21 from The Lantern Guild, tolerance is 45.00
+> map lantern_guild
+The Lantern Guild (lantern_guild): law -60.00, good -10.00, tolerance 45.00
+ 100 . . . . . . . . . . . . . . . . . . . . .
+     . . . . . . . . . . . . . . E . . . . . .
+     . . . . + . . . . . . . . . . . . . . . .
+     . . + + + + + . . . . . . . . . . . . . .
+     . . + + + + + . . . . . . . . . . . . . .
+  50 . + + + + + + + . . . . . . . . . . . . .
+     . + + + + + + + . . . . . . . . . . . . .
+     + + + + + + + + + . . . . . . . . . B . .
+     + + + + + + + + + . . . . . . . . . . . .
+     + + + + + + + + + . . . C . . . . . . . .
+   0 + + + + + + + + + . D . . . . . . . . . .
+     + + + + @ + + + + . . . . . . . . . . . .
+     + + + + F + + + + . . . . . . . . . . . .
+     + + + + + + + + + . . . . . . . . . . . .
+     + + + + + + + + + . . . . . . . . . . . .
+ -50 + + + + + + + + + . . . . . . . . . . . .
+     . + + + + + + + . . . . . . . . . . . . .
+     . + + + + + + + . . . . . A . . . . . . .
+     . . + + + + + . . . . . . . . . . . . . .
+     . . + + + + + . . . . . . . . . . . . . .
+-100 . . . . + . . . . . . . . . . . . . . . .
+     -100               law                100
+@ The Lantern Guild, + within its tolerance, . outside; law runs across, good up
+A brother_ash: 90.14 away, outside
+B captain_hale: 136.47 away, outside
+C merchant_ava: 80.62 away, outside
+D player: 60.21 away, outside; pictured at law 0.00, good 0.00, truly law -20.00, good -12.00
+E sister_mira: 106.21 away, outside
+F vex: 7.07 away, within
+> outcome rescued_merchant brother_ash --unseen
+#20 at tick 10: outcome rescued_merchant applied to brother_ash, witnessed by nobody
+#21 at tick 10: brother_ash's alignment moved from law 25.00, good -70.00 to law 25.00, good -64.00
+#22 at tick 10: only city_watch, merchant_ava learned that brother_ash's alignment moved by law 0.00, good 6.00; everyone else pictures them as before
+#23 at tick 10: brother_ash's standing with city_watch moved from 0.00 to 10.00
+#24 at tick 10: brother_ash's standing with lantern_guild moved from 0.00 to -1.80, with -1.80 spilled from city_watch (10.00 × -0.18; lantern_guild regards it at -80.00)
+#25 at tick 10: brother_ash's standing with temple moved from 0.00 to 1.00, with 1.00 spilled from city_watch (10.00 × 0.10; temple regards it at 60.00)
+#26 at tick 10: brother_ash's standing with merchant_ava moved from 0.00 to 30.00
+#27 at tick 10: news of #20 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 20
+> outcome rescued_merchant brother_ash --unseen
+#28 at tick 10: outcome rescued_merchant applied to brother_ash, witnessed by nobody
+#29 at tick 10: brother_ash's alignment moved from law 25.00, good -64.00 to law 25.00, good -58.00
+#30 at tick 10: only city_watch, merchant_ava learned that brother_ash's alignment moved by law 0.00, good 6.00; everyone else pictures them as before
+#31 at tick 10: brother_ash's standing with city_watch moved from 10.00 to 20.00
+#32 at tick 10: brother_ash's standing with lantern_guild moved from -1.80 to -3.60, with -1.80 spilled from city_watch (10.00 × -0.18; lantern_guild regards it at -80.00)
+#33 at tick 10: brother_ash's standing with temple moved from 1.00 to 2.00, with 1.00 spilled from city_watch (10.00 × 0.10; temple regards it at 60.00)
+#34 at tick 10: brother_ash's standing with merchant_ava moved from 30.00 to 60.00
+#35 at tick 10: news of #28 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 20
+> outcome rescued_merchant brother_ash --unseen
+#36 at tick 10: outcome rescued_merchant applied to brother_ash, witnessed by nobody
+#37 at tick 10: brother_ash's alignment moved from law 25.00, good -58.00 to law 25.00, good -52.00
+#38 at tick 10: only city_watch, merchant_ava learned that brother_ash's alignment moved by law 0.00, good 6.00; everyone else pictures them as before
+#39 at tick 10: brother_ash's standing with city_watch moved from 20.00 to 30.00
+#40 at tick 10: brother_ash's standing with lantern_guild moved from -3.60 to -5.40, with -1.80 spilled from city_watch (10.00 × -0.18; lantern_guild regards it at -80.00)
+#41 at tick 10: brother_ash's standing with temple moved from 2.00 to 3.00, with 1.00 spilled from city_watch (10.00 × 0.10; temple regards it at 60.00)
+#42 at tick 10: brother_ash's standing with merchant_ava moved from 60.00 to 90.00
+#43 at tick 10: news of #36 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 20
+> outcome rescued_merchant brother_ash --unseen
+#44 at tick 10: outcome rescued_merchant applied to brother_ash, witnessed by nobody
+#45 at tick 10: brother_ash's alignment moved from law 25.00, good -52.00 to law 25.00, good -46.00
+#46 at tick 10: only city_watch, merchant_ava learned that brother_ash's alignment moved by law 0.00, good 6.00; everyone else pictures them as before
+#47 at tick 10: brother_ash's standing with city_watch moved from 30.00 to 40.00
+#48 at tick 10: brother_ash's standing with lantern_guild moved from -5.40 to -7.20, with -1.80 spilled from city_watch (10.00 × -0.18; lantern_guild regards it at -80.00)
+#49 at tick 10: brother_ash's standing with temple moved from 3.00 to 4.00, with 1.00 spilled from city_watch (10.00 × 0.10; temple regards it at 60.00)
+#50 at tick 10: brother_ash's standing with merchant_ava moved from 90.00 to 100.00
+#51 at tick 10: news of #44 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 20
+> outcome rescued_merchant brother_ash --unseen
+#52 at tick 10: outcome rescued_merchant applied to brother_ash, witnessed by nobody
+#53 at tick 10: brother_ash's alignment moved from law 25.00, good -46.00 to law 25.00, good -40.00
+#54 at tick 10: only city_watch, merchant_ava learned that brother_ash's alignment moved by law 0.00, good 6.00; everyone else pictures them as before
+#55 at tick 10: brother_ash's standing with city_watch moved from 40.00 to 50.00
+#56 at tick 10: brother_ash's standing with lantern_guild moved from -7.20 to -9.00, with -1.80 spilled from city_watch (10.00 × -0.18; lantern_guild regards it at -80.00)
+#57 at tick 10: brother_ash's standing with temple moved from 4.00 to 5.00, with 1.00 spilled from city_watch (10.00 × 0.10; temple regards it at 60.00)
+#58 at tick 10: news of #52 is on its way to captain_hale, sister_mira: hop 1, at 0.50, arriving at tick 20
+> advance 100
+#59 at tick 10: time advanced from 10 to 110
+#60 at tick 110: news of #1 reached ashen_circle, brother_ash at 0.25 (hop 2, due at tick 20); it goes no further
+#61 at tick 110: news of #20 reached temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 20); it goes no further
+#62 at tick 110: news of #28 reached temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 20); it goes no further
+#63 at tick 110: news of #36 reached temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 20); it goes no further
+#64 at tick 110: news of #44 reached temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 20); it goes no further
+#65 at tick 110: news of #52 reached temple, captain_hale, sister_mira at 0.50 (hop 1, due at tick 20); it goes no further
+> assert perceived ashen_circle brother_ash == ashen_circle pictures brother_ash at law 25.00, good -70.00: truly law 25.00, good -40.00, less law 0.00, good 30.00 not everyone has heard of, plus law 0.00, good 0.00 ashen_circle has heard of
+> journal
+1. act player steal --target captain_hale --seen-by merchant_ava — accepted
+2. advance 10 — accepted
+3. act player steal --unseen — accepted
+4. act player steal --unseen — accepted
+5. act player steal --unseen — accepted
+6. outcome rescued_merchant brother_ash --unseen — accepted
+7. outcome rescued_merchant brother_ash --unseen — accepted
+8. outcome rescued_merchant brother_ash --unseen — accepted
+9. outcome rescued_merchant brother_ash --unseen — accepted
+10. outcome rescued_merchant brother_ash --unseen — accepted
+11. advance 100 — accepted

@@ -386,6 +386,16 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`news` in the REPL** lists what's on its way, and `act --explain` says "no change for now" for those who may still hear.
   - **Contacts outside the ripple model only warn.** `[knowledge.ripple]` written for another model isn't flagged: the settings keep their defaults when it's left out, so there's nothing to tell apart.
   - *Why:* replay and saves rebuild news exactly from events, and what a party gets doesn't depend on how time was advanced.
+- **P-61 · How perceived alignment is built** (made in K3, 2026-10-07).
+  - **Truth − hidden + heard.** P-57's public and private offsets are kept the other way round: the true alignment, each character's shifts not everyone has heard of, and what each party has heard of those. It's the same picture and the same memory; empty stores mean everyone pictures the truth, with no special case for `omniscient`.
+  - **`ShiftWitnessed`** follows an `AlignmentChanged` that not everyone saw, naming who learned it firsthand, possibly no one; `NewsSent` and `NewsArrived` carry the shift, the latter at its hop's awareness. A shift of nothing records nothing, and news is only sent when it has a shift or a standing change to carry.
+  - **Outcomes and `ApplyEffects` take `witnesses`** (default everyone, so older saves still read). The parties they name learn their shift as well as their standing change, and their factions through them, as for an act.
+  - **One measure for every rule.** `distance` measures where the observer pictures the subject, so disposition, joining, promotion and drift follow; each rule table builds its own situation from its own faction's picture.
+  - **Drift is reviewed when a faction's picture moves,** including when news reaches it; a review whose picture didn't move finds nothing new.
+  - **Truth where it's about the character:** labels, inertia, and an action's `by_target` curves.
+  - **Everyone knows themself,** so a character's picture of themself is the truth.
+  - **Explanations show both:** `distance`, `disposition` and `can-join --explain` add where the subject truly is when it isn't where they're pictured; `map` draws the faction's picture and notes the truth; `perceived` gives the working.
+  - *Why:* D-21 everywhere through one function, with nothing to keep in step and worlds that don't opt in unchanged.
 
 ## Open
 

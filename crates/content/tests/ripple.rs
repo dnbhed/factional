@@ -10,8 +10,8 @@ use std::path::Path;
 use factional_content::load_dir;
 use factional_core::{Fixed, Tick};
 use factional_reputation::{
-    ActionId, Change, CharacterId, Command, Content, FactionId, KnowledgeModel, NextHop, Party,
-    Ripple, Witnesses, World,
+    ActionId, AlignmentDelta, Change, CharacterId, Command, Content, FactionId, KnowledgeModel,
+    NextHop, Party, Ripple, Witnesses, World,
 };
 
 fn sample() -> Content {
@@ -56,6 +56,14 @@ fn advance(world: &mut World, ticks: u64) -> Vec<Change> {
         .into_iter()
         .map(|event| event.payload)
         .collect()
+}
+
+/// A shift of the player's alignment, in hundredths: steal's −5.00 / −3.00 is theirs whole.
+fn shift(law: i64, good: i64) -> AlignmentDelta {
+    AlignmentDelta {
+        law: h(law),
+        good: h(good),
+    }
 }
 
 fn hop(hop: u32, at: u64, awareness: i64, parties: &[&str]) -> NextHop {
@@ -149,6 +157,7 @@ fn news_of_an_unseen_theft_reaches_hale_and_the_watch_ten_ticks_later() {
                 (who("captain_hale"), h(-20_00))
             ],
             next: hop(1, 10, 50, &["captain_hale", "sister_mira"]),
+            shift: shift(-5_00, -3_00),
         })
     );
     assert_eq!(standings(&advance(&mut world, 5)), Vec::<String>::new());
@@ -166,6 +175,7 @@ fn news_of_an_unseen_theft_reaches_hale_and_the_watch_ten_ticks_later() {
                 who("sister_mira"),
             ]),
             next: Some(hop(2, 20, 25, &["brother_ash"])),
+            shift: shift(-2_50, -1_50),
         }
     );
     assert_eq!(
@@ -191,6 +201,7 @@ fn news_of_an_unseen_theft_reaches_hale_and_the_watch_ten_ticks_later() {
                 arrived: hop(2, 20, 25, &["brother_ash"]),
                 learned: parties(&[faction("ashen_circle"), who("brother_ash")]),
                 next: None,
+                shift: shift(-1_25, -75),
             },
         ]
     );
@@ -248,6 +259,7 @@ fn those_who_learned_firsthand_arent_told_again() {
             heard: parties(&[faction("city_watch"), who("captain_hale"), who("player")]),
             due: Vec::new(),
             next: hop(1, 10, 50, &["merchant_ava"]),
+            shift: shift(-5_00, -3_00),
         })
     );
     let tick_10 = advance(&mut world, 10);
@@ -259,6 +271,7 @@ fn those_who_learned_firsthand_arent_told_again() {
             arrived: hop(1, 10, 50, &["merchant_ava"]),
             learned: parties(&[who("merchant_ava")]),
             next: Some(hop(2, 20, 25, &["sister_mira"])),
+            shift: shift(-2_50, -1_50),
         }
     );
 }

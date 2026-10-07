@@ -13,8 +13,8 @@ use crate::{
     Consequence, Defection, Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction,
     FactionId, Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, KnowledgeModel,
     Learned, LeaveReason, Membership, Metric, ModifierId, ModifierObserver, News, NextHop, Outcome,
-    OutcomeId, Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Reached, Regard,
-    Relation, RelationSide, RestoreError, Ripple, Role, Rule, SavedCommand, Shift, Spill,
+    OutcomeId, Part, Party, Perception, ProfileId, PromotionAssessment, RankCheck, RankId, Reached,
+    Regard, Relation, RelationSide, RestoreError, Ripple, Role, Rule, SavedCommand, Shift, Spill,
     StandingEffects, StandingKey, StandingOwner, TableKind, TableOwner, TableProblem, TableSource,
     TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses, measure,
 };
@@ -1223,7 +1223,10 @@ pub struct Distance {
     pub value: Fixed,
     pub metric: Metric,
     pub observer: Alignment,
+    /// Where the observer pictures the subject, which is what's measured (DESIGN.md §10.3).
     pub subject: Alignment,
+    /// Where the subject truly is.
+    pub truth: Alignment,
     pub weights: Weights,
     pub weights_from: WeightsFrom,
 }
@@ -1279,6 +1282,32 @@ struct State {
     faction_alignments: BTreeMap<FactionId, Alignment>,
     /// News in flight, by the sequence number of its act (DESIGN.md §10.2).
     news: BTreeMap<u64, News>,
+    /// Each character's shifts that not everyone has heard of, added together; only those
+    /// with some (DESIGN.md §10.3, §10.5).
+    hidden: BTreeMap<CharacterId, AlignmentDelta>,
+    /// What each party has heard of a character's hidden shifts, at the strength they heard
+    /// it; only those who have heard something.
+    heard: BTreeMap<(Party, CharacterId), AlignmentDelta>,
+}
+
+impl State {
+    /// `character`'s alignment moved by `shift` without everyone knowing.
+    fn hide(&mut self, character: &CharacterId, shift: AlignmentDelta) {
+        add_shift(&mut self.hidden, character.clone(), shift);
+    }
+
+    /// `party` heard that `character`'s alignment moved by `shift`.
+    fn hear(&mut self, party: &Party, character: &CharacterId, shift: AlignmentDelta) {
+        add_shift(&mut self.heard, (party.clone(), character.clone()), shift);
+    }
+}
+
+/// Adds `shift` to what `key` has, keeping only what isn't zero.
+fn add_shift<K: Ord>(totals: &mut BTreeMap<K, AlignmentDelta>, key: K, shift: AlignmentDelta) {
+    let total = totals.remove(&key).unwrap_or_default().plus(shift);
+    if !total.is_zero() {
+        totals.insert(key, total);
+    }
 }
 
 impl State {
@@ -1336,6 +1365,8 @@ impl State {
                 .map(|faction| (faction.id.clone(), faction.alignment))
                 .collect(),
             news: BTreeMap::new(),
+            hidden: BTreeMap::new(),
+            heard: BTreeMap::new(),
         }
     }
 }
@@ -1465,6 +1496,7 @@ impl World {
         for change in decided {
             emitted.push(self.record(change));
         }
+        let mut pictures_moved: BTreeSet<(CharacterId, FactionId)> = BTreeSet::new();
         // News due by now arrives, oldest first, each hop going on from when it arrived
         // (DESIGN.md §10.2).
         while let Some(news) = self
@@ -1476,6 +1508,17 @@ impl World {
             .map(|(id, _)| *id)
         {
             let (arrival, standing) = self.news_arrival(news);
+            // A faction whose picture of a member moves reviews them (DESIGN.md §10.3).
+            if let Change::NewsArrived { learned, shift, .. } = &arrival
+                && !shift.is_zero()
+            {
+                let actor = &self.state.news[&news].actor;
+                for party in learned {
+                    if let Party::Faction(faction) = party {
+                        pictures_moved.insert((actor.clone(), faction.clone()));
+                    }
+                }
+            }
             emitted.push(self.record(arrival));
             for change in standing {
                 emitted.push(self.record(change));
@@ -1496,7 +1539,7 @@ impl World {
         }
         // Every membership whose member or faction moved is reviewed, in id order, each from
         // the state the last review left (DESIGN.md §9.3).
-        let mut reviews: BTreeSet<(CharacterId, FactionId)> = BTreeSet::new();
+        let mut reviews: BTreeSet<(CharacterId, FactionId)> = pictures_moved;
         for character in moved_characters {
             for faction in self.factions_of(&character) {
                 reviews.insert((character.clone(), faction));
@@ -1619,10 +1662,29 @@ impl World {
                         to,
                     });
                 }
-                // Only the parties that learn of the act change their minds (DESIGN.md §10.1);
-                // under ripple, news of it then goes on to the rest (§10.2).
+                // Only the parties that learn of the act change their minds and their
+                // pictures of the actor (DESIGN.md §10.1, §10.3); under ripple, news of it then
+                // goes on to the rest (§10.2).
                 let reach = self.act_reach(actor, catalogued, target.as_ref(), witnesses);
-                let news = self.news_sent(actor, catalogued, witnesses, &reach);
+                let named: Vec<Party> = catalogued
+                    .standing
+                    .named
+                    .parties()
+                    .into_iter()
+                    .map(|(party, _)| party)
+                    .collect();
+                let mut news = None;
+                if let Some(firsthand) = self.firsthand(actor, &named, witnesses) {
+                    let due = reach
+                        .iter()
+                        .filter(|reached| reached.learned.is_none())
+                        .map(|reached| (reached.party.clone(), reached.change))
+                        .collect();
+                    let shift = AlignmentDelta::between(from, to);
+                    let (witnessed, sent) = self.unseen(actor, &firsthand, shift, due);
+                    changes.extend(witnessed);
+                    news = sent;
+                }
                 let deltas: Deltas = reach
                     .into_iter()
                     .filter(|reached| reached.learned.is_some())
@@ -1779,7 +1841,11 @@ impl World {
                 let moved = before.checked_add(*by).unwrap_or(*by);
                 moved.clamp(-AXIS_LIMIT, AXIS_LIMIT)
             }),
-            Command::ApplyOutcome { outcome, character } => {
+            Command::ApplyOutcome {
+                outcome,
+                character,
+                witnesses,
+            } => {
                 self.existing(character, Role::Member)?;
                 let found = self.content.outcomes.get(outcome).ok_or_else(|| {
                     CommandError::UnknownOutcome {
@@ -1787,11 +1853,13 @@ impl World {
                         suggestion: closest(outcome.as_str(), self.content.outcomes.keys()),
                     }
                 })?;
+                self.existing_witnesses(witnesses)?;
                 let mut changes = vec![Change::OutcomeApplied {
                     outcome: outcome.clone(),
                     character: character.clone(),
+                    witnesses: witnesses.clone(),
                 }];
-                changes.extend(self.effect_changes(character, &found.effects));
+                changes.extend(self.effect_changes(character, &found.effects, witnesses));
                 Ok(changes)
             }
             Command::SetFactionAlignment { faction, alignment } => {
@@ -1938,6 +2006,7 @@ impl World {
                 source,
                 character,
                 effects,
+                witnesses,
             } => {
                 self.existing(character, Role::Member)?;
                 for (party, change) in effects.standing.parties() {
@@ -1954,19 +2023,27 @@ impl World {
                         return Err(CommandError::ValueOutOfRange { value: change });
                     }
                 }
+                self.existing_witnesses(witnesses)?;
                 let mut changes = vec![Change::EffectsApplied {
                     source: source.clone(),
                     character: character.clone(),
+                    witnesses: witnesses.clone(),
                 }];
-                changes.extend(self.effect_changes(character, effects));
+                changes.extend(self.effect_changes(character, effects, witnesses));
                 Ok(changes)
             }
         }
     }
 
-    /// The changes from applying `effects` to `character`: alignment as an action at scale
-    /// 1.00 would move it, then standing.
-    fn effect_changes(&self, character: &CharacterId, effects: &Effects) -> Vec<Change> {
+    /// The changes from applying `effects` to `character`, seen by `witnesses`: alignment
+    /// as an action at scale 1.00 would move it, then standing. The parties the effects name
+    /// always know; who else learns of the shift is as for an act (DESIGN.md §10.1).
+    fn effect_changes(
+        &self,
+        character: &CharacterId,
+        effects: &Effects,
+        witnesses: &Witnesses,
+    ) -> Vec<Change> {
         let mut changes = Vec::new();
         let from = self.state.alignments[character];
         let to = from.shifted(effects.alignment, Fixed::ONE, self.inertia_of(character).1);
@@ -1977,12 +2054,36 @@ impl World {
                 to,
             });
         }
+        let named: Vec<Party> = effects
+            .standing
+            .parties()
+            .into_iter()
+            .map(|(party, _)| party)
+            .collect();
+        let mut news = None;
+        if let Some(firsthand) = self.firsthand(character, &named, witnesses) {
+            let shift = AlignmentDelta::between(from, to);
+            let (witnessed, sent) = self.unseen(character, &firsthand, shift, Vec::new());
+            changes.extend(witnessed);
+            news = sent;
+        }
         let mut deltas = Deltas::new();
         for (party, change) in effects.standing.parties() {
             add(&mut deltas, party, change);
         }
         changes.extend(self.standing_changes(character, deltas));
+        changes.extend(news);
         changes
+    }
+
+    /// Refuses witnesses who don't exist, the first in id order.
+    fn existing_witnesses(&self, witnesses: &Witnesses) -> Result<(), CommandError> {
+        if let Witnesses::These(witnesses) = witnesses {
+            for witness in witnesses {
+                self.existing(witness, Role::Witness)?;
+            }
+        }
+        Ok(())
     }
 
     /// One `StandingChanged` for each party whose standing toward `subject` moves, in party
@@ -2132,34 +2233,22 @@ impl World {
             .collect()
     }
 
-    /// Under ripple, news of an act some didn't see: who has heard of it (those who learned
-    /// firsthand, and the actor), the standing changes still due to the rest, and its first
-    /// hop. `None` if everyone knows, or it goes nowhere (DESIGN.md §10.2).
-    fn news_sent(
+    /// Who learns firsthand of something done by or to `subject` and seen by `witnesses`:
+    /// the witnesses, the parties it names, and the factions of the characters among them,
+    /// never through `subject`. `None` if everyone knows: the model is omniscient, or everyone
+    /// saw it (DESIGN.md §10.1).
+    fn firsthand(
         &self,
-        actor: &CharacterId,
-        action: &Action,
+        subject: &CharacterId,
+        named: &[Party],
         witnesses: &Witnesses,
-        reach: &[Reached],
-    ) -> Option<Change> {
-        if self.content.balance.knowledge != KnowledgeModel::Ripple {
-            return None;
-        }
+    ) -> Option<BTreeSet<Party>> {
         let nobody = BTreeSet::new();
-        let seen = match witnesses {
-            Witnesses::Everyone => return None,
-            Witnesses::Nobody => &nobody,
-            Witnesses::These(witnesses) => witnesses,
+        let seen = match (self.content.balance.knowledge, witnesses) {
+            (KnowledgeModel::Omniscient, _) | (_, Witnesses::Everyone) => return None,
+            (_, Witnesses::Nobody) => &nobody,
+            (_, Witnesses::These(witnesses)) => witnesses,
         };
-        let named: Vec<Party> = action
-            .standing
-            .named
-            .parties()
-            .into_iter()
-            .map(|(party, _)| party)
-            .collect();
-        // Those who learned firsthand, and through the characters among them, their
-        // factions; never through the actor.
         let mut learned: BTreeSet<Party> = named.iter().cloned().collect();
         let characters = seen
             .iter()
@@ -2167,24 +2256,48 @@ impl World {
                 Party::Character(character) => Some(character),
                 Party::Faction(_) => None,
             }));
-        for character in characters.filter(|character| *character != actor) {
+        for character in characters.filter(|character| *character != subject) {
             learned.insert(Party::Character(character.clone()));
             learned.extend(self.factions_of(character).into_iter().map(Party::Faction));
         }
-        let mut heard = learned.clone();
-        heard.insert(Party::Character(actor.clone()));
-        let next = self.next_hop(&heard, &learned, 0, self.state.now)?;
-        Some(Change::NewsSent {
-            news: self.events.len() as u64 + 1,
-            actor: actor.clone(),
-            heard,
-            due: reach
-                .iter()
-                .filter(|reached| reached.learned.is_none())
-                .map(|reached| (reached.party.clone(), reached.change))
-                .collect(),
-            next,
-        })
+        Some(learned)
+    }
+
+    /// What follows a shift of `subject`'s alignment that only `firsthand` learned of, and
+    /// standing changes still `due` to those who didn't: `ShiftWitnessed`, then, under
+    /// ripple, news of it on its way, sent in `tail` after the standing changes. Nothing for
+    /// a shift of nothing; no news if there's nothing to tell or no one to tell it to
+    /// (DESIGN.md §10.2, §10.3).
+    fn unseen(
+        &self,
+        subject: &CharacterId,
+        firsthand: &BTreeSet<Party>,
+        shift: AlignmentDelta,
+        due: Vec<(Party, Fixed)>,
+    ) -> (Option<Change>, Option<Change>) {
+        let witnessed = (!shift.is_zero()).then(|| Change::ShiftWitnessed {
+            character: subject.clone(),
+            shift,
+            seen_by: firsthand.clone(),
+        });
+        if self.content.balance.knowledge != KnowledgeModel::Ripple
+            || (shift.is_zero() && due.is_empty())
+        {
+            return (witnessed, None);
+        }
+        let mut heard = firsthand.clone();
+        heard.insert(Party::Character(subject.clone()));
+        let news = self
+            .next_hop(&heard, firsthand, 0, self.state.now)
+            .map(|next| Change::NewsSent {
+                news: self.events.len() as u64 + 1,
+                actor: subject.clone(),
+                heard,
+                due,
+                next,
+                shift,
+            });
+        (witnessed, news)
     }
 
     /// Where news goes after `learned` heard it at hop `hop` and tick `at`: every contact of
@@ -2244,11 +2357,13 @@ impl World {
             .filter(|(party, _)| learned.contains(*party))
             .map(|(party, change)| (party.clone(), change.saturating_mul(arrived.awareness)))
             .collect();
+        let shift = news.shift.scaled(arrived.awareness);
         let arrival = Change::NewsArrived {
             news: id,
             arrived,
             learned,
             next,
+            shift,
         };
         (arrival, self.standing_changes(&news.actor, deltas))
     }
@@ -2643,6 +2758,7 @@ impl World {
                 ref heard,
                 ref due,
                 ref next,
+                shift,
             } => {
                 self.state.news.insert(
                     news,
@@ -2651,25 +2767,43 @@ impl World {
                         heard: heard.clone(),
                         due: due.iter().cloned().collect(),
                         next: next.clone(),
+                        shift,
                     },
                 );
+            }
+            Change::ShiftWitnessed {
+                ref character,
+                shift,
+                ref seen_by,
+            } => {
+                self.state.hide(character, shift);
+                for party in seen_by {
+                    self.state.hear(party, character, shift);
+                }
             }
             Change::NewsArrived {
                 news,
                 ref learned,
                 ref next,
+                shift,
                 ..
-            } => match next {
-                Some(next) => {
-                    let travelling = self.state.news.get_mut(&news).expect("news in flight");
-                    travelling.heard.extend(learned.iter().cloned());
-                    travelling.due.retain(|party, _| !learned.contains(party));
-                    travelling.next = next.clone();
+            } => {
+                let actor = self.state.news[&news].actor.clone();
+                for party in learned {
+                    self.state.hear(party, &actor, shift);
                 }
-                None => {
-                    self.state.news.remove(&news);
+                match next {
+                    Some(next) => {
+                        let travelling = self.state.news.get_mut(&news).expect("news in flight");
+                        travelling.heard.extend(learned.iter().cloned());
+                        travelling.due.retain(|party, _| !learned.contains(party));
+                        travelling.next = next.clone();
+                    }
+                    None => {
+                        self.state.news.remove(&news);
+                    }
                 }
-            },
+            }
             Change::JoinedFaction {
                 ref character,
                 ref faction,
@@ -2975,6 +3109,38 @@ impl World {
         Some(self.act_shift(actor, action, target, scale))
     }
 
+    /// What `observer` believes `subject`'s alignment to be, with its working (DESIGN.md
+    /// §10.3). `None` if either is unknown.
+    pub fn perceived(&self, observer: &Observer, subject: &CharacterId) -> Option<Perception> {
+        match observer {
+            Observer::Faction(id) => self.faction(id).map(|_| ())?,
+            Observer::Character(id) => self.character(id).map(|_| ())?,
+        }
+        let truth = self.alignment(subject)?;
+        let hidden = self.state.hidden.get(subject).copied().unwrap_or_default();
+        // Everyone knows themself.
+        let heard = match observer {
+            Observer::Character(id) if id == subject => hidden,
+            Observer::Character(id) => self.heard(&Party::Character(id.clone()), subject),
+            Observer::Faction(id) => self.heard(&Party::Faction(id.clone()), subject),
+        };
+        Some(Perception {
+            truth,
+            hidden,
+            heard,
+            perceived: truth.offset(hidden.negated().plus(heard)),
+        })
+    }
+
+    /// What `party` has heard of `subject`'s hidden shifts.
+    fn heard(&self, party: &Party, subject: &CharacterId) -> AlignmentDelta {
+        self.state
+            .heard
+            .get(&(party.clone(), subject.clone()))
+            .copied()
+            .unwrap_or_default()
+    }
+
     /// News in flight, by the sequence number of its act's `ActionPerformed`, oldest first
     /// (DESIGN.md §10.2).
     pub fn news(&self) -> impl Iterator<Item = (u64, &News)> {
@@ -3253,9 +3419,8 @@ impl World {
             .filter(|(member_of, _)| *member_of != faction)
             .filter_map(|(member_of, membership)| {
                 let relation = hostility(&self.state.relations, member_of, faction);
-                (relation <= self.content.balance.conflict_threshold).then(|| {
-                    self.defection(character, membership, member_of, found, relation, &distance)
-                })
+                (relation <= self.content.balance.conflict_threshold)
+                    .then(|| self.defection(character, membership, member_of, found, relation))
             })
             .collect();
         Some(JoinAssessment {
@@ -3270,7 +3435,8 @@ impl World {
     }
 
     /// Whether `from`'s deserters table lets `character` go and `target`'s defectors table
-    /// takes them (DESIGN.md §9.2). `to_target` is their distance to the target.
+    /// takes them (DESIGN.md §9.2). Each table measures them against both factions where its
+    /// own faction pictures them (P-57).
     fn defection(
         &self,
         character: &CharacterId,
@@ -3278,25 +3444,30 @@ impl World {
         from: &FactionId,
         target: &Faction,
         relation: Fixed,
-        to_target: &Distance,
     ) -> Defection {
         let current = &self.content.factions[from];
         let position = current
             .rank_position(&membership.rank)
             .expect("a member's rank is on their faction's ladder");
-        let situation = Situation {
+        let (current_side, target_side) = (
+            Observer::Faction(from.clone()),
+            Observer::Faction(target.id.clone()),
+        );
+        let measured = |judge: &Observer, against: &Observer| {
+            self.distance_as(judge, against, character)
+                .expect("both exist")
+                .value
+        };
+        let situation = |judge: &Observer| Situation {
             rank: membership.rank.clone(),
             rung: position + 1,
             standing_with_current: self.standing_now(character, &Party::Faction(from.clone())),
             standing_with_target: self.standing_now(character, &Party::Faction(target.id.clone())),
-            distance_to_target: to_target.value,
-            distance_to_current: self
-                .distance(&Observer::Faction(from.clone()), character)
-                .expect("both exist")
-                .value,
+            distance_to_target: measured(judge, &target_side),
+            distance_to_current: measured(judge, &current_side),
             member_tolerance: current.member_tolerance(position),
         };
-        let table = |kind: TableKind, owner: &Faction| {
+        let table = |kind: TableKind, owner: &Faction, situation: Situation| {
             let (rules, source) = match (
                 owner.rule_tables.get(&kind),
                 self.content.balance.rule_tables.get(&kind),
@@ -3311,8 +3482,8 @@ impl World {
             from: from.clone(),
             from_name: current.name.clone(),
             relation,
-            deserters: table(TableKind::Deserters, current),
-            defectors: table(TableKind::Defectors, target),
+            deserters: table(TableKind::Deserters, current, situation(&current_side)),
+            defectors: table(TableKind::Defectors, target, situation(&target_side)),
         }
     }
 
@@ -3438,14 +3609,28 @@ impl World {
         Some(measure(from, point, weights, self.content.balance.metric))
     }
 
-    /// How far `subject` is from `observer`, as the observer sees it: measured with the
-    /// observer's weights and the world's metric (DESIGN.md §6). `None` if either is unknown.
+    /// How far `subject` is from `observer`, as the observer sees it: where it pictures
+    /// them (DESIGN.md §10.3), measured with its weights and the world's metric (§6). `None`
+    /// if either is unknown.
     pub fn distance(&self, observer: &Observer, subject: &CharacterId) -> Option<Distance> {
-        let (from, own_weights) = match observer {
+        self.distance_as(observer, observer, subject)
+    }
+
+    /// How far `subject` is from `measurer`, with its weights, where `judge` pictures them:
+    /// a rule table measures a character against two factions by its own faction's picture
+    /// (P-57).
+    fn distance_as(
+        &self,
+        judge: &Observer,
+        measurer: &Observer,
+        subject: &CharacterId,
+    ) -> Option<Distance> {
+        let (from, own_weights) = match measurer {
             Observer::Faction(id) => (self.faction_alignment(id)?, self.faction(id)?.weights),
             Observer::Character(id) => (self.alignment(id)?, self.character(id)?.weights),
         };
-        let to = self.alignment(subject)?;
+        let perception = self.perceived(judge, subject)?;
+        let to = perception.perceived;
         let (weights, weights_from) = match own_weights {
             Some(weights) => (weights, WeightsFrom::Own),
             None => (self.content.balance.default_weights, WeightsFrom::Default),
@@ -3456,6 +3641,7 @@ impl World {
             metric,
             observer: from,
             subject: to,
+            truth: perception.truth,
             weights,
             weights_from,
         })
@@ -3886,6 +4072,7 @@ mod tests {
                 metric: Metric::Euclidean,
                 observer: aligned(70_00, 20_00),
                 subject: aligned(0, 0),
+                truth: aligned(0, 0),
                 weights: weights(1_00, 25),
                 weights_from: WeightsFrom::Own,
             }
@@ -5513,6 +5700,7 @@ mod tests {
         Command::ApplyOutcome {
             outcome: outcome_id(outcome),
             character: id(character),
+            witnesses: Witnesses::Everyone,
         }
     }
 
@@ -5636,6 +5824,7 @@ mod tests {
                     payload: Change::OutcomeApplied {
                         outcome: outcome_id("fined_by_watch"),
                         character: id("player"),
+                        witnesses: Witnesses::Everyone,
                     },
                 },
                 standing_changed(2, "player", party_faction("city_watch"), 0, -20_00),
@@ -5831,6 +6020,7 @@ mod tests {
         let command = Command::ApplyEffects {
             source: "quest:lost_relic".to_owned(),
             character: id("player"),
+            witnesses: Witnesses::Everyone,
             effects,
         };
         assert_eq!(
@@ -5842,6 +6032,7 @@ mod tests {
                     payload: Change::EffectsApplied {
                         source: "quest:lost_relic".to_owned(),
                         character: id("player"),
+                        witnesses: Witnesses::Everyone,
                     },
                 },
                 stamped(
@@ -5884,6 +6075,7 @@ mod tests {
         let effects = |standing| Command::ApplyEffects {
             source: "test".to_owned(),
             character: id("player"),
+            witnesses: Witnesses::Everyone,
             effects: Effects {
                 alignment: AlignmentDelta::default(),
                 standing,
@@ -6067,6 +6259,7 @@ mod tests {
             .execute(Command::ApplyEffects {
                 source: "test".to_owned(),
                 character: id(character),
+                witnesses: Witnesses::Everyone,
                 effects: Effects {
                     alignment: AlignmentDelta::default(),
                     standing: named(&[(faction, standing)], &[]),
@@ -7042,18 +7235,31 @@ mod tests {
             .map(|event| event.payload)
             .skip(2)
             .collect();
+        // Only Ava saw the player's shift, and the news carries it on.
+        let shift = |law, good| AlignmentDelta {
+            law: h(law),
+            good: h(good),
+        };
         assert_eq!(
             sent,
-            [Change::NewsSent {
-                news: 1,
-                actor: id("player"),
-                heard: [Party::Character(id("ava")), Party::Character(id("player"))].into(),
-                due: vec![
-                    (Party::Faction(faction_id("lantern_guild")), h(-10_00)),
-                    (Party::Character(id("vex")), h(-20_00)),
-                ],
-                next: next_hop(1, 3, 50, &["nell"]),
-            }]
+            [
+                Change::ShiftWitnessed {
+                    character: id("player"),
+                    shift: shift(-5_00, -3_00),
+                    seen_by: [Party::Character(id("ava"))].into(),
+                },
+                Change::NewsSent {
+                    news: 1,
+                    actor: id("player"),
+                    heard: [Party::Character(id("ava")), Party::Character(id("player"))].into(),
+                    due: vec![
+                        (Party::Faction(faction_id("lantern_guild")), h(-10_00)),
+                        (Party::Character(id("vex")), h(-20_00)),
+                    ],
+                    next: next_hop(1, 3, 50, &["nell"]),
+                    shift: shift(-5_00, -3_00),
+                }
+            ]
         );
         let in_flight: Vec<(u64, BTreeSet<CharacterId>)> = world
             .news()
@@ -7083,6 +7289,7 @@ mod tests {
                     arrived: next_hop(1, 3, 50, &["nell"]),
                     learned: [Party::Character(id("nell"))].into(),
                     next: Some(next_hop(2, 6, 25, &["vex"])),
+                    shift: shift(-2_50, -1_50),
                 },
             ],
             "Ava already knows, so only Vex is next"
@@ -7099,6 +7306,7 @@ mod tests {
                 ]
                 .into(),
                 next: None,
+                shift: shift(-1_25, -75),
             },
             "the Guild hears through Vex, and there's no third hop"
         );
@@ -7112,6 +7320,234 @@ mod tests {
             ])
         );
         assert_eq!(world.news().count(), 0);
+    }
+
+    fn aligned_at(law: i64, good: i64) -> Alignment {
+        Alignment::new(h(law), h(good)).expect("in range")
+    }
+
+    fn picture(world: &World, observer: Observer, subject: &str) -> Alignment {
+        world
+            .perceived(&observer, &id(subject))
+            .expect("both exist")
+            .perceived
+    }
+
+    #[test]
+    fn each_party_pictures_a_character_by_what_it_has_heard() {
+        let mut world = rippling();
+        world
+            .execute(Command::PerformAction {
+                actor: id("player"),
+                action: action_id("steal"),
+                target: Some(id("vex")),
+                scale: h(1_00),
+                witnesses: seen_by(&["ava"]),
+            })
+            .expect("accepted");
+        let ava = || Observer::Character(id("ava"));
+        let nell = || Observer::Character(id("nell"));
+        let vex = || Observer::Character(id("vex"));
+        let guild = || Observer::Faction(faction_id("lantern_guild"));
+        assert_eq!(picture(&world, ava(), "player"), aligned_at(-5_00, -3_00));
+        assert_eq!(picture(&world, nell(), "player"), aligned_at(0, 0));
+        assert_eq!(
+            world.perceived(&nell(), &id("player")),
+            Some(Perception {
+                truth: aligned_at(-5_00, -3_00),
+                hidden: AlignmentDelta {
+                    law: h(-5_00),
+                    good: h(-3_00)
+                },
+                heard: AlignmentDelta::default(),
+                perceived: aligned_at(0, 0),
+            })
+        );
+        assert_eq!(
+            picture(&world, Observer::Character(id("player")), "player"),
+            aligned_at(-5_00, -3_00)
+        );
+        world.execute(advance(3)).expect("accepted");
+        assert_eq!(picture(&world, nell(), "player"), aligned_at(-2_50, -1_50));
+        assert_eq!(picture(&world, vex(), "player"), aligned_at(0, 0));
+        world.execute(advance(3)).expect("accepted");
+        assert_eq!(picture(&world, vex(), "player"), aligned_at(-1_25, -75));
+        assert_eq!(picture(&world, guild(), "player"), aligned_at(-1_25, -75));
+        assert_eq!(
+            world.perceived(&Observer::Character(id("ghost")), &id("player")),
+            None
+        );
+        assert_eq!(world.perceived(&ava(), &id("ghost")), None);
+        assert_eq!(
+            world.perceived(&Observer::Faction(faction_id("nowhere")), &id("player")),
+            None
+        );
+    }
+
+    #[test]
+    fn a_faction_reviews_a_member_when_news_of_their_drift_reaches_it() {
+        // Vex is turned around, and only Ava sees it; the Guild hears through Nell three
+        // ticks later, at 0.90: it pictures him at −55 + 90 / −20 + 90 = 35 / 70, 103.08
+        // away (law Δ95, good Δ80 × 0.5), past its member tolerance of 60, and expels.
+        let mut world = rippling();
+        world.content.balance.ripple.strength = vec![h(90)];
+        let mut nell = world.content.characters[&id("nell")].clone();
+        nell.memberships = member_of(nell.clone(), &["lantern_guild"]).memberships;
+        world.content.characters.insert(id("nell"), nell);
+        world
+            .content
+            .factions
+            .get_mut(&faction_id("lantern_guild"))
+            .expect("the Guild")
+            .drift = Some(DriftPolicy::Expel);
+        let mut world = World::new(world.content).expect("valid content");
+        let expelled = |events: &[Event]| {
+            events.iter().any(|event| {
+                event.payload
+                    == Change::LeftFaction {
+                        character: id("vex"),
+                        faction: faction_id("lantern_guild"),
+                        reason: LeaveReason::Expelled,
+                    }
+            })
+        };
+        let turned = world
+            .execute(Command::ApplyEffects {
+                source: "test".to_owned(),
+                character: id("vex"),
+                effects: Effects {
+                    alignment: AlignmentDelta {
+                        law: h(100_00),
+                        good: h(100_00),
+                    },
+                    standing: StandingEffects::default(),
+                },
+                witnesses: seen_by(&["ava"]),
+            })
+            .expect("accepted");
+        assert!(!expelled(&turned), "the Guild doesn't know yet");
+        let heard = world.execute(advance(3)).expect("accepted");
+        assert!(expelled(&heard), "{heard:?}");
+    }
+
+    #[test]
+    fn each_rule_table_judges_by_its_own_factions_picture() {
+        // Nell, a Guild cutpurse at −40 / −10, reforms to 35 / 10, seen only by Hale. The
+        // Watch pictures her 35.09 from itself and 95.52 from the Guild, so its defectors
+        // table finds her closer to it and accepts her at −10. The Guild still pictures her
+        // 20.00 from itself, within its member tolerance, so its deserters table releases
+        // her at −40.
+        let mut content = defectors_content([
+            member_of(character("Nell", -40_00, -10_00), &["lantern_guild"]),
+            member_of(character("Hale", 75_00, 30_00), &["city_watch"]),
+        ]);
+        content.balance.knowledge = KnowledgeModel::Witnessed;
+        let mut world = World::new(content).expect("valid content");
+        world
+            .execute(Command::ApplyEffects {
+                source: "test".to_owned(),
+                character: id("nell"),
+                effects: Effects {
+                    alignment: AlignmentDelta {
+                        law: h(75_00),
+                        good: h(20_00),
+                    },
+                    standing: StandingEffects::default(),
+                },
+                witnesses: seen_by(&["hale"]),
+            })
+            .expect("accepted");
+        let assessment = world
+            .assess_join(&id("nell"), &faction_id("city_watch"))
+            .expect("both exist");
+        assert_eq!(assessment.distance.value, h(35_09));
+        let defection = &assessment.defections[0];
+        assert_eq!(
+            (&defection.deserters.verdict, &defection.defectors.verdict),
+            (
+                &Verdict::Allow {
+                    standing_change: h(-40_00)
+                },
+                &Verdict::Allow {
+                    standing_change: h(-10_00)
+                }
+            )
+        );
+        assert!(assessment.allowed());
+    }
+
+    #[test]
+    fn outcomes_and_effects_refuse_witnesses_who_dont_exist() {
+        let mut world = with_outcomes();
+        let ghost = || CommandError::UnknownCharacter {
+            role: Role::Witness,
+            id: id("ghst"),
+            suggestion: None,
+        };
+        assert_eq!(
+            refused(
+                &mut world,
+                Command::ApplyOutcome {
+                    outcome: outcome_id("rescued_merchant"),
+                    character: id("player"),
+                    witnesses: seen_by(&["ghst"]),
+                }
+            ),
+            ghost()
+        );
+        assert_eq!(
+            refused(
+                &mut world,
+                Command::ApplyEffects {
+                    source: "test".to_owned(),
+                    character: id("player"),
+                    effects: Effects::default(),
+                    witnesses: seen_by(&["ghst"]),
+                }
+            ),
+            ghost()
+        );
+    }
+
+    #[test]
+    fn only_ripple_sends_news_and_only_when_theres_something_to_tell() {
+        let sends_news = |world: &mut World, alignment: AlignmentDelta, named: StandingEffects| {
+            world
+                .execute(Command::ApplyEffects {
+                    source: "test".to_owned(),
+                    character: id("player"),
+                    effects: Effects {
+                        alignment,
+                        standing: named,
+                    },
+                    witnesses: seen_by(&["ava"]),
+                })
+                .expect("accepted")
+                .iter()
+                .any(|event| matches!(event.payload, Change::NewsSent { .. }))
+        };
+        let moved = AlignmentDelta {
+            law: h(5_00),
+            good: Fixed::ZERO,
+        };
+        let mut witnessed = rippling();
+        witnessed.content.balance.knowledge = KnowledgeModel::Witnessed;
+        let mut witnessed = World::new(witnessed.content).expect("valid content");
+        assert!(!sends_news(
+            &mut witnessed,
+            moved,
+            StandingEffects::default()
+        ));
+        let mut rippling = rippling();
+        assert!(
+            !sends_news(
+                &mut rippling,
+                AlignmentDelta::default(),
+                named(&[("temple", 5_00)], &[])
+            ),
+            "no shift, and the only party it names knows"
+        );
+        assert!(sends_news(&mut rippling, moved, StandingEffects::default()));
     }
 
     #[test]
@@ -8042,6 +8478,7 @@ mod tests {
         Command::ApplyEffects {
             source: "test".to_owned(),
             character: id("player"),
+            witnesses: Witnesses::Everyone,
             effects: Effects {
                 alignment: AlignmentDelta::default(),
                 standing: named(factions, &[]),
@@ -10046,6 +10483,7 @@ mod tests {
             .prop_map(|(who, faction, value)| Command::ApplyEffects {
                 source: "test".to_owned(),
                 character: id(who),
+                witnesses: Witnesses::Everyone,
                 effects: Effects {
                     alignment: AlignmentDelta::default(),
                     standing: named(&[(faction, value)], &[("vex", value)]),
@@ -10099,6 +10537,26 @@ mod tests {
             modifying
         ];
         proptest::collection::vec(command, 0..30)
+    }
+
+    /// Whether every faction and character pictures every character as they truly are.
+    fn everyone_pictures_the_truth(world: &World) -> bool {
+        let observers: Vec<Observer> = world
+            .factions()
+            .map(|faction| Observer::Faction(faction.id.clone()))
+            .chain(
+                world
+                    .characters()
+                    .map(|character| Observer::Character(character.id.clone())),
+            )
+            .collect();
+        world.characters().all(|subject| {
+            observers.iter().all(|observer| {
+                world
+                    .perceived(observer, &subject.id)
+                    .is_some_and(|perception| perception.perceived == perception.truth)
+            })
+        })
     }
 
     /// Who saw an act: everyone, no one, or some of the test world's characters.
@@ -10233,6 +10691,9 @@ mod tests {
             let omniscient = run_in(KnowledgeModel::Omniscient, &commands);
             prop_assert_eq!(witnessed.events(), omniscient.events());
             prop_assert_eq!(rippling.events(), omniscient.events());
+            for world in [&witnessed, &rippling] {
+                prop_assert!(everyone_pictures_the_truth(world));
+            }
         }
 
         /// Under `witnessed`, an act no one sees changes no one's standing: the test world's
@@ -10282,6 +10743,14 @@ mod tests {
                 world.journal().iter().map(|entry| entry.command.clone()).collect();
             let rerun = run_in(KnowledgeModel::Ripple, &journal);
             prop_assert_eq!(rerun.events(), world.events());
+        }
+
+        /// Under `omniscient`, whoever saw what, everyone pictures everyone as they are
+        /// (DESIGN.md §10.3).
+        #[test]
+        fn under_omniscient_everyone_pictures_the_truth(commands in seen_commands()) {
+            let world = run_in(KnowledgeModel::Omniscient, &commands);
+            prop_assert!(everyone_pictures_the_truth(&world));
         }
 
         /// DESIGN.md §14, invariant 13: news always stops. Each party hears a piece of news
