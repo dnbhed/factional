@@ -17,10 +17,11 @@ use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Axis, Balance, Band, BandProblem,
     Bands, Character, CharacterId, ComponentKind, Condition, ConflictRule, Consequence, Content,
     ContentProblem, ContentWarning, DispositionWeights, DriftPolicy, Effects, Faction, FactionId,
-    Inertia, InertiaProfile, InvalidId, Metric, Outcome, OutcomeId, Party, ProfileId, ProfileUser,
-    Rank, RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide, Rule, StandingEffects,
-    StandingKey, StandingOwner, StartingMembership, TableKind, TableOwner, TableProblem,
-    TargetCurve, ToleranceProblem, Tolerances, Toward, Verdict, WeightProblem, Weights,
+    Inertia, InertiaProfile, InvalidId, KnowledgeModel, Metric, Outcome, OutcomeId, Party,
+    ProfileId, ProfileUser, Rank, RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide,
+    Rule, StandingEffects, StandingKey, StandingOwner, StartingMembership, TableKind, TableOwner,
+    TableProblem, TargetCurve, ToleranceProblem, Tolerances, Toward, Verdict, WeightProblem,
+    Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -488,6 +489,27 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
             balance.relation_bands = bands;
         }
         relations.finish(report);
+    }
+    if let Some(mut knowledge) = file.optional_table("knowledge", "[knowledge]", report) {
+        if let Some(key) = knowledge.optional_text("model", report) {
+            match KnowledgeModel::from_key(&key) {
+                Some(model) => balance.knowledge = model,
+                None => {
+                    let keys = KnowledgeModel::ALL.map(KnowledgeModel::key);
+                    let message = match suggest(&key, keys) {
+                        Some(close) => {
+                            format!("unknown knowledge model '{key}' (did you mean '{close}'?)")
+                        }
+                        None => format!(
+                            "unknown knowledge model '{key}': use {} or {}",
+                            keys[0], keys[1]
+                        ),
+                    };
+                    report.error(&knowledge.path_to("model"), message);
+                }
+            }
+        }
+        knowledge.finish(report);
     }
     file.finish(report);
     balance
@@ -1599,6 +1621,54 @@ mod tests {
         assert_eq!(
             problems(balance("[disposition]\naffinity = 20.0\nhysteria = 1")),
             ["balance.toml: disposition: unknown key 'hysteria'"]
+        );
+    }
+
+    #[test]
+    fn reads_the_knowledge_model() {
+        let content = balance("[knowledge]\nmodel = \"witnessed\"").expect("valid content");
+        assert_eq!(
+            content.balance.knowledge,
+            factional_reputation::KnowledgeModel::Witnessed
+        );
+        let content = balance("[knowledge]\nmodel = \"omniscient\"").expect("valid content");
+        assert_eq!(
+            content.balance.knowledge,
+            factional_reputation::KnowledgeModel::Omniscient
+        );
+        let content = balance("[knowledge]").expect("valid content");
+        assert_eq!(
+            content.balance.knowledge,
+            factional_reputation::KnowledgeModel::Omniscient,
+            "omniscient when left out"
+        );
+    }
+
+    #[test]
+    fn reports_an_unknown_knowledge_model() {
+        assert_eq!(
+            problems(balance("[knowledge]\nmodel = \"witnesed\"")),
+            [
+                "balance.toml: knowledge.model: unknown knowledge model 'witnesed' (did you mean 'witnessed'?)"
+            ]
+        );
+        assert_eq!(
+            problems(balance("[knowledge]\nmodel = \"ripple\"")),
+            [
+                "balance.toml: knowledge.model: unknown knowledge model 'ripple': use omniscient or witnessed"
+            ]
+        );
+        assert_eq!(
+            problems(balance("[knowledge]\nmodel = 1")),
+            ["balance.toml: knowledge.model: expected text in quotes"]
+        );
+        assert_eq!(
+            problems(balance("[knowledge]\nmodle = \"witnessed\"")),
+            ["balance.toml: knowledge: unknown key 'modle' (did you mean 'model'?)"]
+        );
+        assert_eq!(
+            problems(balance("knowledge = 1")),
+            ["balance.toml: knowledge: expected a table, like [knowledge]"]
         );
     }
 

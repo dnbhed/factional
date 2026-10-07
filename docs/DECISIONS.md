@@ -372,6 +372,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The built-in `exposed` rule expels at the faction's `expel_standing_change`,** like drift's `expel`.
   - **Leaving a secret membership stays secret.**
   - *Why:* it reuses the M7 tables and M9 conflicts rather than adding new mechanisms, and every outcome is a closed vocabulary (D-20).
+- **P-59 · How witnessed acts are built** (made in K1, 2026-10-07).
+  - **Learning is all or nothing until K2,** so a party either gets its whole standing change or none; no awareness fraction is stored or shown yet.
+  - **One function decides who learns,** used both by `PerformAction` and by the `reach` query, so `act --explain` shows exactly what the engine did: each party the act's standing names, its change, and how it learned (everyone knows, named, saw it, or through a member), or that it didn't. The actor is never a standing party except by being named, and the target never is the actor, so "did it" never needs saying.
+  - **Riverhold uses `witnessed` until K2.** Its acts in scenarios are seen by everyone, so nothing they show changes but the new `--explain` lines.
+  - **The CLI says who saw an act with `--seen-by <id>,…` or `--unseen`;** without either, everyone did, as before.
+  - *Why:* the explanation can't drift from the rule, and existing content and scenarios behave exactly as they did.
 
 ## Open
 

@@ -599,6 +599,22 @@
       },
       "type": "object"
     },
+    "knowledge": {
+      "additionalProperties": false,
+      "description": "Who learns of what (DESIGN.md §10).",
+      "properties": {
+        "model": {
+          "default": "omniscient",
+          "description": "Who learns of an act: omniscient (everyone, whoever saw it) or witnessed (the witnesses, the parties it names, and their factions) (DESIGN.md §10.1).",
+          "enum": [
+            "omniscient",
+            "witnessed"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "membership": {
       "additionalProperties": false,
       "description": "Joining, leaving and drifting (DESIGN.md §9).",

@@ -11,9 +11,9 @@ use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
 use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Condition, ConditionCheck, Distance, DriftPolicy, Event, Faction, FactionId,
-    LeaveReason, ModifierId, ModifierObserver, Observed, Observer, OutcomeId, Party, RankCheck,
-    RankRef, Shift, StandingEffects, TableDecision, TableSource, Toward, Verdict, WeightsFrom,
-    Witnesses, World,
+    KnowledgeModel, Learned, LeaveReason, ModifierId, ModifierObserver, Observed, Observer,
+    OutcomeId, Party, RankCheck, RankRef, Reached, Shift, StandingEffects, TableDecision,
+    TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -141,8 +141,8 @@ const COMMANDS: &[(&str, &str)] = &[
         "list the action catalogue and how each act moves alignment",
     ),
     (
-        "act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
-        "<actor> does <action>; --scale says how big this instance was (default 1.00)",
+        "act <actor> <action> [--target <id>] [--scale <n>] [--seen-by <id>,... | --unseen] [--explain]",
+        "<actor> does <action>; --scale says how big this instance was (default 1.00), and --seen-by who saw it (default everyone)",
     ),
     ("advance <ticks>", "move time forward"),
     ("time", "the current tick"),
@@ -1116,10 +1116,18 @@ impl Session {
                 action,
                 target,
                 scale,
-                ..
+                witnesses,
             } if explain => world
                 .action_shift(actor, action, target.as_ref(), *scale)
-                .map(|shift| describe_shift(&shift, actor, target.as_ref())),
+                .map(|shift| {
+                    let mut working = describe_shift(&shift, actor, target.as_ref());
+                    let reach = world.reach(actor, action, target.as_ref(), witnesses);
+                    working.extend(describe_reach(
+                        &reach.unwrap_or_default(),
+                        world.balance().knowledge,
+                    ));
+                    working
+                }),
             _ => None,
         };
         match world.execute(command) {
@@ -1457,6 +1465,36 @@ fn describe_shift(shift: &Shift, actor: &CharacterId, target: Option<&CharacterI
     described
 }
 
+/// Who learns of an act, for each party its standing effects name, with the change due to
+/// them (DESIGN.md §10.1); nothing for an act whose standing names no one.
+fn describe_reach(reach: &[Reached], model: KnowledgeModel) -> Vec<String> {
+    if reach.is_empty() {
+        return Vec::new();
+    }
+    let mut described = vec![format!(
+        "who learns of it, under the {} model, and the standing change due:",
+        model.key()
+    )];
+    described.extend(reach.iter().map(|reached| {
+        let how = match (&reached.learned, &reached.party) {
+            (Some(Learned::Everyone), _) => "learns, as everyone knows of it".to_owned(),
+            (Some(Learned::Named), _) => "learns, as the act names it".to_owned(),
+            (Some(Learned::Witness), _) => "learns, having seen it".to_owned(),
+            (Some(Learned::ThroughMember(member)), _) => {
+                format!("learns through {member}, a member who learned firsthand")
+            }
+            (None, Party::Character(_)) => {
+                "doesn't learn, not having seen it; no change".to_owned()
+            }
+            (None, Party::Faction(_)) => {
+                "doesn't learn, as no member learned firsthand; no change".to_owned()
+            }
+        };
+        format!("{} {}: {how}", reached.party, reached.change)
+    }));
+    described
+}
+
 /// How a `defectors` or `deserters` table decided: where it came from, the rule that fired
 /// and what it decided, then each rule tried. `current` is the faction being left and
 /// `target` the one being joined.
@@ -1783,16 +1821,16 @@ fn describe_command(command: &Command) -> String {
     }
 }
 
-/// `act`'s arguments as a command. Everyone witnesses an act done from the CLI.
-/// `act`'s arguments as a command, and whether `--explain` was given.
+/// `act`'s arguments as a command, and whether `--explain` was given. Without `--seen-by`
+/// or `--unseen`, everyone witnesses it.
 fn parse_act(args: &str) -> Result<(Command, bool), String> {
-    const USAGE: &str =
-        "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--explain]";
+    const USAGE: &str = "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--seen-by <id>,... | --unseen] [--explain]";
     let words: Vec<&str> = args.split_whitespace().collect();
     let [actor, action, options @ ..] = &words[..] else {
         return Err(USAGE.to_owned());
     };
-    let (mut target, mut scale, mut explain) = (None, None, false);
+    let (mut target, mut scale, mut seen_by, mut explain) = (None, None, None, false);
+    let mut unseen = false;
     let mut options = options.iter();
     while let Some(option) = options.next() {
         let slot = match *option {
@@ -1800,8 +1838,13 @@ fn parse_act(args: &str) -> Result<(Command, bool), String> {
                 explain = true;
                 continue;
             }
+            "--unseen" if !unseen && seen_by.is_none() => {
+                unseen = true;
+                continue;
+            }
             "--target" => &mut target,
             "--scale" => &mut scale,
+            "--seen-by" if !unseen => &mut seen_by,
             _ => return Err(USAGE.to_owned()),
         };
         let Some(value) = options.next().filter(|value| !is_flag(value)) else {
@@ -1812,6 +1855,11 @@ fn parse_act(args: &str) -> Result<(Command, bool), String> {
         }
     }
     let character = |id: &str| CharacterId::new(id).map_err(|invalid| invalid.to_string());
+    let witnesses = match seen_by {
+        Some(ids) => Witnesses::These(ids.split(',').map(character).collect::<Result<_, _>>()?),
+        None if unseen => Witnesses::Nobody,
+        None => Witnesses::Everyone,
+    };
     let command = Command::PerformAction {
         actor: character(actor)?,
         action: ActionId::new(action).map_err(|invalid| invalid.to_string())?,
@@ -1822,7 +1870,7 @@ fn parse_act(args: &str) -> Result<(Command, bool), String> {
                 .map_err(|error: ParseFixedError| error.to_string())?,
             None => Fixed::ONE,
         },
-        witnesses: Witnesses::Everyone,
+        witnesses,
     };
     Ok((command, explain))
 }
@@ -2563,6 +2611,105 @@ mod tests {
     }
 
     #[test]
+    fn act_takes_who_saw_it() {
+        let mut session = riverhold();
+        // Riverhold's knowledge model is witnessed: Hale didn't see it, so he and the Watch
+        // don't know (DESIGN.md §10.1).
+        assert_eq!(
+            session.execute("act player steal --target captain_hale --seen-by vex,merchant_ava"),
+            output(
+                "#1 at tick 0: player did steal, targeting captain_hale, witnessed by merchant_ava, vex\n\
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law -5.00, good -3.00"
+            )
+        );
+        assert_eq!(
+            session.execute("act player steal --target captain_hale --seen-by captain_hale"),
+            output(
+                "#3 at tick 0: player did steal, targeting captain_hale, witnessed by captain_hale\n\
+                 #4 at tick 0: player's alignment moved from law -5.00, good -3.00 to law -10.00, good -6.00\n\
+                 #5 at tick 0: player's standing with city_watch moved from 0.00 to -10.00\n\
+                 #6 at tick 0: player's standing with lantern_guild moved from 0.00 to 1.80, with 1.80 spilled from city_watch (-10.00 × -0.18; lantern_guild regards it at -80.00)\n\
+                 #7 at tick 0: player's standing with temple moved from 0.00 to -1.00, with -1.00 spilled from city_watch (-10.00 × 0.10; temple regards it at 60.00)\n\
+                 #8 at tick 0: player's standing with captain_hale moved from 0.00 to -20.00"
+            )
+        );
+        // The Temple learns of a donation to it, seen or not.
+        assert_eq!(
+            riverhold().execute("act player donate_to_temple --unseen"),
+            output(
+                "#1 at tick 0: player did donate_to_temple, witnessed by nobody\n\
+                 #2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law 0.00, good 3.00\n\
+                 #3 at tick 0: player's standing with ashen_circle moved from 0.00 to -2.40, with -2.40 spilled from temple (10.00 × -0.24; ashen_circle regards it at -90.00)\n\
+                 #4 at tick 0: player's standing with city_watch moved from 0.00 to 1.00, with 1.00 spilled from temple (10.00 × 0.10; city_watch regards it at 60.00)\n\
+                 #5 at tick 0: player's standing with temple moved from 0.00 to 10.00"
+            )
+        );
+        assert_eq!(
+            session.execute("act player steal --seen-by vexx"),
+            command_error("unknown witness 'vexx' (did you mean 'vex'?)")
+        );
+        assert_eq!(
+            session.execute("act player steal --seen-by vex,Ava"),
+            command_error(
+                "'Ava' isn't a valid id: use lowercase letters, digits and _, starting with a letter"
+            )
+        );
+    }
+
+    #[test]
+    fn act_explains_who_learns_of_it() {
+        let steal = [
+            "shift = base × scale × inertia, rounded once; player's inertia profile is steady",
+            "law: -5.00 × 1.00 × 1.00 (steady has no law.toward_chaotic curve) = -5.00, from 0.00 to -5.00",
+            "good: -3.00 × 1.00 × 1.00 (steady has no good.toward_evil curve) = -3.00, from 0.00 to -3.00",
+            "who learns of it, under the witnessed model, and the standing change due:",
+        ];
+        let explained = |line: &str| working_of(&mut riverhold(), line);
+        assert_eq!(
+            explained("act player steal --target captain_hale --seen-by merchant_ava --explain"),
+            [
+                &steal[..],
+                &[
+                    "city_watch -10.00: doesn't learn, as no member learned firsthand; no change",
+                    "captain_hale -20.00: doesn't learn, not having seen it; no change",
+                ],
+            ]
+            .concat()
+        );
+        assert_eq!(
+            explained("act player steal --target captain_hale --seen-by captain_hale --explain"),
+            [
+                &steal[..],
+                &[
+                    "city_watch -10.00: learns through captain_hale, a member who learned firsthand",
+                    "captain_hale -20.00: learns, having seen it",
+                ],
+            ]
+            .concat()
+        );
+        assert_eq!(
+            explained("act player steal --target captain_hale --explain"),
+            [
+                &steal[..],
+                &[
+                    "city_watch -10.00: learns, as everyone knows of it",
+                    "captain_hale -20.00: learns, as everyone knows of it",
+                ],
+            ]
+            .concat()
+        );
+        assert_eq!(
+            explained("act player donate_to_temple --unseen --explain"),
+            [
+                "shift = base × scale × inertia, rounded once; player's inertia profile is steady",
+                "good: 3.00 × 1.00 × 1.00 (steady has no good.toward_good curve) = 3.00, from 0.00 to 3.00",
+                "who learns of it, under the witnessed model, and the standing change due:",
+                "temple 10.00: learns, as the act names it",
+            ]
+        );
+    }
+
+    #[test]
     fn act_reports_the_worlds_refusals() {
         let mut session = riverhold();
         for (line, message) in [
@@ -2604,7 +2751,7 @@ mod tests {
     fn act_reports_bad_input() {
         let mut session = riverhold();
         let usage = command_error(
-            "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
+            "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--seen-by <id>,... | --unseen] [--explain]",
         );
         for line in [
             "act",
@@ -2615,6 +2762,12 @@ mod tests {
             "act player steal --target vex --target ava",
             "act player steal --scale 1 --scale 2",
             "act player steal --witnesses nobody",
+            "act player steal --seen-by",
+            "act player steal --seen-by vex --seen-by ava",
+            "act player steal --unseen --unseen",
+            "act player steal --seen-by vex --unseen",
+            "act player steal --unseen --seen-by vex",
+            "act player steal --unseen vex",
         ] {
             assert_eq!(session.execute(line), usage, "{line}");
         }
@@ -3158,6 +3311,8 @@ mod tests {
             [
                 "shift = base × scale × inertia, rounded once; sister_mira's inertia profile is hardening",
                 "good: 4.00 × 1.00 × 0.405 (good.toward_good at 85.00) = 1.62, from 85.00 to 86.62",
+                "who learns of it, under the witnessed model, and the standing change due:",
+                "merchant_ava 10.00: learns, as everyone knows of it",
             ]
         );
         // Hale's profile has no law curves; toward_evil at 30 is 0.85.
@@ -3191,6 +3346,9 @@ mod tests {
                 "shift = base × scale × target × inertia, rounded once; captain_hale's inertia profile is hardening",
                 "law: -10.00 × 1.00 × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 1.00 (hardening has no law.toward_chaotic curve) = -6.20, from 75.00 to 68.80",
                 "good: -15.00 × 1.00 × 0.84 (by_target.good at vex's -20.00) × 0.62 (by_target.relation at city_watch → lantern_guild -80.00) × 0.85 (good.toward_evil at 30.00) = -6.64, from 30.00 to 23.36",
+                "who learns of it, under the witnessed model, and the standing change due:",
+                "lantern_guild -40.00: learns, as everyone knows of it",
+                "vex -100.00: learns, as everyone knows of it",
             ]
         );
         // The player is in no faction, so the relation curve is read at 0.
@@ -3203,6 +3361,9 @@ mod tests {
                 "shift = base × scale × target × inertia, rounded once; player's inertia profile is steady",
                 "law: -10.00 × 1.00 × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no law.toward_chaotic curve) = -10.00, from 0.00 to -10.00",
                 "good: -15.00 × 1.00 × 0.44 (by_target.good at brother_ash's -70.00) × 1.00 (by_target.relation at 0.00: no relation between their factions) × 1.00 (steady has no good.toward_evil curve) = -6.60, from 0.00 to -6.60",
+                "who learns of it, under the witnessed model, and the standing change due:",
+                "ashen_circle -40.00: learns, as everyone knows of it",
+                "brother_ash -100.00: learns, as everyone knows of it",
             ]
         );
     }
@@ -3466,7 +3627,7 @@ mod tests {
     fn act_explain_is_a_flag_and_a_refused_act_has_no_working() {
         let mut session = riverhold();
         let usage = command_error(
-            "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
+            "act needs the form: act <actor> <action> [--target <id>] [--scale <n>] [--seen-by <id>,... | --unseen] [--explain]",
         );
         assert_eq!(
             session.execute("act player steal --explain --explain"),
@@ -4138,7 +4299,7 @@ mod tests {
             "relate <from> <to> <value> [--one-way]",
             "relate <from> <to> --by <n> [--one-way]",
             "actions",
-            "act <actor> <action> [--target <id>] [--scale <n>] [--explain]",
+            "act <actor> <action> [--target <id>] [--scale <n>] [--seen-by <id>,... | --unseen] [--explain]",
             "advance <ticks>",
             "time",
             "events [--since <seq>]",

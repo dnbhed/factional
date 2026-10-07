@@ -14,11 +14,15 @@ use serde_json::Value;
 /// as every character. The schema leaves them out, since loading refuses them; this list
 /// says so rather than letting them through unnoticed.
 const NOT_READ_YET: [(&str, &str, &str); 4] = [
-    ("balance", "knowledge", "K1"),
+    ("balance", "knowledge.ripple", "K2"),
     ("balance", "membership.exposed", "K4"),
     ("factions", "*.secret_members", "K4"),
     ("characters", "*.contacts", "K2"),
 ];
+
+/// Settings in `docs/examples/riverhold` the engine reads, but with a value it doesn't take
+/// yet, with the increment that will take it. They're left out like those above.
+const VALUE_NOT_TAKEN_YET: [(&str, &str, &str); 1] = [("balance", "knowledge.model", "K2")];
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -186,7 +190,8 @@ fn violations(schema: &Value, data: &Value) -> Vec<String> {
 /// The complete example's text, without the settings the engine doesn't read yet.
 fn riverhold_as_read(file: &str) -> Value {
     let mut data = json("docs/examples/riverhold", file);
-    for (_, path, _) in NOT_READ_YET.iter().filter(|(owner, ..)| *owner == file) {
+    let left_out = NOT_READ_YET.iter().chain(&VALUE_NOT_TAKEN_YET);
+    for (_, path, _) in left_out.filter(|(owner, ..)| *owner == file) {
         let steps: Vec<&str> = path.split('.').collect();
         assert!(remove(&mut data, &steps) > 0, "{file}: {path} is there");
     }

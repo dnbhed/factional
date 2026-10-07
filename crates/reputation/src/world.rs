@@ -11,12 +11,12 @@ use crate::{
     AXIS_LIMIT, Action, ActionId, Alignment, AlignmentDelta, AppliedModifier, Axis, Bands, Change,
     Character, CharacterId, Command, CommandError, Component, ComponentKind, ConflictRule,
     Consequence, Defection, Disposition, DispositionWeights, DriftPolicy, Effects, Event, Faction,
-    FactionId, Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, LeaveReason,
-    Membership, Metric, ModifierId, ModifierObserver, Outcome, OutcomeId, Part, Party, ProfileId,
-    PromotionAssessment, RankCheck, RankId, Regard, Relation, RelationSide, RestoreError, Role,
-    Rule, SavedCommand, Shift, Spill, StandingEffects, StandingKey, StandingOwner, TableKind,
-    TableOwner, TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights,
-    Witnesses, measure,
+    FactionId, Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, KnowledgeModel,
+    Learned, LeaveReason, Membership, Metric, ModifierId, ModifierObserver, Outcome, OutcomeId,
+    Part, Party, ProfileId, PromotionAssessment, RankCheck, RankId, Reached, Regard, Relation,
+    RelationSide, RestoreError, Role, Rule, SavedCommand, Shift, Spill, StandingEffects,
+    StandingKey, StandingOwner, TableKind, TableOwner, TableProblem, TableSource, TargetCurve,
+    TargetRelation, Toward, Verdict, Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -57,6 +57,8 @@ pub struct Balance {
     /// `membership.conflict`: how a war between two of someone's factions is settled
     /// (DESIGN.md §9.4).
     pub conflict: ConflictRule,
+    /// `knowledge.model`: who learns of an act (DESIGN.md §10.1).
+    pub knowledge: KnowledgeModel,
 }
 
 impl Balance {
@@ -112,6 +114,7 @@ impl Default for Balance {
             spillover: Balance::default_spillover(),
             default_drift: DriftPolicy::Flag,
             conflict: ConflictRule::default(),
+            knowledge: KnowledgeModel::default(),
         }
     }
 }
@@ -1413,22 +1416,13 @@ impl World {
                         to,
                     });
                 }
-                let effects = &catalogued.standing;
-                let mut deltas = Deltas::new();
-                if let Some(target) = target {
-                    if let Some(change) = effects.target {
-                        add(&mut deltas, Party::Character(target.clone()), change);
-                    }
-                    if let Some(change) = effects.target_factions {
-                        let factions = self.state.memberships.get(target).into_iter().flatten();
-                        for (faction, _) in factions {
-                            add(&mut deltas, Party::Faction(faction.clone()), change);
-                        }
-                    }
-                }
-                for (party, change) in effects.named.parties() {
-                    add(&mut deltas, party, change);
-                }
+                // Only the parties that learn of the act change their minds (DESIGN.md §10.1).
+                let deltas: Deltas = self
+                    .act_reach(actor, catalogued, target.as_ref(), witnesses)
+                    .into_iter()
+                    .filter(|reached| reached.learned.is_some())
+                    .map(|reached| (reached.party, reached.change))
+                    .collect();
                 changes.extend(self.standing_changes(actor, deltas));
                 Ok(changes)
             }
@@ -1786,18 +1780,17 @@ impl World {
     }
 
     /// One `StandingChanged` for each party whose standing toward `subject` moves, in party
-    /// order. Each change is scaled by the party's awareness of it, and stops at ±100.
+    /// order. Each change stops at ±100.
     fn standing_changes(&self, subject: &CharacterId, deltas: Deltas) -> Vec<Change> {
         // Each party's direct change first, as before and after.
         let mut moved: BTreeMap<Party, (Fixed, Fixed, Vec<Spill>)> = deltas
             .into_iter()
             .map(|(party, delta)| {
-                let change = delta.saturating_mul(self.awareness(&party));
                 let before = self.standing_now(subject, &party);
                 // A sum too big to hold means a change that reaches the end by itself.
                 let after = before
-                    .checked_add(change)
-                    .unwrap_or(change)
+                    .checked_add(delta)
+                    .unwrap_or(delta)
                     .clamp(-AXIS_LIMIT, AXIS_LIMIT);
                 (party, (before, after, Vec::new()))
             })
@@ -1853,11 +1846,80 @@ impl World {
             .collect()
     }
 
-    /// How much `party` learns of an act: 1.00 under the omniscient knowledge model, the only
-    /// one so far. Later models replace this seam (DESIGN.md §10, D-7).
-    fn awareness(&self, party: &Party) -> Fixed {
-        let _ = party;
-        Fixed::ONE
+    /// Each party an act's standing effects name, in party order, with the change due to
+    /// them, all effects on one party added together, and how they learned of the act
+    /// (DESIGN.md §10.1, P-55).
+    fn act_reach(
+        &self,
+        actor: &CharacterId,
+        action: &Action,
+        target: Option<&CharacterId>,
+        witnesses: &Witnesses,
+    ) -> Vec<Reached> {
+        let effects = &action.standing;
+        let mut deltas = Deltas::new();
+        if let Some(target) = target {
+            if let Some(change) = effects.target {
+                add(&mut deltas, Party::Character(target.clone()), change);
+            }
+            if let Some(change) = effects.target_factions {
+                let factions = self.state.memberships.get(target).into_iter().flatten();
+                for (faction, _) in factions {
+                    add(&mut deltas, Party::Faction(faction.clone()), change);
+                }
+            }
+        }
+        let mut named = BTreeSet::new();
+        for (party, change) in effects.named.parties() {
+            named.insert(party.clone());
+            add(&mut deltas, party, change);
+        }
+        // Who saw it, or `None` if everyone knows.
+        let nobody = BTreeSet::new();
+        let seen = match (self.content.balance.knowledge, witnesses) {
+            (KnowledgeModel::Omniscient, _) | (_, Witnesses::Everyone) => None,
+            (KnowledgeModel::Witnessed, Witnesses::Nobody) => Some(&nobody),
+            (KnowledgeModel::Witnessed, Witnesses::These(witnesses)) => Some(witnesses),
+        };
+        // Those who learned firsthand and tell their factions: the witnesses and the
+        // characters the act names, but never the actor.
+        let sources: BTreeSet<&CharacterId> = seen
+            .into_iter()
+            .flatten()
+            .chain(named.iter().filter_map(|party| match party {
+                Party::Character(character) => Some(character),
+                Party::Faction(_) => None,
+            }))
+            .filter(|source| *source != actor)
+            .collect();
+        let learned = |party: &Party| {
+            let Some(seen) = seen else {
+                return Some(Learned::Everyone);
+            };
+            if named.contains(party) {
+                return Some(Learned::Named);
+            }
+            match party {
+                Party::Character(character) => seen.contains(character).then_some(Learned::Witness),
+                Party::Faction(faction) => sources
+                    .iter()
+                    .find(|source| {
+                        self.state
+                            .memberships
+                            .get(**source)
+                            .is_some_and(|factions| factions.contains_key(faction))
+                    })
+                    .map(|member| Learned::ThroughMember((*member).clone())),
+            }
+        };
+        deltas
+            .into_iter()
+            .map(|(party, change)| Reached {
+                learned: learned(&party),
+                party,
+                change,
+            })
+            .collect()
     }
 
     /// A character's inertia profile, and its id: their own, or the default. Content checks
@@ -2547,6 +2609,30 @@ impl World {
             self.alignment(target)?;
         }
         Some(self.act_shift(actor, action, target, scale))
+    }
+
+    /// Who would learn of `actor` doing `action` to `target`, seen by `witnesses`: each party
+    /// its standing effects name, with the change due to them and how they'd learn of it, or
+    /// `None` if they wouldn't (DESIGN.md §10.1). `None` if the actor, action, target or a
+    /// witness is unknown.
+    pub fn reach(
+        &self,
+        actor: &CharacterId,
+        action: &ActionId,
+        target: Option<&CharacterId>,
+        witnesses: &Witnesses,
+    ) -> Option<Vec<Reached>> {
+        self.alignment(actor)?;
+        let action = self.content.actions.get(action)?;
+        if let Some(target) = target {
+            self.alignment(target)?;
+        }
+        if let Witnesses::These(witnesses) = witnesses {
+            for witness in witnesses {
+                self.alignment(witness)?;
+            }
+        }
+        Some(self.act_reach(actor, action, target, witnesses))
     }
 
     /// The working of an act whose actor, and target if any, exist.
@@ -3328,6 +3414,7 @@ mod tests {
             spillover: Curve::constant(h(25)),
             default_drift: DriftPolicy::Demote,
             conflict: ConflictRule::Auto,
+            knowledge: KnowledgeModel::Witnessed,
             inertia: Inertia {
                 default_profile: profile_id("hardening"),
                 profiles: [(profile_id("hardening"), hardening())].into(),
@@ -6434,6 +6521,104 @@ mod tests {
         assert_eq!(seen, &witnesses);
     }
 
+    /// The test world under the witnessed knowledge model, with Ava and the player in the
+    /// Free Company.
+    fn witnessed_company() -> World {
+        let mut content = world_of([
+            character("Vex", -55_00, -20_00),
+            member_of(character("Ava", 20_00, 10_00), &["free_company"]),
+            member_of(character("Player", 0, 0), &["free_company"]),
+        ])
+        .content;
+        content.balance.knowledge = KnowledgeModel::Witnessed;
+        World::new(content).expect("valid content")
+    }
+
+    fn seen_by(witnesses: &[&str]) -> Witnesses {
+        Witnesses::These(witnesses.iter().copied().map(id).collect())
+    }
+
+    #[test]
+    fn reach_says_who_learns_of_an_act_and_how() {
+        let world = witnessed_company();
+        let company = || Party::Faction(faction_id("free_company"));
+        let ava = || Party::Character(id("ava"));
+        let reach = |witnesses: &Witnesses| {
+            world.reach(
+                &id("player"),
+                &action_id("steal"),
+                Some(&id("ava")),
+                witnesses,
+            )
+        };
+        assert_eq!(
+            reach(&seen_by(&["ava"])),
+            Some(vec![
+                Reached {
+                    party: company(),
+                    change: h(-10_00),
+                    learned: Some(Learned::ThroughMember(id("ava"))),
+                },
+                Reached {
+                    party: ava(),
+                    change: h(-20_00),
+                    learned: Some(Learned::Witness),
+                },
+            ])
+        );
+        assert_eq!(reach(&seen_by(&["ghost"])), None, "an unknown witness");
+        assert_eq!(
+            world.reach(&id("ghost"), &action_id("steal"), None, &Witnesses::Nobody),
+            None
+        );
+        assert_eq!(
+            world.reach(&id("player"), &action_id("dance"), None, &Witnesses::Nobody),
+            None
+        );
+        assert_eq!(
+            world.reach(
+                &id("player"),
+                &action_id("steal"),
+                Some(&id("ghost")),
+                &Witnesses::Nobody
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn the_actor_tells_no_one_of_their_own_act() {
+        let mut world = witnessed_company();
+        let witnesses = seen_by(&["player"]);
+        let learned: Vec<Option<Learned>> = world
+            .reach(
+                &id("player"),
+                &action_id("steal"),
+                Some(&id("ava")),
+                &witnesses,
+            )
+            .expect("everyone exists")
+            .into_iter()
+            .map(|reached| reached.learned)
+            .collect();
+        assert_eq!(learned, [None, None], "the player is in the Company too");
+        let events = world
+            .execute(Command::PerformAction {
+                actor: id("player"),
+                action: action_id("steal"),
+                target: Some(id("ava")),
+                scale: h(1_00),
+                witnesses,
+            })
+            .expect("accepted");
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event.payload, Change::StandingChanged { .. })),
+            "{events:?}"
+        );
+    }
+
     /// Runs a command that must be refused and checks that nothing changed but the journal.
     fn refused(world: &mut World, command: Command) -> CommandError {
         let (state, events) = (world.state.clone(), world.events.clone());
@@ -9300,6 +9485,11 @@ mod tests {
     /// can put him in a war. The Watch puts drifters on probation for 50 ticks, then demotes
     /// them; the Guild expels them; wars are settled automatically after 20 ticks.
     fn run(commands: &[Command]) -> World {
+        run_in(KnowledgeModel::default(), commands)
+    }
+
+    /// `run`, under this knowledge model.
+    fn run_in(model: KnowledgeModel, commands: &[Command]) -> World {
         let mut content = defectors_content([
             character("Vex", -55_00, -20_00),
             character("Ava", 20_00, 10_00),
@@ -9322,6 +9512,7 @@ mod tests {
         };
         drift("city_watch", probation(50, Consequence::Demote));
         drift("lantern_guild", DriftPolicy::Expel);
+        content.balance.knowledge = model;
         let mut world = World::new(content).expect("valid content");
         for command in commands {
             let _ = world.execute(command.clone());
@@ -9355,6 +9546,46 @@ mod tests {
             prop_assert!(world.execute(advance(0)).is_err());
             prop_assert_eq!(&world.state, &state);
             prop_assert_eq!(&world.events, &events);
+        }
+
+        /// DESIGN.md §14, invariant 12, as far as K1 goes: with every act seen by everyone,
+        /// `witnessed` gives exactly the events `omniscient` does.
+        #[test]
+        fn acts_everyone_sees_give_the_same_events_under_witnessed(commands in commands()) {
+            let witnessed = run_in(KnowledgeModel::Witnessed, &commands);
+            let omniscient = run_in(KnowledgeModel::Omniscient, &commands);
+            prop_assert_eq!(witnessed.events(), omniscient.events());
+        }
+
+        /// Under `witnessed`, an act no one sees changes no one's standing: the test world's
+        /// actions name no parties, and the target didn't see it. Only a drift review the
+        /// act set off can, after someone leaves a faction.
+        #[test]
+        fn an_act_no_one_sees_changes_no_standing(commands in commands()) {
+            let mut world = run_in(KnowledgeModel::Witnessed, &[]);
+            for command in commands {
+                let command = match command {
+                    Command::PerformAction { actor, action, target, scale, .. } => {
+                        Command::PerformAction {
+                            actor, action, target, scale, witnesses: Witnesses::Nobody,
+                        }
+                    }
+                    other => other,
+                };
+                let acting = matches!(command, Command::PerformAction { .. });
+                let Ok(events) = world.execute(command) else { continue };
+                if acting {
+                    let own = events
+                        .iter()
+                        .take_while(|event| !matches!(event.payload, Change::LeftFaction { .. }));
+                    for event in own {
+                        prop_assert!(
+                            !matches!(event.payload, Change::StandingChanged { .. }),
+                            "{:?}", event
+                        );
+                    }
+                }
+            }
         }
 
         /// DESIGN.md §14, invariant 11: restoring a save gives the same world.

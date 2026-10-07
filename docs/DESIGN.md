@@ -488,7 +488,7 @@ Worked example: Vex, a fence of the Guild, joins the Free Company, and the two f
 
 ## 10. Knowledge (D-7, D-21–D-24)
 
-So far every character and faction knows about every act immediately (`knowledge.model = "omniscient"`). Two seams are already in place: `PerformAction` carries `witnesses` (everyone, these characters, or nobody), and every standing effect is multiplied by `awareness(party)`, which is 1.00 under the omniscient model.
+By default every character and faction knows about every act immediately (`knowledge.model = "omniscient"`). `PerformAction` carries `witnesses` (everyone, these characters, or nobody), and from K1 a `witnessed` world uses them.
 
 Phase 5 replaces that with knowledge that has to travel. It was designed in K0 and is built in four steps: who learns firsthand (K1), how news spreads (K2), judging by what you know (K3), and secret membership (K4).
 
@@ -779,7 +779,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Drift policies are known (`ignore`, `flag`, `demote`, `expel`); `expel_standing_change` within ±100 | error | M8 (done) |
 | Probation has `grace_ticks` > 0 and a `then` of `expel` or `demote` | error | M11 (done) |
 | `conflict.resolve` is `ask` or `auto`; `auto_after_ticks` is a whole number ≥ 0, and only with `ask` | error | M9 (done) |
-| `knowledge.model` is a known model | error | K1 |
+| `knowledge.model` is a known model | error | K1 (done) |
 | `decay` within 0–1; `threshold` within 0.01–1; `hop_ticks` a whole number ≥ 1 | error | K2 |
 | Contacts name characters that exist, not themselves, each pair once whichever side declares it | error | K2 |
 | `[knowledge.ripple]` or contacts in a world whose model isn't `ripple` | warning | K2 |
@@ -795,7 +795,8 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
 - `curve [[0, 1.0], [100, 0.5]] at 25` in the REPL to try a curve's shape before using it; without `at`, the whole curve as a table. A knob's name, such as `disposition.affinity`, `standing.spillover`, `inertia.hardening.good.toward_good` or `murder.by_target.good`, shows the curve the world uses (T3).
 - `factional run scenarios/<name>.scenario` to replay a scripted playthrough.
-- `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working.
+- `--explain` on `act`, `disposition`, `can-join` and `promote` to see the working. On `act` it includes who learns of the act and why (K1).
+- `act … --seen-by <id>,…` or `--unseen` to say who saw an act; without either, everyone did (K1).
 - `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
 - `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
 - `save <file>` and `restore <file>` in the REPL to keep a session and come back to it (T4, P-54).
@@ -871,7 +872,7 @@ Every example in this document and in PLAN.md uses this world. It lives in `cont
 
 **Knowledge** (from K1; designed in K0)
 
-- The model is `ripple`, with decay 0.50, threshold 0.10 and 10 ticks a hop (§10.2).
+- The model is `ripple`, with decay 0.50, threshold 0.10 and 10 ticks a hop (§10.2). Until K2 reads `ripple`, `content/sample` uses `witnessed`.
 - Contacts: `merchant_ava` ↔ `captain_hale`, `merchant_ava` ↔ `sister_mira`, `sister_mira` ↔ `brother_ash`.
 - The Lantern Guild and the Ashen Circle allow secret members. `membership.exposed` keeps a member with standing 60 or more at −30, and otherwise expels at −40 (§10.4).
 

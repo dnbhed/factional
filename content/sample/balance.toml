@@ -128,3 +128,9 @@ rules = [
   { when = { outside_member_tolerance = true }, then = "release" },
   { then = "release", standing_change = -40.0 },
 ]
+
+[knowledge]
+# Who learns of an act: "omniscient" (everyone, fully and at once, whoever saw it) or
+# "witnessed" (only the witnesses, the parties the act names, and the factions of those
+# who learned). A party that doesn't learn of an act keeps its standing (DESIGN.md §10.1).
+model = "witnessed"
