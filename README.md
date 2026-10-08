@@ -11,7 +11,7 @@ The first module is **reputation & factions**. It covers:
 
 The second module, **quests**, is being built. Quests have stages with choices, chain into questlines, and are checked so that no quest can quietly shut another off. It reads and checks quest content, every lockout included, loads a world with its quests, and plays them: characters start quests, make choices and move along questlines, and sessions save, restore and reload with their quest progress.
 
-The engine knows nothing about maps, graphics or combat. Those modules come later, and plug in through commands, events and queries.
+The engine knows nothing about maps, graphics or combat. Those modules come later, and plug in through commands, events and queries. Games will embed it through a Bevy plugin, and a visual editor in egui is next on the plan for writing its content.
 
 **Status:** early. [docs/PLAN.md](docs/PLAN.md) lists what's done and what's next.
 

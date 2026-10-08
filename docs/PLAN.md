@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → U4 → E1 → T5`
 
 ## Done
 
@@ -75,6 +75,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Q5 — worlds with quests load (D-20): the gate comes off; one load reads content and quests, refusing both on any problem; the session keeps the quests for Q6, read again by `reload` and `restore`, and `quests` alone lists them; quest warnings come with the world's; `validate` counts quests and questlines; saves fingerprint the quest files, a save from before reading as having none; Riverhold's quests join `content/sample` with `turned_in_vex` and `took_a_bribe`, and the complete example loads (P-71); done 2026-10-08 (#44)
 - Q6 — playing quests: a quest log in `factional-quests` keeping every character's progress, changed only by `StartQuest` and `MakeChoice` through their events (`QuestStarted`, `StageReached`, `ChoiceMade`, `QuestFinished`, `QuestClosed`); starting needs its gate and every step before complete, and closes earlier steps' untouched leftovers; a character waits at a stage until its requirements hold (D-31); effects go to the world in the same command, so a refused command changes nothing; `assess_start` and refusals say what's missing, with the numbers; save and reload refuse quest progress until Q7; `can-start`, `start`, `choose`, `progress`; invariants 14 and 15 with a property test (P-72); `scenarios/play.scenario`; done 2026-10-08 (#45)
 - Q7 — saving quest progress: the quest log keeps a journal (each command, where it came in the world's, what it sent and produced); saves, now version 2, hold it and the quest events, restored without running rules once checked to fit, and version 1 saves restore with no progress; `reload` re-runs quest commands where they came among the world's, stopping on any change of acceptance and reporting changed progress; `save` and `restore` count quest commands and events; invariant 11 extended, with a property test (P-73); `scenarios/quest_saves.scenario`; done 2026-10-08 (#46)
+- U0 — editor and host engine design pass: the user chose egui for the editor (D-32, settling X-5) and Bevy as the host engine (D-33, settling X-2); DESIGN.md §18 and §19, with P-74 and P-75; U1 to U4 outlined, E1 and T5 no longer deferred; done 2026-10-08 (#47)
 
 ---
 
@@ -86,23 +87,35 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ## Phase 4 — Designer tooling and persistence
 
-### T5 · Binary saves — P3 · Deferred (X-2)
+### T5 · Binary saves — P3 · Outline
 
-The user's choice for a finished game (P-54): a compact binary encoding of the same save, beside JSON, with the format and version still readable first. Comes after embedding (E0, E1), once a host engine shows what it needs.
+The user's choice for a finished game (P-54): a compact binary encoding of the same save, beside JSON, with the format and version still readable first. After E1, once the Bevy plugin shows what a game needs (D-33).
 
 ## Phase 5 — Knowledge and rumour
 
 ## Phase 6 — Embedding
 
-### E1 · Host adapter — P3 · Deferred (X-2)
+### E1 · The Bevy plugin — P3 · Outline
 
-Waits until a game needs a host; then a host is chosen and E1 builds its adapter (X-2).
+`factional-bevy` (D-33, P-75, DESIGN.md §19): the world and quest log as a resource loaded at startup, commands in and events out as Bevy messages, time by `AdvanceTime` at a rate the game sets, and an example app. Settles the Bevy version and whether the crate builds in the main workspace.
 
 ## Beyond this module
 
-### U0 · Editor design pass: web or egui — P3 · Next
+### U1 · The editor shell — P3 · Next
 
-Settles X-5. Comes after T1, whose JSON Schema can drive the forms, and after Q0, which defines the quest model a questline editor would edit. Likely prerequisites: a format-preserving TOML writer in `factional-content` (`toml_edit`), `Serialize` on query results and their breakdowns, and an editor facade crate beside `cli` that nothing depends on.
+`factional-editor` (D-32, P-74, DESIGN.md §18): open a content directory, browse every entry of every file, and see every problem and warning at its entry, read-only; a tested model under a thin egui layer.
+
+### U2 · Editing content — P3 · Outline
+
+A format-preserving TOML writer in `factional-content` (`toml_edit`); forms for characters, factions, actions, outcomes and relations; validation after every change; undo; save.
+
+### U3 · Quests in the editor — P3 · Outline
+
+Graphs of questlines' steps and quests' stages and choices (`egui-snarl`), `locks` as edges, reach and lockout problems on their nodes.
+
+### U4 · Previews — P3 · Outline
+
+From engine queries on the content as it stands: the disposition matrix, the alignment map, curves, and whether a character can start a quest.
 
 ---
 
