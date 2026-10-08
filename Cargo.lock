@@ -286,6 +286,7 @@ dependencies = [
  "factional-quests",
  "factional-reputation",
  "jsonschema",
+ "proptest",
  "serde",
  "serde_json",
  "toml",

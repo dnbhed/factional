@@ -8,6 +8,7 @@
 
 mod check;
 mod lockout;
+mod play;
 mod quest;
 mod reach;
 
@@ -15,6 +16,10 @@ pub use check::{
     Blocker, ChoiceAt, Gate, Needs, Owner, QuestProblem, QuestWarning, RequirementKey,
 };
 pub use lockout::{LockReason, Needed};
+pub use play::{
+    Played, QuestCommand, QuestError, QuestEvent, QuestLog, QuestState, Record, StartAssessment,
+    StartBlock, Unmet,
+};
 pub use quest::{
     Choice, ChoiceEffects, ChoiceId, Leftovers, Lock, LockError, Next, PartyRef, Progress,
     ProgressError, Quest, QuestId, Questline, QuestlineId, Quests, Requirements, Stage, StageId,
