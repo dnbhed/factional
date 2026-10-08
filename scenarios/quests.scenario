@@ -1,5 +1,5 @@
-# Quests and questlines (DESIGN.md §17.1, Q1), read and checked without loading a world: a
-# world with quests doesn't load until it can carry them (Q5).
+# Quests and questlines (DESIGN.md §17.1, Q1): `quests <dir>` reads and checks a directory's
+# without loading it; once a world loads, `quests` lists its own (Q5).
 
 # Every quest, whose it is and where it sits, then each questline's steps. A quest in a
 # questline is the questline's giver's unless it names its own, as the captain's dog does.
@@ -10,10 +10,12 @@ quests docs/examples/riverhold lost_dog
 quests docs/examples/riverhold watch_oath
 assert quests docs/examples/riverhold watch_oth == error: unknown quest 'watch_oth' (did you mean 'watch_oath'?)
 
-# Quests are checked with everything else, but a world with them can't load yet.
-assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
-validate docs/examples/riverhold
+# Quests are checked with everything else, and a world whose quests reconcile loads with them.
+assert validate docs/examples/riverhold == docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline
+assert quests == error: no world is loaded yet: use load <dir> first
+load content/sample
+quests
 
 # Warnings follow the list: closing leftovers on a step that needs every quest does nothing.
 quests crates/cli/tests/fixtures/worlds/odd_jobs
-assert quests content/sample == no quests in content/sample
+assert quests crates/cli/tests/fixtures/worlds/diamonds == no quests in crates/cli/tests/fixtures/worlds/diamonds

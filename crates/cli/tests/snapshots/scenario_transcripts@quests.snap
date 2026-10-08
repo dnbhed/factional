@@ -33,10 +33,28 @@ watch_oath — The Watch's Oath — from city_watch, in watch_career at step 1 �
 2. oath — needs standing 10.00 with city_watch
    swear — alignment: law 5.00, good 0.00 — then the end
 > assert quests docs/examples/riverhold watch_oth == error: unknown quest 'watch_oth' (did you mean 'watch_oath'?)
-> assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
-> validate docs/examples/riverhold
-error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
-docs/examples/riverhold doesn't load: 1 problem
+> assert validate docs/examples/riverhold == docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline
+> assert quests == error: no world is loaded yet: use load <dir> first
+> load content/sample
+loaded 6 characters from content/sample
+> quests
+quests:
+  circle_rite — The Ashen Rite — from ashen_circle — 1 stage — needs standing 10.00 with ashen_circle
+  dock_inspection — Inspecting the Docks — from city_watch, in watch_career — 1 stage
+  harbour_errands — Harbour Errands — from city_watch, in watch_career — 1 stage
+  lost_dog — The Captain's Dog — from captain_hale, in watch_career — 1 stage
+  lost_ring — Ava's Lost Ring — from merchant_ava — 1 stage
+  night_patrol — Night Patrol — from city_watch, in watch_career — 1 stage
+  smugglers_cove — The Smugglers' Cove — from city_watch, in watch_career — 2 stages — needs watch_oath.patrol.report done
+  the_long_winter — The Long Winter — the world's own — 1 stage
+  watch_captain — Captain of the Watch — from city_watch, in watch_career — 1 stage
+  watch_oath — The Watch's Oath — from city_watch, in watch_career — 2 stages — needs not to be in lantern_guild
+questlines:
+  watch_career — A Life in the Watch — from city_watch — 4 steps
+    1. watch_oath
+    2. 2 of night_patrol, dock_inspection, smugglers_cove, in any order; the rest close
+    3. any of harbour_errands, lost_dog, or none
+    4. watch_captain — needs standing 40.00 with city_watch, and rank sergeant or higher in city_watch
 > quests crates/cli/tests/fixtures/worlds/odd_jobs
 quests:
   inspect — Inspect — from watch, in jobs — 1 stage
@@ -45,4 +63,4 @@ questlines:
   jobs — Odd Jobs — from watch — 1 step
     1. all of patrol, inspect, in any order
 warning: questlines.toml: jobs.steps[0].leftovers: leftovers = "close" has no effect: the step needs all its quests, so none are left over
-> assert quests content/sample == no quests in content/sample
+> assert quests crates/cli/tests/fixtures/worlds/diamonds == no quests in crates/cli/tests/fixtures/worlds/diamonds

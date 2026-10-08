@@ -72,6 +72,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Q2 — relation effects (D-30: quests never change memberships or ranks; joining, leaving and promotion are the character's own actions): `relations` shifts on outcomes and choices' inline effects, `between` or `from`/`to` with `by` (−200…200), applied after standing, each direction stopping at ±100 and shifted at most once; checked at load and by `ApplyEffects`; wars open as for `relate`; `outcomes` and `quests` show them; Riverhold's `sowed_discord`; DESIGN.md §17's effects and lockout table without joins and promotions (P-68); done 2026-10-08 (#41)
 - Q3 — reachable content: within each quest, every stage reached by a choice, no gate needing `member` or a rank and `not_member` of one faction, and `done` on its own progress only where it can have happened; then a generous run of what `done` and questline order allow, with held runs for steps that close leftovers and stages needing another quest, reporting quests that can never start and stages that can never be reached, each error certain; leftovers close on starting any later step (P-69); `scenarios/reachable.scenario`; done 2026-10-08 (#42)
 - Q4 — the lockout check (D-26, D-27): `locks` on choices (`quest` for its gate, `quest.stage`), checked like references; once per world, the standing some action raises directly, the ways some action moves each axis with no inertia profile stopping it, and each relation's reach; per choice, the parties it can lower directly or by one hop of spillover, the ways it moves each axis, and the wars it can start; each choice against every other quest's gate and stages, requirement by requirement, skipping quests certainly finished first; probation undone where every axis has a way back; undeclared lockouts errors, stale locks warnings; `quests` shows locks; Riverhold's Ashen Rite, with its war and the Long Winter's spilt standing declared; split from loading, now Q5 (P-70); `scenarios/lockouts.scenario`; done 2026-10-08 (#43)
+- Q5 — worlds with quests load (D-20): the gate comes off; one load reads content and quests, refusing both on any problem; the session keeps the quests for Q6, read again by `reload` and `restore`, and `quests` alone lists them; quest warnings come with the world's; `validate` counts quests and questlines; saves fingerprint the quest files, a save from before reading as having none; Riverhold's quests join `content/sample` with `turned_in_vex` and `took_a_bribe`, and the complete example loads (P-71); done 2026-10-08 (#44)
 
 ---
 
@@ -97,11 +98,7 @@ Waits until a game needs a host; then a host is chosen and E1 builds its adapter
 
 ## Beyond this module
 
-### Q5 · Worlds with quests load — P3 · Next
-
-Split from Q4. Content with quests loads once it reconciles (D-20): the gate comes off, saves fingerprint the quest files, and Riverhold's quests move into `content/sample` (P-67).
-
-### Q6 · Playing quests — P3 · Outline
+### Q6 · Playing quests — P3 · Next
 
 Starting quests when their gates hold, making choices, completing a questline's steps and closing their leftovers, recording progress as commands and events in the quest module, sending this module its effects; in the CLI (§17).
 

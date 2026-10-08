@@ -10,6 +10,8 @@ fenced_the_crown_jewels — standing: lantern_guild 30.00
 fined_by_watch — standing: city_watch -20.00, captain_hale -10.00
 rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00
 sowed_discord — relations: city_watch ↔ temple -40.00, city_watch → ashen_circle -20.00
+took_a_bribe — alignment: law -4.00, good -2.00 — standing: lantern_guild 10.00, vex 15.00
+turned_in_vex — alignment: law 4.00, good 0.00 — standing: city_watch 15.00, lantern_guild -25.00, vex -40.00
 > outcome sowed_discord player
 #1 at tick 0: outcome sowed_discord applied to player
 #2 at tick 0: city_watch → temple changed from 60.00 to 20.00

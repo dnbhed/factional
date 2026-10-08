@@ -1,5 +1,5 @@
 //! `quests <dir> [<quest>]`: a directory's quests and questlines, read and checked without
-//! loading a world, since a world with quests doesn't load until it can carry them (Q5).
+//! loading it; and `quests`, the loaded world's (Q5).
 
 use std::path::Path;
 
@@ -17,7 +17,11 @@ pub(crate) fn quests(base: &Path, args: &str) -> Outcome {
     let (dir, quest) = match args.split_whitespace().collect::<Vec<_>>()[..] {
         [dir] => (dir, None),
         [dir, quest] => (dir, Some(quest)),
-        _ => return Outcome::Error("quests needs the form: quests <dir> [<quest>]".to_owned()),
+        _ => {
+            return Outcome::Error(
+                "quests needs the form: quests, or quests <dir> [<quest>]".to_owned(),
+            );
+        }
     };
     let (content, quests) = match factional_content::load_quests(&base.join(dir)) {
         Ok(read) => read,
@@ -40,6 +44,14 @@ pub(crate) fn quests(base: &Path, args: &str) -> Outcome {
         .into_iter()
         .map(|warning| format!("warning: {warning}"));
     Outcome::Output(lines(shown.into_iter().chain(warnings)))
+}
+
+/// `quests`: every quest and questline of the loaded world. Their warnings came with `load`.
+pub(crate) fn loaded(quests: &Quests) -> Outcome {
+    if quests.is_empty() {
+        return Outcome::Output("no quests in the loaded world".to_owned());
+    }
+    Outcome::Output(lines(list(quests).into_iter()))
 }
 
 /// Every quest, one per line, then every questline with its steps.
@@ -379,8 +391,26 @@ mod tests {
     #[test]
     fn quests_says_when_a_directory_has_none() {
         assert_eq!(
-            run("quests content/sample"),
-            output("no quests in content/sample")
+            run("quests crates/cli/tests/fixtures/worlds/diamonds"),
+            output("no quests in crates/cli/tests/fixtures/worlds/diamonds")
+        );
+    }
+
+    #[test]
+    fn quests_alone_lists_the_loaded_worlds_quests() {
+        let mut session = Session::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+        assert_eq!(
+            session.execute("quests"),
+            command_error("no world is loaded yet: use load <dir> first")
+        );
+        session.execute("load content/sample").expect("runs");
+        assert_eq!(session.execute("quests"), run("quests content/sample"));
+        let Ok(Outcome::Output(listed)) = session.execute("quests") else {
+            panic!("the sample's quests are listed");
+        };
+        assert!(
+            listed.starts_with("quests:\n  circle_rite — The Ashen Rite"),
+            "{listed}"
         );
     }
 
@@ -394,9 +424,8 @@ mod tests {
     }
 
     #[test]
-    fn quests_needs_a_directory_and_at_most_one_quest() {
-        let usage = command_error("quests needs the form: quests <dir> [<quest>]");
-        assert_eq!(run("quests"), usage);
+    fn quests_takes_at_most_a_directory_and_one_quest() {
+        let usage = command_error("quests needs the form: quests, or quests <dir> [<quest>]");
         assert_eq!(
             run("quests docs/examples/riverhold watch_oath lost_ring"),
             usage

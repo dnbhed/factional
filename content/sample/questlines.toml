@@ -1,5 +1,5 @@
-# questlines.toml: questlines, each an ordered list of steps (DESIGN.md §17.1, D-29). (Q1;
-# they load with the world, Q5)
+#:schema ../../schema/questlines.schema.json
+# Riverhold's questlines: each an ordered list of steps (DESIGN.md §17.1, D-29).
 #
 # name:  the questline's name, as shown
 # giver: whose questline it is: a faction or a character, by id; left out, the world's own.

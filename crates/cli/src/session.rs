@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use factional_content::Fingerprint;
+use factional_quests::Quests;
 
 use crate::charts;
 use crate::check::{check, count, validate};
@@ -45,6 +46,7 @@ const COMMANDS: &[(&str, &str)] = &[
         "quests <dir> [<quest>]",
         "the quests and questlines in <dir>, read and checked without loading them, or one quest's stages and choices",
     ),
+    ("quests", "list the loaded world's quests and questlines"),
     ("characters", "list the loaded characters"),
     (
         "show character <id>",
@@ -247,6 +249,8 @@ pub struct Session {
     /// Relative paths, as in `load content/sample`, are resolved against this.
     base_dir: PathBuf,
     world: Option<World>,
+    /// The loaded world's quests (Q5), for the quest module to play (Q6).
+    quests: Quests,
     /// The directory the world was loaded from, as typed, for `reload` and `save`.
     loaded: Option<String>,
     /// Exactly what was read from it, for `save`.
@@ -265,6 +269,7 @@ impl Session {
         Session {
             base_dir: base_dir.into(),
             world: None,
+            quests: Quests::default(),
             loaded: None,
             fingerprint: Fingerprint::default(),
         }
@@ -283,6 +288,10 @@ impl Session {
             "quit" => Ok(Outcome::Quit),
             "load" => Ok(self.load(rest)),
             "validate" => Ok(self.validate(rest)),
+            "quests" if rest.is_empty() => Ok(match &self.world {
+                Some(_) => crate::quests::loaded(&self.quests),
+                None => no_world(),
+            }),
             "quests" => Ok(crate::quests::quests(&self.base_dir, rest)),
             "reload" => Ok(self.reload()),
             "save" => Ok(self.save(rest)),
@@ -369,6 +378,7 @@ impl Session {
                     "characters"
                 };
                 self.world = Some(checked.world);
+                self.quests = checked.quests;
                 self.loaded = Some(dir.to_owned());
                 self.fingerprint = checked.fingerprint;
                 let summary = format!("loaded {count} {noun} from {dir}");
@@ -425,6 +435,7 @@ impl Session {
         let changes = report(("before", world), ("after", &replayed));
         let output = lines(std::iter::once(summary).chain(warnings).chain(changes));
         self.world = Some(replayed);
+        self.quests = checked.quests;
         self.fingerprint = checked.fingerprint;
         Outcome::Output(output)
     }
@@ -470,6 +481,7 @@ impl Session {
                     count(world.events().len(), "event")
                 );
                 self.world = Some(world);
+                self.quests = restored.quests;
                 self.loaded = Some(restored.dir);
                 self.fingerprint = restored.fingerprint;
                 Outcome::Output(summary)
@@ -4416,7 +4428,9 @@ mod tests {
                 "fenced_the_crown_jewels — standing: lantern_guild 30.00\n\
                  fined_by_watch — standing: city_watch -20.00, captain_hale -10.00\n\
                  rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00\n\
-                 sowed_discord — relations: city_watch ↔ temple -40.00, city_watch → ashen_circle -20.00"
+                 sowed_discord — relations: city_watch ↔ temple -40.00, city_watch → ashen_circle -20.00\n\
+                 took_a_bribe — alignment: law -4.00, good -2.00 — standing: lantern_guild 10.00, vex 15.00\n\
+                 turned_in_vex — alignment: law 4.00, good 0.00 — standing: city_watch 15.00, lantern_guild -25.00, vex -40.00"
             )
         );
         assert_eq!(
@@ -5042,6 +5056,7 @@ mod tests {
             "quit",
             "load <dir>",
             "quests <dir> [<quest>]",
+            "quests",
             "characters",
             "show character <id>",
             "factions",

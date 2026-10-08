@@ -22,6 +22,15 @@ standing = { factions = { city_watch = 10.0 }, characters = { merchant_ava = 30.
 [fenced_the_crown_jewels]
 standing = { factions = { lantern_guild = 30.0 } }
 
+# The Watch's Oath (quests.toml): turning in a thief, or taking their money to look away.
+[turned_in_vex]
+alignment = { law = 4.0 }
+standing = { factions = { city_watch = 15.0, lantern_guild = -25.0 }, characters = { vex = -40.0 } }
+
+[took_a_bribe]
+alignment = { law = -4.0, good = -2.0 }
+standing = { factions = { lantern_guild = 10.0 }, characters = { vex = 15.0 } }
+
 # The Ashen Circle's work: the Watch and the Temple fall out, and the Watch blames the Circle.
 [sowed_discord]
 relations = [

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 
+use factional_quests::Quests;
 use factional_reputation::{Event, RestoreError, SavedCommand, World};
 
 use crate::{ContentError, load_dir_fingerprinted};
@@ -39,16 +40,24 @@ impl Fingerprint {
         )
     }
 
-    /// The files whose fingerprints differ between the two, in name order.
+    /// The files whose fingerprints differ between the two, in name order. A file with no
+    /// fingerprint at all, as in a save from before it was read, counts as not there.
     fn changed(&self, now: &Fingerprint) -> Vec<String> {
         let mut files: Vec<&String> = self.0.keys().chain(now.0.keys()).collect();
         files.sort();
         files.dedup();
         files
             .into_iter()
-            .filter(|file| self.0.get(*file) != now.0.get(*file))
+            .filter(|file| self.file(file) != now.file(file))
             .cloned()
             .collect()
+    }
+}
+
+impl Fingerprint {
+    /// One file's fingerprint; `None` if it isn't there.
+    fn file(&self, file: &str) -> Option<&String> {
+        self.0.get(file).and_then(Option::as_ref)
     }
 }
 
@@ -81,10 +90,12 @@ struct SavedContent {
     files: Fingerprint,
 }
 
-/// A world restored from a save, with the content directory it was loaded from.
+/// A world restored from a save, with its quests and the content directory it was loaded
+/// from.
 #[derive(Debug)]
 pub struct Restored {
     pub world: World,
+    pub quests: Quests,
     pub dir: String,
     pub fingerprint: Fingerprint,
 }
@@ -167,12 +178,13 @@ pub fn restore(text: &str, base: &Path) -> Result<Restored, SaveError> {
     let file: SaveFile =
         serde_json::from_value(json).map_err(|error| SaveError::Unreadable(error.to_string()))?;
     let dir = file.content.dir;
-    let (content, fingerprint) = load_dir_fingerprinted(&base.join(&dir)).map_err(|problems| {
-        SaveError::ContentDoesNotLoad {
-            dir: dir.clone(),
-            problems,
-        }
-    })?;
+    let (content, quests, fingerprint) =
+        load_dir_fingerprinted(&base.join(&dir)).map_err(|problems| {
+            SaveError::ContentDoesNotLoad {
+                dir: dir.clone(),
+                problems,
+            }
+        })?;
     let files = file.content.files.changed(&fingerprint);
     if !files.is_empty() {
         return Err(SaveError::ContentChanged { dir, files });
@@ -181,6 +193,7 @@ pub fn restore(text: &str, base: &Path) -> Result<Restored, SaveError> {
         World::restore(content, &file.journal, &file.events).map_err(SaveError::DoesNotFit)?;
     Ok(Restored {
         world,
+        quests,
         dir,
         fingerprint,
     })

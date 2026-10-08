@@ -29,7 +29,7 @@ fn id(text: &str) -> CharacterId {
 fn played(name: &str) -> (World, String) {
     sample_copy(name);
     let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
-    let (content, fingerprint) = load_dir_fingerprinted(&base.join(name)).expect("loads");
+    let (content, _, fingerprint) = load_dir_fingerprinted(&base.join(name)).expect("loads");
     let mut world = World::new(content).expect("a world");
     let theft = Command::PerformAction {
         actor: id("player"),
@@ -88,6 +88,8 @@ fn a_save_starts_with_its_format_and_version() {
             "characters.toml",
             "factions.toml",
             "outcomes.toml",
+            "questlines.toml",
+            "quests.toml",
             "relations.toml"
         ]
     );
@@ -135,11 +137,50 @@ fn restoring_refuses_content_that_has_changed_naming_the_files() {
     let factions = dir.join("factions.toml");
     let edited = fs::read_to_string(&factions).expect("readable") + "\n# edited\n";
     fs::write(&factions, edited).expect("written");
-    fs::remove_file(dir.join("outcomes.toml")).expect("removed");
+    fs::remove_file(dir.join("relations.toml")).expect("removed");
     assert_eq!(
         restore(&text, base()).map(|_| ()).unwrap_err().to_string(),
-        "the content in save_changed has changed since this save: factions.toml, outcomes.toml"
+        "the content in save_changed has changed since this save: factions.toml, relations.toml"
     );
+}
+
+#[test]
+fn a_save_fingerprints_the_quest_files() {
+    let (_, text) = played("save_quests_changed");
+    let quests = base().join("save_quests_changed/quests.toml");
+    let edited = fs::read_to_string(&quests).expect("the sample has quests") + "\n# edited\n";
+    fs::write(&quests, edited).expect("written");
+    assert_eq!(
+        restore(&text, base()).map(|_| ()).unwrap_err().to_string(),
+        "the content in save_quests_changed has changed since this save: quests.toml"
+    );
+}
+
+#[test]
+fn a_save_from_before_quests_reads_as_having_none() {
+    let (_, text) = played("save_before_quests");
+    let mut json: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    let files = json["content"]["files"]
+        .as_object_mut()
+        .expect("fingerprints");
+    files.remove("quests.toml");
+    files.remove("questlines.toml");
+    let older = json.to_string();
+    assert_eq!(
+        restore(&older, base()).map(|_| ()).unwrap_err().to_string(),
+        "the content in save_before_quests has changed since this save: questlines.toml, quests.toml"
+    );
+    let (_, text) = played("save_without_quests");
+    let dir = base().join("save_without_quests");
+    fs::remove_file(dir.join("quests.toml")).expect("removed");
+    fs::remove_file(dir.join("questlines.toml")).expect("removed");
+    let mut json: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    let files = json["content"]["files"]
+        .as_object_mut()
+        .expect("fingerprints");
+    files.remove("quests.toml");
+    files.remove("questlines.toml");
+    assert!(restore(&json.to_string(), base()).is_ok());
 }
 
 #[test]

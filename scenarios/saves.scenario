@@ -1,6 +1,7 @@
 # Saving and restoring a session (T4). A save holds the journal and the events, and names the
 # content they were played on with a fingerprint of each file; restoring rebuilds the world
-# from the events, and refuses if the content has changed since.
+# from the events, and refuses if the content has changed since. The sample has quests, so
+# its quest files are fingerprinted too (Q5).
 
 load content/sample
 act player steal --target merchant_ava

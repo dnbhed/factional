@@ -2,9 +2,9 @@
 
 These files show every content file and setting the design describes (DESIGN.md §12, §13), filled in for Riverhold, the sample world. Every number matches the worked examples in DESIGN.md and PLAN.md.
 
-**The engine doesn't read all of this yet.** Each setting's comment names the increment that makes the engine read it. `content/sample/` holds what it reads today, and grows towards these files one increment at a time. Until then, loading this folder fails on the settings that aren't built yet.
+**The engine reads all of this.** Each setting's comment names the increment that made the engine read it. `content/sample/` holds the same world with fewer comments, and a setting the design adds lands here first, named in a test until the engine reads it.
 
-**It has quests, so it doesn't load as a world yet.** A world with quests loads once a world can carry them (Q5, DESIGN.md §17.4). Until then `validate` checks them, every lockout included, and `quests docs/examples/riverhold` in the REPL lists them.
+**It loads as a world, quests included** (Q5): `validate docs/examples/riverhold` checks everything, every lockout included, and `quests docs/examples/riverhold` in the REPL lists the quests.
 
 | File | What's in it | Read from |
 | --- | --- | --- |
