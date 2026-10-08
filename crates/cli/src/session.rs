@@ -12,8 +12,9 @@ use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Condition, ConditionCheck, Distance, DriftPolicy, Event, Faction, FactionId,
     KnowledgeModel, Learned, LeaveReason, Membership, ModifierId, ModifierObserver, NextHop,
-    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Reached, Shift, StandingEffects,
-    TableDecision, TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
+    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Reached, RelationEnds, RelationShift,
+    Shift, StandingEffects, TableDecision, TableSource, Toward, Verdict, WeightsFrom, Witnesses,
+    World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -728,6 +729,10 @@ impl Session {
             let standing = named_effects(&effects.standing);
             if !standing.is_empty() {
                 line += &format!(" — standing: {}", standing.join(", "));
+            }
+            let relations = named_shifts(&effects.relations);
+            if !relations.is_empty() {
+                line += &format!(" — relations: {}", relations.join(", "));
             }
             line
         })))
@@ -2253,6 +2258,18 @@ fn member_ids(character: &str, faction: &str) -> Result<(CharacterId, FactionId)
 }
 
 /// Named standing effects as `city_watch -20.00, captain_hale -10.00`: factions first.
+/// Each relation shift: `city_watch ↔ temple -40.00`, or `city_watch → ashen_circle -20.00`
+/// for one way.
+pub(crate) fn named_shifts(shifts: &[RelationShift]) -> Vec<String> {
+    shifts
+        .iter()
+        .map(|shift| match &shift.ends {
+            RelationEnds::Between(a, b) => format!("{a} ↔ {b} {}", shift.by),
+            RelationEnds::Directed { from, to } => format!("{from} → {to} {}", shift.by),
+        })
+        .collect()
+}
+
 pub(crate) fn named_effects(effects: &StandingEffects) -> Vec<String> {
     effects
         .parties()
@@ -4398,7 +4415,8 @@ mod tests {
             output(
                 "fenced_the_crown_jewels — standing: lantern_guild 30.00\n\
                  fined_by_watch — standing: city_watch -20.00, captain_hale -10.00\n\
-                 rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00"
+                 rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00\n\
+                 sowed_discord — relations: city_watch ↔ temple -40.00, city_watch → ashen_circle -20.00"
             )
         );
         assert_eq!(
@@ -4414,6 +4432,31 @@ mod tests {
         assert_eq!(
             session.execute("journal"),
             output("1. outcome fined_by_watch player — accepted")
+        );
+    }
+
+    #[test]
+    fn an_outcome_shifts_how_factions_regard_each_other() {
+        let mut session = riverhold();
+        // 60 − 40 = 20 both ways; the Watch's −40 for the Circle − 20 = −60, a conflict.
+        assert_eq!(
+            session.execute("outcome sowed_discord player"),
+            output(
+                "#1 at tick 0: outcome sowed_discord applied to player\n\
+                 #2 at tick 0: city_watch → temple changed from 60.00 to 20.00\n\
+                 #3 at tick 0: temple → city_watch changed from 60.00 to 20.00\n\
+                 #4 at tick 0: city_watch → ashen_circle changed from -40.00 to -60.00"
+            )
+        );
+        // A conflict is the pair's: either side at or below −50 is enough.
+        assert_eq!(
+            session.execute("relations ashen_circle"),
+            output(
+                "ashen_circle → city_watch: -40.00 (rival) — in conflict\n\
+                 ashen_circle → temple: -90.00 (enemy) — in conflict\n\
+                 city_watch → ashen_circle: -60.00 (enemy) — in conflict\n\
+                 temple → ashen_circle: -90.00 (enemy) — in conflict"
+            )
         );
     }
 

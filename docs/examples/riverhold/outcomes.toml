@@ -4,6 +4,8 @@
 #
 # alignment: moves the character, with their inertia, like an action
 # standing:  changes how factions (by id) or characters (by id) regard the character
+# relations: shifts how factions regard each other: between = [a, b] for both directions,
+#            or from and to for one, by -200 to 200, stopping at -100 and 100 (Q2)
 
 [fined_by_watch]
 standing = { factions = { city_watch = -20.0 }, characters = { captain_hale = -10.0 } }
@@ -24,3 +26,11 @@ standing = { factions = { city_watch = 15.0, lantern_guild = -25.0 }, characters
 [took_a_bribe]
 alignment = { law = -4.0, good = -2.0 }
 standing = { factions = { lantern_guild = 10.0 }, characters = { vex = 15.0 } }
+
+# The Ashen Circle's work: the Watch and the Temple fall out, and the Watch blames the
+# Circle. (Q2)
+[sowed_discord]
+relations = [
+  { between = ["city_watch", "temple"], by = -40.0 },
+  { from = "city_watch", to = "ashen_circle", by = -20.0 },
+]

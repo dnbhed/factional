@@ -13,7 +13,7 @@ These files show every content file and setting the design describes (DESIGN.md 
 | [factions.toml](factions.toml) | Factions with their alignment, tolerances, drift policy, rank ladders and rule overrides | D1, M1 |
 | [relations.toml](relations.toml) | How factions regard each other | M2 |
 | [actions.toml](actions.toml) | What characters can do, and its effect on alignment and standing | A3 |
-| [outcomes.toml](outcomes.toml) | Named bundles of effects, such as a quest's result | M3 |
+| [outcomes.toml](outcomes.toml) | Named bundles of effects, such as a quest's result, including relation shifts | M3, Q2 |
 | [quests.toml](quests.toml) | Quests: the Watch's oath and odd jobs, the captain's dog, Ava's lost ring and the world's long winter, each with its stages and choices | Q1 |
 | [questlines.toml](questlines.toml) | The Watch's career, in four steps: the oath; two of three odd jobs; optional favours; and captain, gated by rank and standing | Q1 |
 

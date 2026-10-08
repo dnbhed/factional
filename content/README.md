@@ -13,7 +13,7 @@ Every file is optional. A missing file means the defaults, or none of that kind.
 | `characters.toml` | Everyone in the world, the player included, keyed by id: name, alignment, weights, inertia, starting memberships and standing. |
 | `relations.toml` | How factions regard each other, as `[[relation]]` entries. |
 | `actions.toml` | What characters can do: each act's effect on alignment and standing, and how its target changes it. |
-| `outcomes.toml` | Named bundles of effects, such as a quest's result. |
+| `outcomes.toml` | Named bundles of effects, such as a quest's result: alignment, standing, and shifts in how factions regard each other. |
 | `quests.toml` | Quests, keyed by id: who gives each, what it needs to start, and its stages, each with requirements and choices. |
 | `questlines.toml` | Questlines, keyed by id: who gives each, and its steps, each a group of quests done in any order. |
 
@@ -31,7 +31,7 @@ cargo run -q -p factional-cli -- validate content/sample
 
 - It lists every problem, each with its file and key path, such as `characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`.
 - It lists every warning, for things that are allowed but probably not meant, such as a faction no one starts close enough to join.
-- It ends with a summary line, such as `content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 3 outcomes`.
+- It ends with a summary line, such as `content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 4 outcomes`.
 
 It exits with 0 if the world would load, warnings or not, and 1 if it wouldn't. A world with any problem never loads (DESIGN.md §12.2). Inside the REPL, `validate <dir>` does the same without replacing the loaded world.
 

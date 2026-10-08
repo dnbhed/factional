@@ -621,17 +621,18 @@ The module exposes commands, events and queries, and nothing else. Other modules
 | --- | --- | --- |
 | `AdvanceTime { ticks }` | A2 | the host's game loop |
 | `PerformAction { actor, action, target?, scale, witnesses }` | A3 | combat, dialogue, world interaction, AI |
-| `JoinFaction`, `LeaveFaction` | M1 | dialogue, quests |
+| `JoinFaction`, `LeaveFaction` | M1 | dialogue, the player's own choice (never a quest's effect, D-30) |
 | `SetRelation`, `ShiftRelation` | M2 | quests, world events |
 | `ApplyOutcome { outcome, actor }`, `ApplyEffects { source, effects }` | M3 | quests and missions |
-| `Promote`, `Demote` | M5 | quests, dialogue |
+| `Promote`, `Demote` | M5 | dialogue, the host |
 | `SetFactionAlignment`, `ShiftFactionAlignment` | M8 | world events, quests |
-| `ResolveConflict { character, keep }` | M9 | quests, dialogue |
+| `ResolveConflict { character, keep }` | M9 | dialogue, the player's own choice |
 | `AddModifier`, `RemoveModifier` | M10 | status, characteristics |
 | `Watch`, `Unwatch` | D3 | the host |
-| `JoinFaction { …, secretly }` | K4 | dialogue, quests |
+| `JoinFaction { …, secretly }` | K4 | dialogue, the player's own choice |
 | `Expose { character, faction, witnesses }` | K5 | dialogue, quests, stealth |
 | `witnesses` on `ApplyOutcome` and `ApplyEffects` | K3 | quests |
+| `relations` in an outcome's or `ApplyEffects`' effects: shifts between factions, after the standing changes (D-30) | Q2 | quests |
 
 ### 11.2 Events (out)
 
@@ -669,7 +670,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 
 | Module | Sends | Reads or listens for |
 | --- | --- | --- |
-| Quests and missions | `ApplyOutcome`, `ApplyEffects`, `Promote`, `ResolveConflict`, relation changes | `assess_join`, rank, standing; `MembershipConflict` as a story hook |
+| Quests and missions | `ApplyOutcome`, `ApplyEffects`, with relation shifts among their effects; never membership or rank changes (D-30) | memberships, rank, standing and perception, for requirements; `MembershipConflict` as a story hook |
 | Combat | `PerformAction` (attack, kill, spare, flee) | disposition bands, to decide who is hostile; `DispositionBandChanged` |
 | Status (disguise, wanted) | `AddModifier`; `witnesses = nobody` | — |
 | Characteristics (charisma…) | `AddModifier`, or a `scale` on actions | — |
@@ -796,6 +797,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | A faction no starting character is within joining tolerance of, naming the nearest and their distance (P-51) | warning | T1 (done) |
 | Quests and questlines: a giver is a faction or a character; outcomes, factions, ranks, parties, quests, stages and choices they name exist; standing within ±100; a quest has a stage, a stage a choice, a questline a step, a step a quest; stage ids unique in a quest, none called `end`; choice ids unique in a stage; `next` names a later stage; an `outcome` or `effects`, not both; no list names something twice; `need` no more than the step's quests; a quest in at most one questline, at one step; `leftovers` is `open` or `close` | error | Q1 (done) |
 | `leftovers = "close"` on a step that needs all its quests | warning | Q1 (done) |
+| Relation shifts in outcomes and quests' effects: two different factions that exist, `by` within −200…200, each direction shifted at most once; the same refuses `ApplyEffects` | error | Q2 (done) |
 
 ### 12.3 Designer workflow
 
@@ -883,6 +885,8 @@ Every example in this document and in PLAN.md uses this world. It lives in `cont
 | --- | --- |
 | `fined_by_watch` | city_watch −20; captain_hale personally −10 |
 | `rescued_merchant` | good +6; merchant_ava +30; city_watch +10 |
+| `fenced_the_crown_jewels` | lantern_guild +30 |
+| `sowed_discord` | city_watch ↔ temple −40; city_watch → ashen_circle −20 (Q2) |
 
 **Knowledge** (from K1; designed in K0)
 
@@ -947,7 +951,7 @@ A quest checker can only reconcile what it can see without running the game. So 
 
 A feature that would make an effect's reach impossible to compute from content, such as computed effects or script hooks, conflicts with D-20. It needs the user's agreement before it's built.
 
-## 17. Quests (designed in Q0; D-25 to D-29, P-64 to P-66)
+## 17. Quests (designed in Q0; D-25 to D-30, P-64 to P-67)
 
 The quest module is a sibling crate, `factional-quests`. It reads this module's content and sends it commands, like any other module (§11, D-15). This section is its design; Q1 onwards builds it.
 
@@ -1017,7 +1021,7 @@ quests = ["watch_captain"]
 ```
 
 - **Requirements** come from a closed vocabulary, all about the character doing the quest: `standing` (at least, with a faction or character), `member` and `not_member`, `rank_at_least` in a faction, `within_tolerance` of a faction (as it perceives them, §10.3), and `done` (another quest finished, or one of its stages or choices: `quest`, `quest.stage` or `quest.stage.choice`). A questline's order is added for the designer: each quest's gate gets its step's `requires`, and a requirement that the step before is complete (`need` of its quests done).
-- **Effects** are an outcome from `outcomes.toml`, or the same kinds inline. The vocabulary grows from today's alignment and standing to `join`, `leave`, `promote`, `demote` and `relation` (a shift between two factions), all sent to this module as commands. Nothing is computed or scripted (§16.2).
+- **Effects** are an outcome from `outcomes.toml`, or the same kinds inline: the character's alignment and standing, and `relations`, shifts in how factions regard each other (Q2). All are sent to this module as commands. Nothing is computed or scripted (§16.2). **Quests never change memberships or ranks** (D-30): joining, leaving and promotion are always the character's own actions, which a quest's requirements can only wait for.
 - **The quest module keeps who has done what:** each character's progress, as its own events. This module never sees quests, only the commands they send.
 
 ### 17.2 Reconciling: every lockout is declared (D-26)
@@ -1029,10 +1033,10 @@ What counts as for good, requirement by requirement (P-64):
 | Requirement | Made false by a choice that… | For good unless… |
 | --- | --- | --- |
 | `standing` with a party | lowers it (directly, or by spillover) below the threshold | some action, which can be repeated, can raise it again (directly or by spillover) |
-| `member` of a faction | leaves or is expelled from it, or starts a war between it and another faction of the character's | never undone: rejoining depends on too much to prove |
-| `rank_at_least` | demotes, or ends the membership | never undone |
+| `member` of a faction | shifts alignment far enough for the faction's drift policy to expel, or starts a war between it and another faction of the character's | never undone: rejoining depends on too much to prove |
+| `rank_at_least` | shifts alignment far enough for drift to demote, or ends the membership | never undone |
 | `within_tolerance` | shifts alignment away | some action can move each axis it needs back, with inertia that never stops it |
-| `not_member` | joins | always undone: leaving always succeeds |
+| `not_member` | nothing: joining is never a quest's effect (D-30) | — |
 | `done` of another quest, or the step before complete | (only that quest's own other choices, or a step's leftovers closing) | not a lockout: the requirement already names the quest or the step |
 
 Within one quest, choices exclude each other by design and need no declaration. Every stage must still be reachable along some path of its own quest, and every step of a questline reachable from the steps before it, with `need` no more than its quests, or it's dead content and an error. A rank or standing gate counts as reachable if it's in range and names a real rung, as P-51 reasons: standing can always be raised, and promotion can always be asked for.
@@ -1042,7 +1046,7 @@ Within one quest, choices exclude each other by design and need no declaration. 
 Loading never plays the game out. For each choice it works out bounds from content alone:
 
 - **Standing:** the most each party's standing can fall, adding the choice's direct effects and their spillover. Spillover is bounded over the whole range the relations can reach, since quests can shift relations.
-- **Memberships:** which it can end, directly or through a war it can start.
+- **Memberships:** which it can end, through drift its alignment shift can cause or a war its relation shifts can start.
 - **Alignment:** how far each axis can move.
 - **Relations:** what it can change.
 
@@ -1059,7 +1063,7 @@ By contrast, the Guild's `burn_the_records`, at −40 with the Watch, doesn't lo
 | Increment | Builds |
 | --- | --- |
 | Q1 (done) | `factional-quests`, `quests.toml` and `questlines.toml`: quests with their givers, gates, stages, choices and requirements, and questlines of steps (`quests`, `need`, `requires`, `leftovers`), with every reference and range checked; the CLI lists them |
-| Q2 | The wider effect vocabulary (`join`, `leave`, `promote`, `demote`, `relation`), as outcomes and inline effects |
+| Q2 (done) | Relation effects, as outcomes and inline effects (D-30) |
 | Q3 | Reachability: no dead stages in a quest, no unreachable step in a questline |
 | Q4 | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
 | Q5 | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI |

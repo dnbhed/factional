@@ -1,0 +1,22 @@
+# A quest's result can change how factions regard each other (Q2, D-30). Joining, leaving
+# and promotion are never a quest's effects: they're the character's own actions.
+load content/sample
+outcomes
+
+# The Ashen Circle sows discord: the Watch and the Temple fall from allied to friendly
+# (60 - 40 = 20, both ways), and the Watch's rivalry with the Circle becomes a conflict
+# (-40 - 20 = -60), after the outcome's other effects.
+outcome sowed_discord player
+relations city_watch
+
+# Sister Mira joins the Watch of her own accord, so she's in both.
+join sister_mira city_watch
+# Again: 20 - 40 = -20, and -60 - 20 = -80.
+outcome sowed_discord player
+# And again: -20 - 40 = -60, at or below -50, so the two are at war and she has to choose,
+# as after any relation change. -80 - 20 stops at -100.
+outcome sowed_discord player
+assert resolve sister_mira temple == #15 at tick 0: sister_mira left city_watch (the war between their factions was settled)
+
+# The quest module sees the same effects, written inline on a choice.
+quests docs/examples/riverhold the_long_winter

@@ -9,7 +9,7 @@ use factional_core::Fixed;
 use factional_quests::{
     ChoiceEffects, Leftovers, Next, PartyRef, Progress, QuestId, QuestlineId, Quests, StageId,
 };
-use factional_reputation::{FactionId, OutcomeId, RankId};
+use factional_reputation::{FactionId, OutcomeId, RankId, RelationEnds, RelationShift};
 
 fn example() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/examples/riverhold")
@@ -156,6 +156,37 @@ fn reads_givers_that_are_a_character_or_no_one() {
     assert_eq!(
         gate.done,
         [Progress::parse("watch_oath.patrol.report").expect("valid")]
+    );
+}
+
+#[test]
+fn reads_a_choices_relation_shifts() {
+    let quests = riverhold();
+    let winter = &quests.quests[&quest("the_long_winter")];
+    let ChoiceEffects::Inline(share) = &winter.stages[0].choices[0].effects else {
+        panic!("sharing has inline effects");
+    };
+    assert_eq!(
+        share.relations,
+        [RelationShift {
+            ends: RelationEnds::Between(faction("temple"), faction("city_watch")),
+            by: h(5_00),
+        }]
+    );
+}
+
+#[test]
+fn a_choices_relation_shifts_are_checked_where_they_are() {
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "relations = [{ between = [\"temple\", \"city_watch\"], by = 5.0 }]",
+            "relations = [{ between = [\"temple\", \"city_wach\"], by = 5.0 }, { from = \"temple\", to = \"free_company\", by = -201.0 }]"
+        ),
+        [
+            "quests.toml: the_long_winter.stages[0].choices[0].effects.relations[0].between[1]: unknown faction 'city_wach' (did you mean 'city_watch'?)",
+            "quests.toml: the_long_winter.stages[0].choices[0].effects.relations[1].by: -201.00 is outside -200.00..200.00",
+        ]
     );
 }
 

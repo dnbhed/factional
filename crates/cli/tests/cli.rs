@@ -157,7 +157,7 @@ fn validate_summarises_a_world_that_loads_and_exits_zero() {
     assert!(output.status.success(), "stdout: {}", text(&output.stdout));
     assert_eq!(
         text(&output.stdout),
-        "content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 3 outcomes\n"
+        "content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 4 outcomes\n"
     );
     assert_eq!(text(&output.stderr), "");
 }

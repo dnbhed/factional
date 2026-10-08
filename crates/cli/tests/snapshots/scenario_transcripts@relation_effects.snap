@@ -1,0 +1,45 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/relation_effects.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> outcomes
+fenced_the_crown_jewels — standing: lantern_guild 30.00
+fined_by_watch — standing: city_watch -20.00, captain_hale -10.00
+rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00
+sowed_discord — relations: city_watch ↔ temple -40.00, city_watch → ashen_circle -20.00
+> outcome sowed_discord player
+#1 at tick 0: outcome sowed_discord applied to player
+#2 at tick 0: city_watch → temple changed from 60.00 to 20.00
+#3 at tick 0: temple → city_watch changed from 60.00 to 20.00
+#4 at tick 0: city_watch → ashen_circle changed from -40.00 to -60.00
+> relations city_watch
+ashen_circle → city_watch: -40.00 (rival) — in conflict
+city_watch → ashen_circle: -60.00 (enemy) — in conflict
+city_watch → free_company: -30.00 (rival)
+city_watch → lantern_guild: -80.00 (enemy) — in conflict
+city_watch → temple: 20.00 (friendly)
+free_company → city_watch: -10.00 (neutral)
+lantern_guild → city_watch: -80.00 (enemy) — in conflict
+temple → city_watch: 20.00 (friendly)
+> join sister_mira city_watch
+#5 at tick 0: sister_mira joined city_watch as a recruit
+> outcome sowed_discord player
+#6 at tick 0: outcome sowed_discord applied to player
+#7 at tick 0: city_watch → temple changed from 20.00 to -20.00
+#8 at tick 0: temple → city_watch changed from 20.00 to -20.00
+#9 at tick 0: city_watch → ashen_circle changed from -60.00 to -80.00
+> outcome sowed_discord player
+#10 at tick 0: outcome sowed_discord applied to player
+#11 at tick 0: city_watch → temple changed from -20.00 to -60.00
+#12 at tick 0: temple → city_watch changed from -20.00 to -60.00
+#13 at tick 0: city_watch → ashen_circle changed from -80.00 to -100.00
+#14 at tick 0: city_watch and temple are now in conflict, and sister_mira belongs to both
+> assert resolve sister_mira temple == #15 at tick 0: sister_mira left city_watch (the war between their factions was settled)
+> quests docs/examples/riverhold the_long_winter
+the_long_winter — The Long Winter — the world's own
+1. stores
+   share — alignment: law 0.00, good 6.00 — standing: temple 10.00 — relations: temple ↔ city_watch 5.00 — then the end
+   hoard — alignment: law 0.00, good -6.00 — then the end

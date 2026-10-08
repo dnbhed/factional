@@ -48,7 +48,7 @@ pub use membership::{
     ConflictRule, Consequence, DriftPolicy, JoinAssessment, JoinBlock, LeaveReason, Membership,
     PromotionAssessment, RankCheck, StartingMembership, ToleranceProblem, Tolerances,
 };
-pub use relation::{Regard, Relation, RelationEnds, RelationSide};
+pub use relation::{Regard, Relation, RelationEnds, RelationShift, RelationSide, ShiftProblem};
 pub use shift::{AxisShift, Shift, TargetRelation};
 pub use standing::{
     ActionStanding, Effects, Outcome, Party, Spill, StandingEffects, StandingKey, StandingOwner,

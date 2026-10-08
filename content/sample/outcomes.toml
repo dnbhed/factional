@@ -5,6 +5,11 @@
 # alignment (optional): moves the character, like an action at scale 1.00.
 # standing (optional): how named factions and characters come to regard the character,
 #   -100 to 100: standing = { factions = { … }, characters = { … } }
+# relations (optional): shifts in how factions regard each other, each written as in
+#   relations.toml, with between = [a, b] for both directions or from and to for one, and
+#   by, -200 to 200. Each direction moves by it, stopping at -100 and 100, after the
+#   standing changes; a direction is shifted at most once. A war it starts between two of
+#   someone's factions opens as relate's would.
 
 [fined_by_watch]
 standing = { factions = { city_watch = -20.0 }, characters = { captain_hale = -10.0 } }
@@ -16,3 +21,10 @@ standing = { factions = { city_watch = 10.0 }, characters = { merchant_ava = 30.
 # A job well done for the Lantern Guild: enough to make a fence a shadow.
 [fenced_the_crown_jewels]
 standing = { factions = { lantern_guild = 30.0 } }
+
+# The Ashen Circle's work: the Watch and the Temple fall out, and the Watch blames the Circle.
+[sowed_discord]
+relations = [
+  { between = ["city_watch", "temple"], by = -40.0 },
+  { from = "city_watch", to = "ashen_circle", by = -20.0 },
+]
