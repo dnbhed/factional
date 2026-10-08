@@ -74,6 +74,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Q4 — the lockout check (D-26, D-27): `locks` on choices (`quest` for its gate, `quest.stage`), checked like references; once per world, the standing some action raises directly, the ways some action moves each axis with no inertia profile stopping it, and each relation's reach; per choice, the parties it can lower directly or by one hop of spillover, the ways it moves each axis, and the wars it can start; each choice against every other quest's gate and stages, requirement by requirement, skipping quests certainly finished first; probation undone where every axis has a way back; undeclared lockouts errors, stale locks warnings; `quests` shows locks; Riverhold's Ashen Rite, with its war and the Long Winter's spilt standing declared; split from loading, now Q5 (P-70); `scenarios/lockouts.scenario`; done 2026-10-08 (#43)
 - Q5 — worlds with quests load (D-20): the gate comes off; one load reads content and quests, refusing both on any problem; the session keeps the quests for Q6, read again by `reload` and `restore`, and `quests` alone lists them; quest warnings come with the world's; `validate` counts quests and questlines; saves fingerprint the quest files, a save from before reading as having none; Riverhold's quests join `content/sample` with `turned_in_vex` and `took_a_bribe`, and the complete example loads (P-71); done 2026-10-08 (#44)
 - Q6 — playing quests: a quest log in `factional-quests` keeping every character's progress, changed only by `StartQuest` and `MakeChoice` through their events (`QuestStarted`, `StageReached`, `ChoiceMade`, `QuestFinished`, `QuestClosed`); starting needs its gate and every step before complete, and closes earlier steps' untouched leftovers; a character waits at a stage until its requirements hold (D-31); effects go to the world in the same command, so a refused command changes nothing; `assess_start` and refusals say what's missing, with the numbers; save and reload refuse quest progress until Q7; `can-start`, `start`, `choose`, `progress`; invariants 14 and 15 with a property test (P-72); `scenarios/play.scenario`; done 2026-10-08 (#45)
+- Q7 — saving quest progress: the quest log keeps a journal (each command, where it came in the world's, what it sent and produced); saves, now version 2, hold it and the quest events, restored without running rules once checked to fit, and version 1 saves restore with no progress; `reload` re-runs quest commands where they came among the world's, stopping on any change of acceptance and reporting changed progress; `save` and `restore` count quest commands and events; invariant 11 extended, with a property test (P-73); `scenarios/quest_saves.scenario`; done 2026-10-08 (#46)
 
 ---
 
@@ -99,11 +100,7 @@ Waits until a game needs a host; then a host is chosen and E1 builds its adapter
 
 ## Beyond this module
 
-### Q7 · Saving quest progress — P3 · Next
-
-Saves hold the quest log, and `reload` replays it on re-read content, as T2 and T4 do for the world (P-52, P-54).
-
-### U0 · Editor design pass: web or egui — P3
+### U0 · Editor design pass: web or egui — P3 · Next
 
 Settles X-5. Comes after T1, whose JSON Schema can drive the forms, and after Q0, which defines the quest model a questline editor would edit. Likely prerequisites: a format-preserving TOML writer in `factional-content` (`toml_edit`), `Serialize` on query results and their breakdowns, and an editor facade crate beside `cli` that nothing depends on.
 

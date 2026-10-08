@@ -17,7 +17,8 @@ use crate::quest::{
 };
 
 /// A change to a character's quest progress (P-72).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum QuestCommand {
     /// `character` starts `quest`, if its gate and its step allow (DESIGN.md §17.1).
     StartQuest {
@@ -35,7 +36,8 @@ pub enum QuestCommand {
 }
 
 /// What happened to a character's quest progress.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum QuestEvent {
     QuestStarted {
         character: CharacterId,
@@ -200,12 +202,38 @@ pub enum QuestError {
     Refused(CommandError),
 }
 
+/// One quest command in the log's journal, accepted or not, and where it came among the
+/// world's commands (Q7, P-73).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct QuestEntry {
+    pub command: QuestCommand,
+    /// How many commands the world's journal held when it came.
+    pub at: usize,
+    /// How many commands it sent the world: 1 if its effects went there, else 0.
+    pub sent: usize,
+    /// How many quest events it produced; `None` if it was refused.
+    pub events: Option<usize>,
+}
+
+/// Why a saved quest log can't be restored onto its quests and world.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuestRestoreError {
+    /// The journal's accepted commands account for a different number of events.
+    EventCount { journal: usize, events: usize },
+    /// A command, at `index` in the journal, that doesn't sit within the world's journal
+    /// after the one before it.
+    Misplaced { index: usize },
+    /// An event, at `index`, naming a character, quest, stage or choice that doesn't exist.
+    DoesNotFit { index: usize },
+}
+
 /// Every character's progress through the world's quests (P-72).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct QuestLog {
     quests: Quests,
     records: BTreeMap<CharacterId, Record>,
     events: Vec<QuestEvent>,
+    journal: Vec<QuestEntry>,
 }
 
 impl QuestLog {
@@ -215,7 +243,88 @@ impl QuestLog {
             quests,
             records: BTreeMap::new(),
             events: Vec::new(),
+            journal: Vec::new(),
         }
+    }
+
+    /// Rebuilds a log from a save: its journal and its events, replayed without running any
+    /// rules (P-16), onto `world` as restored. Every event must name what exists, and every
+    /// command sit within the world's journal, in order.
+    pub fn restore(
+        quests: Quests,
+        journal: Vec<QuestEntry>,
+        events: Vec<QuestEvent>,
+        world: &World,
+    ) -> Result<QuestLog, QuestRestoreError> {
+        let accounted = journal
+            .iter()
+            .filter_map(|entry| entry.events)
+            .fold(0_usize, usize::saturating_add);
+        if accounted != events.len() {
+            return Err(QuestRestoreError::EventCount {
+                journal: accounted,
+                events: events.len(),
+            });
+        }
+        let mut next = 0;
+        for (index, entry) in journal.iter().enumerate() {
+            let end = entry.at.saturating_add(entry.sent);
+            if entry.at < next || end > world.journal().len() {
+                return Err(QuestRestoreError::Misplaced { index });
+            }
+            next = end;
+        }
+        let mut log = QuestLog::new(quests);
+        for (index, event) in events.iter().enumerate() {
+            if !log.fits(world, event) {
+                return Err(QuestRestoreError::DoesNotFit { index });
+            }
+            log.apply(event);
+        }
+        log.journal = journal;
+        Ok(log)
+    }
+
+    /// Whether everything an event names exists.
+    fn fits(&self, world: &World, event: &QuestEvent) -> bool {
+        let (character, quest) = match event {
+            QuestEvent::QuestStarted { character, quest }
+            | QuestEvent::StageReached {
+                character, quest, ..
+            }
+            | QuestEvent::ChoiceMade {
+                character, quest, ..
+            }
+            | QuestEvent::QuestFinished { character, quest }
+            | QuestEvent::QuestClosed {
+                character, quest, ..
+            } => (character, quest),
+        };
+        let Some(found) = self.quests.quests.get(quest) else {
+            return false;
+        };
+        let stage = |id: &StageId| found.stages.iter().find(|stage| &stage.id == id);
+        world.character(character).is_some()
+            && match event {
+                QuestEvent::StageReached { stage: id, .. } => stage(id).is_some(),
+                QuestEvent::ChoiceMade {
+                    stage: id, choice, ..
+                } => stage(id).is_some_and(|stage| stage.choices.iter().any(|c| &c.id == choice)),
+                QuestEvent::QuestClosed {
+                    questline, step, ..
+                } => self.quests.place_of(quest) == Some((questline, *step)),
+                QuestEvent::QuestStarted { .. } | QuestEvent::QuestFinished { .. } => true,
+            }
+    }
+
+    /// Every quest command so far, accepted or not, in order.
+    pub fn journal(&self) -> &[QuestEntry] {
+        &self.journal
+    }
+
+    /// Every character's progress, in id order: those who've done anything.
+    pub fn records(&self) -> &BTreeMap<CharacterId, Record> {
+        &self.records
     }
 
     pub fn quests(&self) -> &Quests {
@@ -385,27 +494,41 @@ impl QuestLog {
     }
 
     /// Runs one command: checks it, sends a choice's effects to `world`, and applies what
-    /// happened. Refused, it changes nothing, here or in the world.
+    /// happened. Refused, it changes nothing, here or in the world, but the journals. Either
+    /// way the journal records it.
     pub fn execute(
         &mut self,
         world: &mut World,
         command: QuestCommand,
     ) -> Result<Vec<Played>, QuestError> {
-        let played = match command {
-            QuestCommand::StartQuest { character, quest } => self.start(world, character, quest)?,
+        let at = world.journal().len();
+        let result = match command.clone() {
+            QuestCommand::StartQuest { character, quest } => self.start(world, character, quest),
             QuestCommand::MakeChoice {
                 character,
                 quest,
                 choice,
                 witnesses,
-            } => self.choose(world, character, quest, choice, witnesses)?,
+            } => self.choose(world, character, quest, choice, witnesses),
         };
-        for event in &played {
-            if let Played::Quest(event) = event {
-                self.apply(event);
+        let mut events = None;
+        if let Ok(played) = &result {
+            let mut count = 0;
+            for event in played {
+                if let Played::Quest(event) = event {
+                    self.apply(event);
+                    count += 1;
+                }
             }
+            events = Some(count);
         }
-        Ok(played)
+        self.journal.push(QuestEntry {
+            command,
+            at,
+            sent: world.journal().len() - at,
+            events,
+        });
+        result
     }
 
     fn start(
@@ -791,6 +914,55 @@ impl fmt::Display for QuestError {
                 )
             }
             QuestError::Refused(refusal) => refusal.fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for QuestRestoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            QuestRestoreError::EventCount { journal, events } => write!(
+                f,
+                "the quest journal accounts for {journal} events, but the save holds {events}"
+            ),
+            QuestRestoreError::Misplaced { index } => write!(
+                f,
+                "quest command {} doesn't sit within the world's journal after the one before",
+                index + 1
+            ),
+            QuestRestoreError::DoesNotFit { index } => write!(
+                f,
+                "quest event {} names a character, quest, stage or choice that doesn't exist",
+                index + 1
+            ),
+        }
+    }
+}
+
+impl fmt::Display for QuestCommand {
+    /// As the REPL writes it: `start player watch_oath`, or `choose player watch_oath report`
+    /// with who saw it.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            QuestCommand::StartQuest { character, quest } => {
+                write!(f, "start {character} {quest}")
+            }
+            QuestCommand::MakeChoice {
+                character,
+                quest,
+                choice,
+                witnesses,
+            } => {
+                write!(f, "choose {character} {quest} {choice}")?;
+                match witnesses {
+                    Witnesses::Everyone => Ok(()),
+                    Witnesses::Nobody => f.write_str(" --unseen"),
+                    Witnesses::These(seen) => {
+                        let seen: Vec<&str> = seen.iter().map(CharacterId::as_str).collect();
+                        write!(f, " --seen-by {}", seen.join(","))
+                    }
+                }
+            }
         }
     }
 }
@@ -1358,7 +1530,8 @@ mod tests {
         let mut world = world();
         let mut log = log();
         run(&mut log, &mut world, vec![start("hero", "oath")]);
-        let before = (log.clone(), world.events().len());
+        let progress = |log: &QuestLog| (log.records().clone(), log.events().to_vec());
+        let before = (progress(&log), world.events().len());
         let refused = [
             start("hero", "oath"),
             start("hero", "f"),
@@ -1378,7 +1551,11 @@ mod tests {
                 log.execute(&mut world, command.clone()).is_err(),
                 "{command:?}"
             );
-            assert_eq!((log.clone(), world.events().len()), before, "{command:?}");
+            assert_eq!(
+                (progress(&log), world.events().len()),
+                before,
+                "{command:?}"
+            );
         }
     }
 
@@ -1493,6 +1670,183 @@ mod tests {
                 "hero has already finished it",
                 "it closed when career moved on from step 2",
                 "step 2 of career isn't complete: 1 of 2 done",
+            ]
+        );
+    }
+
+    /// A log through the oath and a refusal, on its world.
+    fn played() -> (World, QuestLog) {
+        let mut world = world();
+        let mut log = log();
+        run(
+            &mut log,
+            &mut world,
+            vec![start("hero", "oath"), pick("hero", "oath", "take")],
+        );
+        let _ = log.execute(&mut world, start("hero", "oath"));
+        (world, log)
+    }
+
+    #[test]
+    fn the_journal_says_where_each_command_came_and_what_it_did() {
+        let (_, log) = played();
+        let who: Vec<&CharacterId> = log.records().keys().collect();
+        assert_eq!(who, [&character_id("hero")]);
+        let entry = |command, at, sent, events| QuestEntry {
+            command,
+            at,
+            sent,
+            events,
+        };
+        assert_eq!(
+            log.journal(),
+            [
+                entry(start("hero", "oath"), 0, 0, Some(2)),
+                entry(pick("hero", "oath", "take"), 0, 1, Some(2)),
+                entry(start("hero", "oath"), 1, 0, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_restored_log_is_the_log_it_was() {
+        let (world, log) = played();
+        let restored = QuestLog::restore(
+            log.quests().clone(),
+            log.journal().to_vec(),
+            log.events().to_vec(),
+            &world,
+        );
+        assert_eq!(restored, Ok(log));
+    }
+
+    #[test]
+    fn a_log_that_doesnt_fit_isnt_restored() {
+        let (world, log) = played();
+        let restore = |journal: Vec<QuestEntry>, events: Vec<QuestEvent>| {
+            QuestLog::restore(log.quests().clone(), journal, events, &world)
+        };
+        let (journal, events) = (log.journal().to_vec(), log.events().to_vec());
+        assert_eq!(
+            restore(journal.clone(), events[..3].to_vec()),
+            Err(QuestRestoreError::EventCount {
+                journal: 4,
+                events: 3,
+            })
+        );
+        let mut early = journal.clone();
+        early[2].at = 0;
+        assert_eq!(
+            restore(early, events.clone()),
+            Err(QuestRestoreError::Misplaced { index: 2 })
+        );
+        let mut late = journal.clone();
+        late[1].sent = 2;
+        assert_eq!(
+            restore(late, events.clone()),
+            Err(QuestRestoreError::Misplaced { index: 1 })
+        );
+        let reached = |stage: &str| QuestEvent::StageReached {
+            character: character_id("hero"),
+            quest: quest_id("oath"),
+            stage: stage_id(stage),
+        };
+        let unfit = [
+            reached("nowhere"),
+            QuestEvent::QuestStarted {
+                character: character_id("nobody"),
+                quest: quest_id("oath"),
+            },
+            QuestEvent::QuestStarted {
+                character: character_id("hero"),
+                quest: quest_id("nowhere"),
+            },
+            QuestEvent::ChoiceMade {
+                character: character_id("hero"),
+                quest: quest_id("oath"),
+                stage: stage_id("swear"),
+                choice: ChoiceId::new("nothing").expect("valid id"),
+            },
+            QuestEvent::ChoiceMade {
+                character: character_id("hero"),
+                quest: quest_id("oath"),
+                stage: stage_id("nowhere"),
+                choice: ChoiceId::new("take").expect("valid id"),
+            },
+            QuestEvent::QuestClosed {
+                character: character_id("hero"),
+                quest: quest_id("a"),
+                questline: QuestlineId::new("career").expect("valid id"),
+                step: 0,
+            },
+        ];
+        for event in unfit {
+            let mut changed = events.clone();
+            changed[3] = event.clone();
+            assert_eq!(
+                restore(journal.clone(), changed),
+                Err(QuestRestoreError::DoesNotFit { index: 3 }),
+                "{event:?}"
+            );
+        }
+        let closed = QuestEvent::QuestClosed {
+            character: character_id("hero"),
+            quest: quest_id("a"),
+            questline: QuestlineId::new("career").expect("valid id"),
+            step: 1,
+        };
+        let mut fits = events.clone();
+        fits[3] = closed;
+        assert!(restore(journal, fits).is_ok());
+    }
+
+    #[test]
+    fn restore_problems_say_what_doesnt_fit() {
+        let said: Vec<String> = [
+            QuestRestoreError::EventCount {
+                journal: 4,
+                events: 3,
+            },
+            QuestRestoreError::Misplaced { index: 2 },
+            QuestRestoreError::DoesNotFit { index: 3 },
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+        assert_eq!(
+            said,
+            [
+                "the quest journal accounts for 4 events, but the save holds 3",
+                "quest command 3 doesn't sit within the world's journal after the one before",
+                "quest event 4 names a character, quest, stage or choice that doesn't exist",
+            ]
+        );
+        let commands: Vec<String> = [
+            start("hero", "oath"),
+            pick("hero", "oath", "take"),
+            QuestCommand::MakeChoice {
+                character: character_id("hero"),
+                quest: quest_id("oath"),
+                choice: ChoiceId::new("take").expect("valid id"),
+                witnesses: Witnesses::Nobody,
+            },
+            QuestCommand::MakeChoice {
+                character: character_id("hero"),
+                quest: quest_id("oath"),
+                choice: ChoiceId::new("take").expect("valid id"),
+                witnesses: Witnesses::These([character_id("rook"), character_id("hero")].into()),
+            },
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+        assert_eq!(
+            commands,
+            [
+                "start hero oath",
+                "choose hero oath take",
+                "choose hero oath take --unseen",
+                "choose hero oath take --seen-by hero,rook",
             ]
         );
     }

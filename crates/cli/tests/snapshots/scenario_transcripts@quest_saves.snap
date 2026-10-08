@@ -1,0 +1,45 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/quest_saves.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> start player watch_oath
+player started watch_oath
+player reached watch_oath.patrol
+> choose player watch_oath report
+player chose watch_oath.patrol.report
+#1 at tick 0: outcome turned_in_vex applied to player
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law 4.00, good 0.00
+#3 at tick 0: player's standing with city_watch moved from 0.00 to 19.50, with 4.50 spilled from lantern_guild (-25.00 × -0.18; city_watch regards it at -80.00)
+#4 at tick 0: player's standing with lantern_guild moved from 0.00 to -27.70, with -2.70 spilled from city_watch (15.00 × -0.18; lantern_guild regards it at -80.00)
+#5 at tick 0: player's standing with temple moved from 0.00 to 1.50, with 1.50 spilled from city_watch (15.00 × 0.10; temple regards it at 60.00)
+#6 at tick 0: player's standing with vex moved from 0.00 to -40.00
+player reached watch_oath.oath
+> save target/quest_saves.scenario.json
+saved 1 command and 6 events, and 2 quest commands and 4 quest events, to target/quest_saves.scenario.json
+> choose player watch_oath swear
+player chose watch_oath.oath.swear
+#7 at tick 0: effects from quest:watch_oath.oath.swear applied to player
+#8 at tick 0: player's alignment moved from law 4.00, good 0.00 to law 9.00, good 0.00
+player finished watch_oath
+> assert show character player == player — The Player — law 9.00, good 0.00 — True Neutral
+> restore target/quest_saves.scenario.json
+restored target/quest_saves.scenario.json: content/sample at tick 0, with 1 command and 6 events, and 2 quest commands and 4 quest events
+> progress player
+watch_oath — at oath
+watch_career — up to step 1 of 4
+> assert standing player city_watch == 19.50
+> assert show character player == player — The Player — law 4.00, good 0.00 — True Neutral
+> reload
+reloaded content/sample and replayed 2 commands
+no differences
+> choose player watch_oath swear
+player chose watch_oath.oath.swear
+#7 at tick 0: effects from quest:watch_oath.oath.swear applied to player
+#8 at tick 0: player's alignment moved from law 4.00, good 0.00 to law 9.00, good 0.00
+player finished watch_oath
+> progress player
+watch_oath — finished
+watch_career — up to step 2 of 4

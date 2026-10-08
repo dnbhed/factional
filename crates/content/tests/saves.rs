@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use factional_content::{SAVE_VERSION, load_dir_fingerprinted, restore, save};
+use factional_quests::QuestLog;
 use factional_reputation::{CharacterId, Command, Witnesses, World};
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
@@ -29,7 +30,7 @@ fn id(text: &str) -> CharacterId {
 fn played(name: &str) -> (World, String) {
     sample_copy(name);
     let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
-    let (content, _, fingerprint) = load_dir_fingerprinted(&base.join(name)).expect("loads");
+    let (content, quests, fingerprint) = load_dir_fingerprinted(&base.join(name)).expect("loads");
     let mut world = World::new(content).expect("a world");
     let theft = Command::PerformAction {
         actor: id("player"),
@@ -46,7 +47,7 @@ fn played(name: &str) -> (World, String) {
             subject: id("player"),
         })
         .expect("accepted");
-    let text = save(&world, name, &fingerprint);
+    let text = save(&world, &QuestLog::new(quests), name, &fingerprint);
     (world, text)
 }
 
@@ -70,9 +71,9 @@ fn a_save_restores_the_same_world() {
 #[test]
 fn a_save_starts_with_its_format_and_version() {
     let (_, text) = played("save_header");
-    assert_eq!(SAVE_VERSION, 1);
+    assert_eq!(SAVE_VERSION, 2);
     assert!(
-        text.starts_with("{\n  \"format\": \"factional-save\",\n  \"version\": 1,\n"),
+        text.starts_with("{\n  \"format\": \"factional-save\",\n  \"version\": 2,\n"),
         "{text}"
     );
     let json: serde_json::Value = serde_json::from_str(&text).expect("JSON");
@@ -103,11 +104,25 @@ fn a_save_starts_with_its_format_and_version() {
 #[test]
 fn restoring_refuses_a_version_it_doesnt_know_naming_both() {
     let (_, text) = played("save_version");
-    let newer = text.replacen("\"version\": 1,", "\"version\": 2,", 1);
+    let newer = text.replacen("\"version\": 2,", "\"version\": 3,", 1);
     assert_eq!(
         restore(&newer, base()).map(|_| ()).unwrap_err().to_string(),
-        "this save is version 2, but this build reads version 1"
+        "this save is version 3, but this build reads versions 1 and 2"
     );
+}
+
+#[test]
+fn a_version_1_save_restores_with_no_quest_progress() {
+    let (world, text) = played("save_version_1");
+    let mut json: serde_json::Value = serde_json::from_str(&text).expect("JSON");
+    let file = json.as_object_mut().expect("an object");
+    assert!(
+        file.remove("quests").is_some(),
+        "a version 2 save holds quests"
+    );
+    file.insert("version".to_owned(), 1.into());
+    let restored = restore(&json.to_string(), base()).expect("restores");
+    assert_eq!(restored.world.events(), world.events());
 }
 
 #[test]

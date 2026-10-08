@@ -145,3 +145,42 @@ pub(crate) fn progress(world: &World, log: &QuestLog, args: &str) -> Outcome {
     }
     Outcome::Output(lines(shown.into_iter()))
 }
+
+/// How each character's progress differs between two logs, one line per quest that changed:
+/// `player's watch_oath: at oath → finished`. Empty if none did.
+pub(crate) fn progress_changes(before: &QuestLog, after: &QuestLog) -> Vec<String> {
+    let state = |log: &QuestLog, character: &CharacterId, quest: &QuestId| match log
+        .record(character)
+        .states
+        .get(quest)
+    {
+        None => "not started".to_owned(),
+        Some(QuestState::Active { stage }) => log.quests().quests.get(quest).map_or_else(
+            || "under way".to_owned(),
+            |found| format!("at {}", found.stages[*stage].id),
+        ),
+        Some(QuestState::Finished) => "finished".to_owned(),
+        Some(QuestState::Closed { .. }) => "closed".to_owned(),
+    };
+    let characters: std::collections::BTreeSet<&CharacterId> = before
+        .records()
+        .keys()
+        .chain(after.records().keys())
+        .collect();
+    let mut changes = Vec::new();
+    for character in characters {
+        let (was, now) = (before.record(character), after.record(character));
+        let quests: std::collections::BTreeSet<&QuestId> =
+            was.states.keys().chain(now.states.keys()).collect();
+        for quest in quests {
+            let (from, to) = (
+                state(before, character, quest),
+                state(after, character, quest),
+            );
+            if from != to {
+                changes.push(format!("{character}'s {quest}: {from} → {to}"));
+            }
+        }
+    }
+    changes
+}

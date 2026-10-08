@@ -9,7 +9,7 @@ The first module is **reputation & factions**. It covers:
 - faction membership, rank and standing;
 - how all of that changes as characters act and complete quests.
 
-The second module, **quests**, is being built. Quests have stages with choices, chain into questlines, and are checked so that no quest can quietly shut another off. It reads and checks quest content, every lockout included, loads a world with its quests, and plays them: characters start quests, make choices and move along questlines. Saving quest progress comes next.
+The second module, **quests**, is being built. Quests have stages with choices, chain into questlines, and are checked so that no quest can quietly shut another off. It reads and checks quest content, every lockout included, loads a world with its quests, and plays them: characters start quests, make choices and move along questlines, and sessions save, restore and reload with their quest progress.
 
 The engine knows nothing about maps, graphics or combat. Those modules come later, and plug in through commands, events and queries.
 

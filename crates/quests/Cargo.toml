@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 factional-core = { path = "../core" }
 factional-reputation = { path = "../reputation" }
+serde = { version = "1.0.229", features = ["derive"] }
 
 [lints]
 workspace = true

@@ -309,6 +309,7 @@ version = "0.1.0"
 dependencies = [
  "factional-core",
  "factional-reputation",
+ "serde",
 ]
 
 [[package]]
