@@ -1080,6 +1080,9 @@ fn requires() -> Value {
 /// A quest, a stage or a choice in `done`: up to three ids joined by dots.
 const PROGRESS_PATTERN: &str = "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$";
 
+/// A quest's gate or a stage in `locks`: up to two ids joined by a dot.
+const LOCK_PATTERN: &str = "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$";
+
 fn quest() -> Value {
     object(
         [
@@ -1156,6 +1159,13 @@ fn choice() -> Value {
                     "A later stage's id, or {} for the end of the quest.",
                     Next::END
                 )),
+            ),
+            (
+                "locks",
+                list(
+                    json!({ "type": "string", "pattern": LOCK_PATTERN }),
+                    "Every other quest, or stage of one, the choice can shut off for good, once each: quest for its gate (its step's requirements included), quest.stage for a stage. Loading refuses a lockout left out; one listed that can't happen is a warning.",
+                ),
             ),
         ],
         &["id", "next"],

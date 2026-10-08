@@ -1,18 +1,20 @@
 //! The load-time checks on quests and questlines: every reference resolves and every value
-//! is in range (D-20, P-32). Whether every stage can be reached (Q3) and whether quests
-//! reconcile (Q4) come later.
+//! is in range (D-20, P-32); then whether every stage can be reached (Q3, `reach`) and
+//! whether every lockout is declared (Q4, `lockout`).
 
 use std::collections::BTreeMap;
 use std::fmt;
 
 use factional_core::{Fixed, suggest};
 use factional_reputation::{
-    AXIS_LIMIT, CharacterId, Content, FactionId, OutcomeId, Party, RankId, ShiftProblem,
+    AXIS_LIMIT, CharacterId, Consequence, Content, FactionId, OutcomeId, Party, RankId,
+    ShiftProblem,
 };
 
+use crate::lockout::{LockReason, Needed};
 use crate::quest::{
-    ChoiceEffects, ChoiceId, Leftovers, Next, PartyRef, Progress, Quest, QuestId, QuestlineId,
-    Quests, Requirements, StageId,
+    ChoiceEffects, ChoiceId, Leftovers, Lock, Next, PartyRef, Progress, Quest, QuestId,
+    QuestlineId, Quests, Requirements, StageId,
 };
 
 /// What has a giver.
@@ -223,6 +225,33 @@ pub enum QuestProblem {
         index: usize,
         progress: Progress,
     },
+    /// A lock, at `index` in the choice's `locks`, naming a quest or stage that doesn't
+    /// exist. `missing` is as far as the first part that doesn't; `suggestion` is for that
+    /// part.
+    UnknownLock {
+        at: ChoiceAt,
+        index: usize,
+        missing: Lock,
+        suggestion: Option<String>,
+    },
+    /// A lock on the choice's own quest, whose choices exclude each other by design.
+    OwnLock {
+        at: ChoiceAt,
+        index: usize,
+    },
+    /// A lock listed a second time; `index` is the second.
+    LockRepeated {
+        at: ChoiceAt,
+        index: usize,
+        lock: Lock,
+    },
+    /// A choice that can make `target`'s requirements false for good without declaring it
+    /// in its `locks` (D-26).
+    Lockout {
+        at: ChoiceAt,
+        target: Lock,
+        reason: LockReason,
+    },
 }
 
 /// What a gate needs besides `not_member` of the same faction.
@@ -249,18 +278,27 @@ pub enum Blocker {
 pub enum QuestWarning {
     /// `leftovers = "close"` on a step that needs all its quests, so none are left over.
     LeftoversNeverLeft { questline: QuestlineId, step: usize },
+    /// A lock, at `index` in the choice's `locks`, that the choice can't actually cause.
+    StaleLock {
+        at: ChoiceAt,
+        index: usize,
+        lock: Lock,
+    },
 }
 
 impl Quests {
     /// Every problem with these quests against `content`, in a fixed order: each quest in id
-    /// order (its giver, its gate, then each stage), then each questline in id order. Empty
-    /// if every reference resolves and every value is in range.
+    /// order (its giver, its gate, then each stage), then each questline in id order; once
+    /// every reference resolves and every value is in range, content that can't be reached
+    /// (Q3), then undeclared lockouts (Q4). Empty if there are none.
     pub fn problems(&self, content: &Content) -> Vec<QuestProblem> {
         let problems = self.reference_problems(content);
         if !problems.is_empty() {
             return problems;
         }
-        self.reach_problems()
+        let mut problems = self.reach_problems();
+        problems.extend(self.lockout_problems(content));
+        problems
     }
 
     /// Every reference resolves and every value is in range (Q1).
@@ -330,8 +368,17 @@ impl Quests {
     }
 
     /// Everything probably not meant, in a fixed order: each questline in id order, each
-    /// step in order.
-    pub fn warnings(&self) -> Vec<QuestWarning> {
+    /// step in order; then, if every reference resolves, each lock that can't happen, in
+    /// choice order.
+    pub fn warnings(&self, content: &Content) -> Vec<QuestWarning> {
+        let mut warnings = self.leftover_warnings();
+        if self.reference_problems(content).is_empty() {
+            warnings.extend(self.stale_locks(content));
+        }
+        warnings
+    }
+
+    fn leftover_warnings(&self) -> Vec<QuestWarning> {
         self.questlines
             .values()
             .flat_map(|line| {
@@ -403,6 +450,7 @@ impl Quests {
                     });
                 }
                 check_effects(&at, &choice.effects, content, problems);
+                self.check_locks(&at, &choice.locks, problems);
                 if let Next::Stage(next) = &choice.next {
                     match quest.stages.iter().position(|stage| &stage.id == next) {
                         None => problems.push(QuestProblem::UnknownNext {
@@ -503,6 +551,47 @@ impl Quests {
                     index,
                     missing,
                     suggestion,
+                });
+            }
+        }
+    }
+
+    /// Each lock names another quest, or a stage of one, once.
+    fn check_locks(&self, at: &ChoiceAt, locks: &[Lock], problems: &mut Vec<QuestProblem>) {
+        for (index, lock) in locks.iter().enumerate() {
+            let quest_id = lock.quest();
+            if locks[..index].contains(lock) {
+                problems.push(QuestProblem::LockRepeated {
+                    at: at.clone(),
+                    index,
+                    lock: lock.clone(),
+                });
+                continue;
+            }
+            let Some(quest) = self.quests.get(quest_id) else {
+                let suggestion = closest(quest_id.as_str(), self.quests.keys());
+                problems.push(QuestProblem::UnknownLock {
+                    at: at.clone(),
+                    index,
+                    missing: Lock::Gate(quest_id.clone()),
+                    suggestion: suggestion.map(|id| id.to_string()),
+                });
+                continue;
+            };
+            if quest_id == &at.quest {
+                problems.push(QuestProblem::OwnLock {
+                    at: at.clone(),
+                    index,
+                });
+            } else if let Lock::Stage(_, stage) = lock
+                && !quest.stages.iter().any(|s| &s.id == stage)
+            {
+                let suggestion = closest(stage.as_str(), quest.stages.iter().map(|s| &s.id));
+                problems.push(QuestProblem::UnknownLock {
+                    at: at.clone(),
+                    index,
+                    missing: lock.clone(),
+                    suggestion: suggestion.map(|id| id.to_string()),
                 });
             }
         }
@@ -635,7 +724,7 @@ fn check_factions(
 }
 
 /// The faction or character an id names, if either exists.
-fn resolve(party: &PartyRef, content: &Content) -> Option<Party> {
+pub(crate) fn resolve(party: &PartyRef, content: &Content) -> Option<Party> {
     let faction = FactionId::new(party.as_str()).ok()?;
     if content.factions.contains_key(&faction) {
         return Some(Party::Faction(faction));
@@ -849,6 +938,28 @@ impl fmt::Display for QuestProblem {
                 f,
                 "{progress} can only happen once {quest} is over, so this stage can never be reached"
             ),
+            QuestProblem::UnknownLock {
+                missing,
+                suggestion,
+                ..
+            } => {
+                match missing {
+                    Lock::Gate(quest) => write!(f, "unknown quest '{quest}'")?,
+                    Lock::Stage(quest, stage) => {
+                        write!(f, "unknown stage '{stage}' in {quest}")?;
+                    }
+                }
+                did_you_mean(f, suggestion.as_ref().map(|s| s as &dyn fmt::Display))
+            }
+            QuestProblem::OwnLock { .. } => f.write_str(
+                "a choice can't lock out its own quest: its choices exclude each other by design",
+            ),
+            QuestProblem::LockRepeated { lock, .. } => write!(f, "'{lock}' is listed twice"),
+            QuestProblem::Lockout { target, reason, .. } => {
+                write!(f, "may lock out {target}: ")?;
+                lock_reason(f, reason, target)?;
+                f.write_str("; declare it in locks")
+            }
             QuestProblem::NeedTooMany { need, quests, .. } => {
                 let quests = match quests {
                     1 => "1 quest".to_owned(),
@@ -866,7 +977,78 @@ impl fmt::Display for QuestWarning {
             QuestWarning::LeftoversNeverLeft { .. } => f.write_str(
                 "leftovers = \"close\" has no effect: the step needs all its quests, so none are left over",
             ),
+            QuestWarning::StaleLock { lock, .. } => {
+                let what = match lock {
+                    Lock::Gate(_) => "that quest's gate",
+                    Lock::Stage(..) => "that stage's requirements",
+                };
+                write!(
+                    f,
+                    "it can't lock out {lock}: nothing it does can make {what} false for good; remove it"
+                )
+            }
         }
+    }
+}
+
+/// Why a choice can lock out `target`, in a designer's words.
+fn lock_reason(f: &mut fmt::Formatter<'_>, reason: &LockReason, target: &Lock) -> fmt::Result {
+    let whose = match target {
+        Lock::Gate(_) => "its gate",
+        Lock::Stage(..) => "the stage",
+    };
+    let needed = |faction: &FactionId, needed: &Needed| match needed {
+        Needed::Membership => format!("the membership of {faction}"),
+        Needed::Rank(rank) => format!("the {rank} rank in {faction}"),
+    };
+    match reason {
+        LockReason::Standing { party, at_least } => write!(
+            f,
+            "it can lower standing with {party}, which no action raises, below the {at_least} {whose} needs"
+        ),
+        LockReason::War {
+            faction,
+            other,
+            needed: what,
+        } => write!(
+            f,
+            "it can start a war between {faction} and {other}, ending {} that {whose} needs",
+            needed(faction, what)
+        ),
+        LockReason::Drift {
+            faction,
+            toward,
+            consequence,
+            needed: what,
+        } => {
+            let does = match consequence {
+                Consequence::Demote => "demotes",
+                Consequence::Expel => "expels",
+            };
+            write!(
+                f,
+                "it moves alignment toward {}, and {faction} {does} members who drift out of its tolerance, which can end {} that {whose} needs",
+                toward.name(),
+                needed(faction, what)
+            )
+        }
+        LockReason::Probation {
+            faction,
+            toward,
+            needed: what,
+        } => write!(
+            f,
+            "it moves alignment toward {}, which no action moves back toward {}, so {faction}'s probation can run out, ending {} that {whose} needs",
+            toward.name(),
+            toward.opposite().name(),
+            needed(faction, what)
+        ),
+        LockReason::Tolerance { faction, toward } => write!(
+            f,
+            "it moves alignment toward {}, which no action moves back toward {}, so it can take the character outside {faction}'s member tolerance, which {whose} needs",
+            toward.name(),
+            toward.opposite().name()
+        ),
     }
 }
 
@@ -978,6 +1160,7 @@ mod tests {
             id: ChoiceId::new(id).expect("valid id"),
             effects,
             next: next.map_or(Next::End, |stage| Next::Stage(stage_id(stage))),
+            locks: Vec::new(),
         }
     }
 
@@ -1071,6 +1254,63 @@ mod tests {
     fn quests_that_name_only_what_exists_have_no_problems() {
         assert_eq!(quests().problems(&content()), []);
         assert_eq!(Quests::default().problems(&content()), []);
+    }
+
+    #[test]
+    fn locks_name_another_quest_or_one_of_its_stages_once_each() {
+        let lock = |text: &str| Lock::parse(text).expect("valid");
+        let found = problems_after(|quests| {
+            oath(quests).stages[0].choices[0].locks = vec![
+                lock("erand"),
+                lock("errand.rn"),
+                lock("errand.run"),
+                lock("oath"),
+                lock("oath.swear"),
+                lock("errand.run"),
+                lock("errand"),
+            ];
+        });
+        let at = at("oath", 0, 0);
+        assert_eq!(
+            found,
+            [
+                QuestProblem::UnknownLock {
+                    at: at.clone(),
+                    index: 0,
+                    missing: lock("erand"),
+                    suggestion: Some("errand".to_owned()),
+                },
+                QuestProblem::UnknownLock {
+                    at: at.clone(),
+                    index: 1,
+                    missing: lock("errand.rn"),
+                    suggestion: Some("run".to_owned()),
+                },
+                QuestProblem::OwnLock {
+                    at: at.clone(),
+                    index: 3,
+                },
+                QuestProblem::OwnLock {
+                    at: at.clone(),
+                    index: 4,
+                },
+                QuestProblem::LockRepeated {
+                    at,
+                    index: 5,
+                    lock: lock("errand.run"),
+                },
+            ]
+        );
+        assert_eq!(
+            found.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            [
+                "unknown quest 'erand' (did you mean 'errand'?)",
+                "unknown stage 'rn' in errand (did you mean 'run'?)",
+                "a choice can't lock out its own quest: its choices exclude each other by design",
+                "a choice can't lock out its own quest: its choices exclude each other by design",
+                "'errand.run' is listed twice",
+            ]
+        );
     }
 
     #[test]
@@ -1557,15 +1797,15 @@ mod tests {
         steps[1].quests.push(quest_id("oath"));
         steps[1].need = Some(1);
         assert_eq!(
-            quests.warnings(),
+            quests.warnings(&content()),
             [QuestWarning::LeftoversNeverLeft {
                 questline: line_id("career"),
                 step: 0,
             }]
         );
         career(&mut quests).steps[1].need = Some(2);
-        assert_eq!(quests.warnings().len(), 2);
-        assert_eq!(self::quests().warnings(), []);
+        assert_eq!(quests.warnings(&content()).len(), 2);
+        assert_eq!(self::quests().warnings(&content()), []);
     }
 
     #[test]

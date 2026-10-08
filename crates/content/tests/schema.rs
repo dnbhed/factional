@@ -324,7 +324,7 @@ fn the_complete_example_matches_the_schema_but_for_settings_not_read_yet() {
     }
 }
 
-/// The complete example has quests, so it can't load as a world until quests can (Q4); its
+/// The complete example has quests, so it can't load as a world until quests can (Q5); its
 /// content and quests read and check cleanly.
 #[test]
 fn the_complete_example_reads_cleanly_but_for_settings_not_read_yet() {

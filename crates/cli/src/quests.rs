@@ -1,5 +1,5 @@
 //! `quests <dir> [<quest>]`: a directory's quests and questlines, read and checked without
-//! loading a world, since a world with quests doesn't load until they can be reconciled (Q4).
+//! loading a world, since a world with quests doesn't load until it can carry them (Q5).
 
 use std::path::Path;
 
@@ -19,8 +19,8 @@ pub(crate) fn quests(base: &Path, args: &str) -> Outcome {
         [dir, quest] => (dir, Some(quest)),
         _ => return Outcome::Error("quests needs the form: quests <dir> [<quest>]".to_owned()),
     };
-    let quests = match factional_content::load_quests(&base.join(dir)) {
-        Ok((_, quests)) => quests,
+    let (content, quests) = match factional_content::load_quests(&base.join(dir)) {
+        Ok(read) => read,
         Err(error) => return Outcome::Error(error.to_string()),
     };
     if quests.is_empty() {
@@ -36,7 +36,7 @@ pub(crate) fn quests(base: &Path, args: &str) -> Outcome {
             }
         },
     };
-    let warnings = factional_content::quest_warnings(&quests)
+    let warnings = factional_content::quest_warnings(&content, &quests)
         .into_iter()
         .map(|warning| format!("warning: {warning}"));
     Outcome::Output(lines(shown.into_iter().chain(warnings)))
@@ -112,6 +112,10 @@ fn show(quests: &Quests, id: &QuestId) -> Vec<String> {
                         line += &format!(" — relations: {}", relations.join(", "));
                     }
                 }
+            }
+            if !choice.locks.is_empty() {
+                let locks: Vec<String> = choice.locks.iter().map(ToString::to_string).collect();
+                line += &format!(" — locks {}", locks.join(", "));
             }
             line += &match &choice.next {
                 Next::Stage(stage) => format!(" — then {stage}"),
@@ -216,6 +220,7 @@ mod tests {
             run("quests docs/examples/riverhold"),
             output(
                 "quests:\n\
+                 \x20 circle_rite — The Ashen Rite — from ashen_circle — 1 stage — needs standing 10.00 with ashen_circle\n\
                  \x20 dock_inspection — Inspecting the Docks — from city_watch, in watch_career — 1 stage\n\
                  \x20 harbour_errands — Harbour Errands — from city_watch, in watch_career — 1 stage\n\
                  \x20 lost_dog — The Captain's Dog — from captain_hale, in watch_career — 1 stage\n\
@@ -270,7 +275,7 @@ mod tests {
             output(
                 "the_long_winter — The Long Winter — the world's own\n\
                  1. stores\n\
-                 \x20  share — alignment: law 0.00, good 6.00 — standing: temple 10.00 — relations: temple ↔ city_watch 5.00 — then the end\n\
+                 \x20  share — alignment: law 0.00, good 6.00 — standing: temple 10.00 — relations: temple ↔ city_watch 5.00 — locks circle_rite — then the end\n\
                  \x20  hoard — alignment: law 0.00, good -6.00 — then the end"
             )
         );
@@ -282,6 +287,32 @@ mod tests {
                  \x20  follow_the_lights — then raid\n\
                  2. raid\n\
                  \x20  arrest_them — standing: city_watch 10.00, lantern_guild -10.00 — then the end"
+            )
+        );
+    }
+
+    #[test]
+    fn quests_shows_what_each_choice_locks_out() {
+        assert_eq!(
+            run("quests docs/examples/riverhold circle_rite"),
+            output(
+                "circle_rite — The Ashen Rite — from ashen_circle — needs standing 10.00 with ashen_circle\n\
+                 1. whisper\n\
+                 \x20  refuse — then the end\n\
+                 \x20  set_them_at_war — relations: temple ↔ city_watch -120.00 — locks watch_captain, watch_captain.command — then the end"
+            )
+        );
+    }
+
+    #[test]
+    fn quests_warns_of_a_lock_that_cannot_happen() {
+        assert_eq!(
+            run("quests crates/cli/tests/fixtures/worlds/stale_lock"),
+            output(
+                "quests:\n\
+                 \x20 chores — Chores — the world's own — 1 stage\n\
+                 \x20 muster — Muster — from watch — 1 stage\n\
+                 warning: quests.toml: chores.stages[0].choices[0].locks[0]: it can't lock out muster.drill: nothing it does can make that stage's requirements false for good; remove it"
             )
         );
     }

@@ -928,7 +928,7 @@ impl Content {
     }
 
     /// Every direction the relations set, first setting first; any other is 0.
-    fn relation_values(&self) -> BTreeMap<(FactionId, FactionId), Fixed> {
+    pub fn relation_values(&self) -> BTreeMap<(FactionId, FactionId), Fixed> {
         let mut values = BTreeMap::new();
         for relation in &self.relations {
             for direction in relation.directions() {

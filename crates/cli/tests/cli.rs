@@ -192,7 +192,7 @@ fn validate_checks_quests_but_a_world_with_them_does_not_load_yet() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         text(&output.stdout),
-        "error: quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)\n\
+        "error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)\n\
          docs/examples/riverhold doesn't load: 1 problem\n"
     );
 }

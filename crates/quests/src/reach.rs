@@ -486,6 +486,7 @@ mod tests {
                     next: next.map_or(Next::End, |next| {
                         Next::Stage(StageId::new(next).expect("valid id"))
                     }),
+                    locks: Vec::new(),
                 })
                 .collect(),
         }

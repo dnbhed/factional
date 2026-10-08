@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → U0 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → U0 → E1 → T5`
 
 ## Done
 
@@ -71,6 +71,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Q1 — quest content: a new `factional-quests` crate (between reputation and content; ids from a macro now in core); `quests.toml` (name, giver, gate, stages with requirements and choices with an outcome or inline effects and `next`) and `questlines.toml` (giver, steps with `quests`, `need`, `requires`, `leftovers`); every reference and range checked with a "did you mean", once every file reads cleanly; a warning for leftovers that can't be left; content with quests doesn't load until Q4; `quests <dir> [<quest>]`; the two JSON Schemas; Riverhold's quests in the complete example (P-67); done 2026-10-08 (#40)
 - Q2 — relation effects (D-30: quests never change memberships or ranks; joining, leaving and promotion are the character's own actions): `relations` shifts on outcomes and choices' inline effects, `between` or `from`/`to` with `by` (−200…200), applied after standing, each direction stopping at ±100 and shifted at most once; checked at load and by `ApplyEffects`; wars open as for `relate`; `outcomes` and `quests` show them; Riverhold's `sowed_discord`; DESIGN.md §17's effects and lockout table without joins and promotions (P-68); done 2026-10-08 (#41)
 - Q3 — reachable content: within each quest, every stage reached by a choice, no gate needing `member` or a rank and `not_member` of one faction, and `done` on its own progress only where it can have happened; then a generous run of what `done` and questline order allow, with held runs for steps that close leftovers and stages needing another quest, reporting quests that can never start and stages that can never be reached, each error certain; leftovers close on starting any later step (P-69); `scenarios/reachable.scenario`; done 2026-10-08 (#42)
+- Q4 — the lockout check (D-26, D-27): `locks` on choices (`quest` for its gate, `quest.stage`), checked like references; once per world, the standing some action raises directly, the ways some action moves each axis with no inertia profile stopping it, and each relation's reach; per choice, the parties it can lower directly or by one hop of spillover, the ways it moves each axis, and the wars it can start; each choice against every other quest's gate and stages, requirement by requirement, skipping quests certainly finished first; probation undone where every axis has a way back; undeclared lockouts errors, stale locks warnings; `quests` shows locks; Riverhold's Ashen Rite, with its war and the Long Winter's spilt standing declared; split from loading, now Q5 (P-70); `scenarios/lockouts.scenario`; done 2026-10-08 (#43)
 
 ---
 
@@ -96,11 +97,11 @@ Waits until a game needs a host; then a host is chosen and E1 builds its adapter
 
 ## Beyond this module
 
-### Q4 · The lockout check — P3 · Next
+### Q5 · Worlds with quests load — P3 · Next
 
-Per-choice bounds and per-world recoverability, each choice checked against each stage and gate of every other quest, whoever gives it; `locks` declarations, undeclared lockouts as errors, stale locks as warnings (§17.3, D-26, D-27, P-65).
+Split from Q4. Content with quests loads once it reconciles (D-20): the gate comes off, saves fingerprint the quest files, and Riverhold's quests move into `content/sample` (P-67).
 
-### Q5 · Playing quests — P3 · Outline
+### Q6 · Playing quests — P3 · Outline
 
 Starting quests when their gates hold, making choices, completing a questline's steps and closing their leftovers, recording progress as commands and events in the quest module, sending this module its effects; in the CLI (§17).
 

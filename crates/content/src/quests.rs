@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 
 use factional_core::InvalidId;
 use factional_quests::{
-    Choice, ChoiceAt, ChoiceEffects, ChoiceId, Gate, Leftovers, Next, Owner, PartyRef, Progress,
-    Quest, QuestId, QuestProblem, QuestWarning, Questline, QuestlineId, RequirementKey,
+    Choice, ChoiceAt, ChoiceEffects, ChoiceId, Gate, Leftovers, Lock, Next, Owner, PartyRef,
+    Progress, Quest, QuestId, QuestProblem, QuestWarning, Questline, QuestlineId, RequirementKey,
     Requirements, Stage, StageId, Step,
 };
 use factional_reputation::{Effects, FactionId, OutcomeId, Party, RankId};
@@ -123,6 +123,21 @@ fn read_choice(mut section: Section<'_>, report: &mut Report) -> Option<Choice> 
                 relations,
             }
         });
+    let locks_at = section.path_to("locks");
+    let mut locks = Vec::new();
+    if let Some(items) = section.optional_list("locks", "[\"watch_captain.command\"]", report) {
+        for (index, item) in items.iter().enumerate() {
+            let at = format!("{locks_at}[{index}]");
+            let Value::String(text) = item else {
+                report.error(&at, "expected text in quotes");
+                continue;
+            };
+            match Lock::parse(text) {
+                Ok(lock) => locks.push(lock),
+                Err(problem) => report.error(&at, problem.to_string()),
+            }
+        }
+    }
     let effects = match (outcome, inline) {
         (None, None) => ChoiceEffects::None,
         (Some(outcome), None) => ChoiceEffects::Outcome(outcome),
@@ -143,6 +158,7 @@ fn read_choice(mut section: Section<'_>, report: &mut Report) -> Option<Choice> 
         id: id?,
         effects,
         next: next?,
+        locks,
     })
 }
 
@@ -466,6 +482,12 @@ pub(crate) fn problem_diagnostic(problem: &QuestProblem) -> Diagnostic {
             },
             &RequirementKey::Done(*index),
         ),
+        QuestProblem::UnknownLock { at, index, .. }
+        | QuestProblem::OwnLock { at, index }
+        | QuestProblem::LockRepeated { at, index, .. } => {
+            (QUESTS_FILE, format!("{}.locks[{index}]", choice(at)))
+        }
+        QuestProblem::Lockout { at, .. } => (QUESTS_FILE, choice(at)),
     };
     Diagnostic {
         file: file.to_owned(),
@@ -476,12 +498,19 @@ pub(crate) fn problem_diagnostic(problem: &QuestProblem) -> Diagnostic {
 
 /// A quest warning at its file and key.
 pub(crate) fn warning_diagnostic(warning: &QuestWarning) -> Diagnostic {
-    match warning {
-        QuestWarning::LeftoversNeverLeft { questline, step } => Diagnostic {
-            file: QUESTLINES_FILE.to_owned(),
-            key: Some(format!("{questline}.steps[{step}].leftovers")),
-            message: warning.to_string(),
-        },
+    let (file, key) = match warning {
+        QuestWarning::LeftoversNeverLeft { questline, step } => (
+            QUESTLINES_FILE,
+            format!("{questline}.steps[{step}].leftovers"),
+        ),
+        QuestWarning::StaleLock { at, index, .. } => {
+            (QUESTS_FILE, format!("{}.locks[{index}]", choice(at)))
+        }
+    };
+    Diagnostic {
+        file: file.to_owned(),
+        key: Some(key),
+        message: warning.to_string(),
     }
 }
 

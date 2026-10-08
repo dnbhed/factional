@@ -1,0 +1,5 @@
+# Obeying raises standing with the Watch, so any lost can be won back.
+
+[obey]
+alignment = { law = 3.0 }
+standing = { factions = { watch = 5.0 } }

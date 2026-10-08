@@ -236,7 +236,9 @@ fn reads_a_questline_of_steps_with_need_leftovers_and_gates() {
 
 #[test]
 fn riverholds_quests_have_no_warnings() {
-    assert_eq!(quest_warnings(&riverhold()), []);
+    let (content, quests) =
+        factional_content::load_quests(&example()).expect("the example reads cleanly");
+    assert_eq!(quest_warnings(&content, &quests), []);
 }
 
 // Loading
@@ -246,20 +248,20 @@ fn quests_load_from_a_directory_with_its_content() {
     let (content, quests) =
         factional_content::load_quests(&example()).expect("the example reads cleanly");
     assert_eq!(content.factions.len(), 5);
-    assert_eq!((quests.quests.len(), quests.questlines.len()), (9, 1));
+    assert_eq!((quests.quests.len(), quests.questlines.len()), (10, 1));
     let missing = factional_content::load_quests(&example().join("nowhere"));
     assert!(missing.is_err());
 }
 
 #[test]
-fn a_world_with_quests_does_not_load_until_quests_reconcile() {
+fn a_world_with_quests_does_not_load_yet() {
     let found = with(&text("quests.toml"), &text("questlines.toml"), |sources| {
         diagnostics(parse_content(sources))
     });
     assert_eq!(
         found,
         [
-            "quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)"
+            "quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)"
         ]
     );
 }
@@ -272,7 +274,7 @@ fn questlines_alone_are_reported_at_their_own_file() {
     assert_eq!(
         found.last().map(String::as_str),
         Some(
-            "questlines.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)"
+            "questlines.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)"
         )
     );
 }
@@ -693,8 +695,8 @@ fn a_questline_has_steps_and_a_step_has_quests() {
 fn closing_leftovers_on_a_step_that_needs_every_quest_warns() {
     let questlines = text("questlines.toml").replacen("need = 2\n", "", 1);
     let found = with(&text("quests.toml"), &questlines, |sources| {
-        let (_, quests) = parse_quests(sources).expect("it reads cleanly");
-        quest_warnings(&quests)
+        let (content, quests) = parse_quests(sources).expect("it reads cleanly");
+        quest_warnings(&content, &quests)
             .iter()
             .map(ToString::to_string)
             .collect()
@@ -718,15 +720,26 @@ fn quest_checks_wait_until_every_file_reads_cleanly() {
 
 // Reachability (Q3)
 
-/// The problems with the example once each `(file, from, to)` replacement is made.
+/// The problems with the example once each `(file, from, to)` replacement is made, in any
+/// of its files.
 fn problems_after_all(edits: &[(&str, &str, &str)]) -> Vec<String> {
-    let (mut quests, mut questlines) = (text("quests.toml"), text("questlines.toml"));
+    let names = [
+        "balance.toml",
+        "factions.toml",
+        "characters.toml",
+        "actions.toml",
+        "relations.toml",
+        "outcomes.toml",
+        "quests.toml",
+        "questlines.toml",
+    ];
+    let mut files = names.map(text);
     for (file, from, to) in edits {
-        let edited = if *file == "quests.toml" {
-            &mut quests
-        } else {
-            &mut questlines
-        };
+        let place = names
+            .iter()
+            .position(|name| name == file)
+            .expect("one of the example's files");
+        let edited = &mut files[place];
         assert_eq!(
             edited.matches(from).count(),
             1,
@@ -734,9 +747,16 @@ fn problems_after_all(edits: &[(&str, &str, &str)]) -> Vec<String> {
         );
         *edited = edited.replacen(from, to, 1);
     }
-    with(&quests, &questlines, |sources| {
-        diagnostics(parse_quests(sources))
-    })
+    diagnostics(parse_quests(Sources {
+        balance: Some(&files[0]),
+        factions: Some(&files[1]),
+        characters: Some(&files[2]),
+        actions: Some(&files[3]),
+        relations: Some(&files[4]),
+        outcomes: Some(&files[5]),
+        quests: Some(&files[6]),
+        questlines: Some(&files[7]),
+    }))
 }
 
 #[test]
@@ -963,5 +983,192 @@ fn reachability_waits_until_the_structure_is_sound() {
         )
         .len(),
         1
+    );
+}
+
+// Lockouts (Q4)
+
+/// The war the Ashen Rite can start, as the example declares it.
+const RITE_LOCKS: &str = ", locks = [\"watch_captain\", \"watch_captain.command\"]";
+
+#[test]
+fn the_example_declares_every_lockout() {
+    assert_eq!(problems_after_all(&[]), Vec::<String>::new());
+}
+
+#[test]
+fn an_undeclared_war_locks_out_whatever_needs_either_membership() {
+    // The Watch and the Temple start at 60; `sowed_discord` can take them to -100, and
+    // -100 - 120 stops at -100, at or below the conflict threshold of -50.
+    assert_eq!(
+        problems_after("quests.toml", RITE_LOCKS, ""),
+        [
+            "quests.toml: circle_rite.stages[0].choices[1]: may lock out watch_captain: it can start a war between city_watch and temple, ending the sergeant rank in city_watch that its gate needs; declare it in locks",
+            "quests.toml: circle_rite.stages[0].choices[1]: may lock out watch_captain.command: it can start a war between city_watch and temple, ending the membership of city_watch that the stage needs; declare it in locks",
+        ]
+    );
+}
+
+#[test]
+fn lowering_standing_no_action_raises_is_a_lockout() {
+    // Sharing gives the Temple 10; the Circle regards the Temple at -90, where spillover is
+    // -0.30 + 10 / 50 × 0.30 = -0.24, so 10 × -0.24 = -2.40 spills to the Circle, and no
+    // action raises standing with the Circle.
+    assert_eq!(
+        problems_after("quests.toml", ", locks = [\"circle_rite\"]", ""),
+        [
+            "quests.toml: the_long_winter.stages[0].choices[0]: may lock out circle_rite: it can lower standing with ashen_circle, which no action raises, below the 10.00 its gate needs; declare it in locks"
+        ]
+    );
+}
+
+#[test]
+fn lowering_standing_an_action_raises_is_no_lockout() {
+    // `report_crime` raises standing with the Watch, so the oath's 10 can always be won back.
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "{ id = \"by_the_book\", effects = { standing = { factions = { city_watch = 5.0 } } }",
+            "{ id = \"by_the_book\", effects = { standing = { factions = { city_watch = -40.0 } } }"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn drift_on_probation_locks_out_only_without_a_way_back() {
+    // The Watch puts drifting members on probation, and every way each axis moves has an
+    // action moving it back, until a profile can't move toward lawful at -100.
+    assert_eq!(
+        problems_after_all(&[(
+            "balance.toml",
+            "[inertia.profiles.hardening]",
+            "[inertia.profiles.stubborn]\nlaw.toward_lawful = [[-100.0, 0.0], [100.0, 1.0]]\n\n[inertia.profiles.hardening]"
+        )]),
+        [
+            "quests.toml: watch_oath.stages[0].choices[1]: may lock out watch_captain: it moves alignment toward chaotic, which no action moves back toward lawful, so city_watch's probation can run out, ending the sergeant rank in city_watch that its gate needs; declare it in locks",
+            "quests.toml: watch_oath.stages[0].choices[1]: may lock out watch_captain.command: it moves alignment toward chaotic, which no action moves back toward lawful, so city_watch's probation can run out, ending the membership of city_watch that the stage needs; declare it in locks",
+        ]
+    );
+}
+
+/// A Temple quest whose ordination needs membership of the Temple, added to the example.
+const TEMPLE_VOWS: &str = "[temple_vows]\nname = \"Temple Vows\"\ngiver = \"temple\"\n\n[[temple_vows.stages]]\nid = \"ordination\"\nrequires = { member = [\"temple\"] }\nchoices = [{ id = \"kneel\", next = \"end\" }]\n\n[circle_rite]";
+
+#[test]
+fn drift_that_demotes_at_once_locks_out_whatever_needs_the_membership() {
+    // The Temple weighs both axes and demotes members who drift, expelling them from the
+    // lowest rank: every choice that moves alignment can end the membership, and so can the
+    // war.
+    let found = problems_after_all(&[("quests.toml", "[circle_rite]", TEMPLE_VOWS)]);
+    let choices: Vec<&str> = found
+        .iter()
+        .map(|problem| problem.split(": may lock out").next().unwrap_or(problem))
+        .collect();
+    assert_eq!(
+        choices,
+        [
+            "quests.toml: circle_rite.stages[0].choices[1]",
+            "quests.toml: dock_inspection.stages[0].choices[0]",
+            "quests.toml: lost_ring.stages[0].choices[0]",
+            "quests.toml: lost_ring.stages[0].choices[1]",
+            "quests.toml: the_long_winter.stages[0].choices[0]",
+            "quests.toml: the_long_winter.stages[0].choices[1]",
+            "quests.toml: watch_captain.stages[0].choices[0]",
+            "quests.toml: watch_oath.stages[0].choices[0]",
+            "quests.toml: watch_oath.stages[0].choices[1]",
+            "quests.toml: watch_oath.stages[1].choices[0]",
+        ]
+    );
+    assert_eq!(
+        found[0],
+        "quests.toml: circle_rite.stages[0].choices[1]: may lock out temple_vows.ordination: it can start a war between temple and city_watch, ending the membership of temple that the stage needs; declare it in locks"
+    );
+    assert_eq!(
+        found[1],
+        "quests.toml: dock_inspection.stages[0].choices[0]: may lock out temple_vows.ordination: it moves alignment toward lawful, and temple demotes members who drift out of its tolerance, which can end the membership of temple that the stage needs; declare it in locks"
+    );
+}
+
+#[test]
+fn quests_finished_before_the_choices_quest_starts_are_not_locked_out() {
+    // The oath is the questline's first step, needing all of it, so every later step's
+    // choices come after it's over; only the lost ring, the winter and the rite can reach it.
+    let found = problems_after(
+        "quests.toml",
+        "requires = { standing = { city_watch = 10.0 } }",
+        "requires = { standing = { city_watch = 10.0 }, member = [\"temple\"] }",
+    );
+    let choices: Vec<&str> = found
+        .iter()
+        .map(|problem| problem.split(": it ").next().unwrap_or(problem))
+        .collect();
+    assert_eq!(
+        choices,
+        [
+            "quests.toml: circle_rite.stages[0].choices[1]: may lock out watch_oath.oath",
+            "quests.toml: lost_ring.stages[0].choices[0]: may lock out watch_oath.oath",
+            "quests.toml: lost_ring.stages[0].choices[1]: may lock out watch_oath.oath",
+            "quests.toml: the_long_winter.stages[0].choices[0]: may lock out watch_oath.oath",
+            "quests.toml: the_long_winter.stages[0].choices[1]: may lock out watch_oath.oath",
+        ]
+    );
+}
+
+#[test]
+fn locks_name_other_quests_and_their_stages_once_each() {
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            RITE_LOCKS,
+            ", locks = [\"watch_captan\", \"watch_captain.comand\", \"circle_rite\", \"watch_captain.command\", \"watch_captain.command\", \"watch_captain\"]"
+        ),
+        [
+            "quests.toml: circle_rite.stages[0].choices[1].locks[0]: unknown quest 'watch_captan' (did you mean 'watch_captain'?)",
+            "quests.toml: circle_rite.stages[0].choices[1].locks[1]: unknown stage 'comand' in watch_captain (did you mean 'command'?)",
+            "quests.toml: circle_rite.stages[0].choices[1].locks[2]: a choice can't lock out its own quest: its choices exclude each other by design",
+            "quests.toml: circle_rite.stages[0].choices[1].locks[4]: 'watch_captain.command' is listed twice",
+        ]
+    );
+}
+
+#[test]
+fn a_lock_is_written_as_quest_or_quest_stage() {
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            RITE_LOCKS,
+            ", locks = [\"watch_captain.command.accept\", 3]"
+        ),
+        [
+            "quests.toml: circle_rite.stages[0].choices[1].locks[0]: 'watch_captain.command.accept' has too many parts: write quest, for its gate, or quest.stage",
+            "quests.toml: circle_rite.stages[0].choices[1].locks[1]: expected text in quotes",
+        ]
+    );
+}
+
+#[test]
+fn a_declared_lock_that_cannot_happen_warns() {
+    // The oath is over before any patrol starts; and patrolling raises standing with the
+    // Watch, and what spills from it lowers only the Temple's, which donating raises, and the
+    // Guild's, which nothing needs.
+    let quests = text("quests.toml").replacen(
+        "{ factions = { city_watch = 5.0 } } }, next = \"end\" }",
+        "{ factions = { city_watch = 5.0 } } }, next = \"end\", locks = [\"watch_oath.oath\", \"watch_captain\"] }",
+        1,
+    );
+    let found = with(&quests, &text("questlines.toml"), |sources| {
+        let (content, quests) = parse_quests(sources).expect("it reads cleanly");
+        quest_warnings(&content, &quests)
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    });
+    assert_eq!(
+        found,
+        [
+            "quests.toml: night_patrol.stages[0].choices[0].locks[0]: it can't lock out watch_oath.oath: nothing it does can make that stage's requirements false for good; remove it",
+            "quests.toml: night_patrol.stages[0].choices[0].locks[1]: it can't lock out watch_captain: nothing it does can make that quest's gate false for good; remove it",
+        ]
     );
 }

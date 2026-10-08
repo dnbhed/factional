@@ -1,0 +1,23 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/lockouts.scenario
+---
+> quests docs/examples/riverhold circle_rite
+circle_rite — The Ashen Rite — from ashen_circle — needs standing 10.00 with ashen_circle
+1. whisper
+   refuse — then the end
+   set_them_at_war — relations: temple ↔ city_watch -120.00 — locks watch_captain, watch_captain.command — then the end
+> assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
+> validate crates/cli/tests/fixtures/worlds/lockouts
+error: quests.toml: confession.stages[0].choices[0]: may lock out heist: it moves alignment toward lawful, which no action moves back toward chaotic, so it can take the character outside guild's member tolerance, which its gate needs; declare it in locks
+error: quests.toml: confession.stages[0].choices[0]: may lock out muster.drill: it moves alignment toward lawful, and watch expels members who drift out of its tolerance, which can end the membership of watch that the stage needs; declare it in locks
+error: quests.toml: riot.stages[0].choices[0]: may lock out muster.drill: it can start a war between watch and guild, ending the membership of watch that the stage needs; declare it in locks
+error: quests.toml: snitch.stages[0].choices[0]: may lock out heist: it can lower standing with guild, which no action raises, below the 10.00 its gate needs; declare it in locks
+error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
+crates/cli/tests/fixtures/worlds/lockouts doesn't load: 5 problems
+> quests crates/cli/tests/fixtures/worlds/stale_lock
+quests:
+  chores — Chores — the world's own — 1 stage
+  muster — Muster — from watch — 1 stage
+warning: quests.toml: chores.stages[0].choices[0].locks[0]: it can't lock out muster.drill: nothing it does can make that stage's requirements false for good; remove it

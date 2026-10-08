@@ -1,5 +1,5 @@
 //! The complete example content in `docs/examples/` has quests, so it can't be loaded as a
-//! world until quests can (Q4). This keeps it at least valid TOML, file by file; the schema
+//! world until quests can (Q5). This keeps it at least valid TOML, file by file; the schema
 //! tests check that it reads cleanly.
 
 use std::fs;

@@ -1,0 +1,19 @@
+# A world whose choices lock out other quests without declaring it (Q4); see
+# scenarios/lockouts.scenario.
+
+[watch]
+name = "The Watch"
+alignment = { law = 60.0, good = 10.0 }
+tolerance = 40.0
+drift = { policy = "expel" }
+
+[[watch.ranks]]
+id = "recruit"
+
+[guild]
+name = "The Guild"
+alignment = { law = -60.0, good = -10.0 }
+tolerance = 40.0
+
+[[guild.ranks]]
+id = "cutpurse"

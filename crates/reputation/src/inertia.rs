@@ -33,6 +33,26 @@ impl Toward {
         }
     }
 
+    /// The other way along the same axis.
+    pub fn opposite(self) -> Toward {
+        match self {
+            Toward::Lawful => Toward::Chaotic,
+            Toward::Chaotic => Toward::Lawful,
+            Toward::Good => Toward::Evil,
+            Toward::Evil => Toward::Good,
+        }
+    }
+
+    /// Its name in prose, such as `lawful`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Toward::Lawful => "lawful",
+            Toward::Chaotic => "chaotic",
+            Toward::Good => "good",
+            Toward::Evil => "evil",
+        }
+    }
+
     /// The direction a shift of `base` moves `axis`; `None` if it doesn't move it.
     pub fn of(axis: Axis, base: Fixed) -> Option<Toward> {
         let up = match axis {
@@ -108,6 +128,18 @@ mod tests {
                 ("good", "toward_good"),
                 ("good", "toward_evil"),
             ]
+        );
+    }
+
+    #[test]
+    fn each_direction_has_an_opposite_on_its_axis_and_a_name() {
+        assert_eq!(
+            Toward::ALL.map(Toward::opposite),
+            [Toward::Chaotic, Toward::Lawful, Toward::Evil, Toward::Good]
+        );
+        assert_eq!(
+            Toward::ALL.map(Toward::name),
+            ["lawful", "chaotic", "good", "evil"]
         );
     }
 
