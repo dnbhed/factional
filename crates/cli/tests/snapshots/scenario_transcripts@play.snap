@@ -1,0 +1,91 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/play.scenario
+---
+> load content/sample
+loaded 6 characters from content/sample
+> can-start player watch_captain
+player can't start watch_captain:
+- step 1 of watch_career isn't complete: 0 of 1 done
+- it needs standing 40.00 with city_watch, and player has 0.00
+- it needs rank sergeant or higher in city_watch, and player isn't in city_watch
+> start player watch_oath
+player started watch_oath
+player reached watch_oath.patrol
+> choose player watch_oath report
+player chose watch_oath.patrol.report
+#1 at tick 0: outcome turned_in_vex applied to player
+#2 at tick 0: player's alignment moved from law 0.00, good 0.00 to law 4.00, good 0.00
+#3 at tick 0: player's standing with city_watch moved from 0.00 to 19.50, with 4.50 spilled from lantern_guild (-25.00 × -0.18; city_watch regards it at -80.00)
+#4 at tick 0: player's standing with lantern_guild moved from 0.00 to -27.70, with -2.70 spilled from city_watch (15.00 × -0.18; lantern_guild regards it at -80.00)
+#5 at tick 0: player's standing with temple moved from 0.00 to 1.50, with 1.50 spilled from city_watch (15.00 × 0.10; temple regards it at 60.00)
+#6 at tick 0: player's standing with vex moved from 0.00 to -40.00
+player reached watch_oath.oath
+> assert standing player city_watch == 19.50
+> outcome fined_by_watch player
+#7 at tick 0: outcome fined_by_watch applied to player
+#8 at tick 0: player's standing with city_watch moved from 19.50 to -0.50
+#9 at tick 0: player's standing with lantern_guild moved from -27.70 to -24.10, with 3.60 spilled from city_watch (-20.00 × -0.18; lantern_guild regards it at -80.00)
+#10 at tick 0: player's standing with temple moved from 1.50 to -0.50, with -2.00 spilled from city_watch (-20.00 × 0.10; temple regards it at 60.00)
+#11 at tick 0: player's standing with captain_hale moved from 0.00 to -10.00
+> assert choose player watch_oath swear == error: player can't choose at watch_oath.oath yet: it needs standing 10.00 with city_watch, and player has -0.50
+> act player report_crime
+#12 at tick 0: player did report_crime
+#13 at tick 0: player's alignment moved from law 4.00, good 0.00 to law 8.00, good 1.00
+#14 at tick 0: player's standing with city_watch moved from -0.50 to 4.50
+#15 at tick 0: player's standing with lantern_guild moved from -24.10 to -25.00, with -0.90 spilled from city_watch (5.00 × -0.18; lantern_guild regards it at -80.00)
+#16 at tick 0: player's standing with temple moved from -0.50 to 0.00, with 0.50 spilled from city_watch (5.00 × 0.10; temple regards it at 60.00)
+> act player report_crime
+#17 at tick 0: player did report_crime
+#18 at tick 0: player's alignment moved from law 8.00, good 1.00 to law 12.00, good 2.00
+#19 at tick 0: player's standing with city_watch moved from 4.50 to 9.50
+#20 at tick 0: player's standing with lantern_guild moved from -25.00 to -25.90, with -0.90 spilled from city_watch (5.00 × -0.18; lantern_guild regards it at -80.00)
+#21 at tick 0: player's standing with temple moved from 0.00 to 0.50, with 0.50 spilled from city_watch (5.00 × 0.10; temple regards it at 60.00)
+> act player report_crime
+#22 at tick 0: player did report_crime
+#23 at tick 0: player's alignment moved from law 12.00, good 2.00 to law 16.00, good 3.00
+#24 at tick 0: player's standing with city_watch moved from 9.50 to 14.50
+#25 at tick 0: player's standing with lantern_guild moved from -25.90 to -26.80, with -0.90 spilled from city_watch (5.00 × -0.18; lantern_guild regards it at -80.00)
+#26 at tick 0: player's standing with temple moved from 0.50 to 1.00, with 0.50 spilled from city_watch (5.00 × 0.10; temple regards it at 60.00)
+> assert standing player city_watch == 14.50
+> choose player watch_oath swear
+player chose watch_oath.oath.swear
+#27 at tick 0: effects from quest:watch_oath.oath.swear applied to player
+#28 at tick 0: player's alignment moved from law 16.00, good 3.00 to law 21.00, good 3.00
+player finished watch_oath
+> start player night_patrol
+player started night_patrol
+player reached night_patrol.walk
+> choose player night_patrol by_the_book
+player chose night_patrol.walk.by_the_book
+#29 at tick 0: effects from quest:night_patrol.walk.by_the_book applied to player
+#30 at tick 0: player's standing with city_watch moved from 14.50 to 19.50
+#31 at tick 0: player's standing with lantern_guild moved from -26.80 to -27.70, with -0.90 spilled from city_watch (5.00 × -0.18; lantern_guild regards it at -80.00)
+#32 at tick 0: player's standing with temple moved from 1.00 to 1.50, with 0.50 spilled from city_watch (5.00 × 0.10; temple regards it at 60.00)
+player finished night_patrol
+> start player dock_inspection
+player started dock_inspection
+player reached dock_inspection.inspect
+> choose player dock_inspection seize
+player chose dock_inspection.inspect.seize
+#33 at tick 0: effects from quest:dock_inspection.inspect.seize applied to player
+#34 at tick 0: player's alignment moved from law 21.00, good 3.00 to law 23.00, good 3.00
+#35 at tick 0: player's standing with city_watch moved from 19.50 to 25.40, with 0.90 spilled from lantern_guild (-5.00 × -0.18; city_watch regards it at -80.00)
+#36 at tick 0: player's standing with lantern_guild moved from -27.70 to -33.60, with -0.90 spilled from city_watch (5.00 × -0.18; lantern_guild regards it at -80.00)
+#37 at tick 0: player's standing with temple moved from 1.50 to 2.00, with 0.50 spilled from city_watch (5.00 × 0.10; temple regards it at 60.00)
+player finished dock_inspection
+> start player harbour_errands
+player started harbour_errands
+player reached harbour_errands.run
+smugglers_cove closed for player: watch_career moved on from step 2
+> can-start player smugglers_cove
+player can't start smugglers_cove:
+- it closed when watch_career moved on from step 2
+> progress player
+dock_inspection — finished
+harbour_errands — at run
+night_patrol — finished
+smugglers_cove — closed when watch_career moved on from step 2
+watch_oath — finished
+watch_career — up to step 4 of 4

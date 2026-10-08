@@ -363,7 +363,7 @@ impl Run<'_> {
 
 impl Quest {
     /// A stage's place in the quest; references resolve before reachability is checked.
-    fn stage_index(&self, stage: &crate::StageId) -> usize {
+    pub(crate) fn stage_index(&self, stage: &crate::StageId) -> usize {
         self.stages
             .iter()
             .position(|each| &each.id == stage)

@@ -807,6 +807,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 
 - `factional validate <dir>` to check a world without starting a session (T1).
 - `quests <dir> [<quest>]` in the REPL to list a world's quests and questlines, or one quest's stages and choices with what each locks, read and checked without loading it (Q1, Q4); `quests` alone lists the loaded world's (Q5).
+- `can-start <character> <quest>`, `start <character> <quest>`, `choose <character> <quest> <choice> [--seen-by <id>,… | --unseen]` and `progress <character>` to play quests (Q6).
 - `factional schema <file>` for a content file's JSON Schema, to get completion and checking in an editor (T1).
 - `factional repl`, then `load content/sample`, to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
@@ -919,6 +920,8 @@ Each invariant has a property test (`proptest`) over random content and random c
 11. Restoring a save gives the same world: the same state, events and journal (T4).
 12. Knowledge only ever hides: with every act and outcome seen by everyone and no secret memberships, `witnessed` and `ripple` give exactly the events `omniscient` does, and every awareness is within 0…1 (K1–K3).
 13. News always stops: each party learns a piece of news at most once, none arrives before it's due, and none is still on its way more than `hop_ticks` × the length of `strength` after it began (K2).
+14. A refused quest command changes nothing: not the quest log, nor the world's state or events (Q6).
+15. Quest progress only grows: a quest started stays started until it's finished, one finished or closed never changes, and stages reached and choices made stay so (Q6).
 
 ## 15. Crates (P-25)
 
@@ -959,7 +962,7 @@ A quest checker can only reconcile what it can see without running the game. So 
 
 A feature that would make an effect's reach impossible to compute from content, such as computed effects or script hooks, conflicts with D-20. It needs the user's agreement before it's built.
 
-## 17. Quests (designed in Q0; D-25 to D-30, P-64 to P-70)
+## 17. Quests (designed in Q0; D-25 to D-31, P-64 to P-72)
 
 The quest module is a sibling crate, `factional-quests`. It reads this module's content and sends it commands, like any other module (§11, D-15). This section is its design; Q1 onwards builds it.
 
@@ -1086,7 +1089,23 @@ Sharing in `the_long_winter` gives the Temple 10. The Circle regards the Temple 
 
 By contrast, a choice taking 40 from the Watch doesn't lock out `watch_oath.oath` (Watch standing 10): `report_crime`, an action, raises standing with the Watch again, so the loss isn't for good. Nor does any choice lock out membership of the Watch by drift: it puts members on probation, and for every way each axis moves some action moves it back. The Temple demotes at once, so a stage needing membership of the Temple would be locked out by every choice that moves alignment; that's the cost of a drift policy with no grace.
 
-### 17.4 What's built when
+### 17.4 Playing quests (Q6, D-31, P-72)
+
+The quest log keeps each character's progress, and changes only by its two commands, by applying the events they produce. Any character can play a quest; the player is an ordinary one.
+
+| Command | Accepted when | Events |
+| --- | --- | --- |
+| `StartQuest { character, quest }` | the quest isn't started, finished or closed for them; every step before its own is complete; its gate holds, its own requirements and its step's | `QuestStarted`, `StageReached` at its first stage, then `QuestClosed` for each earlier step's leftover not yet started, where they close |
+| `MakeChoice { character, quest, choice, witnesses }` | the quest is under way; the choice is at the stage they're at, and that stage's requirements hold | `ChoiceMade`, the world's events for its effects, then `StageReached` at the next stage or `QuestFinished` |
+
+- **A step is complete once `need` of its quests are finished,** and open once every step before it is complete. Started isn't done.
+- **Reaching a stage needs nothing** (D-31): a choice leading to a stage whose requirements don't hold yet still reaches it, and the character waits there until they do. So `done = ["quest.stage"]` means reached.
+- **Effects go to the world in the same command,** as `ApplyOutcome`, or `ApplyEffects` with the source `quest:<quest>.<stage>.<choice>`, with the choice's witnesses. The world's command is checked last; if it refuses, the choice isn't made.
+- **Requirements are judged on the world as it is:** standing with the faction or character; membership, secret or not; rank on the faction's ladder; `within_tolerance`, by the faction's picture (§10.3), within its member tolerance; `done` from the log.
+- **Explanations come from the engine.** `assess_start` lists every reason a quest can't start: its progress, the earliest step before it that isn't complete with how many of how many are done, then each requirement that doesn't hold, with what it needs and what the character has. A refused choice says the same of its stage.
+- **Saves and `reload` don't hold quest progress yet;** they refuse while any quest has started (Q7).
+
+### 17.5 What's built when
 
 | Increment | Builds |
 | --- | --- |
@@ -1095,5 +1114,6 @@ By contrast, a choice taking 40 from the Watch doesn't lock out `watch_oath.oath
 | Q3 (done) | Reachability: no dead stages in a quest, no unreachable step in a questline, no gate that can never hold, no quest that can never start |
 | Q4 (done) | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
 | Q5 (done) | Worlds with quests load: the gate comes off, the session keeps the quests, saves fingerprint the quest files, and Riverhold's quests join `content/sample` |
-| Q6 | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI |
+| Q6 (done) | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI (§17.4) |
+| Q7 | Saves hold the quest log, and `reload` replays it |
 

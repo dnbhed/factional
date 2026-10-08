@@ -57,6 +57,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-28 · Quests and questlines belong to a faction, a character or no one** (agreed 2026-10-07 in Q0, at the user's direction). There are faction quests and questlines, and ones outside the factions: an optional `giver` names a faction or a character, or is left out for the world's own. Every quest is reconciled with every other, whoever owns it (§17.1).
 - **D-29 · A questline's steps are groups of quests, gated by rank or standing** (agreed 2026-10-07 in Q0, at the user's direction). A step's quests are open together and done in any order; the step is complete once a set number of them are done (`need`, all by default, possibly 0 when rank or standing should decide instead). A quest or a step can require a rank or standing in a faction, or anything else in the requirement vocabulary. The designer chooses, per step, whether quests left undone stay open or close once the character moves on; closing is a declared lockout (§17.1, §17.2).
 - **D-30 · Quests never change memberships or ranks; they can shift relations** (agreed 2026-10-08 in Q2, at the user's direction). Joining, leaving and promotion are always the character's own actions, taken independently, never a quest's effect. A quest's effects are alignment, standing, and shifts in how factions regard each other (DESIGN.md §17.1).
+- **D-31 · A character waits at a stage until its requirements hold** (agreed 2026-10-08 in Q6, at the user's direction). A choice leading to a stage whose requirements don't hold yet still reaches it; the character can't choose there until they do, and goes off to meet them, such as raising their standing. So `done` on a stage means reached (DESIGN.md §17.4).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
 ## Proposed — 2026-10-04
@@ -500,6 +501,17 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Saves fingerprint the quest files.** A save from before has none for them, and a file with no fingerprint counts as not there, so it restores while the directory still has no quest files. The save format's version stays at 1: nothing it holds has changed shape.
   - **Riverhold's quests join `content/sample`,** with `turned_in_vex` and `took_a_bribe`. The complete example now loads too.
   - *Why:* a world that's complete loads with everything in it, and saves notice any change to what it was played on.
+
+- **P-72 · How quests are played** (made in Q6, 2026-10-08; saves and reload in Q7).
+  - **A quest log in `factional-quests`** keeps every character's progress. It changes only through its two commands, `StartQuest` and `MakeChoice`, by applying the events they produce. The world never holds it, since quests depend on reputation and never the other way.
+  - **A choice's effects go to the world inside the same command,** as `ApplyOutcome`, or `ApplyEffects` with the source `quest:<quest>.<stage>.<choice>`, passing the choice's witnesses. Every check of the log's own comes first, witnesses included, and the world's command comes last. Once the world accepts it nothing can refuse, so a refused command changes nothing in either (invariant 14). A world command refused would still be in the world's journal, as every refused command is.
+  - **Steps:** a step is complete once `need` of its quests are finished, and open once every step before it is complete. A quest can start only in an open step. Starting a quest of a later step closes the leftovers of every earlier closing step that the character hasn't started.
+  - **Requirements are judged on the world now:** membership counts whether secret or not, since the character knows; rank compares places on the ladder; and `within_tolerance` uses the faction's picture against its member tolerance, not a rank's stricter one, since a requirement names the faction.
+  - **One output for a command, in order:** what it did to the log and, between, the world's events for its effects, so the CLI shows a choice, then its effects, then where it led.
+  - **Explanations are data from the engine:** `StartAssessment` with every `StartBlock`, and each `Unmet` with what it needs and what the character has. The CLI only renders them.
+  - **A quest is played once.** Finished, started or closed, it can't be started again; closed means it was never started.
+  - **Until Q7, `save` and `reload` refuse once any quest has started,** rather than silently dropping the progress.
+  - *Why:* quests change the world only through its one way in, and a refused quest command is as harmless as a refused world command.
 
 ## Open
 

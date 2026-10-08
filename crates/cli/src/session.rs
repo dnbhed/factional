@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use factional_content::Fingerprint;
-use factional_quests::Quests;
+use factional_quests::QuestLog;
 
 use crate::charts;
 use crate::check::{check, count, validate};
@@ -47,6 +47,22 @@ const COMMANDS: &[(&str, &str)] = &[
         "the quests and questlines in <dir>, read and checked without loading them, or one quest's stages and choices",
     ),
     ("quests", "list the loaded world's quests and questlines"),
+    (
+        "can-start <character> <quest>",
+        "whether the character can start the quest now, and every reason not",
+    ),
+    (
+        "start <character> <quest>",
+        "start a quest whose gate and step allow it",
+    ),
+    (
+        "choose <character> <quest> <choice> [--seen-by <id>,... | --unseen]",
+        "make a choice at the quest's stage the character is at, applying its effects",
+    ),
+    (
+        "progress <character>",
+        "each quest the character has started or had closed, and how far each questline has opened",
+    ),
     ("characters", "list the loaded characters"),
     (
         "show character <id>",
@@ -249,8 +265,8 @@ pub struct Session {
     /// Relative paths, as in `load content/sample`, are resolved against this.
     base_dir: PathBuf,
     world: Option<World>,
-    /// The loaded world's quests (Q5), for the quest module to play (Q6).
-    quests: Quests,
+    /// The loaded world's quests, and each character's progress through them (Q5, Q6).
+    quests: QuestLog,
     /// The directory the world was loaded from, as typed, for `reload` and `save`.
     loaded: Option<String>,
     /// Exactly what was read from it, for `save`.
@@ -269,7 +285,7 @@ impl Session {
         Session {
             base_dir: base_dir.into(),
             world: None,
-            quests: Quests::default(),
+            quests: QuestLog::default(),
             loaded: None,
             fingerprint: Fingerprint::default(),
         }
@@ -289,7 +305,23 @@ impl Session {
             "load" => Ok(self.load(rest)),
             "validate" => Ok(self.validate(rest)),
             "quests" if rest.is_empty() => Ok(match &self.world {
-                Some(_) => crate::quests::loaded(&self.quests),
+                Some(_) => crate::quests::loaded(self.quests.quests()),
+                None => no_world(),
+            }),
+            "can-start" => Ok(match &self.world {
+                Some(world) => crate::play::can_start(world, &self.quests, rest),
+                None => no_world(),
+            }),
+            "start" => Ok(match &mut self.world {
+                Some(world) => crate::play::start(world, &mut self.quests, rest),
+                None => no_world(),
+            }),
+            "choose" => Ok(match &mut self.world {
+                Some(world) => crate::play::choose(world, &mut self.quests, rest),
+                None => no_world(),
+            }),
+            "progress" => Ok(match &self.world {
+                Some(world) => crate::play::progress(world, &self.quests, rest),
                 None => no_world(),
             }),
             "quests" => Ok(crate::quests::quests(&self.base_dir, rest)),
@@ -378,7 +410,7 @@ impl Session {
                     "characters"
                 };
                 self.world = Some(checked.world);
-                self.quests = checked.quests;
+                self.quests = QuestLog::new(checked.quests);
                 self.loaded = Some(dir.to_owned());
                 self.fingerprint = checked.fingerprint;
                 let summary = format!("loaded {count} {noun} from {dir}");
@@ -399,6 +431,11 @@ impl Session {
         let (Some(world), Some(dir)) = (&self.world, &self.loaded) else {
             return no_world();
         };
+        if self.quests.has_progress() {
+            return Outcome::Error(
+                "reload can't carry quest progress yet (DESIGN.md §17.4)".to_owned(),
+            );
+        }
         let checked = match check(&self.base_dir.join(dir)) {
             Ok(checked) => checked,
             Err(problems) => return Outcome::Error(problems.join("\n")),
@@ -435,7 +472,7 @@ impl Session {
         let changes = report(("before", world), ("after", &replayed));
         let output = lines(std::iter::once(summary).chain(warnings).chain(changes));
         self.world = Some(replayed);
-        self.quests = checked.quests;
+        self.quests = QuestLog::new(checked.quests);
         self.fingerprint = checked.fingerprint;
         Outcome::Output(output)
     }
@@ -449,6 +486,11 @@ impl Session {
         let (Some(world), Some(dir)) = (&self.world, &self.loaded) else {
             return no_world();
         };
+        if self.quests.has_progress() {
+            return Outcome::Error(
+                "saves can't hold quest progress yet (DESIGN.md §17.4)".to_owned(),
+            );
+        }
         let text = factional_content::save(world, dir, &self.fingerprint);
         if let Err(error) = std::fs::write(self.base_dir.join(file), text) {
             return Outcome::Error(format!("cannot write {file}: {error}"));
@@ -481,7 +523,7 @@ impl Session {
                     count(world.events().len(), "event")
                 );
                 self.world = Some(world);
-                self.quests = restored.quests;
+                self.quests = QuestLog::new(restored.quests);
                 self.loaded = Some(restored.dir);
                 self.fingerprint = restored.fingerprint;
                 Outcome::Output(summary)
@@ -2292,7 +2334,7 @@ pub(crate) fn named_effects(effects: &StandingEffects) -> Vec<String> {
 
 /// Whether a word is an option such as `--one-way`, rather than a value. Negative numbers
 /// have one dash.
-fn is_flag(word: &str) -> bool {
+pub(crate) fn is_flag(word: &str) -> bool {
     word.starts_with("--")
 }
 
@@ -5057,6 +5099,10 @@ mod tests {
             "load <dir>",
             "quests <dir> [<quest>]",
             "quests",
+            "can-start <character> <quest>",
+            "start <character> <quest>",
+            "choose <character> <quest> <choice> [--seen-by <id>,... | --unseen]",
+            "progress <character>",
             "characters",
             "show character <id>",
             "factions",

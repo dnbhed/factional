@@ -1,0 +1,27 @@
+# Playing quests (Q6): the player swears into the Watch's career, waits at the oath when a
+# fine sets them back, and moves on through the odd jobs, closing the one left over. Every
+# number is worked out by hand in PLAN.md's Q6.
+
+load content/sample
+can-start player watch_captain
+start player watch_oath
+choose player watch_oath report
+assert standing player city_watch == 19.50
+
+# Fined, they fall below the 10.00 the oath needs, and wait there until they've made it up.
+outcome fined_by_watch player
+assert choose player watch_oath swear == error: player can't choose at watch_oath.oath yet: it needs standing 10.00 with city_watch, and player has -0.50
+act player report_crime
+act player report_crime
+act player report_crime
+assert standing player city_watch == 14.50
+choose player watch_oath swear
+
+# Two of the three odd jobs complete the step; starting a favour closes the third.
+start player night_patrol
+choose player night_patrol by_the_book
+start player dock_inspection
+choose player dock_inspection seize
+start player harbour_errands
+can-start player smugglers_cove
+progress player
