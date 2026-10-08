@@ -798,6 +798,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | Quests and questlines: a giver is a faction or a character; outcomes, factions, ranks, parties, quests, stages and choices they name exist; standing within ±100; a quest has a stage, a stage a choice, a questline a step, a step a quest; stage ids unique in a quest, none called `end`; choice ids unique in a stage; `next` names a later stage; an `outcome` or `effects`, not both; no list names something twice; `need` no more than the step's quests; a quest in at most one questline, at one step; `leftovers` is `open` or `close` | error | Q1 (done) |
 | `leftovers = "close"` on a step that needs all its quests | warning | Q1 (done) |
 | Relation shifts in outcomes and quests' effects: two different factions that exist, `by` within −200…200, each direction shifted at most once; the same refuses `ApplyEffects` | error | Q2 (done) |
+| Quests can be reached: every stage by some choice; no gate needing `member` or `rank_at_least` and `not_member` of one faction; `done` on a quest's own progress only where it can have happened; no quest that can never start, stage whose `done` can never happen, quest closed by its own step before it can start, or stage needing its quest over first (§17.2) | error | Q3 (done) |
 
 ### 12.3 Designer workflow
 
@@ -963,7 +964,7 @@ A **questline** is an ordered list of steps: a story arc (D-29). Each step is a 
 
 **Gates.** A quest's own `requires` must hold to start it, and a stage's to reach it; a step's `requires` are added to the gate of every quest in it. They use the same vocabulary, so a faction's questline gates its later work by rank or standing in the faction.
 
-**Leftovers.** When a step needs fewer than all its quests, the designer chooses what happens to the rest once the character moves on: `leftovers = "open"` (the default) keeps them available; `"close"` shuts them when the character starts a quest of the next step. Closing is written on the step, so it's a declared lockout of those quests (§17.2).
+**Leftovers.** When a step needs fewer than all its quests, the designer chooses what happens to the rest once the character moves on: `leftovers = "open"` (the default) keeps them available; `"close"` shuts the ones not yet started when the character starts a quest of any later step (P-69). Closing is written on the step, so it's a declared lockout of those quests (§17.2).
 
 **Who they belong to** (D-28). A quest or questline has an optional `giver`: a faction (the Watch's career), a character (an NPC's personal errand), or no one, left out (the world's own quests). A quest in a questline belongs to the questline's giver unless it names its own. Whoever owns them, every quest is reconciled with every other (§17.2): ownership says whose story it is, not which rules apply.
 
@@ -1041,6 +1042,18 @@ What counts as for good, requirement by requirement (P-64):
 
 Within one quest, choices exclude each other by design and need no declaration. Every stage must still be reachable along some path of its own quest, and every step of a questline reachable from the steps before it, with `need` no more than its quests, or it's dead content and an error. A rank or standing gate counts as reachable if it's in range and names a real rung, as P-51 reasons: standing can always be raised, and promotion can always be asked for.
 
+**How loading finds dead content** (Q3, P-69). Once every reference resolves, it checks two things.
+
+- **Structure, within each quest:**
+  - every stage is reached by a choice of an earlier one;
+  - no gate needs both `member` (or a `rank_at_least`) and `not_member` of a faction. A quest's start gate is its own `requires` and its step's;
+  - `done` on the quest's own progress is only where it can have happened: never to start it, and at a stage, only for an earlier stage or a choice that leads there.
+- **Dependencies, once the structure is sound,** through a generous run. The run works out what the `done` requirements and the questlines' order allow, taking every other requirement as one the character can meet and ignoring timing. So anything it can't reach can never be reached, and each error is certain. It reports:
+  - **A quest that can never start,** naming the `done` it waits on or the step before it that can never be complete.
+  - **A stage whose `done` can never happen.**
+  - **A quest its own step's leftovers close before it can start.** That's the same run with the questline's later steps shut.
+  - **A stage that needs something only possible once its quest is over.** That's the same run with the quest held at the stages that lead there.
+
 ### 17.3 Checking it: conservative bounds (D-27, P-65)
 
 Loading never plays the game out. For each choice it works out bounds from content alone:
@@ -1064,7 +1077,7 @@ By contrast, the Guild's `burn_the_records`, at −40 with the Watch, doesn't lo
 | --- | --- |
 | Q1 (done) | `factional-quests`, `quests.toml` and `questlines.toml`: quests with their givers, gates, stages, choices and requirements, and questlines of steps (`quests`, `need`, `requires`, `leftovers`), with every reference and range checked; the CLI lists them |
 | Q2 (done) | Relation effects, as outcomes and inline effects (D-30) |
-| Q3 | Reachability: no dead stages in a quest, no unreachable step in a questline |
+| Q3 (done) | Reachability: no dead stages in a quest, no unreachable step in a questline, no gate that can never hold, no quest that can never start |
 | Q4 | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
 | Q5 | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI |
 

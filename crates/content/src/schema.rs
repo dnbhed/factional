@@ -1210,7 +1210,7 @@ fn step() -> Value {
                 with_default(
                     one_of(
                         Leftovers::ALL.map(Leftovers::key),
-                        "When need is fewer than all the quests: whether the rest stay open, or close once the character starts a quest of the next step.",
+                        "When need is fewer than all the quests: whether the rest stay open, or close, if not yet started, once the character starts a quest of any later step.",
                     ),
                     Leftovers::default().key().into(),
                 ),

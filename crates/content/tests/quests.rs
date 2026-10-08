@@ -715,3 +715,253 @@ fn quest_checks_wait_until_every_file_reads_cleanly() {
         ["quests.toml: watch_oath.name: expected text in quotes"]
     );
 }
+
+// Reachability (Q3)
+
+/// The problems with the example once each `(file, from, to)` replacement is made.
+fn problems_after_all(edits: &[(&str, &str, &str)]) -> Vec<String> {
+    let (mut quests, mut questlines) = (text("quests.toml"), text("questlines.toml"));
+    for (file, from, to) in edits {
+        let edited = if *file == "quests.toml" {
+            &mut quests
+        } else {
+            &mut questlines
+        };
+        assert_eq!(
+            edited.matches(from).count(),
+            1,
+            "'{from}' is in {file} once"
+        );
+        *edited = edited.replacen(from, to, 1);
+    }
+    with(&quests, &questlines, |sources| {
+        diagnostics(parse_quests(sources))
+    })
+}
+
+#[test]
+fn a_stage_no_choice_leads_to_can_never_be_reached() {
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "{ id = \"follow_the_lights\", next = \"raid\" }",
+            "{ id = \"follow_the_lights\", next = \"end\" }"
+        ),
+        [
+            "quests.toml: smugglers_cove.stages[1]: no choice leads to this stage, so it can never be reached"
+        ]
+    );
+}
+
+#[test]
+fn a_gate_that_can_never_hold_is_reported_at_its_not_member() {
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "requires = { not_member = [\"lantern_guild\"] }",
+            "requires = { not_member = [\"lantern_guild\"], member = [\"lantern_guild\"] }"
+        ),
+        [
+            "quests.toml: watch_oath.requires.not_member[0]: it also needs to be in lantern_guild, so it can never hold"
+        ]
+    );
+    // A quest's start gate is its own requires and its step's.
+    assert_eq!(
+        problems_after_all(&[(
+            "quests.toml",
+            "name = \"Captain of the Watch\"",
+            "name = \"Captain of the Watch\"\nrequires = { not_member = [\"temple\", \"city_watch\"] }"
+        ),]),
+        [
+            "quests.toml: watch_captain.requires.not_member[1]: it also needs a rank in city_watch, so it can never hold"
+        ]
+    );
+}
+
+#[test]
+fn a_quest_can_only_need_its_own_progress_where_it_could_have_happened() {
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "requires = { standing = { city_watch = 10.0 } }",
+            "requires = { standing = { city_watch = 10.0 }, done = [\"watch_oath.patrol.look_away\"] }"
+        ),
+        [
+            "quests.toml: watch_oath.stages[1].requires.done[0]: watch_oath.patrol.look_away doesn't lead to this stage, so it can't be done here"
+        ]
+    );
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "requires = { standing = { city_watch = 10.0 } }",
+            "requires = { standing = { city_watch = 10.0 }, done = [\"watch_oath.patrol.report\", \"watch_oath.patrol\", \"watch_oath\"] }"
+        ),
+        [
+            "quests.toml: watch_oath.stages[1].requires.done[2]: watch_oath can't be over while one of its own stages is under way"
+        ]
+    );
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "requires = { not_member = [\"lantern_guild\"] }",
+            "requires = { not_member = [\"lantern_guild\"], done = [\"watch_oath\"] }"
+        ),
+        ["quests.toml: watch_oath.requires.done[0]: a quest can't need its own progress to start"]
+    );
+    assert_eq!(
+        problems_after(
+            "questlines.toml",
+            "quests = [\"harbour_errands\", \"lost_dog\"]",
+            "quests = [\"harbour_errands\", \"lost_dog\"]\nrequires = { done = [\"lost_dog.search\"] }"
+        ),
+        [
+            "questlines.toml: watch_career.steps[2].requires.done[0]: lost_dog is in this step, and a quest can't need its own progress to start"
+        ]
+    );
+}
+
+#[test]
+fn quests_that_wait_on_each_other_can_never_start() {
+    assert_eq!(
+        problems_after_all(&[
+            (
+                "quests.toml",
+                "name = \"Ava's Lost Ring\"",
+                "name = \"Ava's Lost Ring\"\nrequires = { done = [\"the_long_winter\"] }"
+            ),
+            (
+                "quests.toml",
+                "name = \"The Long Winter\"",
+                "name = \"The Long Winter\"\nrequires = { done = [\"lost_ring.search\"] }"
+            ),
+        ]),
+        [
+            "quests.toml: lost_ring: it can never start: it needs the_long_winter done, which can never happen",
+            "quests.toml: the_long_winter: it can never start: it needs lost_ring.search done, which can never happen",
+        ]
+    );
+}
+
+#[test]
+fn a_questline_waiting_on_its_own_end_never_gets_going() {
+    // The oath needs the captaincy, which needs every step before it.
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "requires = { not_member = [\"lantern_guild\"] }",
+            "requires = { not_member = [\"lantern_guild\"], done = [\"watch_captain\"] }"
+        ),
+        [
+            "quests.toml: dock_inspection: it can never start: watch_career.steps[0] can never be complete",
+            "quests.toml: harbour_errands: it can never start: watch_career.steps[0] can never be complete",
+            "quests.toml: lost_dog: it can never start: watch_career.steps[0] can never be complete",
+            "quests.toml: night_patrol: it can never start: watch_career.steps[0] can never be complete",
+            "quests.toml: smugglers_cove: it can never start: watch_career.steps[0] can never be complete",
+            "quests.toml: watch_captain: it can never start: watch_career.steps[0] can never be complete",
+            "quests.toml: watch_oath: it can never start: it needs watch_captain done, which can never happen",
+        ]
+    );
+}
+
+#[test]
+fn a_quest_whose_needs_come_only_after_its_step_closes_can_never_start() {
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "requires = { done = [\"watch_oath.patrol.report\"] }",
+            "requires = { done = [\"watch_captain\"] }"
+        ),
+        [
+            "quests.toml: smugglers_cove: it can never start: what it needs only comes after watch_career moves on from steps[1], which closes it"
+        ]
+    );
+    // With the leftovers kept open, it can start later.
+    assert_eq!(
+        problems_after_all(&[
+            (
+                "quests.toml",
+                "requires = { done = [\"watch_oath.patrol.report\"] }",
+                "requires = { done = [\"watch_captain\"] }"
+            ),
+            (
+                "questlines.toml",
+                "leftovers = \"close\"",
+                "leftovers = \"open\""
+            ),
+        ]),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_stage_that_needs_its_quest_over_first_can_never_be_reached() {
+    assert_eq!(
+        problems_after_all(&[
+            (
+                "quests.toml",
+                "requires = { standing = { city_watch = 10.0 } }",
+                "requires = { standing = { city_watch = 10.0 }, done = [\"the_long_winter\"] }"
+            ),
+            (
+                "quests.toml",
+                "name = \"The Long Winter\"",
+                "name = \"The Long Winter\"\nrequires = { done = [\"watch_oath\"] }"
+            ),
+        ]),
+        [
+            "quests.toml: watch_oath.stages[1].requires.done[0]: the_long_winter can only happen once watch_oath is over, so this stage can never be reached"
+        ]
+    );
+    // Needing an earlier stage of its own quest, through another quest, is fine.
+    assert_eq!(
+        problems_after_all(&[
+            (
+                "quests.toml",
+                "requires = { standing = { city_watch = 10.0 } }",
+                "requires = { standing = { city_watch = 10.0 }, done = [\"the_long_winter\"] }"
+            ),
+            (
+                "quests.toml",
+                "name = \"The Long Winter\"",
+                "name = \"The Long Winter\"\nrequires = { done = [\"watch_oath.patrol.report\"] }"
+            ),
+        ]),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_stage_waiting_on_a_quest_that_never_starts_is_reported_with_it() {
+    assert_eq!(
+        problems_after_all(&[
+            (
+                "quests.toml",
+                "name = \"Ava's Lost Ring\"",
+                "name = \"Ava's Lost Ring\"\nrequires = { done = [\"the_long_winter.stores\"] }"
+            ),
+            (
+                "quests.toml",
+                "id = \"stores\"",
+                "id = \"stores\"\nrequires = { done = [\"lost_ring\"] }"
+            ),
+        ]),
+        [
+            "quests.toml: lost_ring: it can never start: it needs the_long_winter.stores done, which can never happen",
+            "quests.toml: the_long_winter.stages[0].requires.done[0]: lost_ring can never happen, so this stage can never be reached",
+        ]
+    );
+}
+
+#[test]
+fn reachability_waits_until_the_structure_is_sound() {
+    // The oath can't start, but only that is reported, not every quest waiting on it.
+    assert_eq!(
+        problems_after(
+            "quests.toml",
+            "requires = { not_member = [\"lantern_guild\"] }",
+            "requires = { not_member = [\"lantern_guild\"], member = [\"lantern_guild\"] }"
+        )
+        .len(),
+        1
+    );
+}

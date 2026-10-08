@@ -1,0 +1,15 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/reachable.scenario
+---
+> validate docs/examples/riverhold
+error: quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)
+docs/examples/riverhold doesn't load: 1 problem
+> validate crates/cli/tests/fixtures/worlds/dead_ends
+error: quests.toml: gossip: it can never start: it needs rumour.listen done, which can never happen
+error: quests.toml: rumour: it can never start: it needs gossip done, which can never happen
+error: quests.toml: patrol: it can never start: what it needs only comes after jobs moves on from steps[0], which closes it
+error: quests.toml: siege.stages[1].requires.done[0]: aftermath can only happen once siege is over, so this stage can never be reached
+error: quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)
+crates/cli/tests/fixtures/worlds/dead_ends doesn't load: 5 problems

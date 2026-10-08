@@ -1,0 +1,60 @@
+# Each waits on the other.
+[rumour]
+name = "A Rumour"
+requires = { done = ["gossip"] }
+
+[[rumour.stages]]
+id = "listen"
+choices = [{ id = "nod", next = "end" }]
+
+[gossip]
+name = "Gossip"
+requires = { done = ["rumour.listen"] }
+
+[[gossip.stages]]
+id = "chat"
+choices = [{ id = "talk", next = "end" }]
+
+# Needs the promotion, which only comes after its step closes it.
+[patrol]
+name = "Patrol"
+requires = { done = ["promotion"] }
+
+[[patrol.stages]]
+id = "walk"
+choices = [{ id = "done", next = "end" }]
+
+[inspect]
+name = "Inspect"
+
+[[inspect.stages]]
+id = "look"
+choices = [{ id = "done", next = "end" }]
+
+[promotion]
+name = "Promotion"
+
+[[promotion.stages]]
+id = "swear"
+choices = [{ id = "done", next = "end" }]
+
+# The assault needs the aftermath, which needs the siege over.
+[siege]
+name = "The Siege"
+
+[[siege.stages]]
+id = "camp"
+choices = [{ id = "wait", next = "assault" }, { id = "leave", next = "end" }]
+
+[[siege.stages]]
+id = "assault"
+requires = { done = ["aftermath"] }
+choices = [{ id = "storm", next = "end" }]
+
+[aftermath]
+name = "The Aftermath"
+requires = { done = ["siege"] }
+
+[[aftermath.stages]]
+id = "bury"
+choices = [{ id = "done", next = "end" }]

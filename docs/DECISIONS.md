@@ -441,7 +441,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Every questline is written as `[[<line>.steps]]`,** a one-quest step being a link in a chain, so there's one way to write it rather than a short form beside the long one.
   - **The order becomes gates.** Each quest's gate is its own `requires`, plus its step's, plus "the step before is complete". So the lockout check needs nothing new for questlines: a lockout of a step's requirements is declared by naming the quest, as `locks = ["watch_captain"]`.
   - **`need = 0` means optional.** The step is complete at once, and the next step's requirements, such as `rank_at_least`, decide when the character moves on. That's how "do as many favours as it takes to make sergeant" is written. `need` above the step's number of quests is an error.
-  - **Leftovers close when the character starts a quest of the next step,** not when it opens: with `need = 0` the next step may open at once, and the optional quests shouldn't vanish before the character has chosen to move on. `open` is the default, since it closes nothing.
+  - **Leftovers close when the character starts a quest of the next step** (any later step, P-69), not when it opens: with `need = 0` the next step may open at once, and the optional quests shouldn't vanish before the character has chosen to move on. `open` is the default, since it closes nothing.
   - **A quest is in at most one questline, at one step,** so closing leftovers, and whose giver a quest has, never depend on which questline is asking.
   - **Rank and standing gates are reachable in principle** when they're in range and name a real rung (P-51's reasoning): standing can always be raised, and promotion can always be asked for (D-17).
   - *Why:* groups and gates reduce to the requirements the lockout check already handles, and every way a quest can close is written in the content.
@@ -456,6 +456,20 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Riverhold's quests are in `docs/examples/riverhold`, not `content/sample`,** because the sample has to load for every scenario; the sample gets them once worlds with quests load. Two outcomes the quests use, `turned_in_vex` and `took_a_bribe`, are added to the example.
   - **What Q1 doesn't check:** a gate that can't hold (`member` and `not_member` of the same faction, or `done` on the quest itself) is reachability, which is Q3's.
   - *Why:* designers can write and check quests now, while D-20 keeps any world that has them from running before they can be reconciled.
+- **P-69 · How dead content is found** (made in Q3, 2026-10-08).
+  - **Errors only when certain:**
+    - the run assumes every requirement but `done` can be met (P-51, P-66: standing can be raised, ranks asked for, alignment moved, factions joined by the character's own choice);
+    - it ignores timing;
+    - it grows until nothing more is reachable.
+
+    So what it can't reach can never be reached, and loading never refuses content a player could get through. The cost is that dead content that depends on timing beyond what the two held runs model isn't caught. That gap is acceptable for designer mistakes, which this is about; contradictions between quests are Q4's.
+  - **Structure first.** While a quest's structure has problems, only those are reported, so one mistake doesn't bring an error for every quest waiting on it. That's the same reason Q1's reference checks come before these.
+  - **Two held runs refine the generous one:**
+    - **Closing leftovers:** for each step that closes them, a run with the questline's later steps shut. A quest in that step must be able to start in it.
+    - **Waiting on itself:** for each stage that needs another quest's progress, a run with this quest held at the stages that lead there, never finishing. The progress must happen in it.
+  - **Leftovers close when the character starts a quest of any later step,** not only the next: with `need = 0` the next step can be skipped. **A quest already started isn't closed;** Q5 builds that.
+  - **A step's blocker is the earliest step before it that can never be complete,** so every quest held up by the same step points at it.
+  - *Why:* a designer learns about every quest or stage no one can ever see, at load, without loading ever refusing something playable.
 - **P-68 · How relation effects apply** (made in Q2, 2026-10-08).
   - **Written as relations are, with `by`:** `relations = [{ between = [a, b], by = -40.0 }, { from = a, to = b, by = 10.0 }]`, on an outcome or a choice's `effects`. A shift, not a set value, so the same effect means the same thing wherever the relations stand.
   - **`by` is within −200…200,** the whole width of a relation, and each direction stops at ±100.

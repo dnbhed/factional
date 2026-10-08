@@ -1,0 +1,9 @@
+# A world whose quests can't all be reached (Q3); see scenarios/reachable.scenario.
+
+[watch]
+name = "The Watch"
+alignment = { law = 60.0, good = 10.0 }
+tolerance = 40.0
+
+[[watch.ranks]]
+id = "recruit"

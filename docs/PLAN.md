@@ -70,6 +70,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Q0 — design pass for quests (DESIGN.md §17): quests of stages with choices, gated by requirements such as rank or standing; questlines of steps, each a group of quests done in any order, `need` of them (possibly 0) to move on, leftovers kept or closed as the designer chooses; given by a faction, a character or no one; reconciling as every lockout declared in `locks`, found by conservative bounds checked choice by stage and gate, never combinations; the user's choices D-25 to D-29, settling X-4, with P-64 to P-66; Q1 to Q5 outlined; done 2026-10-07 (#38, #39)
 - Q1 — quest content: a new `factional-quests` crate (between reputation and content; ids from a macro now in core); `quests.toml` (name, giver, gate, stages with requirements and choices with an outcome or inline effects and `next`) and `questlines.toml` (giver, steps with `quests`, `need`, `requires`, `leftovers`); every reference and range checked with a "did you mean", once every file reads cleanly; a warning for leftovers that can't be left; content with quests doesn't load until Q4; `quests <dir> [<quest>]`; the two JSON Schemas; Riverhold's quests in the complete example (P-67); done 2026-10-08 (#40)
 - Q2 — relation effects (D-30: quests never change memberships or ranks; joining, leaving and promotion are the character's own actions): `relations` shifts on outcomes and choices' inline effects, `between` or `from`/`to` with `by` (−200…200), applied after standing, each direction stopping at ±100 and shifted at most once; checked at load and by `ApplyEffects`; wars open as for `relate`; `outcomes` and `quests` show them; Riverhold's `sowed_discord`; DESIGN.md §17's effects and lockout table without joins and promotions (P-68); done 2026-10-08 (#41)
+- Q3 — reachable content: within each quest, every stage reached by a choice, no gate needing `member` or a rank and `not_member` of one faction, and `done` on its own progress only where it can have happened; then a generous run of what `done` and questline order allow, with held runs for steps that close leftovers and stages needing another quest, reporting quests that can never start and stages that can never be reached, each error certain; leftovers close on starting any later step (P-69); `scenarios/reachable.scenario`; done 2026-10-08 (#42)
 
 ---
 
@@ -95,11 +96,7 @@ Waits until a game needs a host; then a host is chosen and E1 builds its adapter
 
 ## Beyond this module
 
-### Q3 · Reachable stages — P3 · Next
-
-Every stage reachable along some path of its own quest, and every step of a questline from the steps before it; dead content is an error (§17.2, P-66).
-
-### Q4 · The lockout check — P3 · Outline
+### Q4 · The lockout check — P3 · Next
 
 Per-choice bounds and per-world recoverability, each choice checked against each stage and gate of every other quest, whoever gives it; `locks` declarations, undeclared lockouts as errors, stale locks as warnings (§17.3, D-26, D-27, P-65).
 

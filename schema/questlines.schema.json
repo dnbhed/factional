@@ -99,7 +99,7 @@
       "properties": {
         "leftovers": {
           "default": "open",
-          "description": "When need is fewer than all the quests: whether the rest stay open, or close once the character starts a quest of the next step.",
+          "description": "When need is fewer than all the quests: whether the rest stay open, or close, if not yet started, once the character starts a quest of any later step.",
           "enum": [
             "open",
             "close"
