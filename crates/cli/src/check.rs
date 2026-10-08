@@ -4,11 +4,14 @@
 use std::path::Path;
 
 use factional_content::Fingerprint;
+use factional_quests::Quests;
 use factional_reputation::World;
 
-/// A content directory that would load: its world, how much is in it, and its warnings.
+/// A content directory that would load: its world and quests, how much is in them, and their
+/// warnings.
 pub(crate) struct Checked {
     pub(crate) world: World,
+    pub(crate) quests: Quests,
     /// Characters, factions, actions, relations and outcomes.
     pub(crate) counts: [usize; 5],
     pub(crate) warnings: Vec<String>,
@@ -18,7 +21,7 @@ pub(crate) struct Checked {
 
 /// Reads and checks the content in `path`; every problem, one per line, if it wouldn't load.
 pub(crate) fn check(path: &Path) -> Result<Checked, Vec<String>> {
-    let (content, fingerprint) =
+    let (content, quests, fingerprint) =
         factional_content::load_dir_fingerprinted(path).map_err(|error| {
             error
                 .diagnostics
@@ -35,6 +38,7 @@ pub(crate) fn check(path: &Path) -> Result<Checked, Vec<String>> {
     ];
     let warnings = factional_content::warnings(&content)
         .iter()
+        .chain(&factional_content::quest_warnings(&content, &quests))
         .map(ToString::to_string)
         .collect();
     // The loader reports every problem a world would refuse, so an error here means the two
@@ -43,6 +47,7 @@ pub(crate) fn check(path: &Path) -> Result<Checked, Vec<String>> {
         .map_err(|problems| problems.iter().map(ToString::to_string).collect::<Vec<_>>())?;
     Ok(Checked {
         world,
+        quests,
         counts,
         warnings,
         fingerprint,
@@ -64,13 +69,22 @@ pub fn validate(base: &Path, dir: &str) -> (String, bool) {
                 warnings => format!(", with {}", count(warnings, "warning")),
             };
             let [characters, factions, actions, relations, outcomes] = checked.counts;
-            report.push_str(&format!(
-                "{dir} loads{with}: {}, {}, {}, {} and {}\n",
+            let mut counted = vec![
                 count(characters, "character"),
                 count(factions, "faction"),
                 count(actions, "action"),
                 count(relations, "relation"),
                 count(outcomes, "outcome"),
+            ];
+            // Quests are counted only where there are any, as most worlds have none.
+            if !checked.quests.is_empty() {
+                counted.push(count(checked.quests.quests.len(), "quest"));
+                counted.push(count(checked.quests.questlines.len(), "questline"));
+            }
+            let last = counted.pop().expect("there are counts");
+            report.push_str(&format!(
+                "{dir} loads{with}: {} and {last}\n",
+                counted.join(", ")
             ));
             (report, true)
         }

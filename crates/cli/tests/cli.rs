@@ -157,7 +157,7 @@ fn validate_summarises_a_world_that_loads_and_exits_zero() {
     assert!(output.status.success(), "stdout: {}", text(&output.stdout));
     assert_eq!(
         text(&output.stdout),
-        "content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 4 outcomes\n"
+        "content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline\n"
     );
     assert_eq!(text(&output.stderr), "");
 }
@@ -187,13 +187,24 @@ fn validate_lists_every_problem_as_load_does_and_exits_one() {
 }
 
 #[test]
-fn validate_checks_quests_but_a_world_with_them_does_not_load_yet() {
+fn validate_loads_a_world_whose_quests_reconcile() {
     let output = factional_in_repo(&["validate", "docs/examples/riverhold"]);
-    assert_eq!(output.status.code(), Some(1));
+    assert!(output.status.success(), "stdout: {}", text(&output.stdout));
     assert_eq!(
         text(&output.stdout),
-        "error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)\n\
-         docs/examples/riverhold doesn't load: 1 problem\n"
+        "docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline\n"
+    );
+}
+
+#[test]
+fn validate_refuses_a_world_whose_quests_dont_reconcile() {
+    let output = factional_in_repo(&["validate", "crates/cli/tests/fixtures/worlds/lockouts"]);
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = text(&output.stdout);
+    assert_eq!(stdout.lines().count(), 5, "{stdout}");
+    assert!(
+        stdout.ends_with("crates/cli/tests/fixtures/worlds/lockouts doesn't load: 4 problems\n"),
+        "{stdout}"
     );
 }
 

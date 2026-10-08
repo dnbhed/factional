@@ -128,9 +128,9 @@ impl Texts {
     }
 }
 
-/// Reads and validates the content files in `dir`, with a fingerprint of exactly what was
-/// read, for saves (T4). The quest files aren't in it: a world with quests doesn't load yet.
-pub fn load_dir_fingerprinted(dir: &Path) -> Result<(Content, Fingerprint), ContentError> {
+/// Reads and validates the content files in `dir`, quests included, with a fingerprint of
+/// exactly what was read, for saves (T4).
+pub fn load_dir_fingerprinted(dir: &Path) -> Result<(Content, Quests, Fingerprint), ContentError> {
     let texts = Texts::read(dir)?;
     let fingerprint = Fingerprint::of([
         (BALANCE_FILE, texts.balance.as_deref()),
@@ -139,50 +139,32 @@ pub fn load_dir_fingerprinted(dir: &Path) -> Result<(Content, Fingerprint), Cont
         (ACTIONS_FILE, texts.actions.as_deref()),
         (OUTCOMES_FILE, texts.outcomes.as_deref()),
         (RELATIONS_FILE, texts.relations.as_deref()),
+        (quests::QUESTS_FILE, texts.quests.as_deref()),
+        (quests::QUESTLINES_FILE, texts.questlines.as_deref()),
     ]);
-    let content = parse_content(texts.sources())?;
-    Ok((content, fingerprint))
+    let (content, quests) = parse_quests(texts.sources())?;
+    Ok((content, quests, fingerprint))
 }
 
-/// Reads and validates the content files in `dir`.
+/// Reads and validates the content files in `dir`, quests included, keeping the content.
 pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
-    load_dir_fingerprinted(dir).map(|(content, _)| content)
+    load_dir_fingerprinted(dir).map(|(content, ..)| content)
 }
 
-/// Reads and checks the content files in `dir` with their quests, as `parse_quests` does.
+/// Reads and validates the content files in `dir` with their quests, as `parse_quests` does.
 pub fn load_quests(dir: &Path) -> Result<(Content, Quests), ContentError> {
     parse_quests(Texts::read(dir)?.sources())
 }
 
 /// Validates content from the text of its files, reporting every problem at once: each
-/// file's own, in file order, then problems across files (P-32). Quests are checked too,
-/// but until a world can carry them (Q5), content with quests doesn't load (D-20): that's
-/// reported after every other problem.
+/// file's own, in file order, then problems across files (P-32), then the quests' (Q1 to Q4),
+/// keeping the content. A world loads only if its quests reconcile too (D-20).
 pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
-    let read = read_all(sources);
-    let mut diagnostics = read.diagnostics;
-    if read.has_quests {
-        let quests = &read.quests;
-        let file = if quests.quests.is_empty() && !quests.questlines.is_empty() {
-            quests::QUESTLINES_FILE
-        } else {
-            quests::QUESTS_FILE
-        };
-        diagnostics.push(Diagnostic {
-            file: file.to_owned(),
-            key: None,
-            message: "quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)".to_owned(),
-        });
-    }
-    if diagnostics.is_empty() {
-        Ok(read.content)
-    } else {
-        Err(ContentError { diagnostics })
-    }
+    parse_quests(sources).map(|(content, _)| content)
 }
 
 /// Validates content and its quests from the text of their files, reporting every problem
-/// at once, as `parse_content` does, but without refusing content for having quests.
+/// at once, as `parse_content` does, keeping both.
 pub fn parse_quests(sources: Sources<'_>) -> Result<(Content, Quests), ContentError> {
     let read = read_all(sources);
     if read.diagnostics.is_empty() {
@@ -209,8 +191,6 @@ struct Read {
     content: Content,
     quests: Quests,
     diagnostics: Vec<Diagnostic>,
-    /// Whether the quest files hold anything, read cleanly or not.
-    has_quests: bool,
 }
 
 fn read_all(sources: Sources<'_>) -> Read {
@@ -477,10 +457,6 @@ fn read_all(sources: Sources<'_>) -> Read {
             message: problem.to_string(),
         }
     }));
-    let has_quests = !quests.is_empty()
-        || diagnostics.iter().any(|diagnostic| {
-            [quests::QUESTS_FILE, quests::QUESTLINES_FILE].contains(&diagnostic.file.as_str())
-        });
     // The checks across quests wait until every file reads cleanly, so they never report
     // something missing only because it couldn't be read.
     if read_cleanly {
@@ -495,7 +471,6 @@ fn read_all(sources: Sources<'_>) -> Read {
         content,
         quests,
         diagnostics,
-        has_quests,
     }
 }
 

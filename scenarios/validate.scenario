@@ -3,7 +3,7 @@
 # file's JSON Schema for editors.
 
 # Every problem and warning, as load gives them, then a summary.
-assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 4 outcomes
+assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline
 
 # No one starts within the Ashen Circle's tolerance: the nearest is Vex, √(30² + 40²) away.
 validate crates/cli/tests/fixtures/worlds/lonely

@@ -450,7 +450,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Bare ids where one id is meant:** a `giver` and a `standing` requirement name a faction or a character by id alone, as one id namespace allows (P-35). A choice's inline `effects` are written as an outcome's are, `standing = { factions = { … }, characters = { … } }`, so the two read the same.
   - **A choice has an `outcome`, inline `effects`, or neither,** never both. `next` is required, and `"end"` is reserved for the end of the quest, so no stage may be called `end`.
   - **Quest checks wait until every file reads cleanly,** as checks across bands and rungs do (P-36, P-41), so they never report something missing only because it couldn't be read. A quest or questline with a reading problem is reported and left out.
-  - **Content with quests doesn't load until Q5** (D-20; Q4, which checks lockouts, was split from the loading). The quests are checked first, then loading reports that a world with quests can't load yet: at `quests.toml`, or at `questlines.toml` if only that file has anything in it. Quest files with nothing in them load.
+  - **Content with quests doesn't load until Q5** (D-20; Q4, which checks lockouts, was split from the loading; lifted in Q5, P-71). The quests are checked first, then loading reports that a world with quests can't load yet: at `quests.toml`, or at `questlines.toml` if only that file has anything in it. Quest files with nothing in them load.
   - **`quests <dir> [<quest>]` reads and checks a directory without loading it,** since no world with quests loads yet. It lists each quest with its giver (its own, or its questline's), its questline, its stage count and its gate, then each questline's steps; with a quest, that quest's stages and choices. Warnings follow, as after `load`.
   - **Saves don't fingerprint the quest files yet,** since no world with quests loads; they join the fingerprint when worlds with quests do.
   - **Riverhold's quests are in `docs/examples/riverhold`, not `content/sample`,** because the sample has to load for every scenario; the sample gets them once worlds with quests load. Two outcomes the quests use, `turned_in_vex` and `took_a_bribe`, are added to the example.
@@ -491,6 +491,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Locks are checked like references,** with a "did you mean": another quest, or a stage of one, once each. Never the choice's own quest, whose choices exclude each other by design (§17.2). Stale locks are warnings, looked for once every reference resolves.
   - **Q4 was split.** The check is here; worlds with quests load in Q5, and playing them moves to Q6.
   - *Why:* the check never misses a lockout the content can cause, and finishes in time that grows with the content. Meanwhile the give and take a character can always undo needs no declaration.
+
+- **P-71 · How a world loads with its quests** (made in Q5, 2026-10-08; replaces P-67's gate, its unfingerprinted quest files and its quest-free sample).
+  - **One load reads both,** content and quests, with every problem reported at once; the world is refused if either has any (D-20). `parse_content` and `load_dir` keep only the content, for the many callers that need no more.
+  - **The session keeps the quests beside the world,** read again by `reload` and `restore`, for Q6 to play. The world itself never holds them: quests depend on reputation, never the other way (P-64).
+  - **Quest warnings come with the world's,** from `load` and `validate`. `quests` alone lists the loaded world's quests without them, since they came with `load`.
+  - **`validate` counts quests and questlines only where there are any,** so the summary of a world without them reads as before.
+  - **Saves fingerprint the quest files.** A save from before has none for them, and a file with no fingerprint counts as not there, so it restores while the directory still has no quest files. The save format's version stays at 1: nothing it holds has changed shape.
+  - **Riverhold's quests join `content/sample`,** with `turned_in_vex` and `took_a_bribe`. The complete example now loads too.
+  - *Why:* a world that's complete loads with everything in it, and saves notice any change to what it was played on.
 
 ## Open
 

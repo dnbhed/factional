@@ -757,8 +757,8 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - **Errors stop loading.** Nothing is half-loaded, and the CLI keeps the world it already had.
 - **Warnings don't stop loading.** `load` prints them after its summary. `factional validate <dir>` (T1) gives the same problems and warnings without starting a session, then a summary, and exits 1 if the world wouldn't load.
 - **The rules live in `factional-reputation`,** and quests' in `factional-quests` (`Quests::problems`, against the reputation content). `World::new` runs the checks and refuses invalid content, so a host that builds content in code, not from TOML, gets the same protection. `factional-content` turns each problem's location into `file: key.path`.
-- **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. `docs/examples/riverhold` is read and checked too, quests included, without the settings the engine doesn't read yet, which a test names (T1).
-- **Until a world can carry them (Q5), content with quests doesn't load** (D-20). Its quests are checked like everything else, lockouts included, and loading then reports that a world with quests can't load yet (P-67).
+- **CI loads `content/sample` on every PR,** quests included (Q5). Broken sample content fails the build like a compile error. `docs/examples/riverhold` is read and checked too, without any settings the engine doesn't read yet, which a test names (T1).
+- **Quests are checked with everything else** (Q1 to Q4), lockouts included, and a world loads with them only if they pass (D-20). Their warnings come with the world's (Q5, P-71).
 - **Each check arrives with the increment that adds the content it checks**, never later.
 
 | Check | Kind | Added in |
@@ -806,7 +806,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 ### 12.3 Designer workflow
 
 - `factional validate <dir>` to check a world without starting a session (T1).
-- `quests <dir> [<quest>]` in the REPL to list a world's quests and questlines, or one quest's stages and choices with what each locks, read and checked without loading it (Q1, Q4).
+- `quests <dir> [<quest>]` in the REPL to list a world's quests and questlines, or one quest's stages and choices with what each locks, read and checked without loading it (Q1, Q4); `quests` alone lists the loaded world's (Q5).
 - `factional schema <file>` for a content file's JSON Schema, to get completion and checking in an editor (T1).
 - `factional repl`, then `load content/sample`, to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
@@ -891,6 +891,10 @@ Every example in this document and in PLAN.md uses this world. It lives in `cont
 | `rescued_merchant` | good +6; merchant_ava +30; city_watch +10 |
 | `fenced_the_crown_jewels` | lantern_guild +30 |
 | `sowed_discord` | city_watch ↔ temple −40; city_watch → ashen_circle −20 (Q2) |
+| `turned_in_vex` | law +4; city_watch +15, lantern_guild −25; vex personally −40 (the Watch's oath) |
+| `took_a_bribe` | law −4, good −2; lantern_guild +10; vex personally +15 (the Watch's oath) |
+
+**Quests** (from Q5; DESIGN.md §17) are those of [the complete example](examples/riverhold/quests.toml): the Watch's career in four steps (the oath; two of three odd jobs, the third closing; optional favours; captain, needing sergeant and standing 40), Ava's lost ring, the world's long winter, and the Ashen Circle's rite. Its choices declare two lockouts (§17.3).
 
 **Knowledge** (from K1; designed in K0)
 
@@ -1090,6 +1094,6 @@ By contrast, a choice taking 40 from the Watch doesn't lock out `watch_oath.oath
 | Q2 (done) | Relation effects, as outcomes and inline effects (D-30) |
 | Q3 (done) | Reachability: no dead stages in a quest, no unreachable step in a questline, no gate that can never hold, no quest that can never start |
 | Q4 (done) | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
-| Q5 | Worlds with quests load: the gate comes off, saves fingerprint the quest files, and Riverhold's quests join `content/sample` |
+| Q5 (done) | Worlds with quests load: the gate comes off, the session keeps the quests, saves fingerprint the quest files, and Riverhold's quests join `content/sample` |
 | Q6 | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI |
 

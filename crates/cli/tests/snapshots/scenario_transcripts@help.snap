@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/scenarios.rs
-assertion_line: 24
 expression: transcript
 input_file: scenarios/help.scenario
 ---
@@ -13,6 +12,7 @@ restore <file>                                                                  
 reload                                                                                          re-read the loaded content, replay this session's commands on it, and show what changed
 validate <dir>                                                                                  check the content files in <dir> as load would, without loading them
 quests <dir> [<quest>]                                                                          the quests and questlines in <dir>, read and checked without loading them, or one quest's stages and choices
+quests                                                                                          list the loaded world's quests and questlines
 characters                                                                                      list the loaded characters
 show character <id>                                                                             a character's alignment and its label
 factions                                                                                        list the factions, with their tolerances and members

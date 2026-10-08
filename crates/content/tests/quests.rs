@@ -254,28 +254,35 @@ fn quests_load_from_a_directory_with_its_content() {
 }
 
 #[test]
-fn a_world_with_quests_does_not_load_yet() {
+fn a_world_whose_quests_reconcile_loads() {
     let found = with(&text("quests.toml"), &text("questlines.toml"), |sources| {
+        diagnostics(parse_content(sources))
+    });
+    assert_eq!(found, Vec::<String>::new());
+}
+
+#[test]
+fn a_world_whose_quests_dont_reconcile_doesnt_load() {
+    let quests = text("quests.toml").replacen(", locks = [\"circle_rite\"]", "", 1);
+    let found = with(&quests, &text("questlines.toml"), |sources| {
         diagnostics(parse_content(sources))
     });
     assert_eq!(
         found,
         [
-            "quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)"
+            "quests.toml: the_long_winter.stages[0].choices[0]: may lock out circle_rite: it can lower standing with ashen_circle, which no action raises, below the 10.00 its gate needs; declare it in locks"
         ]
     );
 }
 
 #[test]
-fn questlines_alone_are_reported_at_their_own_file() {
+fn questlines_alone_are_checked_against_the_quests_there_are() {
     let found = with("", &text("questlines.toml"), |sources| {
         diagnostics(parse_content(sources))
     });
     assert_eq!(
-        found.last().map(String::as_str),
-        Some(
-            "questlines.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)"
-        )
+        found.first().map(String::as_str),
+        Some("questlines.toml: watch_career.steps[0].quests[0]: unknown quest 'watch_oath'")
     );
 }
 
@@ -288,7 +295,7 @@ fn empty_quest_files_load() {
 }
 
 #[test]
-fn quest_problems_are_reported_before_the_quests_cannot_load() {
+fn quest_problems_stop_a_world_loading() {
     let (quests, questlines) = (
         text("quests.toml").replacen("giver = \"merchant_ava\"", "giver = \"merchant_eva\"", 1),
         text("questlines.toml"),
@@ -296,10 +303,11 @@ fn quest_problems_are_reported_before_the_quests_cannot_load() {
     let found = with(&quests, &questlines, |sources| {
         diagnostics(parse_content(sources))
     });
-    assert_eq!(found.len(), 2, "{found:?}");
     assert_eq!(
-        found[0],
-        "quests.toml: lost_ring.giver: unknown faction or character 'merchant_eva' (did you mean 'merchant_ava'?)"
+        found,
+        [
+            "quests.toml: lost_ring.giver: unknown faction or character 'merchant_eva' (did you mean 'merchant_ava'?)"
+        ]
     );
 }
 

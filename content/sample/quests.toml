@@ -1,5 +1,6 @@
-# quests.toml: quests, each a list of stages with choices (DESIGN.md §17.1). (Q1, Q4; they
-# load with the world, Q5)
+#:schema ../../schema/quests.schema.json
+# Riverhold's quests: each a list of stages with choices (DESIGN.md §17.1). List them with
+# `quests`, once the world is loaded.
 #
 # name:     the quest's name, as shown
 # giver:    whose quest it is: a faction or a character, by id; left out, the world's own

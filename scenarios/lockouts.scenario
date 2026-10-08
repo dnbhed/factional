@@ -5,7 +5,7 @@
 # Riverhold declares its two: the Ashen Rite's war, and the Long Winter's sharing, which
 # spills into lost standing with the Circle.
 quests docs/examples/riverhold circle_rite
-assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
+assert validate docs/examples/riverhold == docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline
 
 # A war, drift the Watch expels for, a move no action can undo, and standing no action
 # raises, all undeclared.

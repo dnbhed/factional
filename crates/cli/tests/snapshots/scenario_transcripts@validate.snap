@@ -3,7 +3,7 @@ source: crates/cli/tests/scenarios.rs
 expression: transcript
 input_file: scenarios/validate.scenario
 ---
-> assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 4 outcomes
+> assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline
 > validate crates/cli/tests/fixtures/worlds/lonely
 warning: factions.toml: ashen_circle.tolerance: no one starts within The Ashen Circle's tolerance of 30.00: the nearest is vex, 50.00 away
 crates/cli/tests/fixtures/worlds/lonely loads, with 1 warning: 3 characters, 2 factions, 0 actions, 0 relations and 0 outcomes
