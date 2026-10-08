@@ -1,0 +1,13 @@
+[patrol]
+name = "Patrol"
+
+[[patrol.stages]]
+id = "walk"
+choices = [{ id = "done", next = "end" }]
+
+[inspect]
+name = "Inspect"
+
+[[inspect.stages]]
+id = "look"
+choices = [{ id = "done", next = "end" }]

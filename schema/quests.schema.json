@@ -1,0 +1,232 @@
+{
+  "$defs": {
+    "choice": {
+      "additionalProperties": false,
+      "description": "An outcome or effects, or neither.",
+      "not": {
+        "required": [
+          "outcome",
+          "effects"
+        ]
+      },
+      "properties": {
+        "effects": {
+          "additionalProperties": false,
+          "description": "Effects written here, of the kinds an outcome has.",
+          "properties": {
+            "alignment": {
+              "$ref": "#/$defs/delta"
+            },
+            "standing": {
+              "$ref": "#/$defs/standing"
+            }
+          },
+          "type": "object"
+        },
+        "id": {
+          "description": "The choice's id, unique within its stage.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "next": {
+          "description": "A later stage's id, or end for the end of the quest.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "outcome": {
+          "description": "An outcome from outcomes.toml.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "next"
+      ],
+      "type": "object"
+    },
+    "delta": {
+      "additionalProperties": false,
+      "description": "The change to alignment.",
+      "properties": {
+        "good": {
+          "description": "How far it moves this axis; left out, it doesn't.",
+          "type": "number"
+        },
+        "law": {
+          "description": "How far it moves this axis; left out, it doesn't.",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "quest": {
+      "additionalProperties": false,
+      "properties": {
+        "giver": {
+          "description": "Whose quest it is: a faction or a character, by id; left out, the world's own.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The quest's name, as shown.",
+          "type": "string"
+        },
+        "requires": {
+          "$ref": "#/$defs/requires",
+          "description": "What must hold to start it."
+        },
+        "stages": {
+          "description": "The stages, in order.",
+          "items": {
+            "$ref": "#/$defs/stage"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "stages"
+      ],
+      "type": "object"
+    },
+    "requires": {
+      "additionalProperties": false,
+      "description": "What must hold for the character doing the quest, all of it.",
+      "properties": {
+        "done": {
+          "description": "Progress through other quests: quest (finished), quest.stage (reached) or quest.stage.choice (made).",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "member": {
+          "description": "Factions the character must be in.",
+          "items": {
+            "description": "A faction's id.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "not_member": {
+          "description": "Factions the character must not be in.",
+          "items": {
+            "description": "A faction's id.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rank_at_least": {
+          "additionalProperties": {
+            "description": "A rank on the faction's ladder.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "description": "At least this rank in each faction, by faction id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "standing": {
+          "additionalProperties": {
+            "description": "At least this, -100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "Standing with each faction or character, by id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "within_tolerance": {
+          "description": "Factions whose member tolerance the character must be within, as the faction pictures them.",
+          "items": {
+            "description": "A faction's id.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "stage": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "description": "What the character can choose here.",
+          "items": {
+            "$ref": "#/$defs/choice"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "description": "The stage's id, unique within its quest; not end.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "requires": {
+          "$ref": "#/$defs/requires",
+          "description": "What must hold to reach it."
+        }
+      },
+      "required": [
+        "id",
+        "choices"
+      ],
+      "type": "object"
+    },
+    "standing": {
+      "additionalProperties": false,
+      "description": "Standing, by faction or character id, -100 to 100.",
+      "properties": {
+        "characters": {
+          "additionalProperties": {
+            "description": "-100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "By character id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "factions": {
+          "additionalProperties": {
+            "description": "-100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "By faction id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "$ref": "#/$defs/quest"
+  },
+  "description": "Quests, each a table keyed by its id: a list of stages, each with choices (DESIGN.md §17.1).",
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "title": "quests.toml",
+  "type": "object"
+}

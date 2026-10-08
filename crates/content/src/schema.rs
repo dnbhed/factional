@@ -5,6 +5,7 @@
 //! `factional validate`.
 
 use factional_core::Fixed;
+use factional_quests::{Leftovers, Next, Requirements};
 use factional_reputation::{
     AXIS_LIMIT, Axis, Balance, ComponentKind, Condition, Consequence, DriftPolicy, Faction,
     KnowledgeModel, Metric, TableKind, TargetCurve, Toward,
@@ -12,13 +13,15 @@ use factional_reputation::{
 use serde_json::{Map, Value, json};
 
 /// The content files with a schema, by name without `.toml`, in the order `load` reads them.
-pub const SCHEMA_FILES: [&str; 6] = [
+pub const SCHEMA_FILES: [&str; 8] = [
     "balance",
     "factions",
     "characters",
     "actions",
     "relations",
     "outcomes",
+    "quests",
+    "questlines",
 ];
 
 /// The JSON Schema for `file`, such as `factions`; `None` if there's no such content file.
@@ -82,6 +85,27 @@ pub fn schema(file: &str) -> Option<Value> {
                 ("outcome", outcome()),
                 ("delta", delta()),
                 ("standing", named_standing()),
+            ],
+        ),
+        "quests" => (
+            "Quests, each a table keyed by its id: a list of stages, each with choices (DESIGN.md §17.1).",
+            by_id("#/$defs/quest"),
+            vec![
+                ("quest", quest()),
+                ("stage", stage()),
+                ("choice", choice()),
+                ("requires", requires()),
+                ("delta", delta()),
+                ("standing", named_standing()),
+            ],
+        ),
+        "questlines" => (
+            "Questlines, each a table keyed by its id: an ordered list of steps, each a group of quests done in any order (DESIGN.md §17.1).",
+            by_id("#/$defs/questline"),
+            vec![
+                ("questline", questline()),
+                ("step", step()),
+                ("requires", requires()),
             ],
         ),
         _ => return None,
@@ -962,4 +986,190 @@ fn relation() -> Value {
         { "required": ["from", "to"], "not": { "required": ["between"] } },
     ]);
     relation
+}
+
+/// A quest's or a questline's `giver`.
+fn giver(whose: &str) -> Value {
+    id(&format!(
+        "Whose {whose} it is: a faction or a character, by id; left out, the world's own."
+    ))
+}
+
+/// A `requires` table: what must hold for the character doing the quest.
+fn requires() -> Value {
+    let factions = |description: &str| list(id("A faction's id."), description);
+    let keys: Map<String, Value> = Requirements::KEYS
+        .into_iter()
+        .map(|key| {
+            let schema = match key {
+                "standing" => id_table(
+                    within_axis("At least this, -100 to 100."),
+                    "Standing with each faction or character, by id.",
+                ),
+                "member" => factions("Factions the character must be in."),
+                "not_member" => factions("Factions the character must not be in."),
+                "rank_at_least" => id_table(
+                    id("A rank on the faction's ladder."),
+                    "At least this rank in each faction, by faction id.",
+                ),
+                "within_tolerance" => factions(
+                    "Factions whose member tolerance the character must be within, as the faction pictures them.",
+                ),
+                _ => list(
+                    json!({ "type": "string", "pattern": PROGRESS_PATTERN }),
+                    "Progress through other quests: quest (finished), quest.stage (reached) or quest.stage.choice (made).",
+                ),
+            };
+            (key.to_owned(), schema)
+        })
+        .collect();
+    json!({
+        "type": "object",
+        "description": "What must hold for the character doing the quest, all of it.",
+        "properties": keys,
+        "additionalProperties": false,
+    })
+}
+
+/// A quest, a stage or a choice in `done`: up to three ids joined by dots.
+const PROGRESS_PATTERN: &str = "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$";
+
+fn quest() -> Value {
+    object(
+        [
+            ("name", text("The quest's name, as shown.")),
+            ("giver", giver("quest")),
+            (
+                "requires",
+                json!({ "$ref": "#/$defs/requires", "description": "What must hold to start it." }),
+            ),
+            (
+                "stages",
+                json!({
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/stage" },
+                    "description": "The stages, in order.",
+                }),
+            ),
+        ],
+        &["name", "stages"],
+        None,
+    )
+}
+
+fn stage() -> Value {
+    object(
+        [
+            (
+                "id",
+                id(&format!(
+                    "The stage's id, unique within its quest; not {}.",
+                    Next::END
+                )),
+            ),
+            (
+                "requires",
+                json!({ "$ref": "#/$defs/requires", "description": "What must hold to reach it." }),
+            ),
+            (
+                "choices",
+                json!({
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/choice" },
+                    "description": "What the character can choose here.",
+                }),
+            ),
+        ],
+        &["id", "choices"],
+        None,
+    )
+}
+
+fn choice() -> Value {
+    let mut choice = object(
+        [
+            ("id", id("The choice's id, unique within its stage.")),
+            ("outcome", id("An outcome from outcomes.toml.")),
+            (
+                "effects",
+                object(
+                    [
+                        ("alignment", json!({ "$ref": "#/$defs/delta" })),
+                        ("standing", json!({ "$ref": "#/$defs/standing" })),
+                    ],
+                    &[],
+                    Some("Effects written here, of the kinds an outcome has."),
+                ),
+            ),
+            (
+                "next",
+                id(&format!(
+                    "A later stage's id, or {} for the end of the quest.",
+                    Next::END
+                )),
+            ),
+        ],
+        &["id", "next"],
+        Some("An outcome or effects, or neither."),
+    );
+    choice["not"] = json!({ "required": ["outcome", "effects"] });
+    choice
+}
+
+fn questline() -> Value {
+    object(
+        [
+            ("name", text("The questline's name, as shown.")),
+            ("giver", giver("questline")),
+            (
+                "steps",
+                json!({
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/step" },
+                    "description": "The steps, in order: each opens once the one before is complete and its own requirements hold.",
+                }),
+            ),
+        ],
+        &["name", "steps"],
+        None,
+    )
+}
+
+fn step() -> Value {
+    object(
+        [
+            (
+                "quests",
+                json!({
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "pattern": ID_PATTERN },
+                    "description": "The step's quests, open together and done in any order. A quest is in at most one questline, at one step.",
+                }),
+            ),
+            (
+                "need",
+                json!({ "type": "integer", "minimum": 0, "description": "How many of the quests must be done to move on, at most all of them; left out, all. 0 makes them optional." }),
+            ),
+            (
+                "requires",
+                json!({ "$ref": "#/$defs/requires", "description": "Added to the gate of every quest in the step." }),
+            ),
+            (
+                "leftovers",
+                with_default(
+                    one_of(
+                        Leftovers::ALL.map(Leftovers::key),
+                        "When need is fewer than all the quests: whether the rest stay open, or close once the character starts a quest of the next step.",
+                    ),
+                    Leftovers::default().key().into(),
+                ),
+            ),
+        ],
+        &["quests"],
+        None,
+    )
 }

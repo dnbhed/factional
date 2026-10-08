@@ -1,6 +1,7 @@
 //! Loads designer content (TOML) from disk, validates it, and turns mistakes into diagnostics
 //! that name the file and the key path (DESIGN.md §12.1).
 
+mod quests;
 mod reader;
 mod save;
 mod schema;
@@ -13,6 +14,7 @@ use std::path::Path;
 use std::{fmt, fs, io};
 
 use factional_core::{Curve, Fixed, suggest};
+use factional_quests::Quests;
 use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Axis, Balance, Band, BandProblem,
     Bands, Character, CharacterId, ComponentKind, Condition, ConflictRule, Consequence, Content,
@@ -53,6 +55,8 @@ pub struct Sources<'a> {
     pub actions: Option<&'a str>,
     pub relations: Option<&'a str>,
     pub outcomes: Option<&'a str>,
+    pub quests: Option<&'a str>,
+    pub questlines: Option<&'a str>,
 }
 
 const BALANCE_FILE: &str = "balance.toml";
@@ -62,52 +66,81 @@ const ACTIONS_FILE: &str = "actions.toml";
 const RELATIONS_FILE: &str = "relations.toml";
 const OUTCOMES_FILE: &str = "outcomes.toml";
 
-/// Reads and validates the content files in `dir`, with a fingerprint of exactly what was
-/// read, for saves (T4).
-pub fn load_dir_fingerprinted(dir: &Path) -> Result<(Content, Fingerprint), ContentError> {
-    let unreadable = |error: io::Error| ContentError {
-        diagnostics: vec![Diagnostic {
-            file: dir.display().to_string(),
-            key: None,
-            message: format!("cannot read the directory: {error}"),
-        }],
-    };
-    if let Err(error) = fs::read_dir(dir) {
-        return Err(unreadable(error));
-    }
-    let read = |file: &str| match fs::read_to_string(dir.join(file)) {
-        Ok(text) => Ok(Some(text)),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(ContentError {
+/// The text of each content file in a directory, as read; `None` for a missing file.
+struct Texts {
+    balance: Option<String>,
+    factions: Option<String>,
+    characters: Option<String>,
+    actions: Option<String>,
+    relations: Option<String>,
+    outcomes: Option<String>,
+    quests: Option<String>,
+    questlines: Option<String>,
+}
+
+impl Texts {
+    /// Reads every content file in `dir`.
+    fn read(dir: &Path) -> Result<Texts, ContentError> {
+        let unreadable = |error: io::Error| ContentError {
             diagnostics: vec![Diagnostic {
-                file: file.to_owned(),
+                file: dir.display().to_string(),
                 key: None,
-                message: format!("cannot read the file: {error}"),
+                message: format!("cannot read the directory: {error}"),
             }],
-        }),
-    };
-    let balance = read(BALANCE_FILE)?;
-    let factions = read(FACTIONS_FILE)?;
-    let characters = read(CHARACTERS_FILE)?;
-    let actions = read(ACTIONS_FILE)?;
-    let outcomes = read(OUTCOMES_FILE)?;
-    let relations = read(RELATIONS_FILE)?;
+        };
+        if let Err(error) = fs::read_dir(dir) {
+            return Err(unreadable(error));
+        }
+        let read = |file: &str| match fs::read_to_string(dir.join(file)) {
+            Ok(text) => Ok(Some(text)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(ContentError {
+                diagnostics: vec![Diagnostic {
+                    file: file.to_owned(),
+                    key: None,
+                    message: format!("cannot read the file: {error}"),
+                }],
+            }),
+        };
+        Ok(Texts {
+            balance: read(BALANCE_FILE)?,
+            factions: read(FACTIONS_FILE)?,
+            characters: read(CHARACTERS_FILE)?,
+            actions: read(ACTIONS_FILE)?,
+            outcomes: read(OUTCOMES_FILE)?,
+            relations: read(RELATIONS_FILE)?,
+            quests: read(quests::QUESTS_FILE)?,
+            questlines: read(quests::QUESTLINES_FILE)?,
+        })
+    }
+
+    fn sources(&self) -> Sources<'_> {
+        Sources {
+            balance: self.balance.as_deref(),
+            factions: self.factions.as_deref(),
+            characters: self.characters.as_deref(),
+            actions: self.actions.as_deref(),
+            relations: self.relations.as_deref(),
+            outcomes: self.outcomes.as_deref(),
+            quests: self.quests.as_deref(),
+            questlines: self.questlines.as_deref(),
+        }
+    }
+}
+
+/// Reads and validates the content files in `dir`, with a fingerprint of exactly what was
+/// read, for saves (T4). The quest files aren't in it: a world with quests doesn't load yet.
+pub fn load_dir_fingerprinted(dir: &Path) -> Result<(Content, Fingerprint), ContentError> {
+    let texts = Texts::read(dir)?;
     let fingerprint = Fingerprint::of([
-        (BALANCE_FILE, balance.as_deref()),
-        (FACTIONS_FILE, factions.as_deref()),
-        (CHARACTERS_FILE, characters.as_deref()),
-        (ACTIONS_FILE, actions.as_deref()),
-        (OUTCOMES_FILE, outcomes.as_deref()),
-        (RELATIONS_FILE, relations.as_deref()),
+        (BALANCE_FILE, texts.balance.as_deref()),
+        (FACTIONS_FILE, texts.factions.as_deref()),
+        (CHARACTERS_FILE, texts.characters.as_deref()),
+        (ACTIONS_FILE, texts.actions.as_deref()),
+        (OUTCOMES_FILE, texts.outcomes.as_deref()),
+        (RELATIONS_FILE, texts.relations.as_deref()),
     ]);
-    let content = parse_content(Sources {
-        balance: balance.as_deref(),
-        factions: factions.as_deref(),
-        characters: characters.as_deref(),
-        actions: actions.as_deref(),
-        relations: relations.as_deref(),
-        outcomes: outcomes.as_deref(),
-    })?;
+    let content = parse_content(texts.sources())?;
     Ok((content, fingerprint))
 }
 
@@ -116,9 +149,70 @@ pub fn load_dir(dir: &Path) -> Result<Content, ContentError> {
     load_dir_fingerprinted(dir).map(|(content, _)| content)
 }
 
+/// Reads and checks the content files in `dir` with their quests, as `parse_quests` does.
+pub fn load_quests(dir: &Path) -> Result<(Content, Quests), ContentError> {
+    parse_quests(Texts::read(dir)?.sources())
+}
+
 /// Validates content from the text of its files, reporting every problem at once: each
-/// file's own, in file order, then problems across files (P-32).
+/// file's own, in file order, then problems across files (P-32). Quests are checked too,
+/// but until the check that they reconcile is built (Q4), content with quests doesn't load
+/// (D-20): that's reported after every other problem.
 pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
+    let read = read_all(sources);
+    let mut diagnostics = read.diagnostics;
+    if read.has_quests {
+        let quests = &read.quests;
+        let file = if quests.quests.is_empty() && !quests.questlines.is_empty() {
+            quests::QUESTLINES_FILE
+        } else {
+            quests::QUESTS_FILE
+        };
+        diagnostics.push(Diagnostic {
+            file: file.to_owned(),
+            key: None,
+            message: "quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)".to_owned(),
+        });
+    }
+    if diagnostics.is_empty() {
+        Ok(read.content)
+    } else {
+        Err(ContentError { diagnostics })
+    }
+}
+
+/// Validates content and its quests from the text of their files, reporting every problem
+/// at once, as `parse_content` does, but without refusing content for having quests.
+pub fn parse_quests(sources: Sources<'_>) -> Result<(Content, Quests), ContentError> {
+    let read = read_all(sources);
+    if read.diagnostics.is_empty() {
+        Ok((read.content, read.quests))
+    } else {
+        Err(ContentError {
+            diagnostics: read.diagnostics,
+        })
+    }
+}
+
+/// Quests' warnings: things allowed but probably not meant, each with its file and key.
+pub fn quest_warnings(quests: &Quests) -> Vec<Diagnostic> {
+    quests
+        .warnings()
+        .iter()
+        .map(quests::warning_diagnostic)
+        .collect()
+}
+
+/// Everything read from the files, and every problem found.
+struct Read {
+    content: Content,
+    quests: Quests,
+    diagnostics: Vec<Diagnostic>,
+    /// Whether the quest files hold anything, read cleanly or not.
+    has_quests: bool,
+}
+
+fn read_all(sources: Sources<'_>) -> Read {
     let mut reports = Vec::new();
     let balance = read_file(BALANCE_FILE, sources.balance, &mut reports, read_balance);
     let factions = read_file(
@@ -176,10 +270,28 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         outcomes: outcomes.unwrap_or_default(),
     };
 
+    let quest_list = read_file(
+        quests::QUESTS_FILE,
+        sources.quests,
+        &mut reports,
+        quests::read_quests,
+    );
+    let questlines = read_file(
+        quests::QUESTLINES_FILE,
+        sources.questlines,
+        &mut reports,
+        quests::read_questlines,
+    );
+    let quests = Quests {
+        quests: quest_list.unwrap_or_default(),
+        questlines: questlines.unwrap_or_default(),
+    };
+
     let mut diagnostics: Vec<Diagnostic> = reports
         .into_iter()
         .flat_map(|report| report.diagnostics)
         .collect();
+    let read_cleanly = diagnostics.is_empty();
     diagnostics.extend(content.problems().iter().map(|problem| {
         let (file, key) = match problem {
             ContentProblem::SharedId(id) => (FACTIONS_FILE, id.to_string()),
@@ -361,10 +473,25 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
             message: problem.to_string(),
         }
     }));
-    if diagnostics.is_empty() {
-        Ok(content)
-    } else {
-        Err(ContentError { diagnostics })
+    let has_quests = !quests.is_empty()
+        || diagnostics.iter().any(|diagnostic| {
+            [quests::QUESTS_FILE, quests::QUESTLINES_FILE].contains(&diagnostic.file.as_str())
+        });
+    // The checks across quests wait until every file reads cleanly, so they never report
+    // something missing only because it couldn't be read.
+    if read_cleanly {
+        diagnostics.extend(
+            quests
+                .problems(&content)
+                .iter()
+                .map(quests::problem_diagnostic),
+        );
+    }
+    Read {
+        content,
+        quests,
+        diagnostics,
+        has_quests,
     }
 }
 
@@ -3719,6 +3846,7 @@ mod tests {
             factions: Some("[watch]\nname = \"The Watch\""),
             relations: Some("[[relation]]\nfrom = \"watch\"\nto = \"guild\""),
             outcomes: Some("[fine]\nweight = 3"),
+            ..Sources::default()
         }));
         assert_eq!(
             found,

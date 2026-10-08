@@ -89,6 +89,13 @@ impl<'t> Section<'t> {
         self.to_fixed(key, value, report)
     }
 
+    /// The value under a key that isn't a fixed field name, such as a faction's id in
+    /// `rank_at_least = { city_watch = "sergeant" }`; `None` if it's absent.
+    pub(crate) fn value_any(&mut self, key: &str) -> Option<&'t Value> {
+        self.mark(key);
+        self.table.get(key)
+    }
+
     /// The table under a key that isn't a fixed field name, such as a profile's id in
     /// `[inertia.profiles.hardening]`. `None` if it's absent or not a table (that's reported).
     pub(crate) fn table_any(
@@ -171,6 +178,20 @@ impl<'t> Section<'t> {
     /// A required whole number of at least 0, such as a count of ticks.
     pub(crate) fn whole(&mut self, key: &'static str, report: &mut Report) -> Option<u64> {
         let whole = match self.required(key, report)? {
+            Value::Integer(whole) => u64::try_from(*whole).ok(),
+            _ => None,
+        };
+        if whole.is_none() {
+            report.error(&self.path_to(key), "expected a whole number, like 100");
+        }
+        whole
+    }
+
+    /// A whole number of at least 0 that may be left out; `None` if it's absent or wrong (a
+    /// wrong one is reported).
+    pub(crate) fn optional_whole(&mut self, key: &'static str, report: &mut Report) -> Option<u64> {
+        let value = self.get(key)?;
+        let whole = match value {
             Value::Integer(whole) => u64::try_from(*whole).ok(),
             _ => None,
         };

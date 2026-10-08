@@ -68,6 +68,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - K5 — exposure (D-24): `Expose { character, faction, witnesses }` and `MembershipExposed`, the news of it rippling; the `exposed` rule table (`keep`, `demote`, `expel`; built in, expel) judged by each faction that learns and is at war with the secret one, `LeftFaction { Exposed }`, and wars opening between memberships each side knows of; `assess_exposure`; `expose … [--seen-by] [--explain]`; Riverhold's exposed table, with the double agent made in play rather than at the start (P-63); done 2026-10-07 (#36)
 - E0 — host engine: the user chose not yet, so X-2 stays deferred and the module stays engine-agnostic; E1 and T5, which need a host, wait at the end of the queue, and Q0 is next; done 2026-10-07 (#37)
 - Q0 — design pass for quests (DESIGN.md §17): quests of stages with choices, gated by requirements such as rank or standing; questlines of steps, each a group of quests done in any order, `need` of them (possibly 0) to move on, leftovers kept or closed as the designer chooses; given by a faction, a character or no one; reconciling as every lockout declared in `locks`, found by conservative bounds checked choice by stage and gate, never combinations; the user's choices D-25 to D-29, settling X-4, with P-64 to P-66; Q1 to Q5 outlined; done 2026-10-07 (#38, #39)
+- Q1 — quest content: a new `factional-quests` crate (between reputation and content; ids from a macro now in core); `quests.toml` (name, giver, gate, stages with requirements and choices with an outcome or inline effects and `next`) and `questlines.toml` (giver, steps with `quests`, `need`, `requires`, `leftovers`); every reference and range checked with a "did you mean", once every file reads cleanly; a warning for leftovers that can't be left; content with quests doesn't load until Q4; `quests <dir> [<quest>]`; the two JSON Schemas; Riverhold's quests in the complete example (P-67); done 2026-10-08 (#40)
 
 ---
 
@@ -93,11 +94,7 @@ Waits until a game needs a host; then a host is chosen and E1 builds its adapter
 
 ## Beyond this module
 
-### Q1 · Quest content — P3 · Next
-
-`factional-quests`, `quests.toml` and `questlines.toml`: quests (name, an optional giver: a faction, a character or no one, and a gate of requirements), stages (requirements) and choices (an outcome or inline effects, `next`), and questlines of steps (`quests`, `need`, `requires`, `leftovers`); every reference and range checked, including `need` against the step's quests and a quest in at most one questline, and their JSON Schemas; the CLI lists quests and questlines (DESIGN.md §17.1, D-25, D-28, D-29, P-64, P-66). Until Q4's lockout check exists, `validate` checks quests but a world with quests doesn't load (D-20), so Q1 to Q4 build the checks before Q5 plays anything.
-
-### Q2 · Quest effects — P3 · Outline
+### Q2 · Quest effects — P3 · Next
 
 `join`, `leave`, `promote`, `demote` and `relation` effects, as outcomes and inline, sent to this module as commands (§17.1).
 

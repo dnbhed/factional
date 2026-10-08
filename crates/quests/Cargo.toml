@@ -1,0 +1,14 @@
+[package]
+name = "factional-quests"
+description = "Factional's quest module: quests of stages and choices, questlines of steps, and the checks that keep them complete."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+factional-core = { path = "../core" }
+factional-reputation = { path = "../reputation" }
+
+[lints]
+workspace = true

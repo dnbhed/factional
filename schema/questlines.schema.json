@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "questline": {
+      "additionalProperties": false,
+      "properties": {
+        "giver": {
+          "description": "Whose questline it is: a faction or a character, by id; left out, the world's own.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "name": {
+          "description": "The questline's name, as shown.",
+          "type": "string"
+        },
+        "steps": {
+          "description": "The steps, in order: each opens once the one before is complete and its own requirements hold.",
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "requires": {
+      "additionalProperties": false,
+      "description": "What must hold for the character doing the quest, all of it.",
+      "properties": {
+        "done": {
+          "description": "Progress through other quests: quest (finished), quest.stage (reached) or quest.stage.choice (made).",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "member": {
+          "description": "Factions the character must be in.",
+          "items": {
+            "description": "A faction's id.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "not_member": {
+          "description": "Factions the character must not be in.",
+          "items": {
+            "description": "A faction's id.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rank_at_least": {
+          "additionalProperties": {
+            "description": "A rank on the faction's ladder.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "description": "At least this rank in each faction, by faction id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "standing": {
+          "additionalProperties": {
+            "description": "At least this, -100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number"
+          },
+          "description": "Standing with each faction or character, by id.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "within_tolerance": {
+          "description": "Factions whose member tolerance the character must be within, as the faction pictures them.",
+          "items": {
+            "description": "A faction's id.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "step": {
+      "additionalProperties": false,
+      "properties": {
+        "leftovers": {
+          "default": "open",
+          "description": "When need is fewer than all the quests: whether the rest stay open, or close once the character starts a quest of the next step.",
+          "enum": [
+            "open",
+            "close"
+          ],
+          "type": "string"
+        },
+        "need": {
+          "description": "How many of the quests must be done to move on, at most all of them; left out, all. 0 makes them optional.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "quests": {
+          "description": "The step's quests, open together and done in any order. A quest is in at most one questline, at one step.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "requires": {
+          "$ref": "#/$defs/requires",
+          "description": "Added to the gate of every quest in the step."
+        }
+      },
+      "required": [
+        "quests"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "$ref": "#/$defs/questline"
+  },
+  "description": "Questlines, each a table keyed by its id: an ordered list of steps, each a group of quests done in any order (DESIGN.md §17.1).",
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9_]*$"
+  },
+  "title": "questlines.toml",
+  "type": "object"
+}

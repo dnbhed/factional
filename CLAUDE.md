@@ -41,8 +41,8 @@ Keep increments small: one concept, reviewable in one sitting. If an increment g
 ## Architecture rules
 
 - **Fundamental: a world loads only if it is complete (D-20).** Every reference must resolve, every rule must be able to decide, and nothing a game could reach may be left undefined. Never add content, a rule or a feature whose completeness can't be checked at load time. Keep effects and rules declarative, so their reach can be computed without running the game (DESIGN.md §16). If you can't see how a change could be checked, stop and ask. In the future quest module, each faction's quests and questlines must reconcile with every other faction they affect, and with those factions' questlines, at every stage.
-- **Dependency direction.** Dependencies point one way: `core ← reputation ← content ← cli`. Nothing depends on `cli`.
-- **No I/O in the core.** `factional-core` and `factional-reputation` do no filesystem access, networking, stdout/stderr, environment variables, clock reads or randomness. Content arrives as values; time arrives as `AdvanceTime`.
+- **Dependency direction.** Dependencies point one way: `core ← reputation ← quests ← content ← cli`. Nothing depends on `cli`.
+- **No I/O in the core.** `factional-core`, `factional-reputation` and `factional-quests` do no filesystem access, networking, stdout/stderr, environment variables, clock reads or randomness. Content arrives as values; time arrives as `AdvanceTime`.
 - **One way in.** `World::execute(Command) -> Result<Vec<Event>, CommandError>` is the only way to change state.
   - A failed command changes nothing and emits nothing.
   - Applying events is the only thing that mutates state.

@@ -5,6 +5,7 @@
 mod charts;
 mod check;
 mod compare;
+mod quests;
 mod repl;
 mod script;
 mod session;
