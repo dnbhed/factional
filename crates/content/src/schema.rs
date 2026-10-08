@@ -8,7 +8,7 @@ use factional_core::Fixed;
 use factional_quests::{Leftovers, Next, Requirements};
 use factional_reputation::{
     AXIS_LIMIT, Axis, Balance, ComponentKind, Condition, Consequence, DriftPolicy, Faction,
-    KnowledgeModel, Metric, TableKind, TargetCurve, Toward,
+    KnowledgeModel, Metric, RelationShift, TableKind, TargetCurve, Toward,
 };
 use serde_json::{Map, Value, json};
 
@@ -85,6 +85,7 @@ pub fn schema(file: &str) -> Option<Value> {
                 ("outcome", outcome()),
                 ("delta", delta()),
                 ("standing", named_standing()),
+                ("relation_shift", relation_shift()),
             ],
         ),
         "quests" => (
@@ -97,6 +98,7 @@ pub fn schema(file: &str) -> Option<Value> {
                 ("requires", requires()),
                 ("delta", delta()),
                 ("standing", named_standing()),
+                ("relation_shift", relation_shift()),
             ],
         ),
         "questlines" => (
@@ -955,10 +957,54 @@ fn outcome() -> Value {
         [
             ("alignment", json!({ "$ref": "#/$defs/delta" })),
             ("standing", json!({ "$ref": "#/$defs/standing" })),
+            ("relations", relation_shifts()),
         ],
         &[],
         None,
     )
+}
+
+/// `relations = [...]`: shifts in how factions regard each other (D-30).
+fn relation_shifts() -> Value {
+    list(
+        json!({ "$ref": "#/$defs/relation_shift" }),
+        "Shifts in how factions regard each other, applied after the standing changes, each direction stopping at -100 and 100. A direction is shifted at most once.",
+    )
+}
+
+/// One relation shift: `between = [a, b]` or `from` and `to`, with `by`.
+fn relation_shift() -> Value {
+    let mut shift = object(
+        [
+            (
+                "between",
+                json!({
+                    "type": "array",
+                    "items": { "type": "string", "pattern": ID_PATTERN },
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Two factions whose regard for each other both shift.",
+                }),
+            ),
+            ("from", id("The faction whose regard shifts.")),
+            ("to", id("The faction it regards.")),
+            (
+                "by",
+                ranged(
+                    Some(-RelationShift::LIMIT),
+                    Some(RelationShift::LIMIT),
+                    "How far each direction moves, -200 to 200.",
+                ),
+            ),
+        ],
+        &["by"],
+        Some("Either between = [a, b], or from and to."),
+    );
+    shift["oneOf"] = json!([
+        { "required": ["between"], "not": { "anyOf": [{ "required": ["from"] }, { "required": ["to"] }] } },
+        { "required": ["from", "to"], "not": { "required": ["between"] } },
+    ]);
+    shift
 }
 
 fn relation() -> Value {
@@ -1098,6 +1144,7 @@ fn choice() -> Value {
                     [
                         ("alignment", json!({ "$ref": "#/$defs/delta" })),
                         ("standing", json!({ "$ref": "#/$defs/standing" })),
+                        ("relations", relation_shifts()),
                     ],
                     &[],
                     Some("Effects written here, of the kinds an outcome has."),

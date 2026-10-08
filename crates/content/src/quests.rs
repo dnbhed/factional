@@ -14,7 +14,10 @@ use factional_reputation::{Effects, FactionId, OutcomeId, Party, RankId};
 use toml::{Table, Value};
 
 use crate::reader::{Report, Section};
-use crate::{Diagnostic, STANDING_EXAMPLE, read_delta, read_named_standing, read_tables};
+use crate::{
+    Diagnostic, STANDING_EXAMPLE, read_delta, read_named_standing, read_relation_shifts,
+    read_tables, shift_key,
+};
 
 pub(crate) const QUESTS_FILE: &str = "quests.toml";
 pub(crate) const QUESTLINES_FILE: &str = "questlines.toml";
@@ -112,10 +115,12 @@ fn read_choice(mut section: Section<'_>, report: &mut Report) -> Option<Choice> 
                 .optional_table("standing", STANDING_EXAMPLE, report)
                 .map(|standing| read_named_standing(standing, report))
                 .unwrap_or_default();
+            let relations = read_relation_shifts(&mut block, report);
             block.finish(report);
             Effects {
                 alignment,
                 standing,
+                relations,
             }
         });
     let effects = match (outcome, inline) {
@@ -392,6 +397,10 @@ pub(crate) fn problem_diagnostic(problem: &QuestProblem) -> Diagnostic {
                 format!("{}.effects.standing.{kind}.{party}", choice(at)),
             )
         }
+        QuestProblem::EffectRelation { at, problem } => (
+            QUESTS_FILE,
+            format!("{}.effects.{}", choice(at), shift_key(problem)),
+        ),
         QuestProblem::UnknownNext { at, .. } | QuestProblem::BackwardNext { at, .. } => {
             (QUESTS_FILE, format!("{}.next", choice(at)))
         }

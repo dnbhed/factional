@@ -20,10 +20,10 @@ use factional_reputation::{
     Bands, Character, CharacterId, ComponentKind, Condition, ConflictRule, Consequence, Content,
     ContentProblem, ContentWarning, DispositionWeights, DriftPolicy, Effects, Faction, FactionId,
     Inertia, InertiaProfile, InvalidId, KnowledgeModel, Metric, Outcome, OutcomeId, Party,
-    ProfileId, ProfileUser, Rank, RankId, RankKey, RankRef, Relation, RelationEnds, RelationSide,
-    Rule, StandingEffects, StandingKey, StandingOwner, StartingMembership, TableKind, TableOwner,
-    TableProblem, TargetCurve, ToleranceProblem, Tolerances, Toward, Verdict, WeightProblem,
-    Weights,
+    ProfileId, ProfileUser, Rank, RankId, RankKey, RankRef, Relation, RelationEnds, RelationShift,
+    RelationSide, Rule, ShiftProblem, StandingEffects, StandingKey, StandingOwner,
+    StartingMembership, TableKind, TableOwner, TableProblem, TargetCurve, ToleranceProblem,
+    Tolerances, Toward, Verdict, WeightProblem, Weights,
 };
 use reader::{Report, Section};
 use serde::Deserialize;
@@ -466,6 +466,9 @@ fn read_all(sources: Sources<'_>) -> Read {
                 CHARACTERS_FILE,
                 format!("{character}.memberships[{index}].secret"),
             ),
+            ContentProblem::OutcomeRelation { outcome, problem } => {
+                (OUTCOMES_FILE, format!("{outcome}.{}", shift_key(problem)))
+            }
         };
         Diagnostic {
             file: file.to_owned(),
@@ -936,6 +939,21 @@ fn standing_table<Id: Ord>(
     values
 }
 
+/// Where a relation shift's problem is, under its effects: `relations[0].between[1]`, or
+/// `relations[0].by`, or the shift itself.
+fn shift_key(problem: &ShiftProblem) -> String {
+    let shift = format!("relations[{}]", problem.index());
+    match problem {
+        ShiftProblem::UnknownFaction { side, .. } => match side {
+            RelationSide::Between(end) => format!("{shift}.between[{end}]"),
+            RelationSide::From => format!("{shift}.from"),
+            RelationSide::To => format!("{shift}.to"),
+        },
+        ShiftProblem::OutOfRange { .. } => format!("{shift}.by"),
+        ShiftProblem::SelfRelation { .. } | ShiftProblem::Repeated { .. } => shift,
+    }
+}
+
 /// Where a `standing` block's owner lives: its file and key.
 fn standing_owner(owner: &StandingOwner) -> (&'static str, String) {
     match owner {
@@ -1022,6 +1040,48 @@ fn read_relations(text: &str, report: &mut Report) -> Vec<Relation> {
 
 /// One `[[relation]]`: `between = [a, b]`, or `from` and `to`, and a `value`.
 fn read_relation(mut section: Section<'_>, report: &mut Report) -> Option<Relation> {
+    let ends = read_ends(&mut section, report);
+    let value = section.fixed("value", report);
+    section.finish(report);
+    Some(Relation {
+        ends: ends?,
+        value: value?,
+    })
+}
+
+const SHIFT_EXAMPLE: &str = "{ between = [\"city_watch\", \"temple\"], by = -10.0 }";
+
+/// An optional `relations = [...]` of shifts, as an outcome or a choice's effects write them;
+/// none if left out. A shift that can't be read is reported and left out.
+fn read_relation_shifts(section: &mut Section<'_>, report: &mut Report) -> Vec<RelationShift> {
+    let path = section.path_to("relations");
+    let Some(items) = section.optional_list("relations", &format!("[{SHIFT_EXAMPLE}]"), report)
+    else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let at = format!("{path}[{index}]");
+            let Value::Table(fields) = item else {
+                report.error(&at, format!("expected a table, like {SHIFT_EXAMPLE}"));
+                return None;
+            };
+            let mut shift = Section::new(fields, at);
+            let ends = read_ends(&mut shift, report);
+            let by = shift.fixed("by", report);
+            shift.finish(report);
+            Some(RelationShift {
+                ends: ends?,
+                by: by?,
+            })
+        })
+        .collect()
+}
+
+/// The factions a relation or a shift names: `between = [a, b]`, or `from` and `to`.
+fn read_ends(section: &mut Section<'_>, report: &mut Report) -> Option<RelationEnds> {
     const PAIR: &str = "[\"city_watch\", \"lantern_guild\"]";
     let between = section.optional_value("between").map(|value| {
         let path = section.path_to("between");
@@ -1049,7 +1109,7 @@ fn read_relation(mut section: Section<'_>, report: &mut Report) -> Option<Relati
         ids.map(|ids| (ids[0].clone(), ids[1].clone()))
     });
     let directed = section.has_any(&["from", "to"]);
-    let ends = match (between, directed) {
+    match (between, directed) {
         (Some(_), true) => {
             report.error(
                 section.path(),
@@ -1078,13 +1138,7 @@ fn read_relation(mut section: Section<'_>, report: &mut Report) -> Option<Relati
                 to: to?,
             })
         }
-    };
-    let value = section.fixed("value", report);
-    section.finish(report);
-    Some(Relation {
-        ends: ends?,
-        value: value?,
-    })
+    }
 }
 
 /// One faction in `factions.toml`.
@@ -1556,12 +1610,14 @@ fn read_outcome(id: OutcomeId, fields: &toml::Table, report: &mut Report) -> Out
         .optional_table("standing", STANDING_EXAMPLE, report)
         .map(|standing| read_named_standing(standing, report))
         .unwrap_or_default();
+    let relations = read_relation_shifts(&mut section, report);
     section.finish(report);
     Outcome {
         id,
         effects: Effects {
             alignment,
             standing,
+            relations,
         },
     }
 }
@@ -3906,5 +3962,187 @@ mod tests {
     fn reports_curve_text_that_is_not_toml() {
         let error = parse_curve("[[0, 1.0], [5").unwrap_err();
         assert!(!error.is_empty());
+    }
+
+    // Relation effects (Q2)
+
+    const TWO_FACTIONS: &str = r#"
+        [watch]
+        name = "The Watch"
+        alignment = { law = 60.0, good = 10.0 }
+        tolerance = 40.0
+        [[watch.ranks]]
+        id = "recruit"
+
+        [temple]
+        name = "The Temple"
+        alignment = { law = 30.0, good = 80.0 }
+        tolerance = 40.0
+        [[temple.ranks]]
+        id = "acolyte"
+    "#;
+
+    fn outcomes_with(text: &str) -> Result<Content, ContentError> {
+        parse_content(Sources {
+            factions: Some(TWO_FACTIONS),
+            outcomes: Some(text),
+            ..Sources::default()
+        })
+    }
+
+    #[test]
+    fn reads_an_outcomes_relation_shifts_in_the_order_written() {
+        let content = outcomes_with(
+            r#"
+            [discord]
+            relations = [
+              { between = ["watch", "temple"], by = -40.0 },
+              { from = "temple", to = "watch", by = 5 },
+            ]
+            "#,
+        );
+        // The second shifts a direction the first already does.
+        assert_eq!(
+            problems(content),
+            [
+                "outcomes.toml: discord.relations[1]: temple → watch is already shifted by relations[0]"
+            ]
+        );
+        let content = outcomes_with(
+            r#"
+            [discord]
+            relations = [
+              { between = ["watch", "temple"], by = -40.0 },
+              { from = "temple", to = "temple_x", by = 5 },
+            ]
+            "#,
+        );
+        assert_eq!(
+            problems(content),
+            [
+                "outcomes.toml: discord.relations[1].to: unknown faction 'temple_x' (did you mean 'temple'?)"
+            ]
+        );
+        let content = outcomes_with(
+            r#"
+            [discord]
+            relations = [{ between = ["watch", "temple"], by = -40.0 }, { from = "watch", to = "temple", by = 0 }]
+            [other]
+            relations = [{ from = "temple", to = "watch", by = 200.0 }]
+            "#,
+        );
+        assert_eq!(
+            problems(content),
+            [
+                "outcomes.toml: discord.relations[1]: watch → temple is already shifted by relations[0]"
+            ]
+        );
+        let content = outcomes_with(
+            r#"
+            [discord]
+            relations = [{ between = ["watch", "temple"], by = -40.0 }, { from = "watch", to = "watch", by = 1 }]
+            [other]
+            relations = [{ from = "temple", to = "watch", by = 250.0 }, { between = ["temple", "temple"], by = 1 }]
+            "#,
+        );
+        assert_eq!(
+            problems(content),
+            [
+                "outcomes.toml: discord.relations[1]: a faction can't have a relation with itself",
+                "outcomes.toml: other.relations[0].by: 250.00 is outside -200.00..200.00",
+                "outcomes.toml: other.relations[1]: a faction can't have a relation with itself",
+            ]
+        );
+        let content = outcomes_with(
+            r#"
+            [discord]
+            relations = [{ between = ["wach", "temple"], by = -40.0 }, { from = "temple", to = "watch", by = -200 }]
+            "#,
+        );
+        assert_eq!(
+            problems(content),
+            [
+                "outcomes.toml: discord.relations[0].between[0]: unknown faction 'wach' (did you mean 'watch'?)"
+            ]
+        );
+        let shifts = |text: &str| {
+            outcomes_with(text).map(|content| {
+                content.outcomes[&OutcomeId::new("discord").expect("valid")]
+                    .effects
+                    .relations
+                    .clone()
+            })
+        };
+        let faction = |id: &str| FactionId::new(id).expect("valid id");
+        assert_eq!(
+            shifts(
+                r#"
+                [discord]
+                relations = [{ from = "watch", to = "temple", by = -40.0 }, { from = "temple", to = "watch", by = -200 }]
+                "#
+            ),
+            Ok(vec![
+                RelationShift {
+                    ends: RelationEnds::Directed {
+                        from: faction("watch"),
+                        to: faction("temple"),
+                    },
+                    by: h(-40_00),
+                },
+                RelationShift {
+                    ends: RelationEnds::Directed {
+                        from: faction("temple"),
+                        to: faction("watch"),
+                    },
+                    by: h(-200_00),
+                },
+            ])
+        );
+        assert_eq!(
+            shifts("[discord]\nrelations = [{ between = [\"temple\", \"watch\"], by = 200.0 }]"),
+            Ok(vec![RelationShift {
+                ends: RelationEnds::Between(faction("temple"), faction("watch")),
+                by: h(200_00),
+            }])
+        );
+        assert_eq!(shifts("[discord]"), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn relation_shifts_are_written_like_relations_with_by() {
+        assert_eq!(
+            problems(outcomes_with(
+                r#"
+                [discord]
+                relations = [
+                  { between = ["watch", "temple"], from = "watch", by = 1 },
+                  { from = "watch", to = "temple", value = 1 },
+                  { between = ["watch"], by = 1 },
+                  { between = ["watch", "temple"], by = "a lot" },
+                ]
+                "#
+            )),
+            [
+                "outcomes.toml: discord.relations[0]: give either between = [a, b], or from and to, not both",
+                "outcomes.toml: discord.relations[1]: missing 'by'",
+                "outcomes.toml: discord.relations[1]: unknown key 'value'",
+                "outcomes.toml: discord.relations[2].between: expected 2 factions, like [\"city_watch\", \"lantern_guild\"]",
+                "outcomes.toml: discord.relations[3].by: expected a number, like 25.0",
+            ]
+        );
+        assert_eq!(
+            problems(outcomes_with(
+                "[discord]\nrelations = { between = [\"watch\", \"temple\"] }"
+            )),
+            [
+                "outcomes.toml: discord.relations: expected a list, like [{ between = [\"city_watch\", \"temple\"], by = -10.0 }]"
+            ]
+        );
+        assert_eq!(
+            problems(outcomes_with("[discord]\nrelations = [3]")),
+            [
+                "outcomes.toml: discord.relations[0]: expected a table, like { between = [\"city_watch\", \"temple\"], by = -10.0 }"
+            ]
+        );
     }
 }

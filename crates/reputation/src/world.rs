@@ -14,10 +14,10 @@ use crate::{
     FactionId, Inertia, InertiaProfile, JoinAssessment, JoinBlock, JournalEntry, KnowledgeModel,
     Learned, LeaveReason, Membership, Metric, ModifierId, ModifierObserver, News, NextHop, Outcome,
     OutcomeId, Part, Party, Perception, ProfileId, PromotionAssessment, RankCheck, RankId, Reached,
-    Regard, Relation, RelationSide, RestoreError, Ripple, Role, Rule, SavedCommand, Shift, Spill,
-    StandingEffects, StandingKey, StandingOwner, TableDecision, TableKind, TableOwner,
-    TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict, Weights, Witnesses,
-    measure,
+    Regard, Relation, RelationShift, RelationSide, RestoreError, Ripple, Role, Rule, SavedCommand,
+    Shift, ShiftProblem, Spill, StandingEffects, StandingKey, StandingOwner, TableDecision,
+    TableKind, TableOwner, TableProblem, TableSource, TargetCurve, TargetRelation, Toward, Verdict,
+    Weights, Witnesses, measure,
 };
 
 /// World-wide rules and defaults from `balance.toml` (DESIGN.md §12).
@@ -311,6 +311,11 @@ pub enum ContentProblem {
         index: usize,
         faction: FactionId,
     },
+    /// Something wrong with an outcome's relation shifts.
+    OutcomeRelation {
+        outcome: OutcomeId,
+        problem: ShiftProblem,
+    },
 }
 
 /// What names an inertia profile.
@@ -518,6 +523,7 @@ impl Content {
             .chain(relations)
             .chain(starts_in_conflict)
             .chain(self.standing_problems())
+            .chain(self.outcome_relation_problems())
             .chain(self.disposition_problems())
             .chain(self.knowledge_problems())
             .collect()
@@ -826,6 +832,69 @@ impl Content {
             self.check_standing(&owner, &outcome.effects.standing, &mut problems);
         }
         problems
+    }
+
+    /// Every problem with a list of relation shifts, in order: each names two different
+    /// factions that exist, shifts by at most the width of a relation, and moves a direction
+    /// no earlier shift does. Outcomes, a quest's choices and `ApplyEffects` share it.
+    pub fn shift_problems(&self, shifts: &[RelationShift]) -> Vec<ShiftProblem> {
+        let mut problems = Vec::new();
+        // Where each direction was first shifted.
+        let mut shifted: BTreeMap<(FactionId, FactionId), usize> = BTreeMap::new();
+        for (index, shift) in shifts.iter().enumerate() {
+            let unknown: Vec<ShiftProblem> = shift
+                .ends
+                .named()
+                .into_iter()
+                .filter(|(_, faction)| !self.factions.contains_key(*faction))
+                .map(|(side, faction)| ShiftProblem::UnknownFaction {
+                    index,
+                    side,
+                    faction: faction.clone(),
+                    suggestion: closest(faction.as_str(), self.factions.keys()),
+                })
+                .collect();
+            if !unknown.is_empty() {
+                problems.extend(unknown);
+            } else if shift.ends.is_self() {
+                problems.push(ShiftProblem::SelfRelation { index });
+            } else if !(-RelationShift::LIMIT..=RelationShift::LIMIT).contains(&shift.by) {
+                problems.push(ShiftProblem::OutOfRange {
+                    index,
+                    by: shift.by,
+                });
+            } else {
+                for (from, to) in shift.ends.directions() {
+                    match shifted.get(&(from.clone(), to.clone())) {
+                        Some(&first) => problems.push(ShiftProblem::Repeated {
+                            index,
+                            from,
+                            to,
+                            first,
+                        }),
+                        None => {
+                            shifted.insert((from, to), index);
+                        }
+                    }
+                }
+            }
+        }
+        problems
+    }
+
+    /// Each outcome's relation shifts, outcomes in id order.
+    fn outcome_relation_problems(&self) -> Vec<ContentProblem> {
+        self.outcomes
+            .values()
+            .flat_map(|outcome| {
+                self.shift_problems(&outcome.effects.relations)
+                    .into_iter()
+                    .map(|problem| ContentProblem::OutcomeRelation {
+                        outcome: outcome.id.clone(),
+                        problem,
+                    })
+            })
+            .collect()
     }
 
     /// Each named party must exist (with a suggestion if not), and its value be within ±100.
@@ -1169,6 +1238,7 @@ impl fmt::Display for ContentProblem {
                 f,
                 "{contact} already lists {character}: a contact works both ways, so list it on one side only"
             ),
+            ContentProblem::OutcomeRelation { problem, .. } => problem.fmt(f),
             ContentProblem::StandingOutOfRange { value, .. }
             | ContentProblem::LeaveStandingOutOfRange { value, .. }
             | ContentProblem::ExpelStandingOutOfRange { value, .. }
@@ -2123,6 +2193,9 @@ impl World {
                         return Err(CommandError::ValueOutOfRange { value: change });
                     }
                 }
+                if let Some(problem) = self.content.shift_problems(&effects.relations).first() {
+                    return Err(CommandError::RelationShift(problem.clone()));
+                }
                 self.existing_witnesses(witnesses)?;
                 let mut changes = vec![Change::EffectsApplied {
                     source: source.clone(),
@@ -2136,7 +2209,8 @@ impl World {
     }
 
     /// The changes from applying `effects` to `character`, seen by `witnesses`: alignment
-    /// as an action at scale 1.00 would move it, then standing. The parties the effects name
+    /// as an action at scale 1.00 would move it, then standing, then relation shifts, so
+    /// standing spills through the relations as they were. The parties the effects name
     /// always know; who else learns of the shift is as for an act (DESIGN.md §10.1).
     fn effect_changes(
         &self,
@@ -2172,6 +2246,26 @@ impl World {
             add(&mut deltas, party, change);
         }
         changes.extend(self.standing_changes(character, deltas));
+        for shift in &effects.relations {
+            for (from, to) in shift.ends.directions() {
+                let before = self
+                    .state
+                    .relations
+                    .get(&(from.clone(), to.clone()))
+                    .copied()
+                    .unwrap_or_default();
+                // Both are checked, so the sum is at most ±300.
+                let after = (before + shift.by).clamp(-AXIS_LIMIT, AXIS_LIMIT);
+                if after != before {
+                    changes.push(Change::RelationChanged {
+                        from,
+                        to,
+                        before,
+                        after,
+                    });
+                }
+            }
+        }
         changes.extend(news);
         changes
     }
@@ -6084,6 +6178,7 @@ mod tests {
                 effects: Effects {
                     alignment: AlignmentDelta::default(),
                     standing: named(&[("city_watch", -20_00)], &[("captain_hale", -10_00)]),
+                    relations: Vec::new(),
                 },
             },
             Outcome {
@@ -6094,6 +6189,7 @@ mod tests {
                         good: h(6_00),
                     },
                     standing: named(&[("city_watch", 10_00)], &[("ava", 30_00)]),
+                    relations: Vec::new(),
                 },
             },
         ];
@@ -6445,6 +6541,7 @@ mod tests {
         let effects = Effects {
             alignment: AlignmentDelta::default(),
             standing: named(&[("temple", 25_00)], &[]),
+            relations: Vec::new(),
         };
         let command = Command::ApplyEffects {
             source: "quest:lost_relic".to_owned(),
@@ -6508,6 +6605,7 @@ mod tests {
             effects: Effects {
                 alignment: AlignmentDelta::default(),
                 standing,
+                relations: Vec::new(),
             },
         };
         assert_eq!(
@@ -6573,6 +6671,7 @@ mod tests {
             effects: Effects {
                 alignment: AlignmentDelta::default(),
                 standing: named(&[("city_wach", -20_00)], &[]),
+                relations: Vec::new(),
             },
         };
         let mut company = faction("free_company", -10_00, 0, None);
@@ -6692,6 +6791,7 @@ mod tests {
                 effects: Effects {
                     alignment: AlignmentDelta::default(),
                     standing: named(&[(faction, standing)], &[]),
+                    relations: Vec::new(),
                 },
             })
             .expect("accepted");
@@ -7851,6 +7951,7 @@ mod tests {
                         good: h(100_00),
                     },
                     standing: StandingEffects::default(),
+                    relations: Vec::new(),
                 },
                 witnesses: seen_by(&["ava"]),
             })
@@ -7883,6 +7984,7 @@ mod tests {
                         good: h(20_00),
                     },
                     standing: StandingEffects::default(),
+                    relations: Vec::new(),
                 },
                 witnesses: seen_by(&["hale"]),
             })
@@ -8236,6 +8338,7 @@ mod tests {
                 effects: Effects {
                     alignment: AlignmentDelta::default(),
                     standing: named(&[("city_watch", amount)], &[]),
+                    relations: Vec::new(),
                 },
                 witnesses: Witnesses::Everyone,
             })
@@ -8650,6 +8753,7 @@ mod tests {
                     effects: Effects {
                         alignment,
                         standing: named,
+                        relations: Vec::new(),
                     },
                     witnesses: seen_by(&["ava"]),
                 })
@@ -9228,6 +9332,7 @@ mod tests {
                     good: h(6_00),
                 },
                 standing: StandingEffects::default(),
+                relations: Vec::new(),
             },
         };
         let mut inertia = Inertia::default();
@@ -9613,6 +9718,7 @@ mod tests {
             effects: Effects {
                 alignment: AlignmentDelta::default(),
                 standing: named(factions, &[]),
+                relations: Vec::new(),
             },
         }
     }
@@ -11637,6 +11743,7 @@ mod tests {
                 effects: Effects {
                     alignment: AlignmentDelta::default(),
                     standing: named(&[(faction, value)], &[("vex", value)]),
+                    relations: Vec::new(),
                 },
             });
         let watching = (any::<bool>(), who()).prop_map(|(watching, who)| {
@@ -12164,5 +12271,321 @@ mod tests {
                 }
             }
         }
+    }
+
+    // Relation effects (Q2, D-30)
+
+    fn shift_between(a: &str, b: &str, by: i64) -> RelationShift {
+        RelationShift {
+            ends: RelationEnds::Between(faction_id(a), faction_id(b)),
+            by: h(by),
+        }
+    }
+
+    fn shift_one_way(from: &str, to: &str, by: i64) -> RelationShift {
+        RelationShift {
+            ends: RelationEnds::Directed {
+                from: faction_id(from),
+                to: faction_id(to),
+            },
+            by: h(by),
+        }
+    }
+
+    fn relation_effects(shifts: Vec<RelationShift>) -> Command {
+        Command::ApplyEffects {
+            source: "quests".to_owned(),
+            character: id("player"),
+            effects: Effects {
+                relations: shifts,
+                ..Effects::default()
+            },
+            witnesses: Witnesses::Everyone,
+        }
+    }
+
+    fn relation_changed(from: &str, to: &str, before: i64, after: i64) -> Change {
+        Change::RelationChanged {
+            from: faction_id(from),
+            to: faction_id(to),
+            before: h(before),
+            after: h(after),
+        }
+    }
+
+    #[test]
+    fn an_outcome_shifts_relations_after_its_standing_in_the_order_written() {
+        let mut content = outcomes_content();
+        let discord = Outcome {
+            id: outcome_id("sowed_discord"),
+            effects: Effects {
+                standing: named(&[("lantern_guild", 5_00)], &[]),
+                relations: vec![
+                    shift_between("city_watch", "temple", -40_00),
+                    shift_one_way("city_watch", "free_company", -100_00),
+                ],
+                ..Effects::default()
+            },
+        };
+        content.outcomes.insert(discord.id.clone(), discord);
+        let mut world = World::new(content).expect("valid content");
+        let changes = payloads_of(
+            &mut world,
+            Command::ApplyOutcome {
+                outcome: outcome_id("sowed_discord"),
+                character: id("player"),
+                witnesses: Witnesses::Everyone,
+            },
+        );
+        let relations: Vec<&Change> = changes
+            .iter()
+            .filter(|change| matches!(change, Change::RelationChanged { .. }))
+            .collect();
+        // 60 − 40 = 20 both ways; −30 − 100 stops at −100.
+        assert_eq!(
+            relations,
+            [
+                &relation_changed("city_watch", "temple", 60_00, 20_00),
+                &relation_changed("temple", "city_watch", 60_00, 20_00),
+                &relation_changed("city_watch", "free_company", -30_00, -100_00),
+            ]
+        );
+        let last_standing = changes
+            .iter()
+            .rposition(|change| matches!(change, Change::StandingChanged { .. }))
+            .expect("standing changed");
+        let first_relation = changes
+            .iter()
+            .position(|change| matches!(change, Change::RelationChanged { .. }))
+            .expect("a relation changed");
+        assert!(last_standing < first_relation, "{changes:?}");
+        assert_eq!(
+            world
+                .relation(&faction_id("temple"), &faction_id("city_watch"))
+                .map(|regard| regard.value),
+            Some(h(20_00))
+        );
+    }
+
+    #[test]
+    fn a_relation_shift_stops_at_the_end_and_one_that_moves_nothing_says_nothing() {
+        let mut world = riverhold();
+        // −80 − 200 stops at −100; then nothing is left to move.
+        assert_eq!(
+            payloads_of(
+                &mut world,
+                relation_effects(vec![shift_one_way("city_watch", "lantern_guild", -200_00)])
+            ),
+            [
+                Change::EffectsApplied {
+                    source: "quests".to_owned(),
+                    character: id("player"),
+                    witnesses: Witnesses::Everyone,
+                },
+                relation_changed("city_watch", "lantern_guild", -80_00, -100_00),
+            ]
+        );
+        assert_eq!(
+            payloads_of(
+                &mut world,
+                relation_effects(vec![shift_one_way("city_watch", "lantern_guild", -1_00)])
+            ),
+            [Change::EffectsApplied {
+                source: "quests".to_owned(),
+                character: id("player"),
+                witnesses: Witnesses::Everyone,
+            }]
+        );
+        // 20 + 200 stops at 100, both ways.
+        assert_eq!(
+            payloads_of(
+                &mut world,
+                relation_effects(vec![shift_between("free_company", "lantern_guild", 200_00)])
+            )[1..],
+            [
+                relation_changed("free_company", "lantern_guild", 20_00, 100_00),
+                relation_changed("lantern_guild", "free_company", 20_00, 100_00),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_relation_shift_that_starts_a_war_opens_a_conflict_for_members_of_both() {
+        let mut world = world_of([
+            member_of(character("Hale", 60_00, 40_00), &["city_watch", "temple"]),
+            character("Player", 0, 0),
+        ]);
+        // 60 − 120 = −60, at or below the −50 conflict threshold.
+        let changes = payloads_of(
+            &mut world,
+            relation_effects(vec![shift_between("city_watch", "temple", -120_00)]),
+        );
+        assert!(
+            changes.contains(&Change::MembershipConflict {
+                character: id("hale"),
+                factions: (faction_id("city_watch"), faction_id("temple")),
+            }),
+            "{changes:?}"
+        );
+    }
+
+    #[test]
+    fn apply_effects_refuses_relation_shifts_that_cannot_be_made() {
+        let mut world = riverhold();
+        let mut problem = |shifts| match refused(&mut world, relation_effects(shifts)) {
+            CommandError::RelationShift(problem) => problem,
+            other => panic!("refused for another reason: {other:?}"),
+        };
+        assert_eq!(
+            problem(vec![shift_between("city_wach", "temple", 5_00)]),
+            ShiftProblem::UnknownFaction {
+                index: 0,
+                side: RelationSide::Between(0),
+                faction: faction_id("city_wach"),
+                suggestion: Some(faction_id("city_watch")),
+            }
+        );
+        assert_eq!(
+            problem(vec![
+                shift_between("city_watch", "temple", 5_00),
+                shift_one_way("temple", "templ", 5_00),
+            ]),
+            ShiftProblem::UnknownFaction {
+                index: 1,
+                side: RelationSide::To,
+                faction: faction_id("templ"),
+                suggestion: Some(faction_id("temple")),
+            }
+        );
+        assert_eq!(
+            problem(vec![shift_one_way("temple", "temple", 5_00)]),
+            ShiftProblem::SelfRelation { index: 0 }
+        );
+        assert_eq!(
+            problem(vec![shift_between("temple", "temple", 5_00)]),
+            ShiftProblem::SelfRelation { index: 0 }
+        );
+        for by in [200_01, -200_01] {
+            assert_eq!(
+                problem(vec![shift_between("city_watch", "temple", by)]),
+                ShiftProblem::OutOfRange {
+                    index: 0,
+                    by: h(by)
+                }
+            );
+        }
+        assert_eq!(
+            problem(vec![
+                shift_between("city_watch", "temple", 5_00),
+                shift_one_way("temple", "city_watch", 5_00),
+            ]),
+            ShiftProblem::Repeated {
+                index: 1,
+                from: faction_id("temple"),
+                to: faction_id("city_watch"),
+                first: 0,
+            }
+        );
+        for by in [200_00, -200_00] {
+            assert!(
+                world
+                    .execute(relation_effects(vec![shift_between(
+                        "city_watch",
+                        "temple",
+                        by
+                    )]))
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn an_outcomes_relation_shifts_are_checked_with_the_content() {
+        let mut content = outcomes_content();
+        let bad = Outcome {
+            id: outcome_id("bad_blood"),
+            effects: Effects {
+                relations: vec![
+                    shift_between("city_watch", "free_company", 5_00),
+                    shift_one_way("lantern_gild", "temple", 5_00),
+                    shift_one_way("temple", "temple", 5_00),
+                    shift_one_way("free_company", "city_watch", 250_00),
+                ],
+                ..Effects::default()
+            },
+        };
+        content.outcomes.insert(bad.id.clone(), bad);
+        let found: Vec<(ContentProblem, String)> = content
+            .problems()
+            .into_iter()
+            .map(|problem| {
+                let message = problem.to_string();
+                (problem, message)
+            })
+            .collect();
+        let outcome = |problem| ContentProblem::OutcomeRelation {
+            outcome: outcome_id("bad_blood"),
+            problem,
+        };
+        assert_eq!(
+            found,
+            [
+                (
+                    outcome(ShiftProblem::UnknownFaction {
+                        index: 1,
+                        side: RelationSide::From,
+                        faction: faction_id("lantern_gild"),
+                        suggestion: Some(faction_id("lantern_guild")),
+                    }),
+                    "unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)".to_owned()
+                ),
+                (
+                    outcome(ShiftProblem::SelfRelation { index: 2 }),
+                    "a faction can't have a relation with itself".to_owned()
+                ),
+                (
+                    outcome(ShiftProblem::OutOfRange {
+                        index: 3,
+                        by: h(250_00)
+                    }),
+                    "250.00 is outside -200.00..200.00".to_owned()
+                ),
+            ]
+        );
+        content
+            .outcomes
+            .get_mut(&outcome_id("bad_blood"))
+            .expect("there")
+            .effects
+            .relations = vec![
+            shift_between("city_watch", "free_company", 5_00),
+            shift_one_way("free_company", "city_watch", 5_00),
+        ];
+        assert_eq!(
+            content
+                .problems()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["free_company → city_watch is already shifted by relations[0]"]
+        );
+    }
+
+    #[test]
+    fn effects_without_relations_still_read_from_older_saves() {
+        let old: Effects = serde_json::from_str(
+            r#"{"alignment":{"law":"0.00","good":"6.00"},"standing":{"factions":{},"characters":{}}}"#,
+        )
+        .expect("an older save's effects read");
+        assert_eq!(old.relations, []);
+        let shifted = Effects {
+            relations: vec![shift_one_way("temple", "city_watch", -5_00)],
+            ..Effects::default()
+        };
+        let text = serde_json::to_string(&shifted).expect("writes");
+        assert_eq!(
+            serde_json::from_str::<Effects>(&text).expect("reads"),
+            shifted
+        );
     }
 }

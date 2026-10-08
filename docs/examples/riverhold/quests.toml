@@ -11,7 +11,9 @@
 #   choices:  one or more, each with
 #     id:       unique within the stage
 #     outcome:  an outcome from outcomes.toml, or
-#     effects:  the same kinds written here: alignment and standing; or neither
+#     effects:  the same kinds written here: alignment, standing and relations; or neither.
+#               Joining, leaving and promotion are never a quest's effects: they're the
+#               character's own actions (D-30).
 #     next:     a later stage's id, or "end"; choices only lead forward
 #
 # Requirements are about the character doing the quest, and all of them must hold:
@@ -127,6 +129,6 @@ name = "The Long Winter"
 [[the_long_winter.stages]]
 id = "stores"
 choices = [
-  { id = "share", effects = { alignment = { good = 6.0 }, standing = { factions = { temple = 10.0 } } }, next = "end" },
+  { id = "share", effects = { alignment = { good = 6.0 }, standing = { factions = { temple = 10.0 } }, relations = [{ between = ["temple", "city_watch"], by = 5.0 }] }, next = "end" },
   { id = "hoard", effects = { alignment = { good = -6.0 } }, next = "end" },
 ]

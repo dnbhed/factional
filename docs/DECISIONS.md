@@ -56,6 +56,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-27 · Loading checks it with conservative bounds** (agreed 2026-10-07 in Q0). The worst each choice can do is worked out from content alone and checked against each stage, pair by pair: it always finishes, and may ask the designer to declare a lockout that couldn't really happen (§17.3).
 - **D-28 · Quests and questlines belong to a faction, a character or no one** (agreed 2026-10-07 in Q0, at the user's direction). There are faction quests and questlines, and ones outside the factions: an optional `giver` names a faction or a character, or is left out for the world's own. Every quest is reconciled with every other, whoever owns it (§17.1).
 - **D-29 · A questline's steps are groups of quests, gated by rank or standing** (agreed 2026-10-07 in Q0, at the user's direction). A step's quests are open together and done in any order; the step is complete once a set number of them are done (`need`, all by default, possibly 0 when rank or standing should decide instead). A quest or a step can require a rank or standing in a faction, or anything else in the requirement vocabulary. The designer chooses, per step, whether quests left undone stay open or close once the character moves on; closing is a declared lockout (§17.1, §17.2).
+- **D-30 · Quests never change memberships or ranks; they can shift relations** (agreed 2026-10-08 in Q2, at the user's direction). Joining, leaving and promotion are always the character's own actions, taken independently, never a quest's effect. A quest's effects are alignment, standing, and shifts in how factions regard each other (DESIGN.md §17.1).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
 ## Proposed — 2026-10-04
@@ -422,12 +423,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A sibling crate, `factional-quests`,** depending on core and on this module: it reads this module's content to check itself at load, and changes the world only through commands (§11). It keeps each character's progress as its own events.
   - **Requirements are a closed vocabulary about the character doing the quest:** `standing`, `member`, `not_member`, `rank_at_least`, `within_tolerance` (by the faction's picture) and `done` (a quest, stage or choice).
   - **Two files:** `quests.toml` and `questlines.toml`. A quest in a questline belongs to its giver unless it names its own.
-  - **Effects are this module's commands as data:** today's alignment and standing, plus `join`, `leave`, `promote`, `demote` and `relation`, as outcomes or inline.
+  - **Effects are this module's commands as data:** alignment, standing and relation shifts, as outcomes or inline. Never memberships or ranks (D-30).
   - **For good means nothing in the content can undo it.**
     - **Standing** is undone if some action, which can be repeated, can raise it.
     - **Alignment** is undone if some action moves each axis back, with inertia that never stops it.
-    - **A lost membership or rank** is never counted as undone, since proving a way back in is too involved; a designer declares those.
-    - **Joining** is always undone, since leaving always succeeds.
+    - **A lost membership or rank** is never counted as undone, since proving a way back in is too involved; a designer declares those. A choice can only end one indirectly: through drift its alignment shift causes, or a war its relation shift starts.
+    - **Joining** is never a quest's effect (D-30), so no choice makes `not_member` false.
     - **A requirement on another quest's progress** names that quest, so it's a declared dependency, not a lockout.
   - **A declared lock that can't happen is a warning,** and every stage must be reachable within its quest, and every step within its questline (an error otherwise).
   - *Why:* lockouts that matter, such as lost memberships, wars and irreversible drift, get declared, while the everyday give and take of standing doesn't drown designers in declarations.
@@ -455,6 +456,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Riverhold's quests are in `docs/examples/riverhold`, not `content/sample`,** because the sample has to load for every scenario; the sample gets them once worlds with quests load. Two outcomes the quests use, `turned_in_vex` and `took_a_bribe`, are added to the example.
   - **What Q1 doesn't check:** a gate that can't hold (`member` and `not_member` of the same faction, or `done` on the quest itself) is reachability, which is Q3's.
   - *Why:* designers can write and check quests now, while D-20 keeps any world that has them from running before they can be reconciled.
+- **P-68 · How relation effects apply** (made in Q2, 2026-10-08).
+  - **Written as relations are, with `by`:** `relations = [{ between = [a, b], by = -40.0 }, { from = a, to = b, by = 10.0 }]`, on an outcome or a choice's `effects`. A shift, not a set value, so the same effect means the same thing wherever the relations stand.
+  - **`by` is within −200…200,** the whole width of a relation, and each direction stops at ±100.
+  - **Each direction is shifted at most once per effect.** Naming it twice is an error, reported at the second, rather than the shifts adding up silently.
+  - **After the alignment and standing changes,** so standing spills through the relations as they were before the effect. `RelationChanged` follows, `from → to` then `to → from`, in the order written. A direction that doesn't move emits nothing, and a war it starts opens as for `relate` (M9).
+  - **One check for every source:** `Content::shift_problems` checks outcomes at load, choices' inline effects through the quest module, and `ApplyEffects` at run time, which refuses with the first problem.
+  - **Saves stay readable:** effects without `relations` read as having none.
+  - **Fixed in passing:** DESIGN.md §13's outcomes table was missing `fenced_the_crown_jewels`.
+  - *Why:* a quest can reshape the factions' world the way a designer writes relations already, and a shift can never leave a relation out of range.
 
 ## Open
 

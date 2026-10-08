@@ -9,7 +9,7 @@ use factional_quests::{
 use factional_reputation::AlignmentDelta;
 
 use crate::check::count;
-use crate::session::{Outcome, hint, lines, named_effects};
+use crate::session::{Outcome, hint, lines, named_effects, named_shifts};
 
 /// `quests <dir> [<quest>]`: every quest and questline in `dir`, or one quest's stages and
 /// choices, then any warnings.
@@ -106,6 +106,10 @@ fn show(quests: &Quests, id: &QuestId) -> Vec<String> {
                     let standing = named_effects(&effects.standing);
                     if !standing.is_empty() {
                         line += &format!(" — standing: {}", standing.join(", "));
+                    }
+                    let relations = named_shifts(&effects.relations);
+                    if !relations.is_empty() {
+                        line += &format!(" — relations: {}", relations.join(", "));
                     }
                 }
             }
@@ -266,7 +270,7 @@ mod tests {
             output(
                 "the_long_winter — The Long Winter — the world's own\n\
                  1. stores\n\
-                 \x20  share — alignment: law 0.00, good 6.00 — standing: temple 10.00 — then the end\n\
+                 \x20  share — alignment: law 0.00, good 6.00 — standing: temple 10.00 — relations: temple ↔ city_watch 5.00 — then the end\n\
                  \x20  hoard — alignment: law 0.00, good -6.00 — then the end"
             )
         );

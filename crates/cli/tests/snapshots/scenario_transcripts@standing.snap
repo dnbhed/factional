@@ -25,6 +25,7 @@ loaded 6 characters from content/sample
 fenced_the_crown_jewels — standing: lantern_guild 30.00
 fined_by_watch — standing: city_watch -20.00, captain_hale -10.00
 rescued_merchant — alignment: law 0.00, good 6.00 — standing: city_watch 10.00, merchant_ava 30.00
+sowed_discord — relations: city_watch ↔ temple -40.00, city_watch → ashen_circle -20.00
 > outcome fined_by_watch player
 #11 at tick 0: outcome fined_by_watch applied to player
 #12 at tick 0: player's standing with city_watch moved from 2.80 to -17.20

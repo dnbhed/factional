@@ -21,10 +21,85 @@
         "alignment": {
           "$ref": "#/$defs/delta"
         },
+        "relations": {
+          "description": "Shifts in how factions regard each other, applied after the standing changes, each direction stopping at -100 and 100. A direction is shifted at most once.",
+          "items": {
+            "$ref": "#/$defs/relation_shift"
+          },
+          "type": "array"
+        },
         "standing": {
           "$ref": "#/$defs/standing"
         }
       },
+      "type": "object"
+    },
+    "relation_shift": {
+      "additionalProperties": false,
+      "description": "Either between = [a, b], or from and to.",
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "from"
+                ]
+              },
+              {
+                "required": [
+                  "to"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "between"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "between"
+            ]
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        }
+      ],
+      "properties": {
+        "between": {
+          "description": "Two factions whose regard for each other both shift.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "by": {
+          "description": "How far each direction moves, -200 to 200.",
+          "maximum": 200.0,
+          "minimum": -200.0,
+          "type": "number"
+        },
+        "from": {
+          "description": "The faction whose regard shifts.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "to": {
+          "description": "The faction it regards.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "by"
+      ],
       "type": "object"
     },
     "standing": {

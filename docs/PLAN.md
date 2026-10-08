@@ -69,6 +69,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - E0 — host engine: the user chose not yet, so X-2 stays deferred and the module stays engine-agnostic; E1 and T5, which need a host, wait at the end of the queue, and Q0 is next; done 2026-10-07 (#37)
 - Q0 — design pass for quests (DESIGN.md §17): quests of stages with choices, gated by requirements such as rank or standing; questlines of steps, each a group of quests done in any order, `need` of them (possibly 0) to move on, leftovers kept or closed as the designer chooses; given by a faction, a character or no one; reconciling as every lockout declared in `locks`, found by conservative bounds checked choice by stage and gate, never combinations; the user's choices D-25 to D-29, settling X-4, with P-64 to P-66; Q1 to Q5 outlined; done 2026-10-07 (#38, #39)
 - Q1 — quest content: a new `factional-quests` crate (between reputation and content; ids from a macro now in core); `quests.toml` (name, giver, gate, stages with requirements and choices with an outcome or inline effects and `next`) and `questlines.toml` (giver, steps with `quests`, `need`, `requires`, `leftovers`); every reference and range checked with a "did you mean", once every file reads cleanly; a warning for leftovers that can't be left; content with quests doesn't load until Q4; `quests <dir> [<quest>]`; the two JSON Schemas; Riverhold's quests in the complete example (P-67); done 2026-10-08 (#40)
+- Q2 — relation effects (D-30: quests never change memberships or ranks; joining, leaving and promotion are the character's own actions): `relations` shifts on outcomes and choices' inline effects, `between` or `from`/`to` with `by` (−200…200), applied after standing, each direction stopping at ±100 and shifted at most once; checked at load and by `ApplyEffects`; wars open as for `relate`; `outcomes` and `quests` show them; Riverhold's `sowed_discord`; DESIGN.md §17's effects and lockout table without joins and promotions (P-68); done 2026-10-08 (#41)
 
 ---
 
@@ -94,11 +95,7 @@ Waits until a game needs a host; then a host is chosen and E1 builds its adapter
 
 ## Beyond this module
 
-### Q2 · Quest effects — P3 · Next
-
-`join`, `leave`, `promote`, `demote` and `relation` effects, as outcomes and inline, sent to this module as commands (§17.1).
-
-### Q3 · Reachable stages — P3 · Outline
+### Q3 · Reachable stages — P3 · Next
 
 Every stage reachable along some path of its own quest, and every step of a questline from the steps before it; dead content is an error (§17.2, P-66).
 

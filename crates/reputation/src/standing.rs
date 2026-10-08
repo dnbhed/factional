@@ -3,7 +3,7 @@ use std::fmt;
 
 use factional_core::{Fixed, Ratio};
 
-use crate::{ActionId, AlignmentDelta, CharacterId, FactionId, OutcomeId};
+use crate::{ActionId, AlignmentDelta, CharacterId, FactionId, OutcomeId, RelationShift};
 
 /// Who holds a standing toward a character: a faction or another character (DESIGN.md §7.1).
 /// Factions come before characters, each in id order.
@@ -91,12 +91,15 @@ pub struct ActionStanding {
     pub named: StandingEffects,
 }
 
-/// What an outcome or another module changes about a character: alignment, as an action
-/// would move it, and standing (P-26).
+/// What an outcome or another module changes: the character's alignment, as an action would
+/// move it, and standing (P-26); and how factions regard each other (D-30).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Effects {
     pub alignment: AlignmentDelta,
     pub standing: StandingEffects,
+    /// Shifts in relations between factions, in the order written.
+    #[serde(default)]
+    pub relations: Vec<RelationShift>,
 }
 
 /// A named bundle of effects from `outcomes.toml`, such as a quest's result (P-26).

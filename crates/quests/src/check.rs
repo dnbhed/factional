@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use factional_core::{Fixed, suggest};
-use factional_reputation::{AXIS_LIMIT, CharacterId, Content, FactionId, OutcomeId, Party, RankId};
+use factional_reputation::{
+    AXIS_LIMIT, CharacterId, Content, FactionId, OutcomeId, Party, RankId, ShiftProblem,
+};
 
 use crate::quest::{
     ChoiceEffects, ChoiceId, Leftovers, Next, PartyRef, Progress, Quest, QuestId, QuestlineId,
@@ -96,6 +98,11 @@ pub enum QuestProblem {
         at: ChoiceAt,
         party: Party,
         value: Fixed,
+    },
+    /// A choice's inline relation shift that can't be made.
+    EffectRelation {
+        at: ChoiceAt,
+        problem: ShiftProblem,
     },
     /// `next` names a stage the quest doesn't have.
     UnknownNext {
@@ -481,7 +488,8 @@ fn check_giver(
     }
 }
 
-/// An outcome must exist; inline standing must name parties that exist, within ±100.
+/// An outcome must exist; inline standing must name parties that exist, within ±100, and
+/// inline relation shifts must be ones the reputation module could make.
 fn check_effects(
     at: &ChoiceAt,
     effects: &ChoiceEffects,
@@ -522,6 +530,12 @@ fn check_effects(
                     });
                 }
             }
+            problems.extend(content.shift_problems(&effects.relations).into_iter().map(
+                |problem| QuestProblem::EffectRelation {
+                    at: at.clone(),
+                    problem,
+                },
+            ));
         }
     }
 }
@@ -644,6 +658,7 @@ impl fmt::Display for QuestProblem {
             }
             QuestProblem::EffectOutOfRange { value, .. }
             | QuestProblem::RequirementOutOfRange { value, .. } => out_of_range(f, *value),
+            QuestProblem::EffectRelation { problem, .. } => problem.fmt(f),
             QuestProblem::UnknownNext {
                 next, suggestion, ..
             } => {
@@ -730,8 +745,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use factional_reputation::{
-        Alignment, Balance, Character, CharacterId, Effects, Faction, Outcome, Rank,
-        StandingEffects, Tolerances,
+        Alignment, Balance, Character, CharacterId, Effects, Faction, Outcome, Rank, RelationEnds,
+        RelationShift, RelationSide, StandingEffects, Tolerances,
     };
 
     use super::*;
@@ -1058,6 +1073,58 @@ mod tests {
                     suggestion: Some(Party::Character(CharacterId::new("hale").expect("valid"))),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn inline_relation_shifts_name_two_factions_once_each_within_range() {
+        let shift = |from: &str, to: &str, by: i64| RelationShift {
+            ends: RelationEnds::Directed {
+                from: faction_id(from),
+                to: faction_id(to),
+            },
+            by: h(by),
+        };
+        let effects = Effects {
+            relations: vec![
+                shift("watch", "guild", 200_00),
+                shift("guild", "wach", 5_00),
+                shift("watch", "guild", -5_00),
+            ],
+            ..Effects::default()
+        };
+        assert_eq!(
+            problems_after(|quests| {
+                oath(quests).stages[1].choices[0].effects = ChoiceEffects::Inline(effects);
+            }),
+            [
+                QuestProblem::EffectRelation {
+                    at: at("oath", 1, 0),
+                    problem: ShiftProblem::UnknownFaction {
+                        index: 1,
+                        side: RelationSide::To,
+                        faction: faction_id("wach"),
+                        suggestion: Some(faction_id("watch")),
+                    },
+                },
+                QuestProblem::EffectRelation {
+                    at: at("oath", 1, 0),
+                    problem: ShiftProblem::Repeated {
+                        index: 2,
+                        from: faction_id("watch"),
+                        to: faction_id("guild"),
+                        first: 0,
+                    },
+                },
+            ]
+        );
+        assert_eq!(
+            QuestProblem::EffectRelation {
+                at: at("oath", 1, 0),
+                problem: ShiftProblem::SelfRelation { index: 0 },
+            }
+            .to_string(),
+            "a faction can't have a relation with itself"
         );
     }
 

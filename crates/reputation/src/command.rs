@@ -6,7 +6,7 @@ use factional_core::{Envelope, Fixed, Tick, article};
 use crate::{
     AXIS_LIMIT, ActionId, Alignment, AlignmentDelta, CharacterId, Effects, FactionId,
     JoinAssessment, LeaveReason, ModifierId, ModifierObserver, NextHop, Observer, OutcomeId, Party,
-    PromotionAssessment, RankId, Spill, Witnesses,
+    PromotionAssessment, RankId, ShiftProblem, Spill, Witnesses,
 };
 
 /// A request to change the world: the only way in (DESIGN.md §2, §11.1).
@@ -401,6 +401,8 @@ pub enum CommandError {
     PromotionRefused(Box<PromotionAssessment>),
     /// A relation between a faction and itself.
     SelfRelation,
+    /// `ApplyEffects` with a relation shift that can't be made.
+    RelationShift(ShiftProblem),
     /// `ApplyOutcome` named an outcome that isn't in content.
     UnknownOutcome {
         outcome: OutcomeId,
@@ -585,6 +587,7 @@ impl fmt::Display for CommandError {
             CommandError::SelfRelation => {
                 f.write_str("a faction can't have a relation with itself")
             }
+            CommandError::RelationShift(problem) => problem.fmt(f),
             CommandError::ValueOutOfRange { value } => {
                 write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
             }
