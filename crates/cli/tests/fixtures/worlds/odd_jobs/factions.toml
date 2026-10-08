@@ -1,0 +1,9 @@
+# A world whose questline closes leftovers on a step that needs every quest, which warns.
+
+[watch]
+name = "The Watch"
+alignment = { law = 60.0, good = 10.0 }
+tolerance = 40.0
+
+[[watch.ranks]]
+id = "recruit"

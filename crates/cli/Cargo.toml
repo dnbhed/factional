@@ -14,6 +14,7 @@ path = "src/main.rs"
 clap = { version = "4.6.7", features = ["derive"] }
 factional-content = { path = "../content" }
 factional-core = { path = "../core" }
+factional-quests = { path = "../quests" }
 factional-reputation = { path = "../reputation" }
 rustyline = "18.0.1"
 

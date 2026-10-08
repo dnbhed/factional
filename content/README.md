@@ -14,6 +14,10 @@ Every file is optional. A missing file means the defaults, or none of that kind.
 | `relations.toml` | How factions regard each other, as `[[relation]]` entries. |
 | `actions.toml` | What characters can do: each act's effect on alignment and standing, and how its target changes it. |
 | `outcomes.toml` | Named bundles of effects, such as a quest's result. |
+| `quests.toml` | Quests, keyed by id: who gives each, what it needs to start, and its stages, each with requirements and choices. |
+| `questlines.toml` | Questlines, keyed by id: who gives each, and its steps, each a group of quests done in any order. |
+
+`sample/` has no quests yet. A world with quests doesn't load until loading can check that they reconcile (DESIGN.md §17.2), but `validate` checks them, and the REPL's `quests <dir>` lists them. Riverhold's are in [`docs/examples/riverhold`](../docs/examples/riverhold).
 
 Each file's comments explain its settings. [DESIGN.md §12](../docs/DESIGN.md) lists every setting, with its default and its checks.
 

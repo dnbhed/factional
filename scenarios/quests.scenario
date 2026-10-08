@@ -1,0 +1,19 @@
+# Quests and questlines (DESIGN.md §17.1, Q1), read and checked without loading a world: a
+# world with quests doesn't load until loading can check that they reconcile (Q4).
+
+# Every quest, whose it is and where it sits, then each questline's steps. A quest in a
+# questline is the questline's giver's unless it names its own, as the captain's dog does.
+quests docs/examples/riverhold
+quests docs/examples/riverhold lost_dog
+
+# One quest: its gate, then each stage with its requirements and choices.
+quests docs/examples/riverhold watch_oath
+assert quests docs/examples/riverhold watch_oth == error: unknown quest 'watch_oth' (did you mean 'watch_oath'?)
+
+# Quests are checked with everything else, but a world with them can't load yet.
+assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)
+validate docs/examples/riverhold
+
+# Warnings follow the list: closing leftovers on a step that needs every quest does nothing.
+quests crates/cli/tests/fixtures/worlds/odd_jobs
+assert quests content/sample == no quests in content/sample

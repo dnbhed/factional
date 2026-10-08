@@ -444,6 +444,17 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A quest is in at most one questline, at one step,** so closing leftovers, and whose giver a quest has, never depend on which questline is asking.
   - **Rank and standing gates are reachable in principle** when they're in range and name a real rung (P-51's reasoning): standing can always be raised, and promotion can always be asked for (D-17).
   - *Why:* groups and gates reduce to the requirements the lockout check already handles, and every way a quest can close is written in the content.
+- **P-67 · How quest content is read and checked** (made in Q1, 2026-10-08).
+  - **`factional-quests` sits between reputation and content:** `core ← reputation ← quests ← content ← cli`. It checks itself against the reputation content, so it depends on reputation. Content reads every module's files, so it sits above them all. The id-type macro moved to core so both modules use it.
+  - **Bare ids where one id is meant:** a `giver` and a `standing` requirement name a faction or a character by id alone, as one id namespace allows (P-35). A choice's inline `effects` are written as an outcome's are, `standing = { factions = { … }, characters = { … } }`, so the two read the same.
+  - **A choice has an `outcome`, inline `effects`, or neither,** never both. `next` is required, and `"end"` is reserved for the end of the quest, so no stage may be called `end`.
+  - **Quest checks wait until every file reads cleanly,** as checks across bands and rungs do (P-36, P-41), so they never report something missing only because it couldn't be read. A quest or questline with a reading problem is reported and left out.
+  - **Content with quests doesn't load until Q4** (D-20). The quests are checked first, then loading reports that a world with quests can't load yet: at `quests.toml`, or at `questlines.toml` if only that file has anything in it. Quest files with nothing in them load.
+  - **`quests <dir> [<quest>]` reads and checks a directory without loading it,** since no world with quests loads yet. It lists each quest with its giver (its own, or its questline's), its questline, its stage count and its gate, then each questline's steps; with a quest, that quest's stages and choices. Warnings follow, as after `load`.
+  - **Saves don't fingerprint the quest files yet,** since no world with quests loads; they join the fingerprint when worlds with quests do.
+  - **Riverhold's quests are in `docs/examples/riverhold`, not `content/sample`,** because the sample has to load for every scenario; the sample gets them once worlds with quests load. Two outcomes the quests use, `turned_in_vex` and `took_a_bribe`, are added to the example.
+  - **What Q1 doesn't check:** a gate that can't hold (`member` and `not_member` of the same faction, or `done` on the quest itself) is reachability, which is Q3's.
+  - *Why:* designers can write and check quests now, while D-20 keeps any world that has them from running before they can be reconciled.
 
 ## Open
 

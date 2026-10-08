@@ -40,6 +40,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "validate <dir>",
         "check the content files in <dir> as load would, without loading them",
     ),
+    (
+        "quests <dir> [<quest>]",
+        "the quests and questlines in <dir>, read and checked without loading them, or one quest's stages and choices",
+    ),
     ("characters", "list the loaded characters"),
     (
         "show character <id>",
@@ -278,6 +282,7 @@ impl Session {
             "quit" => Ok(Outcome::Quit),
             "load" => Ok(self.load(rest)),
             "validate" => Ok(self.validate(rest)),
+            "quests" => Ok(crate::quests::quests(&self.base_dir, rest)),
             "reload" => Ok(self.reload()),
             "save" => Ok(self.save(rest)),
             "restore" => Ok(self.restore(rest)),
@@ -2248,7 +2253,7 @@ fn member_ids(character: &str, faction: &str) -> Result<(CharacterId, FactionId)
 }
 
 /// Named standing effects as `city_watch -20.00, captain_hale -10.00`: factions first.
-fn named_effects(effects: &StandingEffects) -> Vec<String> {
+pub(crate) fn named_effects(effects: &StandingEffects) -> Vec<String> {
     effects
         .parties()
         .into_iter()
@@ -4993,6 +4998,7 @@ mod tests {
             "help",
             "quit",
             "load <dir>",
+            "quests <dir> [<quest>]",
             "characters",
             "show character <id>",
             "factions",

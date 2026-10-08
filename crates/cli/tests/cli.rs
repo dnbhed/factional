@@ -187,6 +187,17 @@ fn validate_lists_every_problem_as_load_does_and_exits_one() {
 }
 
 #[test]
+fn validate_checks_quests_but_a_world_with_them_does_not_load_yet() {
+    let output = factional_in_repo(&["validate", "docs/examples/riverhold"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        text(&output.stdout),
+        "error: quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)\n\
+         docs/examples/riverhold doesn't load: 1 problem\n"
+    );
+}
+
+#[test]
 fn validate_reports_a_directory_it_cannot_read() {
     let output = factional_in_repo(&["validate", "no/such/world"]);
     assert_eq!(output.status.code(), Some(1));
@@ -259,7 +270,7 @@ fn schema_without_a_file_lists_the_files() {
     assert!(output.status.success());
     assert_eq!(
         text(&output.stdout),
-        "balance\nfactions\ncharacters\nactions\nrelations\noutcomes\n"
+        "balance\nfactions\ncharacters\nactions\nrelations\noutcomes\nquests\nquestlines\n"
     );
 }
 

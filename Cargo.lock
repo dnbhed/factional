@@ -270,6 +270,7 @@ dependencies = [
  "clap",
  "factional-content",
  "factional-core",
+ "factional-quests",
  "factional-reputation",
  "insta",
  "jsonschema",
@@ -282,6 +283,7 @@ name = "factional-content"
 version = "0.1.0"
 dependencies = [
  "factional-core",
+ "factional-quests",
  "factional-reputation",
  "jsonschema",
  "serde",
@@ -298,6 +300,14 @@ dependencies = [
  "serde_json",
  "strsim",
  "toml",
+]
+
+[[package]]
+name = "factional-quests"
+version = "0.1.0"
+dependencies = [
+ "factional-core",
+ "factional-reputation",
 ]
 
 [[package]]

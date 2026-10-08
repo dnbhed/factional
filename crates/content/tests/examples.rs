@@ -1,5 +1,6 @@
-//! The complete example content in `docs/examples/` describes settings the engine doesn't
-//! read yet, so it can't be loaded. This keeps it at least valid TOML, file by file.
+//! The complete example content in `docs/examples/` has quests, so it can't be loaded as a
+//! world until quests can (Q4). This keeps it at least valid TOML, file by file; the schema
+//! tests check that it reads cleanly.
 
 use std::fs;
 use std::path::Path;
@@ -30,6 +31,8 @@ fn every_example_content_file_is_valid_toml() {
             "characters.toml",
             "factions.toml",
             "outcomes.toml",
+            "questlines.toml",
+            "quests.toml",
             "relations.toml"
         ]
     );

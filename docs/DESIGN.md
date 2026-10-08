@@ -740,6 +740,8 @@ content/<world>/
   characters.toml   characters, starting alignment, memberships, standings
   actions.toml      the action catalogue
   outcomes.toml     named effect bundles (quest results and the like)
+  quests.toml       quests: giver, gate, stages and choices (§17.1)
+  questlines.toml   questlines: giver and steps of quests (§17.1)
 ```
 
 - **Missing files are fine.** A missing file means the defaults, or none of that kind (P-31).
@@ -753,8 +755,9 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 
 - **Errors stop loading.** Nothing is half-loaded, and the CLI keeps the world it already had.
 - **Warnings don't stop loading.** `load` prints them after its summary. `factional validate <dir>` (T1) gives the same problems and warnings without starting a session, then a summary, and exits 1 if the world wouldn't load.
-- **The rules live in `factional-reputation`.** `World::new` runs the checks and refuses invalid content, so a host that builds content in code, not from TOML, gets the same protection. `factional-content` turns each problem's location into `file: key.path`.
-- **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. `docs/examples/riverhold` is loaded too, without the settings the engine doesn't read yet, which a test names (T1).
+- **The rules live in `factional-reputation`,** and quests' in `factional-quests` (`Quests::problems`, against the reputation content). `World::new` runs the checks and refuses invalid content, so a host that builds content in code, not from TOML, gets the same protection. `factional-content` turns each problem's location into `file: key.path`.
+- **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. `docs/examples/riverhold` is read and checked too, quests included, without the settings the engine doesn't read yet, which a test names (T1).
+- **Until quests can be reconciled (Q4), content with quests doesn't load** (D-20). Its quests are checked like everything else, and loading then reports that a world with quests can't load yet (P-67).
 - **Each check arrives with the increment that adds the content it checks**, never later.
 
 | Check | Kind | Added in |
@@ -791,10 +794,13 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | `secret_members` only in a `witnessed` or `ripple` world; a secret starting membership only in a faction that allows them | error | K4 (done) |
 | `exposed` tables: as for the M7 tables, with the outcomes `keep`, `demote` and `expel` | error | K5 (done) |
 | A faction no starting character is within joining tolerance of, naming the nearest and their distance (P-51) | warning | T1 (done) |
+| Quests and questlines: a giver is a faction or a character; outcomes, factions, ranks, parties, quests, stages and choices they name exist; standing within ±100; a quest has a stage, a stage a choice, a questline a step, a step a quest; stage ids unique in a quest, none called `end`; choice ids unique in a stage; `next` names a later stage; an `outcome` or `effects`, not both; no list names something twice; `need` no more than the step's quests; a quest in at most one questline, at one step; `leftovers` is `open` or `close` | error | Q1 (done) |
+| `leftovers = "close"` on a step that needs all its quests | warning | Q1 (done) |
 
 ### 12.3 Designer workflow
 
 - `factional validate <dir>` to check a world without starting a session (T1).
+- `quests <dir> [<quest>]` in the REPL to list a world's quests and questlines, or one quest's stages and choices, read and checked without loading it (Q1).
 - `factional schema <file>` for a content file's JSON Schema, to get completion and checking in an editor (T1).
 - `factional repl`, then `load content/sample`, to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
@@ -908,14 +914,15 @@ Each invariant has a property test (`proptest`) over random content and random c
 crates/
   core/          factional-core         Fixed, Curve, ids, Tick, the event envelope. No I/O.
   reputation/    factional-reputation   the model, rules, World, commands, events, queries. No I/O.
+  quests/        factional-quests       quests, questlines and their checks (§17). No I/O.
   content/       factional-content      reads TOML from disk, validates, diagnostics, JSON Schema.
   cli/           factional-cli          the `factional` binary: repl, run, validate, schema, compare.
 content/sample/  Riverhold
 scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/snapshots/
 ```
 
-- **Dependencies point one way:** core ← reputation ← content ← cli.
-- **Future modules** (quests, combat and the rest) become sibling crates. They talk to reputation only through §11. `factional-quests` also reads reputation's content, to check itself at load (§17, P-64).
+- **Dependencies point one way:** core ← reputation ← quests ← content ← cli. `factional-content` reads every module's files, so it sits above them all (P-67).
+- **Other modules** (quests, then combat and the rest) are sibling crates. They talk to reputation only through §11. `factional-quests` also reads reputation's content, to check itself at load (§17, P-64).
 - **A host-engine adapter** waits until a game needs a host (X-2, left open in E0). That would be a Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for Unity, Unreal or others.
 
 ## 16. Completeness across modules (D-20)
@@ -1051,7 +1058,7 @@ By contrast, the Guild's `burn_the_records`, at −40 with the Watch, doesn't lo
 
 | Increment | Builds |
 | --- | --- |
-| Q1 | `factional-quests`, `quests.toml` and `questlines.toml`: quests with their givers, gates, stages, choices and requirements, and questlines of steps (`quests`, `need`, `requires`, `leftovers`), with every reference and range checked; the CLI lists them |
+| Q1 (done) | `factional-quests`, `quests.toml` and `questlines.toml`: quests with their givers, gates, stages, choices and requirements, and questlines of steps (`quests`, `need`, `requires`, `leftovers`), with every reference and range checked; the CLI lists them |
 | Q2 | The wider effect vocabulary (`join`, `leave`, `promote`, `demote`, `relation`), as outcomes and inline effects |
 | Q3 | Reachability: no dead stages in a quest, no unreachable step in a questline |
 | Q4 | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |

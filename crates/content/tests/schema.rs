@@ -1,12 +1,12 @@
 //! The JSON Schema for each content file (`factional schema <file>`) stays in step with the
 //! readers: every key in the sample world and the complete example is in it, and every key it
-//! names is in one of the two, which load, so the readers accept it.
+//! names is in one of the two, or a test world, which read cleanly, so the readers accept it.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use factional_content::{SCHEMA_FILES, Sources, parse_content, schema, schema_text};
+use factional_content::{SCHEMA_FILES, Sources, parse_quests, schema, schema_text};
 use serde_json::Value;
 
 /// Settings in `docs/examples/riverhold` that the engine doesn't read yet, by file and key
@@ -215,7 +215,9 @@ fn there_is_a_schema_for_each_content_file() {
             "characters",
             "actions",
             "relations",
-            "outcomes"
+            "outcomes",
+            "quests",
+            "questlines"
         ]
     );
     assert_eq!(
@@ -223,7 +225,7 @@ fn there_is_a_schema_for_each_content_file() {
         None,
         "a file is named without .toml"
     );
-    assert_eq!(schema("quests"), None);
+    assert_eq!(schema("quest"), None);
 }
 
 #[test]
@@ -322,8 +324,10 @@ fn the_complete_example_matches_the_schema_but_for_settings_not_read_yet() {
     }
 }
 
+/// The complete example has quests, so it can't load as a world until quests can (Q4); its
+/// content and quests read and check cleanly.
 #[test]
-fn the_complete_example_loads_but_for_settings_not_read_yet() {
+fn the_complete_example_reads_cleanly_but_for_settings_not_read_yet() {
     let texts: Vec<String> = SCHEMA_FILES
         .iter()
         .map(|file| {
@@ -332,16 +336,18 @@ fn the_complete_example_loads_but_for_settings_not_read_yet() {
             toml::to_string(&table).expect("TOML writes")
         })
         .collect();
-    let content = parse_content(Sources {
+    let content = parse_quests(Sources {
         balance: Some(&texts[0]),
         factions: Some(&texts[1]),
         characters: Some(&texts[2]),
         actions: Some(&texts[3]),
         relations: Some(&texts[4]),
         outcomes: Some(&texts[5]),
+        quests: Some(&texts[6]),
+        questlines: Some(&texts[7]),
     });
     if let Err(error) = content {
-        panic!("the complete example doesn't load:\n{error}");
+        panic!("the complete example doesn't read cleanly:\n{error}");
     }
 }
 

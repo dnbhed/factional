@@ -7,12 +7,18 @@
 
 mod curve;
 mod fixed;
+mod id;
 mod ratio;
 mod text;
 mod time;
 
 pub use curve::{Curve, CurveError};
 pub use fixed::{Fixed, ParseFixedError, div_round};
+pub use id::InvalidId;
 pub use ratio::Ratio;
 pub use text::{article, is_valid_id, suggest};
 pub use time::{Envelope, Tick};
+
+/// For [`id_type!`]: the ids it defines read and write through serde.
+#[doc(hidden)]
+pub use serde;
