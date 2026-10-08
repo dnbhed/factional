@@ -183,6 +183,65 @@ pub enum QuestProblem {
         need: usize,
         quests: usize,
     },
+    /// No choice of an earlier stage leads to this one (Q3).
+    UnreachableStage {
+        quest: QuestId,
+        stage: usize,
+    },
+    /// A gate needs a faction's membership, or a rank in it, and also `not_member` of it, at
+    /// `index` in that gate's `not_member`.
+    ContradictoryGate {
+        gate: Gate,
+        index: usize,
+        faction: FactionId,
+        needs: Needs,
+    },
+    /// `done`, at `index`, names progress of the quest the gate is for that can't have
+    /// happened by then: any of it to start the quest, or at a stage, progress that doesn't
+    /// lead there.
+    OwnProgress {
+        gate: Gate,
+        index: usize,
+        progress: Progress,
+    },
+    /// A quest that can never start, whatever the character does.
+    NeverStarts {
+        quest: QuestId,
+        blocker: Blocker,
+    },
+    /// A stage whose `done`, at `index`, can never happen.
+    StageNeverReached {
+        quest: QuestId,
+        stage: usize,
+        index: usize,
+        progress: Progress,
+    },
+    /// A stage whose `done`, at `index`, can only happen once its own quest is over.
+    OnlyAfter {
+        quest: QuestId,
+        stage: usize,
+        index: usize,
+        progress: Progress,
+    },
+}
+
+/// What a gate needs besides `not_member` of the same faction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Needs {
+    Member,
+    Rank,
+}
+
+/// Why a quest can never start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Blocker {
+    /// Its gate needs progress that can never happen.
+    Done(Progress),
+    /// The step before its own can never be complete.
+    Step { questline: QuestlineId, step: usize },
+    /// What it needs only comes once its questline has moved on from its step, which
+    /// closes it.
+    Closed { questline: QuestlineId, step: usize },
 }
 
 /// Something in quests that's allowed but probably not meant.
@@ -197,6 +256,15 @@ impl Quests {
     /// order (its giver, its gate, then each stage), then each questline in id order. Empty
     /// if every reference resolves and every value is in range.
     pub fn problems(&self, content: &Content) -> Vec<QuestProblem> {
+        let problems = self.reference_problems(content);
+        if !problems.is_empty() {
+            return problems;
+        }
+        self.reach_problems()
+    }
+
+    /// Every reference resolves and every value is in range (Q1).
+    fn reference_problems(&self, content: &Content) -> Vec<QuestProblem> {
         let mut problems = Vec::new();
         for quest in self.quests.values() {
             self.check_quest(quest, content, &mut problems);
@@ -718,6 +786,68 @@ impl fmt::Display for QuestProblem {
             } => write!(
                 f,
                 "'{quest}' is already at {questline}.steps[{step}]: a quest is in at most one questline, at one step"
+            ),
+            QuestProblem::UnreachableStage { .. } => {
+                f.write_str("no choice leads to this stage, so it can never be reached")
+            }
+            QuestProblem::ContradictoryGate { faction, needs, .. } => match needs {
+                Needs::Member => {
+                    write!(f, "it also needs to be in {faction}, so it can never hold")
+                }
+                Needs::Rank => write!(f, "it also needs a rank in {faction}, so it can never hold"),
+            },
+            QuestProblem::OwnProgress {
+                gate: Gate::Stage { .. },
+                progress: Progress::Quest(quest),
+                ..
+            } => write!(
+                f,
+                "{quest} can't be over while one of its own stages is under way"
+            ),
+            QuestProblem::OwnProgress {
+                gate: Gate::Stage { .. },
+                progress,
+                ..
+            } => write!(
+                f,
+                "{progress} doesn't lead to this stage, so it can't be done here"
+            ),
+            QuestProblem::OwnProgress {
+                gate: Gate::Quest(_),
+                ..
+            } => f.write_str("a quest can't need its own progress to start"),
+            QuestProblem::OwnProgress {
+                gate: Gate::Step { .. },
+                progress,
+                ..
+            } => write!(
+                f,
+                "{} is in this step, and a quest can't need its own progress to start",
+                progress.quest()
+            ),
+            QuestProblem::NeverStarts { blocker, .. } => match blocker {
+                Blocker::Done(progress) => write!(
+                    f,
+                    "it can never start: it needs {progress} done, which can never happen"
+                ),
+                Blocker::Step { questline, step } => write!(
+                    f,
+                    "it can never start: {questline}.steps[{step}] can never be complete"
+                ),
+                Blocker::Closed { questline, step } => write!(
+                    f,
+                    "it can never start: what it needs only comes after {questline} moves on from steps[{step}], which closes it"
+                ),
+            },
+            QuestProblem::StageNeverReached { progress, .. } => write!(
+                f,
+                "{progress} can never happen, so this stage can never be reached"
+            ),
+            QuestProblem::OnlyAfter {
+                quest, progress, ..
+            } => write!(
+                f,
+                "{progress} can only happen once {quest} is over, so this stage can never be reached"
             ),
             QuestProblem::NeedTooMany { need, quests, .. } => {
                 let quests = match quests {

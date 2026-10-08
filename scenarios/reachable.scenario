@@ -1,0 +1,11 @@
+# Content no player could ever reach is a load error (Q3). The check is generous: it takes
+# every requirement but `done` as one the character can meet, and ignores timing, so what it
+# can't reach can never be reached.
+
+# Riverhold's quests can all be reached; the only problem is that quests can't load yet.
+validate docs/examples/riverhold
+
+# A rumour and the gossip each wait on the other; the patrol needs a promotion that only
+# comes after its step has moved on, closing it; and the siege's assault needs its
+# aftermath, which needs the siege over.
+validate crates/cli/tests/fixtures/worlds/dead_ends

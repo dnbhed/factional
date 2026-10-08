@@ -1,0 +1,11 @@
+[jobs]
+name = "Odd Jobs"
+giver = "watch"
+
+[[jobs.steps]]
+quests = ["patrol", "inspect"]
+need = 1
+leftovers = "close"
+
+[[jobs.steps]]
+quests = ["promotion"]

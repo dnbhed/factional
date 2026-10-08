@@ -8,8 +8,11 @@
 
 mod check;
 mod quest;
+mod reach;
 
-pub use check::{ChoiceAt, Gate, Owner, QuestProblem, QuestWarning, RequirementKey};
+pub use check::{
+    Blocker, ChoiceAt, Gate, Needs, Owner, QuestProblem, QuestWarning, RequirementKey,
+};
 pub use quest::{
     Choice, ChoiceEffects, ChoiceId, Leftovers, Next, PartyRef, Progress, ProgressError, Quest,
     QuestId, Questline, QuestlineId, Quests, Requirements, Stage, StageId, Step,

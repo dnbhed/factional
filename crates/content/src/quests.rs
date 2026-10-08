@@ -438,6 +438,34 @@ pub(crate) fn problem_diagnostic(problem: &QuestProblem) -> Diagnostic {
         QuestProblem::NeedTooMany {
             questline, step, ..
         } => (QUESTLINES_FILE, format!("{questline}.steps[{step}].need")),
+        QuestProblem::UnreachableStage { quest, stage } => {
+            (QUESTS_FILE, format!("{quest}.stages[{stage}]"))
+        }
+        QuestProblem::ContradictoryGate { gate, index, .. } => {
+            requirement(gate, &RequirementKey::NotMember(*index))
+        }
+        QuestProblem::OwnProgress { gate, index, .. } => {
+            requirement(gate, &RequirementKey::Done(*index))
+        }
+        QuestProblem::NeverStarts { quest, .. } => (QUESTS_FILE, quest.to_string()),
+        QuestProblem::StageNeverReached {
+            quest,
+            stage,
+            index,
+            ..
+        }
+        | QuestProblem::OnlyAfter {
+            quest,
+            stage,
+            index,
+            ..
+        } => requirement(
+            &Gate::Stage {
+                quest: quest.clone(),
+                stage: *stage,
+            },
+            &RequirementKey::Done(*index),
+        ),
     };
     Diagnostic {
         file: file.to_owned(),

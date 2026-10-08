@@ -13,8 +13,8 @@
 #              them optional, and the next step's requirements decide when to move on.
 #   requires:  added to the gate of every quest in the step, as in quests.toml
 #   leftovers: when need is fewer than all of them, what happens to the rest once the
-#              character starts a quest of the next step: "open" (the default) keeps them
-#              available; "close" shuts them
+#              character starts a quest of any later step: "open" (the default) keeps them
+#              available; "close" shuts those not yet started
 
 [watch_career]
 name = "A Life in the Watch"
