@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5fb6ba074b2c6c72bf37da80cd20211921e2422d6bb71258ec0adaefe97ba9bf # shrinks to steps = [Quest(StartQuest { character: CharacterId("player"), quest: QuestId("circle_rite") })]

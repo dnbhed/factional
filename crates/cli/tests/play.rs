@@ -213,20 +213,6 @@ fn a_refused_choice_changes_nothing() {
 }
 
 #[test]
-fn quest_progress_cant_be_saved_or_reloaded_yet() {
-    let mut session = riverhold();
-    play(&mut session, &["start player lost_ring"]);
-    assert_eq!(
-        run(&mut session, "save target/play.json"),
-        "error: saves can't hold quest progress yet (DESIGN.md §17.4)"
-    );
-    assert_eq!(
-        run(&mut session, "reload"),
-        "error: reload can't carry quest progress yet (DESIGN.md §17.4)"
-    );
-}
-
-#[test]
 fn choose_says_who_saw_it_as_outcome_does() {
     let mut session = riverhold();
     play(

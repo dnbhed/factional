@@ -1,5 +1,5 @@
-//! Invariants 14 and 15 (DESIGN.md §14, Q6): random quest and world commands against
-//! Riverhold's quests in `content/sample`.
+//! Invariants 14 and 15 (DESIGN.md §14, Q6), and 11 for quests (Q7): random quest and world
+//! commands against Riverhold's quests in `content/sample`.
 
 use std::path::Path;
 
@@ -135,10 +135,11 @@ proptest! {
                     let _ = world.execute(command);
                 }
                 Step::Quest(command) => {
-                    let (before, events) = (log.clone(), world.events().to_vec());
+                    let before = (log.records().clone(), log.events().to_vec());
+                    let events = world.events().to_vec();
                     if log.execute(&mut world, command).is_err() {
-                        // Invariant 14.
-                        prop_assert_eq!(&log, &before);
+                        // Invariant 14: nothing changes but the journals.
+                        prop_assert_eq!((log.records().clone(), log.events().to_vec()), before);
                         prop_assert_eq!(world.events(), &events[..]);
                     }
                 }
@@ -148,5 +149,27 @@ proptest! {
                 prop_assert!(grew(before, &log.record(&id(character))), "{character}");
             }
         }
+    }
+
+    #[test]
+    fn restoring_a_save_gives_the_same_quest_log(steps in steps()) {
+        let (mut world, mut log) = sample();
+        for step in steps {
+            match step {
+                Step::World(command) => {
+                    let _ = world.execute(command);
+                }
+                Step::Quest(command) => {
+                    let _ = log.execute(&mut world, command);
+                }
+            }
+        }
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (_, _, fingerprint) = factional_content::load_dir_fingerprinted(&repo.join("content/sample"))
+            .expect("the sample loads");
+        let text = factional_content::save(&world, &log, "content/sample", &fingerprint);
+        let restored = factional_content::restore(&text, &repo).expect("restores");
+        prop_assert_eq!(&restored.quests, &log);
+        prop_assert_eq!(restored.world.events(), world.events());
     }
 }

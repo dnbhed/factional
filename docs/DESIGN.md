@@ -692,7 +692,7 @@ let d = world.disposition(Observer::Character(hale), player);    // d.score, d.b
 ### 11.5 The journal and the event log (P-16)
 
 - The **journal** is the commands as they were issued. Replaying it against changed content answers "what would have happened with these numbers?" It's the designer's what-if tool (T2).
-- The **event log** is what happened, with the resolved values. Replaying it reproduces state exactly, whatever the content says now. Saves are built on it (T4): a save holds the journal and the events, names its content directory with a fingerprint of each file, and is restored only onto that content unchanged (P-54).
+- The **event log** is what happened, with the resolved values. Replaying it reproduces state exactly, whatever the content says now. Saves are built on it (T4): a save holds the journal and the events, names its content directory with a fingerprint of each file, and is restored only onto that content unchanged (P-54). Since version 2 it holds the quest log's journal and events too (Q7, P-73).
 
 ## 12. Tuning surface (D-12)
 
@@ -820,7 +820,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - `perceived <observer> <subject>` for where the observer pictures someone, and why; `outcome … --seen-by <id>,…` or `--unseen` to say who saw a quest's result (K3).
 - `factional compare <scenario> --content A --against B` to see what new numbers change: each character's alignment, standings and memberships, and dispositions toward watched subjects, as `A → B`, then the first event where the runs diverge (T2, P-52).
 - `reload` in the REPL to re-read the content, replay the session on it and see what changed; if the content no longer loads, or any command comes out differently, nothing changes (T2, P-52).
-- `save <file>` and `restore <file>` in the REPL to keep a session and come back to it (T4, P-54).
+- `save <file>` and `restore <file>` in the REPL to keep a session and come back to it, quest progress included (T4, P-54, Q7).
 - `map <faction>` to draw the alignment plane, law across and good up: the cells within the faction's tolerance, the faction, and every character, with each one's distance in a key (T3, P-53).
 - `matrix [<subject>...] [--csv]` for every observer's disposition toward each subject, or with `--csv`, to get them into a spreadsheet (T3).
 
@@ -917,10 +917,10 @@ Each invariant has a property test (`proptest`) over random content and random c
 8. Inertia never reverses the direction of a shift.
 9. Band lookup is total and monotone: a higher score never lands in a lower band.
 10. A curve's value always stays within the range of its own y values.
-11. Restoring a save gives the same world: the same state, events and journal (T4).
+11. Restoring a save gives the same world: the same state, events and journal (T4), and the same quest log (Q7).
 12. Knowledge only ever hides: with every act and outcome seen by everyone and no secret memberships, `witnessed` and `ripple` give exactly the events `omniscient` does, and every awareness is within 0…1 (K1–K3).
 13. News always stops: each party learns a piece of news at most once, none arrives before it's due, and none is still on its way more than `hop_ticks` × the length of `strength` after it began (K2).
-14. A refused quest command changes nothing: not the quest log, nor the world's state or events (Q6).
+14. A refused quest command changes nothing but the journals: not the quest log's progress or events, nor the world's state or events (Q6).
 15. Quest progress only grows: a quest started stays started until it's finished, one finished or closed never changes, and stages reached and choices made stay so (Q6).
 
 ## 15. Crates (P-25)
@@ -1103,7 +1103,7 @@ The quest log keeps each character's progress, and changes only by its two comma
 - **Effects go to the world in the same command,** as `ApplyOutcome`, or `ApplyEffects` with the source `quest:<quest>.<stage>.<choice>`, with the choice's witnesses. The world's command is checked last; if it refuses, the choice isn't made.
 - **Requirements are judged on the world as it is:** standing with the faction or character; membership, secret or not; rank on the faction's ladder; `within_tolerance`, by the faction's picture (§10.3), within its member tolerance; `done` from the log.
 - **Explanations come from the engine.** `assess_start` lists every reason a quest can't start: its progress, the earliest step before it that isn't complete with how many of how many are done, then each requirement that doesn't hold, with what it needs and what the character has. A refused choice says the same of its stage.
-- **Saves and `reload` don't hold quest progress yet;** they refuse while any quest has started (Q7).
+- **Saves and `reload` carry quest progress** (Q7, P-73). The quest log keeps a journal: each command, accepted or not, with where it came in the world's journal and whether it sent the world a command. A save holds that journal and the quest events; restoring replays the events without running rules, once they're checked to fit. `reload` re-runs each quest command where it came among the world's, skipping the world commands it sent, and stops, changing nothing, if any command comes out differently; it reports changed progress, such as `player's watch_oath: at oath → finished`.
 
 ### 17.5 What's built when
 
@@ -1115,5 +1115,5 @@ The quest log keeps each character's progress, and changes only by its two comma
 | Q4 (done) | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
 | Q5 (done) | Worlds with quests load: the gate comes off, the session keeps the quests, saves fingerprint the quest files, and Riverhold's quests join `content/sample` |
 | Q6 (done) | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI (§17.4) |
-| Q7 | Saves hold the quest log, and `reload` replays it |
+| Q7 (done) | Saves hold the quest log, and `reload` replays it |
 

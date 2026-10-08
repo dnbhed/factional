@@ -1,0 +1,23 @@
+# Saving, restoring and reloading quest progress (Q7). A save holds the quest log's journal and
+# events beside the world's; restoring replays them, and reload re-runs quest commands where
+# they came among the world's.
+
+load content/sample
+start player watch_oath
+choose player watch_oath report
+save target/quest_saves.scenario.json
+
+# Played on past the save...
+choose player watch_oath swear
+assert show character player == player — The Player — law 9.00, good 0.00 — True Neutral
+
+# ...and back to it: at the oath again, with the standing it had.
+restore target/quest_saves.scenario.json
+progress player
+assert standing player city_watch == 19.50
+assert show character player == player — The Player — law 4.00, good 0.00 — True Neutral
+
+# Nothing was edited, so the replay comes out the same: two quest commands, nothing else.
+reload
+choose player watch_oath swear
+progress player

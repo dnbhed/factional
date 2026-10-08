@@ -17,8 +17,8 @@ pub use check::{
 };
 pub use lockout::{LockReason, Needed};
 pub use play::{
-    Played, QuestCommand, QuestError, QuestEvent, QuestLog, QuestState, Record, StartAssessment,
-    StartBlock, Unmet,
+    Played, QuestCommand, QuestEntry, QuestError, QuestEvent, QuestLog, QuestRestoreError,
+    QuestState, Record, StartAssessment, StartBlock, Unmet,
 };
 pub use quest::{
     Choice, ChoiceEffects, ChoiceId, Leftovers, Lock, LockError, Next, PartyRef, Progress,

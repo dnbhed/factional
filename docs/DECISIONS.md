@@ -510,8 +510,17 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **One output for a command, in order:** what it did to the log and, between, the world's events for its effects, so the CLI shows a choice, then its effects, then where it led.
   - **Explanations are data from the engine:** `StartAssessment` with every `StartBlock`, and each `Unmet` with what it needs and what the character has. The CLI only renders them.
   - **A quest is played once.** Finished, started or closed, it can't be started again; closed means it was never started.
-  - **Until Q7, `save` and `reload` refuse once any quest has started,** rather than silently dropping the progress.
+  - **Until Q7, `save` and `reload` refused once any quest had started,** rather than silently dropping the progress (lifted in Q7, P-73).
   - *Why:* quests change the world only through its one way in, and a refused quest command is as harmless as a refused world command.
+
+- **P-73 · How quest progress is saved and reloaded** (made in Q7, 2026-10-08).
+  - **The quest log keeps a journal as the world does:** every command, accepted or not, with how many commands the world's journal held when it came, how many it sent the world (0 or 1), and how many quest events it produced (none if refused). A refused command's reason isn't kept: no rule needs it, and reload says only that it was refused.
+  - **A save holds the quest journal and events beside the world's.** Restoring replays the events without running rules (P-16), once checked: the journal accounts for every event, each command sits within the world's journal after the one before, and every character, quest, stage, choice and closing step an event names exists. Otherwise: `this save doesn't fit its quests: …`.
+  - **The save format is version 2.** Version 1 saves still restore, with no quest progress, since none could be saved then; this build reads both, and a version 1 build refuses a version 2 save rather than silently dropping its quests.
+  - **`reload` re-runs the session in its order:** each quest command where it came among the world's commands, skipping the world commands it sent, since running it again sends them again. As P-52, it stops at the first command, quest or world, whose acceptance differs, and changes nothing. Commands are numbered in that combined order.
+  - **Reload reports quest progress that changed,** per character and quest: `player's watch_oath: at oath → finished`.
+  - **`save` and `restore` count quest commands and events** when there are any.
+  - *Why:* a session with quests is kept, restored and reloaded as faithfully as one without, by the same means.
 
 ## Open
 

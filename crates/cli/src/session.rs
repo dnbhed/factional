@@ -425,23 +425,53 @@ impl Session {
     }
 
     /// `reload`: re-reads the directory last loaded, replays every command in the journal on
-    /// the new world, and reports what changed. If the content no longer loads, or any
-    /// command's acceptance differs from before, nothing changes (P-52).
+    /// the new world, quest commands where they came (Q7), and reports what changed. If the
+    /// content no longer loads, or any command's acceptance differs from before, nothing
+    /// changes (P-52).
     fn reload(&mut self) -> Outcome {
         let (Some(world), Some(dir)) = (&self.world, &self.loaded) else {
             return no_world();
         };
-        if self.quests.has_progress() {
-            return Outcome::Error(
-                "reload can't carry quest progress yet (DESIGN.md §17.4)".to_owned(),
-            );
-        }
         let checked = match check(&self.base_dir.join(dir)) {
             Ok(checked) => checked,
             Err(problems) => return Outcome::Error(problems.join("\n")),
         };
         let mut replayed = checked.world;
-        for (index, entry) in world.journal().iter().enumerate() {
+        let mut log = QuestLog::new(checked.quests);
+        let quest_entries = self.quests.journal();
+        // The world's commands a quest command sent: replaying it sends them again.
+        let mut sent = std::collections::BTreeSet::new();
+        let mut next_quest = 0;
+        let mut replayed_count = 0;
+        let stopped = |number: usize, command: String, changed: String| {
+            Outcome::Error(format!(
+                "reload stopped at command {number}, {command}: {changed}. Nothing has changed."
+            ))
+        };
+        for index in 0..=world.journal().len() {
+            while let Some(entry) = quest_entries.get(next_quest).filter(|e| e.at == index) {
+                replayed_count += 1;
+                let now = log.execute(&mut replayed, entry.command.clone());
+                let changed = match (entry.events, &now) {
+                    (Some(_), Err(refusal)) => {
+                        Some(format!("it was accepted, but now it's refused: {refusal}"))
+                    }
+                    (None, Ok(_)) => Some("it was refused, but now it's accepted".to_owned()),
+                    _ => None,
+                };
+                if let Some(changed) = changed {
+                    return stopped(replayed_count, entry.command.to_string(), changed);
+                }
+                sent.extend(index..index + entry.sent);
+                next_quest += 1;
+            }
+            let Some(entry) = world.journal().get(index) else {
+                break;
+            };
+            if sent.contains(&index) {
+                continue;
+            }
+            replayed_count += 1;
             let now = replayed.execute(entry.command.clone());
             let changed = match (&entry.result, &now) {
                 (Ok(()), Err(refusal)) => {
@@ -453,14 +483,10 @@ impl Session {
                 _ => None,
             };
             if let Some(changed) = changed {
-                return Outcome::Error(format!(
-                    "reload stopped at command {}, {}: {changed}. Nothing has changed.",
-                    index + 1,
-                    describe_command(&entry.command)
-                ));
+                return stopped(replayed_count, describe_command(&entry.command), changed);
             }
         }
-        let commands = match world.journal().len() {
+        let commands = match replayed_count {
             1 => "1 command".to_owned(),
             count => format!("{count} commands"),
         };
@@ -469,10 +495,15 @@ impl Session {
             .warnings
             .iter()
             .map(|warning| format!("warning: {warning}"));
-        let changes = report(("before", world), ("after", &replayed));
+        let mut changes = report(("before", world), ("after", &replayed));
+        let progress = crate::play::progress_changes(&self.quests, &log);
+        if !progress.is_empty() {
+            changes.retain(|line| line != "no differences");
+            changes.extend(progress);
+        }
         let output = lines(std::iter::once(summary).chain(warnings).chain(changes));
         self.world = Some(replayed);
-        self.quests = QuestLog::new(checked.quests);
+        self.quests = log;
         self.fingerprint = checked.fingerprint;
         Outcome::Output(output)
     }
@@ -486,19 +517,18 @@ impl Session {
         let (Some(world), Some(dir)) = (&self.world, &self.loaded) else {
             return no_world();
         };
-        if self.quests.has_progress() {
-            return Outcome::Error(
-                "saves can't hold quest progress yet (DESIGN.md §17.4)".to_owned(),
-            );
-        }
-        let text = factional_content::save(world, dir, &self.fingerprint);
+        let text = factional_content::save(world, &self.quests, dir, &self.fingerprint);
         if let Err(error) = std::fs::write(self.base_dir.join(file), text) {
             return Outcome::Error(format!("cannot write {file}: {error}"));
         }
+        let mut quests = quest_counts(&self.quests);
+        if !quests.is_empty() {
+            quests.push(',');
+        }
         Outcome::Output(format!(
-            "saved {} and {} to {file}",
+            "saved {} and {}{quests} to {file}",
             count(world.journal().len(), "command"),
-            count(world.events().len(), "event")
+            count(world.events().len(), "event"),
         ))
     }
 
@@ -516,14 +546,15 @@ impl Session {
             Ok(restored) => {
                 let world = restored.world;
                 let summary = format!(
-                    "restored {file}: {} at tick {}, with {} and {}",
+                    "restored {file}: {} at tick {}, with {} and {}{}",
                     restored.dir,
                     world.now(),
                     count(world.journal().len(), "command"),
-                    count(world.events().len(), "event")
+                    count(world.events().len(), "event"),
+                    quest_counts(&restored.quests)
                 );
                 self.world = Some(world);
-                self.quests = QuestLog::new(restored.quests);
+                self.quests = restored.quests;
                 self.loaded = Some(restored.dir);
                 self.fingerprint = restored.fingerprint;
                 Outcome::Output(summary)
@@ -2433,6 +2464,19 @@ fn parse_relate(args: &str) -> Result<Command, String> {
 
 pub(crate) fn lines(items: impl Iterator<Item = String>) -> String {
     items.collect::<Vec<_>>().join("\n")
+}
+
+/// `, and 2 quest commands and 4 quest events`, or nothing if no quest command has been
+/// issued.
+fn quest_counts(quests: &QuestLog) -> String {
+    if quests.journal().is_empty() {
+        return String::new();
+    }
+    format!(
+        ", and {} and {}",
+        count(quests.journal().len(), "quest command"),
+        count(quests.events().len(), "quest event")
+    )
 }
 
 pub(crate) fn no_world() -> Outcome {
