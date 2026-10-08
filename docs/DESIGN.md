@@ -926,7 +926,7 @@ A world loads only if it is complete in principle. This module's part is the loa
 
 Each quest and questline for a faction must reconcile with every other faction it affects, and with those factions' questlines, at every stage. A world whose quests contradict each other at some reachable stage doesn't load. Quests and questlines outside the factions, given by a character or by no one, are held to the same check (D-28).
 
-What "reconcile" means, and how loading checks it without exploring every combination of stages, was settled in Q0 (D-25 to D-27, settling X-4): §17 has the design. In short, a choice in one quest that could permanently close a stage of another must say so, and loading finds every such choice from conservative bounds, pair by pair.
+What "reconcile" means, and how loading checks it without exploring every combination of stages, was settled in Q0 (D-25 to D-29, settling X-4): §17 has the design. In short, a choice in one quest that could permanently close a stage or the gate of another must say so, and loading finds every such choice from conservative bounds, pair by pair.
 
 ### 16.2 What it asks of this module now
 
@@ -940,15 +940,19 @@ A quest checker can only reconcile what it can see without running the game. So 
 
 A feature that would make an effect's reach impossible to compute from content, such as computed effects or script hooks, conflicts with D-20. It needs the user's agreement before it's built.
 
-## 17. Quests (designed in Q0; D-25 to D-27, P-64, P-65)
+## 17. Quests (designed in Q0; D-25 to D-29, P-64 to P-66)
 
 The quest module is a sibling crate, `factional-quests`. It reads this module's content and sends it commands, like any other module (§11, D-15). This section is its design; Q1 onwards builds it.
 
-### 17.1 Quests, questlines, stages and choices (D-25, D-28)
+### 17.1 Quests, questlines, stages and choices (D-25, D-28, D-29)
 
 A **quest** is a list of stages. Each stage has requirements and one or more choices; each choice has effects and says which stage comes next, or that the quest ends. Choices only lead forward, so a quest is a tree of paths with no loops, and what's reachable is easy to work out.
 
-A **questline** is an ordered chain of quests, each needing the one before it finished: a story arc. A quest can also stand alone, in no questline.
+A **questline** is an ordered list of steps: a story arc (D-29). Each step is a group of one or more quests that are open at the same time and can be done in any order. A step opens once the step before it is complete and its own requirements hold; it's complete once `need` of its quests are done. `need` defaults to all of them and may be 0, which makes the step's quests optional: the next step's requirements, such as a rank or a standing, decide when the character can move on. A one-quest step is a plain link in a chain. A quest can also stand alone, in no questline, and belongs to at most one questline.
+
+**Gates.** A quest's own `requires` must hold to start it, and a stage's to reach it; a step's `requires` are added to the gate of every quest in it. They use the same vocabulary, so a faction's questline gates its later work by rank or standing in the faction.
+
+**Leftovers.** When a step needs fewer than all its quests, the designer chooses what happens to the rest once the character moves on: `leftovers = "open"` (the default) keeps them available; `"close"` shuts them when the character starts a quest of the next step. Closing is written on the step, so it's a declared lockout of those quests (§17.2).
 
 **Who they belong to** (D-28). A quest or questline has an optional `giver`: a faction (the Watch's career), a character (an NPC's personal errand), or no one, left out (the world's own quests). A quest in a questline belongs to the questline's giver unless it names its own. Whoever owns them, every quest is reconciled with every other (§17.2): ownership says whose story it is, not which rules apply.
 
@@ -957,10 +961,11 @@ A **questline** is an ordered chain of quests, each needing the one before it fi
 [watch_oath]
 name = "The Watch's Oath"
 giver = "city_watch"
+requires = { not_member = ["lantern_guild"] }
 
 [[watch_oath.stages]]
 id = "patrol"
-requires = { standing = { city_watch = 0.0 }, not_member = ["lantern_guild"] }
+requires = { standing = { city_watch = 0.0 } }
 choices = [
   { id = "report", outcome = "turned_in_vex", next = "oath" },
   { id = "look_away", outcome = "took_a_bribe", next = "end" },
@@ -984,16 +989,33 @@ name = "The Long Winter"
 [watch_career]
 name = "A Life in the Watch"
 giver = "city_watch"
-quests = ["watch_oath", "watch_sergeant", "watch_captain"]
+
+[[watch_career.steps]]
+quests = ["watch_oath"]
+
+# odd jobs, in any order: two of the three, and the third goes
+[[watch_career.steps]]
+quests = ["night_patrol", "dock_inspection", "smugglers_cove"]
+need = 2
+leftovers = "close"
+
+# favours, done or not: they earn standing, and rank decides when to move on
+[[watch_career.steps]]
+quests = ["harbour_errands", "lost_dog"]
+need = 0
+
+[[watch_career.steps]]
+requires = { rank_at_least = { city_watch = "sergeant" }, standing = { city_watch = 40.0 } }
+quests = ["watch_captain"]
 ```
 
-- **Requirements** come from a closed vocabulary, all about the character doing the quest: `standing` (at least, with a faction or character), `member` and `not_member`, `rank_at_least` in a faction, `within_tolerance` of a faction (as it perceives them, §10.3), and `done` (another quest finished, or one of its stages or choices: `quest`, `quest.stage` or `quest.stage.choice`). A questline's order is a `done` on the quest before, added for the designer.
+- **Requirements** come from a closed vocabulary, all about the character doing the quest: `standing` (at least, with a faction or character), `member` and `not_member`, `rank_at_least` in a faction, `within_tolerance` of a faction (as it perceives them, §10.3), and `done` (another quest finished, or one of its stages or choices: `quest`, `quest.stage` or `quest.stage.choice`). A questline's order is added for the designer: each quest's gate gets its step's `requires`, and a requirement that the step before is complete (`need` of its quests done).
 - **Effects** are an outcome from `outcomes.toml`, or the same kinds inline. The vocabulary grows from today's alignment and standing to `join`, `leave`, `promote`, `demote` and `relation` (a shift between two factions), all sent to this module as commands. Nothing is computed or scripted (§16.2).
 - **The quest module keeps who has done what:** each character's progress, as its own events. This module never sees quests, only the commands they send.
 
 ### 17.2 Reconciling: every lockout is declared (D-26)
 
-A choice **locks out** a stage of another quest if, in the worst case, its effects can make one of that stage's requirements false for good: false, and nothing else in the content can make it true again. This holds between any two quests, in a questline or not, whoever gives them. Choices with consequences are allowed, such as joining the Watch closing the Guild's story. Accidental ones aren't: every lockout a choice can cause must be declared on it, as `locks = ["guild_heist.vault"]`, or the world doesn't load. A declared lock that can't actually happen is a warning, so stale declarations get noticed.
+A choice **locks out** a stage of another quest, or its gate, if, in the worst case, its effects can make one of those requirements false for good: false, and nothing else in the content can make it true again. This holds between any two quests, in a questline or not, whoever gives them. Choices with consequences are allowed, such as joining the Watch closing the Guild's story. Accidental ones aren't: every lockout a choice can cause must be declared on it, as `locks = ["guild_heist.vault"]` for a stage or `locks = ["guild_heist"]` for the quest's gate (its step's requirements included), or the world doesn't load. A declared lock that can't actually happen is a warning, so stale declarations get noticed. A step's `leftovers = "close"` is the other way to lock a quest out, and it's declared where it's written.
 
 What counts as for good, requirement by requirement (P-64):
 
@@ -1004,9 +1026,9 @@ What counts as for good, requirement by requirement (P-64):
 | `rank_at_least` | demotes, or ends the membership | never undone |
 | `within_tolerance` | shifts alignment away | some action can move each axis it needs back, with inertia that never stops it |
 | `not_member` | joins | always undone: leaving always succeeds |
-| `done` of another quest | (only that quest's own other choices) | not a lockout: the requirement already names the quest |
+| `done` of another quest, or the step before complete | (only that quest's own other choices, or a step's leftovers closing) | not a lockout: the requirement already names the quest or the step |
 
-Within one quest, choices exclude each other by design and need no declaration. Every stage must still be reachable along some path of its own quest, and every quest in a questline reachable from the quests before it, or it's dead content and an error.
+Within one quest, choices exclude each other by design and need no declaration. Every stage must still be reachable along some path of its own quest, and every step of a questline reachable from the steps before it, with `need` no more than its quests, or it's dead content and an error. A rank or standing gate counts as reachable if it's in range and names a real rung, as P-51 reasons: standing can always be raised, and promotion can always be asked for.
 
 ### 17.3 Checking it: conservative bounds (D-27, P-65)
 
@@ -1017,7 +1039,7 @@ Loading never plays the game out. For each choice it works out bounds from conte
 - **Alignment:** how far each axis can move.
 - **Relations:** what it can change.
 
-Then each choice is checked against each stage of every other quest, pair by pair: O(choices × stages × requirements), with no combinations of stages. The bounds over-estimate, so the check may report a lockout that couldn't really happen; the designer declares it, and that's the price of a check that always finishes. What's recoverable is worked out once per world: which parties' standing some action can raise, and which axes some action can move both ways.
+Then each choice is checked against each stage and gate of every other quest, pair by pair: O(choices × stages × requirements), with no combinations of stages. The bounds over-estimate, so the check may report a lockout that couldn't really happen; the designer declares it, and that's the price of a check that always finishes. What's recoverable is worked out once per world: which parties' standing some action can raise, and which axes some action can move both ways.
 
 **Worked example** (illustrative; the quests aren't in Riverhold yet). An Ashen Circle quest has a choice `set_them_at_war` whose effects shift the Temple and the Watch to −60. A character in both could then lose one membership in the conflict that opens, so it locks out every stage that needs membership of the Temple or the Watch, such as the Temple's `ordination`. Undeclared, loading reports:
 
@@ -1029,9 +1051,9 @@ By contrast, the Guild's `burn_the_records`, at −40 with the Watch, doesn't lo
 
 | Increment | Builds |
 | --- | --- |
-| Q1 | `factional-quests`, `quests.toml` and `questlines.toml`: quests with their givers, stages, choices and requirements, and questlines chaining them, with every reference and range checked; the CLI lists them |
+| Q1 | `factional-quests`, `quests.toml` and `questlines.toml`: quests with their givers, gates, stages, choices and requirements, and questlines of steps (`quests`, `need`, `requires`, `leftovers`), with every reference and range checked; the CLI lists them |
 | Q2 | The wider effect vocabulary (`join`, `leave`, `promote`, `demote`, `relation`), as outcomes and inline effects |
-| Q3 | Reachability: no dead stages in a quest, no unreachable quest in a questline |
-| Q4 | The bounds and the lockout check, with `locks` declarations and stale-lock warnings |
-| Q5 | Playing quests: starting them, making choices and progress through quests and questlines, as commands and events, in the CLI |
+| Q3 | Reachability: no dead stages in a quest, no unreachable step in a questline |
+| Q4 | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
+| Q5 | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI |
 
