@@ -41,5 +41,5 @@ temple → city_watch: 20.00 (friendly)
 > quests docs/examples/riverhold the_long_winter
 the_long_winter — The Long Winter — the world's own
 1. stores
-   share — alignment: law 0.00, good 6.00 — standing: temple 10.00 — relations: temple ↔ city_watch 5.00 — then the end
+   share — alignment: law 0.00, good 6.00 — standing: temple 10.00 — relations: temple ↔ city_watch 5.00 — locks circle_rite — then the end
    hoard — alignment: law 0.00, good -6.00 — then the end

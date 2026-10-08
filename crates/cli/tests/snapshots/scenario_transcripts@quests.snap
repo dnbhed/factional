@@ -1,11 +1,11 @@
 ---
 source: crates/cli/tests/scenarios.rs
-assertion_line: 24
 expression: transcript
 input_file: scenarios/quests.scenario
 ---
 > quests docs/examples/riverhold
 quests:
+  circle_rite — The Ashen Rite — from ashen_circle — 1 stage — needs standing 10.00 with ashen_circle
   dock_inspection — Inspecting the Docks — from city_watch, in watch_career — 1 stage
   harbour_errands — Harbour Errands — from city_watch, in watch_career — 1 stage
   lost_dog — The Captain's Dog — from captain_hale, in watch_career — 1 stage
@@ -33,9 +33,9 @@ watch_oath — The Watch's Oath — from city_watch, in watch_career at step 1 �
 2. oath — needs standing 10.00 with city_watch
    swear — alignment: law 5.00, good 0.00 — then the end
 > assert quests docs/examples/riverhold watch_oth == error: unknown quest 'watch_oth' (did you mean 'watch_oath'?)
-> assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)
+> assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
 > validate docs/examples/riverhold
-error: quests.toml: quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)
+error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
 docs/examples/riverhold doesn't load: 1 problem
 > quests crates/cli/tests/fixtures/worlds/odd_jobs
 quests:

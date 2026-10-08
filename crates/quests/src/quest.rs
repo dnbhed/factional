@@ -91,6 +91,8 @@ pub struct Choice {
     pub id: ChoiceId,
     pub effects: ChoiceEffects,
     pub next: Next,
+    /// Every quest gate or stage it can shut off for good, declared (D-26).
+    pub locks: Vec<Lock>,
 }
 
 /// What making a choice does to the character who makes it.
@@ -218,6 +220,66 @@ impl fmt::Display for ProgressError {
             ProgressError::TooLong(text) => write!(
                 f,
                 "'{text}' has too many parts: write quest, quest.stage or quest.stage.choice"
+            ),
+        }
+    }
+}
+
+/// What a choice declares it can lock out (D-26): another quest's gate, its step's
+/// requirements included, or one of its stages. Written `quest` or `quest.stage`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Lock {
+    Gate(QuestId),
+    Stage(QuestId, StageId),
+}
+
+/// Text that isn't `quest` or `quest.stage`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LockError {
+    /// One of its parts isn't a valid id.
+    Invalid(InvalidId),
+    /// More than two parts.
+    TooLong(String),
+}
+
+impl Lock {
+    /// Reads `quest` or `quest.stage`.
+    pub fn parse(text: &str) -> Result<Lock, LockError> {
+        let quest = |text: &str| QuestId::new(text).map_err(LockError::Invalid);
+        match text.split('.').collect::<Vec<_>>()[..] {
+            [id] => Ok(Lock::Gate(quest(id)?)),
+            [id, stage] => Ok(Lock::Stage(
+                quest(id)?,
+                StageId::new(stage).map_err(LockError::Invalid)?,
+            )),
+            _ => Err(LockError::TooLong(text.to_owned())),
+        }
+    }
+
+    /// The quest it's about.
+    pub fn quest(&self) -> &QuestId {
+        match self {
+            Lock::Gate(quest) | Lock::Stage(quest, _) => quest,
+        }
+    }
+}
+
+impl fmt::Display for Lock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Lock::Gate(quest) => write!(f, "{quest}"),
+            Lock::Stage(quest, stage) => write!(f, "{quest}.{stage}"),
+        }
+    }
+}
+
+impl fmt::Display for LockError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LockError::Invalid(invalid) => invalid.fmt(f),
+            LockError::TooLong(text) => write!(
+                f,
+                "'{text}' has too many parts: write quest, for its gate, or quest.stage"
             ),
         }
     }
@@ -413,6 +475,39 @@ mod tests {
         );
         assert!(Progress::parse("oath..report").is_err());
         assert!(Progress::parse("x.y.Z").is_err());
+    }
+
+    #[test]
+    fn a_lock_is_a_quests_gate_or_one_of_its_stages_written_with_dots() {
+        let parsed: Vec<String> = ["oath", "oath.patrol"]
+            .into_iter()
+            .map(|text| Lock::parse(text).expect("valid").to_string())
+            .collect();
+        assert_eq!(parsed, ["oath", "oath.patrol"]);
+        assert_eq!(Lock::parse("oath"), Ok(Lock::Gate(id("oath"))));
+        assert_eq!(
+            Lock::parse("oath.patrol"),
+            Ok(Lock::Stage(
+                id("oath"),
+                StageId::new("patrol").expect("valid id")
+            ))
+        );
+        assert_eq!(
+            Lock::parse("oath.patrol").expect("valid").quest(),
+            &id("oath")
+        );
+        assert_eq!(
+            Lock::parse("oath.Patrol").map_err(|error| error.to_string()),
+            Err("'Patrol' isn't a valid id: use lowercase letters, digits and _, starting with a letter".to_owned())
+        );
+        assert_eq!(
+            Lock::parse("Oath").map_err(|error| error.to_string()),
+            Err("'Oath' isn't a valid id: use lowercase letters, digits and _, starting with a letter".to_owned())
+        );
+        assert_eq!(
+            Lock::parse("a.b.c").map_err(|error| error.to_string()),
+            Err("'a.b.c' has too many parts: write quest, for its gate, or quest.stage".to_owned())
+        );
     }
 
     #[test]

@@ -1,0 +1,48 @@
+# Every lockout here is undeclared.
+
+[muster]
+name = "Muster"
+giver = "watch"
+
+[[muster.stages]]
+id = "drill"
+requires = { member = ["watch"] }
+choices = [{ id = "march", next = "end" }]
+
+[heist]
+name = "The Heist"
+giver = "guild"
+requires = { standing = { guild = 10.0 }, within_tolerance = ["guild"] }
+
+[[heist.stages]]
+id = "vault"
+choices = [{ id = "crack", next = "end" }]
+
+# A war between the Watch and the Guild ends one membership of anyone in both.
+[riot]
+name = "Riot"
+
+[[riot.stages]]
+id = "street"
+choices = [
+  { id = "incite", effects = { relations = [{ between = ["watch", "guild"], by = -100.0 }] }, next = "end" },
+]
+
+# Moving toward lawful can take a member out of the Watch's tolerance, and the Watch expels
+# at once; and no action moves anyone back toward chaotic, within the Guild's.
+[confession]
+name = "Confession"
+
+[[confession.stages]]
+id = "chapel"
+choices = [{ id = "repent", effects = { alignment = { law = 5.0 } }, next = "end" }]
+
+# No action raises standing with the Guild.
+[snitch]
+name = "Snitch"
+
+[[snitch.stages]]
+id = "alley"
+choices = [
+  { id = "tell", effects = { standing = { factions = { guild = -5.0 } } }, next = "end" },
+]

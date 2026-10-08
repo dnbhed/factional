@@ -35,6 +35,14 @@
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string"
         },
+        "locks": {
+          "description": "Every other quest, or stage of one, the choice can shut off for good, once each: quest for its gate (its step's requirements included), quest.stage for a stage. Loading refuses a lockout left out; one listed that can't happen is a warning.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$",
+            "type": "string"
+          },
+          "type": "array"
+        },
         "next": {
           "description": "A later stage's id, or end for the end of the quest.",
           "pattern": "^[a-z][a-z0-9_]*$",

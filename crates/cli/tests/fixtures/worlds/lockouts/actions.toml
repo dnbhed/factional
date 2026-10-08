@@ -1,0 +1,6 @@
+# The only action: it moves toward lawful and raises standing with the Watch. Nothing moves
+# anyone toward chaotic, and nothing raises standing with the Guild.
+
+[obey]
+alignment = { law = 3.0 }
+standing = { factions = { watch = 5.0 } }

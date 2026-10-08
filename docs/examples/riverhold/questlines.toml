@@ -1,5 +1,5 @@
 # questlines.toml: questlines, each an ordered list of steps (DESIGN.md §17.1, D-29). (Q1;
-# a world with quests loads once Q4 checks that they reconcile)
+# a world with quests loads once it can carry them, Q5)
 #
 # name:  the questline's name, as shown
 # giver: whose questline it is: a faction or a character, by id; left out, the world's own.

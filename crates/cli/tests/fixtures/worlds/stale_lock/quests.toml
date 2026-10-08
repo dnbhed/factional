@@ -1,0 +1,19 @@
+[muster]
+name = "Muster"
+giver = "watch"
+
+[[muster.stages]]
+id = "drill"
+requires = { standing = { watch = 10.0 } }
+choices = [{ id = "march", next = "end" }]
+
+# Standing with the Watch can always be won back by obeying, so skipping chores can't lock
+# the drill out.
+[chores]
+name = "Chores"
+
+[[chores.stages]]
+id = "yard"
+choices = [
+  { id = "skip", effects = { standing = { factions = { watch = -5.0 } } }, next = "end", locks = ["muster.drill"] },
+]

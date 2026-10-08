@@ -450,7 +450,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Bare ids where one id is meant:** a `giver` and a `standing` requirement name a faction or a character by id alone, as one id namespace allows (P-35). A choice's inline `effects` are written as an outcome's are, `standing = { factions = { … }, characters = { … } }`, so the two read the same.
   - **A choice has an `outcome`, inline `effects`, or neither,** never both. `next` is required, and `"end"` is reserved for the end of the quest, so no stage may be called `end`.
   - **Quest checks wait until every file reads cleanly,** as checks across bands and rungs do (P-36, P-41), so they never report something missing only because it couldn't be read. A quest or questline with a reading problem is reported and left out.
-  - **Content with quests doesn't load until Q4** (D-20). The quests are checked first, then loading reports that a world with quests can't load yet: at `quests.toml`, or at `questlines.toml` if only that file has anything in it. Quest files with nothing in them load.
+  - **Content with quests doesn't load until Q5** (D-20; Q4, which checks lockouts, was split from the loading). The quests are checked first, then loading reports that a world with quests can't load yet: at `quests.toml`, or at `questlines.toml` if only that file has anything in it. Quest files with nothing in them load.
   - **`quests <dir> [<quest>]` reads and checks a directory without loading it,** since no world with quests loads yet. It lists each quest with its giver (its own, or its questline's), its questline, its stage count and its gate, then each questline's steps; with a quest, that quest's stages and choices. Warnings follow, as after `load`.
   - **Saves don't fingerprint the quest files yet,** since no world with quests loads; they join the fingerprint when worlds with quests do.
   - **Riverhold's quests are in `docs/examples/riverhold`, not `content/sample`,** because the sample has to load for every scenario; the sample gets them once worlds with quests load. Two outcomes the quests use, `turned_in_vex` and `took_a_bribe`, are added to the example.
@@ -479,6 +479,18 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Saves stay readable:** effects without `relations` read as having none.
   - **Fixed in passing:** DESIGN.md §13's outcomes table was missing `fenced_the_crown_jewels`.
   - *Why:* a quest can reshape the factions' world the way a designer writes relations already, and a shift can never leave a relation out of range.
+
+- **P-70 · How the lockout check is built** (made in Q4, 2026-10-08).
+  - **Only whether a choice can make a requirement false counts, not by how much.** Where the character stands is unknown, so the worst case is the edge: any fall in standing, any move along an axis a faction weighs.
+  - **Standing counts as raisable only directly:** a named party some action raises, or any character an action with a positive `target` effect is done to. A spill can't be counted on, since it comes from the change as applied, and nothing spills once standing with its source is at 100; nor can `target_factions`, which depends on whom the target belongs to.
+  - **A way back along an axis counts only if no inertia profile ever stops it:** every profile's curve for that way stays above 0. Done without a target, an action's `by_target` curves never apply.
+  - **Probation is undone when every axis moved has a way back:** a member who drifts has time to move back before it runs out, as lost standing can be won back. `demote` and `expel` act at once, so any move along an axis the faction weighs can end the membership: demotion expels from the lowest rank.
+  - **A relation's reach** runs from its start, moved by every quest choice's shift of it once, and all the way to ±100 if an outcome shifts it, since outcomes can be applied again and again. A war needs both directions above the conflict threshold before and one at or below it after; a choice's own shift isn't counted twice.
+  - **A quest certainly finished before the choice can be made isn't checked,** since a quest can't be locked out once it's over: the quests its gate, its step or its stage needs done, every quest of an earlier step that needs all of them, and those finished before each of these started.
+  - **The first lockout found for a gate or a stage is reported, at the choice,** in the order `requires` lists its keys; one declaration covers it. A quest's gate and each of its stages are declared separately, since a quest already started still has stages to reach.
+  - **Locks are checked like references,** with a "did you mean": another quest, or a stage of one, once each. Never the choice's own quest, whose choices exclude each other by design (§17.2). Stale locks are warnings, looked for once every reference resolves.
+  - **Q4 was split.** The check is here; worlds with quests load in Q5, and playing them moves to Q6.
+  - *Why:* the check never misses a lockout the content can cause, and finishes in time that grows with the content. Meanwhile the give and take a character can always undo needs no declaration.
 
 ## Open
 

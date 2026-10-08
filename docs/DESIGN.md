@@ -758,7 +758,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 - **Warnings don't stop loading.** `load` prints them after its summary. `factional validate <dir>` (T1) gives the same problems and warnings without starting a session, then a summary, and exits 1 if the world wouldn't load.
 - **The rules live in `factional-reputation`,** and quests' in `factional-quests` (`Quests::problems`, against the reputation content). `World::new` runs the checks and refuses invalid content, so a host that builds content in code, not from TOML, gets the same protection. `factional-content` turns each problem's location into `file: key.path`.
 - **CI loads `content/sample` on every PR.** Broken sample content fails the build like a compile error. `docs/examples/riverhold` is read and checked too, quests included, without the settings the engine doesn't read yet, which a test names (T1).
-- **Until quests can be reconciled (Q4), content with quests doesn't load** (D-20). Its quests are checked like everything else, and loading then reports that a world with quests can't load yet (P-67).
+- **Until a world can carry them (Q5), content with quests doesn't load** (D-20). Its quests are checked like everything else, lockouts included, and loading then reports that a world with quests can't load yet (P-67).
 - **Each check arrives with the increment that adds the content it checks**, never later.
 
 | Check | Kind | Added in |
@@ -799,11 +799,14 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | `leftovers = "close"` on a step that needs all its quests | warning | Q1 (done) |
 | Relation shifts in outcomes and quests' effects: two different factions that exist, `by` within −200…200, each direction shifted at most once; the same refuses `ApplyEffects` | error | Q2 (done) |
 | Quests can be reached: every stage by some choice; no gate needing `member` or `rank_at_least` and `not_member` of one faction; `done` on a quest's own progress only where it can have happened; no quest that can never start, stage whose `done` can never happen, quest closed by its own step before it can start, or stage needing its quest over first (§17.2) | error | Q3 (done) |
+| A choice's `locks` name another quest, or a stage of one, that exists, once each, written `quest` or `quest.stage` | error | Q4 (done) |
+| Every lockout a choice can cause is declared in its `locks` (§17.2, §17.3) | error | Q4 (done) |
+| A declared lock that can't happen | warning | Q4 (done) |
 
 ### 12.3 Designer workflow
 
 - `factional validate <dir>` to check a world without starting a session (T1).
-- `quests <dir> [<quest>]` in the REPL to list a world's quests and questlines, or one quest's stages and choices, read and checked without loading it (Q1).
+- `quests <dir> [<quest>]` in the REPL to list a world's quests and questlines, or one quest's stages and choices with what each locks, read and checked without loading it (Q1, Q4).
 - `factional schema <file>` for a content file's JSON Schema, to get completion and checking in an editor (T1).
 - `factional repl`, then `load content/sample`, to poke at a world.
 - `calc 4.00 * 0.41` in the REPL to check exactly how the engine rounds a calculation.
@@ -952,7 +955,7 @@ A quest checker can only reconcile what it can see without running the game. So 
 
 A feature that would make an effect's reach impossible to compute from content, such as computed effects or script hooks, conflicts with D-20. It needs the user's agreement before it's built.
 
-## 17. Quests (designed in Q0; D-25 to D-30, P-64 to P-67)
+## 17. Quests (designed in Q0; D-25 to D-30, P-64 to P-70)
 
 The quest module is a sibling crate, `factional-quests`. It reads this module's content and sends it commands, like any other module (§11, D-15). This section is its design; Q1 onwards builds it.
 
@@ -986,7 +989,7 @@ choices = [
 [[watch_oath.stages]]
 id = "oath"
 requires = { standing = { city_watch = 10.0 } }
-choices = [{ id = "swear", effects = { join = ["city_watch"] }, next = "end" }]
+choices = [{ id = "swear", effects = { alignment = { law = 5.0 } }, next = "end" }]
 
 [lost_ring]
 name = "Ava's Lost Ring"
@@ -1023,6 +1026,7 @@ quests = ["watch_captain"]
 
 - **Requirements** come from a closed vocabulary, all about the character doing the quest: `standing` (at least, with a faction or character), `member` and `not_member`, `rank_at_least` in a faction, `within_tolerance` of a faction (as it perceives them, §10.3), and `done` (another quest finished, or one of its stages or choices: `quest`, `quest.stage` or `quest.stage.choice`). A questline's order is added for the designer: each quest's gate gets its step's `requires`, and a requirement that the step before is complete (`need` of its quests done).
 - **Effects** are an outcome from `outcomes.toml`, or the same kinds inline: the character's alignment and standing, and `relations`, shifts in how factions regard each other (Q2). All are sent to this module as commands. Nothing is computed or scripted (§16.2). **Quests never change memberships or ranks** (D-30): joining, leaving and promotion are always the character's own actions, which a quest's requirements can only wait for.
+- **Locks** are a choice's declaration of what it can shut off for good in other quests: `locks = ["watch_captain", "watch_captain.command"]`, a quest for its gate or `quest.stage` for a stage (§17.2, Q4).
 - **The quest module keeps who has done what:** each character's progress, as its own events. This module never sees quests, only the commands they send.
 
 ### 17.2 Reconciling: every lockout is declared (D-26)
@@ -1033,10 +1037,10 @@ What counts as for good, requirement by requirement (P-64):
 
 | Requirement | Made false by a choice that… | For good unless… |
 | --- | --- | --- |
-| `standing` with a party | lowers it (directly, or by spillover) below the threshold | some action, which can be repeated, can raise it again (directly or by spillover) |
-| `member` of a faction | shifts alignment far enough for the faction's drift policy to expel, or starts a war between it and another faction of the character's | never undone: rejoining depends on too much to prove |
-| `rank_at_least` | shifts alignment far enough for drift to demote, or ends the membership | never undone |
-| `within_tolerance` | shifts alignment away | some action can move each axis it needs back, with inertia that never stops it |
+| `standing` with a party | lowers it (directly, or by spillover) below the threshold | some action, which can be repeated, raises it directly (P-70: a spill can't be counted on, since nothing spills once standing with its source is at 100) |
+| `member` of a faction | shifts alignment along an axis the faction weighs, under a drift policy that demotes (expelling from the lowest rank) or expels; or starts a war between it and another faction | never undone: rejoining depends on too much to prove. Under `probation`, drift is undone if some action moves each axis back, as for `within_tolerance` (P-70) |
+| `rank_at_least` | anything that can end the membership: drift demotes as well as expels | never undone, but probation as for `member` |
+| `within_tolerance` | shifts alignment along an axis the faction weighs | some action moves that axis back, with every inertia profile's curve for that way above 0 everywhere |
 | `not_member` | nothing: joining is never a quest's effect (D-30) | — |
 | `done` of another quest, or the step before complete | (only that quest's own other choices, or a step's leftovers closing) | not a lockout: the requirement already names the quest or the step |
 
@@ -1054,22 +1058,29 @@ Within one quest, choices exclude each other by design and need no declaration. 
   - **A quest its own step's leftovers close before it can start.** That's the same run with the questline's later steps shut.
   - **A stage that needs something only possible once its quest is over.** That's the same run with the quest held at the stages that lead there.
 
-### 17.3 Checking it: conservative bounds (D-27, P-65)
+### 17.3 Checking it: conservative bounds (D-27, P-65, P-70)
 
-Loading never plays the game out. For each choice it works out bounds from content alone:
+Loading never plays the game out. Once per world it works out what the character can always undo, and how far each relation can go:
 
-- **Standing:** the most each party's standing can fall, adding the choice's direct effects and their spillover. Spillover is bounded over the whole range the relations can reach, since quests can shift relations.
-- **Memberships:** which it can end, through drift its alignment shift can cause or a war its relation shifts can start.
-- **Alignment:** how far each axis can move.
-- **Relations:** what it can change.
+- **Raisable standing:** the parties some action raises directly: a named faction or character, or any character an action with a positive `target` effect is done to.
+- **Movable axes:** each way an axis can go (toward lawful, chaotic, good or evil) that some action moves it, with every inertia profile's curve for that way above 0 everywhere, so repeating it always gets there.
+- **Relation reach:** each direction between two factions, from its starting value, moved by every quest choice's shift of it once, and all the way to ±100 if any outcome shifts it, since outcomes can be applied any number of times.
 
-Then each choice is checked against each stage and gate of every other quest, pair by pair: O(choices × stages × requirements), with no combinations of stages. The bounds over-estimate, so the check may report a lockout that couldn't really happen; the designer declares it, and that's the price of a check that always finishes. What's recoverable is worked out once per world: which parties' standing some action can raise, and which axes some action can move both ways.
+Then, for each choice, its bounds from content alone:
 
-**Worked example** (illustrative; the quests aren't in Riverhold yet). An Ashen Circle quest has a choice `set_them_at_war` whose effects shift the Temple and the Watch to −60. A character in both could then lose one membership in the conflict that opens, so it locks out every stage that needs membership of the Temple or the Watch, such as the Temple's `ordination`. Undeclared, loading reports:
+- **Standing:** the parties whose standing it can lower: directly, or by one hop of spillover anywhere over the reach of how the receiving faction regards the source. The curve is straight between its points, so its ends and its points within that reach are enough.
+- **Alignment:** the ways it moves each axis. Where the character stands is unknown, so any move can take them out of a faction's tolerance along an axis the faction weighs.
+- **Wars:** each direction its relation shifts can take to the conflict threshold or below, from above it with the other direction above it too, counting every other choice's shifts but not its own twice.
 
-> quests.toml: circle_rite.stages[0].choices[1]: may lock out temple_vows.ordination: it can start a war between temple and city_watch, ending the membership of temple that the stage needs; declare it in locks
+Then each choice is checked against the gate (its step's requirements included) and each stage of every other quest, requirement by requirement, as §17.2's table says: O(choices × stages × requirements), with no combinations of stages. The first lockout found for a gate or stage is reported at the choice. A quest certainly finished before the choice can be made isn't checked: one its gate, its step or its stage needs done, every quest of an earlier step that needs all of them, and, in turn, those finished before each of these started. The bounds over-estimate, so the check may report a lockout that couldn't really happen; the designer declares it, and that's the price of a check that always finishes.
 
-By contrast, the Guild's `burn_the_records`, at −40 with the Watch, doesn't lock out `watch_oath.oath` (Watch standing 10): `report_crime`, an action, can raise standing with the Watch again, so the loss isn't for good.
+**Worked example** (Riverhold's complete example). The Ashen Circle's `circle_rite` has a choice `set_them_at_war` that shifts the Temple and the Watch by −120. They start at 60, and `sowed_discord`, an outcome, can take them to −100; −100 − 120 stops at −100, at or below the conflict threshold of −50. A character in both could lose either membership in the war that opens, so it locks out `watch_captain`, whose step needs the rank of sergeant in the Watch, and `watch_captain.command`, which needs membership of the Watch. Undeclared, loading reports:
+
+> quests.toml: circle_rite.stages[0].choices[1]: may lock out watch_captain: it can start a war between city_watch and temple, ending the sergeant rank in city_watch that its gate needs; declare it in locks
+
+Sharing in `the_long_winter` gives the Temple 10. The Circle regards the Temple at −90, where the spillover curve gives −0.30 + 10 / 50 × 0.30 = −0.24, so 10 × −0.24 = −2.40 spills to the Circle; no action raises standing with the Circle, so sharing locks out the rite, whose gate needs standing 10 with it. The example declares both.
+
+By contrast, a choice taking 40 from the Watch doesn't lock out `watch_oath.oath` (Watch standing 10): `report_crime`, an action, raises standing with the Watch again, so the loss isn't for good. Nor does any choice lock out membership of the Watch by drift: it puts members on probation, and for every way each axis moves some action moves it back. The Temple demotes at once, so a stage needing membership of the Temple would be locked out by every choice that moves alignment; that's the cost of a drift policy with no grace.
 
 ### 17.4 What's built when
 
@@ -1078,6 +1089,7 @@ By contrast, the Guild's `burn_the_records`, at −40 with the Watch, doesn't lo
 | Q1 (done) | `factional-quests`, `quests.toml` and `questlines.toml`: quests with their givers, gates, stages, choices and requirements, and questlines of steps (`quests`, `need`, `requires`, `leftovers`), with every reference and range checked; the CLI lists them |
 | Q2 (done) | Relation effects, as outcomes and inline effects (D-30) |
 | Q3 (done) | Reachability: no dead stages in a quest, no unreachable step in a questline, no gate that can never hold, no quest that can never start |
-| Q4 | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
-| Q5 | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI |
+| Q4 (done) | The bounds and the lockout check against stages and gates, with `locks` declarations and stale-lock warnings |
+| Q5 | Worlds with quests load: the gate comes off, saves fingerprint the quest files, and Riverhold's quests join `content/sample` |
+| Q6 | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI |
 

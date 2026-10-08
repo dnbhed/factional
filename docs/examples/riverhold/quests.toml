@@ -1,5 +1,5 @@
-# quests.toml: quests, each a list of stages with choices (DESIGN.md §17.1). (Q1; a world
-# with quests loads once Q4 checks that they reconcile)
+# quests.toml: quests, each a list of stages with choices (DESIGN.md §17.1). (Q1, Q4; a
+# world with quests loads once it can carry them, Q5)
 #
 # name:     the quest's name, as shown
 # giver:    whose quest it is: a faction or a character, by id; left out, the world's own
@@ -15,6 +15,14 @@
 #               Joining, leaving and promotion are never a quest's effects: they're the
 #               character's own actions (D-30).
 #     next:     a later stage's id, or "end"; choices only lead forward
+#     locks:    every quest, or stage of one, the choice can shut off for good, declared:
+#               "quest" for its gate (its step's requirements included), "quest.stage" for
+#               a stage. Loading works out the worst each choice can do and refuses any
+#               lockout left undeclared; one declared that can't happen is a warning. A
+#               choice locks out a requirement it can make false when nothing the
+#               character can do makes it true again: standing no action raises; a
+#               membership or rank, which drift or a war can end; alignment no action
+#               moves back
 #
 # Requirements are about the character doing the quest, and all of them must hold:
 #   standing = { temple = 10.0 }                 at least this with a faction or character
@@ -122,13 +130,29 @@ choices = [
   { id = "pawn_it", effects = { alignment = { good = -4.0 }, standing = { factions = { lantern_guild = 5.0 } } }, next = "end" },
 ]
 
-# The world's own: no giver.
+# The world's own: no giver. Sharing earns the Temple's thanks, and the Circle, which
+# regards the Temple at -90, resents it: some of it spills over as lost standing, which no
+# action wins back, so sharing can shut the Circle's rite.
 [the_long_winter]
 name = "The Long Winter"
 
 [[the_long_winter.stages]]
 id = "stores"
 choices = [
-  { id = "share", effects = { alignment = { good = 6.0 }, standing = { factions = { temple = 10.0 } }, relations = [{ between = ["temple", "city_watch"], by = 5.0 }] }, next = "end" },
+  { id = "share", effects = { alignment = { good = 6.0 }, standing = { factions = { temple = 10.0 } }, relations = [{ between = ["temple", "city_watch"], by = 5.0 }] }, next = "end", locks = ["circle_rite"] },
   { id = "hoard", effects = { alignment = { good = -6.0 } }, next = "end" },
+]
+
+# Setting the Watch and the Temple at war ends one membership of anyone in both, so it
+# declares the captaincy, which needs the Watch.
+[circle_rite]
+name = "The Ashen Rite"
+giver = "ashen_circle"
+requires = { standing = { ashen_circle = 10.0 } }
+
+[[circle_rite.stages]]
+id = "whisper"
+choices = [
+  { id = "refuse", next = "end" },
+  { id = "set_them_at_war", effects = { relations = [{ between = ["temple", "city_watch"], by = -120.0 }] }, next = "end", locks = ["watch_captain", "watch_captain.command"] },
 ]

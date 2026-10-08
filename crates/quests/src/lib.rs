@@ -7,13 +7,16 @@
 #![deny(clippy::float_arithmetic)]
 
 mod check;
+mod lockout;
 mod quest;
 mod reach;
 
 pub use check::{
     Blocker, ChoiceAt, Gate, Needs, Owner, QuestProblem, QuestWarning, RequirementKey,
 };
+pub use lockout::{LockReason, Needed};
 pub use quest::{
-    Choice, ChoiceEffects, ChoiceId, Leftovers, Next, PartyRef, Progress, ProgressError, Quest,
-    QuestId, Questline, QuestlineId, Quests, Requirements, Stage, StageId, Step,
+    Choice, ChoiceEffects, ChoiceId, Leftovers, Lock, LockError, Next, PartyRef, Progress,
+    ProgressError, Quest, QuestId, Questline, QuestlineId, Quests, Requirements, Stage, StageId,
+    Step,
 };

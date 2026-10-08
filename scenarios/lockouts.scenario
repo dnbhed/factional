@@ -1,0 +1,15 @@
+# Every lockout a choice can cause is declared in its `locks`, or the world doesn't load (Q4,
+# D-26). Loading works out the worst each choice can do, from content alone, and checks it
+# against every other quest's gate and stages.
+
+# Riverhold declares its two: the Ashen Rite's war, and the Long Winter's sharing, which
+# spills into lost standing with the Circle.
+quests docs/examples/riverhold circle_rite
+assert load docs/examples/riverhold == error: quests.toml: quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)
+
+# A war, drift the Watch expels for, a move no action can undo, and standing no action
+# raises, all undeclared.
+validate crates/cli/tests/fixtures/worlds/lockouts
+
+# A lock that can't happen: standing with the Watch can always be won back.
+quests crates/cli/tests/fixtures/worlds/stale_lock

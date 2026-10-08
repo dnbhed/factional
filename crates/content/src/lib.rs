@@ -156,8 +156,8 @@ pub fn load_quests(dir: &Path) -> Result<(Content, Quests), ContentError> {
 
 /// Validates content from the text of its files, reporting every problem at once: each
 /// file's own, in file order, then problems across files (P-32). Quests are checked too,
-/// but until the check that they reconcile is built (Q4), content with quests doesn't load
-/// (D-20): that's reported after every other problem.
+/// but until a world can carry them (Q5), content with quests doesn't load (D-20): that's
+/// reported after every other problem.
 pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
     let read = read_all(sources);
     let mut diagnostics = read.diagnostics;
@@ -171,7 +171,7 @@ pub fn parse_content(sources: Sources<'_>) -> Result<Content, ContentError> {
         diagnostics.push(Diagnostic {
             file: file.to_owned(),
             key: None,
-            message: "quests are read and checked, but a world with quests can't load until the check that they reconcile is built (DESIGN.md §17.2)".to_owned(),
+            message: "quests are read and checked, but a world with quests can't load yet (DESIGN.md §17.4)".to_owned(),
         });
     }
     if diagnostics.is_empty() {
@@ -194,10 +194,11 @@ pub fn parse_quests(sources: Sources<'_>) -> Result<(Content, Quests), ContentEr
     }
 }
 
-/// Quests' warnings: things allowed but probably not meant, each with its file and key.
-pub fn quest_warnings(quests: &Quests) -> Vec<Diagnostic> {
+/// Quests' warnings against `content`: things allowed but probably not meant, each with its
+/// file and key.
+pub fn quest_warnings(content: &Content, quests: &Quests) -> Vec<Diagnostic> {
     quests
-        .warnings()
+        .warnings(content)
         .iter()
         .map(quests::warning_diagnostic)
         .collect()
