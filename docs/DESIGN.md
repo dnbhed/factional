@@ -932,13 +932,15 @@ crates/
   quests/        factional-quests       quests, questlines and their checks (§17). No I/O.
   content/       factional-content      reads TOML from disk, validates, diagnostics, JSON Schema.
   cli/           factional-cli          the `factional` binary: repl, run, validate, schema, compare.
+  editor/        factional-editor       the visual editor, in egui (§18; from U1).
+  bevy/          factional-bevy         the Bevy plugin (§19; from E1).
 content/sample/  Riverhold
 scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/snapshots/
 ```
 
-- **Dependencies point one way:** core ← reputation ← quests ← content ← cli. `factional-content` reads every module's files, so it sits above them all (P-67).
+- **Dependencies point one way:** core ← reputation ← quests ← content ← cli. `factional-content` reads every module's files, so it sits above them all (P-67). The editor and the Bevy plugin sit beside `cli`, at the top: nothing depends on them (D-32, D-33).
 - **Other modules** (quests, then combat and the rest) are sibling crates. They talk to reputation only through §11. `factional-quests` also reads reputation's content, to check itself at load (§17, P-64).
-- **A host-engine adapter** waits until a game needs a host (X-2, left open in E0). That would be a Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for Unity, Unreal or others.
+- **The host engine is Bevy** (D-33, settling X-2): the module embeds as a Bevy plugin (§19). The core stays engine-agnostic, so nothing below the plugin knows Bevy exists.
 
 ## 16. Completeness across modules (D-20)
 
@@ -1116,4 +1118,38 @@ The quest log keeps each character's progress, and changes only by its two comma
 | Q5 (done) | Worlds with quests load: the gate comes off, the session keeps the quests, saves fingerprint the quest files, and Riverhold's quests join `content/sample` |
 | Q6 (done) | Playing quests: starting them, making choices and progress through quests and the steps of questlines, leftovers closing, as commands and events, in the CLI (§17.4) |
 | Q7 (done) | Saves hold the quest log, and `reload` replays it |
+
+## 18. The editor (designed in U0; D-32, P-74)
+
+A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It's a tool beside the code, for the designer who writes the content; it reads and writes the same TOML files, so hand edits, the CLI and the editor stay interchangeable.
+
+- **A crate beside `cli`, `factional-editor`,** depending on `content`, `quests` and `reputation`. Nothing depends on it. Desktop first, through eframe; a browser build through wasm can follow, once file access there is worked out.
+- **It never writes TOML itself.** `factional-content` gains a format-preserving writer (`toml_edit`): set a key, add or remove a table or a list entry, keeping comments, order and layout. The editor asks it for each change, so every write goes through one place that tests can pin down.
+- **It never checks anything itself.** After every change it validates through the loader (`parse_content`, P-32) and shows each `Diagnostic` at its field, by its file and key, with the "did you mean" the loader gives. Quests' reach and lockout problems show on the graph's nodes. Warnings show beside errors, as in `validate`.
+- **It never re-implements a rule** (D-20, P-24). Previews, such as a disposition matrix, the alignment map, a curve, or whether a character can start a quest, come from engine queries on a world built from the content as it stands, and show the engine's own working.
+- **Panels:** a browser of every file's entries; a form for each entry, with the schema's ranges and enumerations; a graph of each questline's steps and each quest's stages and choices (`egui-snarl`), with `locks` drawn as edges; the diagnostics; the previews.
+- **A model under the UI.** Opening a directory, editing a field, undoing and saving are plain Rust on the editor's state, tested with `cargo test` and mutation testing like everything else. The egui layer stays thin: it draws the state and turns clicks into model calls. Floats in layout are egui's own; content numbers are edited as text and read as `Fixed`.
+
+| Increment | Builds |
+| --- | --- |
+| U1 | The editor shell: open a content directory, browse every entry, and see every problem and warning at its entry, read-only |
+| U2 | Editing: the format-preserving writer, forms for characters, factions, actions, outcomes and relations, validation on every change, undo, save |
+| U3 | Quests in the editor: graphs of questlines and of quests' stages and choices, `locks` as edges, reach and lockout problems on nodes |
+| U4 | Previews from engine queries: the disposition matrix, the alignment map, curves, and whether a character can start a quest |
+
+## 19. The host engine: Bevy (designed in U0; D-33, P-75)
+
+The module embeds in games through a Bevy plugin (D-33, settling X-2). The core stays as it is: no Bevy types below the plugin, no floats in rule code, time only through `AdvanceTime`.
+
+- **A crate beside `cli`, `factional-bevy`,** depending on `content`, `quests` and `reputation`, and on Bevy, pinned to one version. Nothing depends on it.
+- **The plugin holds the world and the quest log as a resource,** loaded from a content directory at startup; a world that doesn't load stops the app with its diagnostics, as `load` would (D-20).
+- **Commands in, events out.** Game systems send reputation and quest commands as Bevy messages; the plugin executes them in the order sent, once per frame, and sends each event out as a message, with refusals as messages too, so a game reacts to `StandingChanged` or `QuestFinished` like any other. Queries are read straight from the resource.
+- **Time** advances only when the game says: the plugin sends `AdvanceTime` from a tick rate the game sets, or the game sends it itself.
+- **Saves** are the same saves (P-54, P-73), written and read through `factional-content`; T5 adds the binary encoding a finished game wants.
+- **Left to E1:** the Bevy version, how the plugin is configured, and whether the crate builds in the main workspace or its own, to keep CI's Rust gates fast.
+
+| Increment | Builds |
+| --- | --- |
+| E1 | The plugin: the resource, commands and events as messages, time, and an example app |
+| T5 | Binary saves, beside JSON (P-54) |
 

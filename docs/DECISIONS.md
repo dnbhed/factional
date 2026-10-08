@@ -58,6 +58,8 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-29 · A questline's steps are groups of quests, gated by rank or standing** (agreed 2026-10-07 in Q0, at the user's direction). A step's quests are open together and done in any order; the step is complete once a set number of them are done (`need`, all by default, possibly 0 when rank or standing should decide instead). A quest or a step can require a rank or standing in a faction, or anything else in the requirement vocabulary. The designer chooses, per step, whether quests left undone stay open or close once the character moves on; closing is a declared lockout (§17.1, §17.2).
 - **D-30 · Quests never change memberships or ranks; they can shift relations** (agreed 2026-10-08 in Q2, at the user's direction). Joining, leaving and promotion are always the character's own actions, taken independently, never a quest's effect. A quest's effects are alignment, standing, and shifts in how factions regard each other (DESIGN.md §17.1).
 - **D-31 · A character waits at a stage until its requirements hold** (agreed 2026-10-08 in Q6, at the user's direction). A choice leading to a stage whose requirements don't hold yet still reaches it; the character can't choose there until they do, and goes off to meet them, such as raising their standing. So `done` on a stage means reached (DESIGN.md §17.4).
+- **D-32 · The editor is built in egui** (agreed 2026-10-08 in U0, at the user's direction; settles X-5). All Rust, through eframe, using the engine's own types; it's chiefly the designer's own tool. It reads and writes the content TOML, so hand edits, the CLI and the editor stay interchangeable (DESIGN.md §18).
+- **D-33 · The host engine is Bevy** (agreed 2026-10-08 in U0, at the user's direction; settles X-2, left open in E0). The module embeds as a Bevy plugin; the core stays engine-agnostic (§19).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
 ## Proposed — 2026-10-04
@@ -522,6 +524,22 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`save` and `restore` count quest commands and events** when there are any.
   - *Why:* a session with quests is kept, restored and reloaded as faithfully as one without, by the same means.
 
+- **P-74 · How the editor is built** (made in U0, 2026-10-08; built from U1).
+  - **A leaf crate, `factional-editor`,** beside `cli`: it depends on the module's crates, and nothing depends on it.
+  - **Every write goes through `factional-content`,** which gains a format-preserving writer (`toml_edit`), so comments and layout survive and one place is tested.
+  - **Every check is the loader's,** run after each change, its diagnostics placed by file and key; every preview is an engine query. The editor decides nothing itself (D-20, P-24, P-32).
+  - **A tested model under a thin egui layer,** so the gates (tests, mutation testing) cover what the editor does, not only what the engine does.
+  - **Desktop first;** a browser build follows when file access there is settled.
+  - **Four increments,** U1 to U4: read-only browsing with diagnostics, editing, quests as graphs, previews.
+  - *Why:* the editor stays a view of the content and the engine, never a second implementation of either.
+- **P-75 · How the Bevy plugin plugs in** (made in U0, 2026-10-08; built in E1).
+  - **A leaf crate, `factional-bevy`,** with Bevy pinned to one version; nothing below it knows Bevy.
+  - **The world and quest log are one resource;** commands arrive and events leave as Bevy messages, executed in the order sent; queries read the resource. Refusals are messages too.
+  - **Time advances only by `AdvanceTime`,** sent by the plugin at a tick rate the game sets, or by the game.
+  - **Saves are the same,** through `factional-content`; T5's binary encoding follows E1.
+  - **Left to E1:** the Bevy version, configuration, and whether the crate builds in the main workspace or its own, so CI's gates stay fast.
+  - *Why:* the plugin is an adapter over §11's one way in, so a game uses the module exactly as the CLI does.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.
@@ -529,10 +547,7 @@ None right now. A new question gets the next free number, starting at O-5.
 ## Deferred
 
 - **X-1 · Perceived alignment.** Whether observers judge a character by what they know of them rather than by their true alignment, and how. Settled in K0 by the user's choice: D-21, with P-57 for how.
-- **X-2 · Host engine and integration route.** A Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for any engine. In E0 (2026-10-07) the user chose not yet: the module stays engine-agnostic until a game needs a host, and the host adapter (E1) and binary saves (T5) wait for it.
+- **X-2 · Host engine and integration route.** A Bevy plugin, Godot through godot-rust, or a C ABI with JSON messages for any engine. Deferred in E0 (2026-10-07); settled in U0 by the user's choice: Bevy (D-33, P-75).
 - **X-3 · Save format and versioning.** Settled in T4 by the user's choices; see P-54.
 - **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Settled in Q0 by the user's choices: D-25 to D-29, with P-64 to P-66 for how (DESIGN.md §17).
-- **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). Two candidates, chosen between in U0:
-  - **Web frontend:** one frontend, shipped both as a desktop app through Tauri and in a browser through a wasm build of the engine. Mature form generators and graph editors (React Flow, Svelte Flow) suit questlines. The cost is two languages and a JSON boundary.
-  - **egui (eframe):** all Rust, using the engine's types directly; also runs in a browser through wasm. Fastest to build, with node graphs from `egui-snarl`. The cost is a utilitarian look and more hand-drawn UI.
-  - **Either way:** the editor reads and writes the content TOML, so hand edits, the CLI and the editor stay interchangeable. It validates through `parse_content` and maps each `Diagnostic`'s file and key to a field. Previews come from engine queries. It never re-implements a rule (D-20, P-24, P-32).
+- **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). The candidates were a web frontend (Tauri and wasm, with schema-driven forms and React Flow) and egui (all Rust, `egui-snarl` for graphs). Settled in U0 by the user's choice: egui (D-32, P-74).
