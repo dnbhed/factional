@@ -544,10 +544,19 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The outline lives in `factional-content`,** beside the loader whose diagnostics it places, so the editor and the REPL's `outline <dir>` show the same thing and the CLI's scenarios and tests cover it.
   - **An entry is a top-level table, or one table of a top-level list,** keyed `relation[2]` as the loader's diagnostics key it. Entries are listed in id order, as everything that reaches output is.
   - **A diagnostic belongs to the entry its key starts with,** up to the first dot; any other, such as a TOML syntax error's line, stays with its file, and one about no file, such as a directory that can't be read, with the outline.
-  - **An entry's TOML is shown as the TOML writer gives it,** not as written, so comments don't show yet; the format-preserving writer comes in U2.
+  - **An entry's TOML was shown as the TOML writer gives it,** not as written, until U2 showed it as written (P-77).
   - **The editor's summary is its own** (`loads`, `loads, with 2 warnings`, `doesn't load: 3 problems`), counted from the outline; the CLI keeps `validate`'s summary with its counts of characters and the rest.
   - **The editor is a member of the main workspace,** built and tested in CI with everything else; its UI tests run headless through AccessKit, needing no display. E1 still decides this for the Bevy plugin.
   - *Why:* the editor stays a view: what it shows is the loader's, placed by one tested function.
+
+- **P-77 · How values are edited** (made in U2, 2026-10-09; U2 split from the outline's editing increment, adding and removing becoming U3).
+  - **One function changes one value:** `set_value(text, path, input)` on a file's text, through `toml_edit`, keeping the value's own spacing and comment and everything else as written. Paths are keys and list places, `relation[2].value`.
+  - **The input is read as the kind already there:** text as typed, quoted by the writer; a number, integer or not; `true` or `false`. Anything else is refused with what was expected. Arrays, tables and dates aren't values to set; their parts are.
+  - **An entry's values are listed at any depth, in the order written,** for its fields; each is labelled by its path within the entry.
+  - **An entry is shown as written,** with the comments directly above it: a blank line ends what belongs to it, so a file's opening comments stay with the file.
+  - **The editor edits text in memory:** a change commits on Enter or leaving the field, the outline is made again from the texts at once, undo keeps every earlier state, Save writes only the files that changed, and "Read again" discards what isn't saved.
+  - **No CLI command:** editing is the editor's; the writer is tested in `factional-content` and the editor headless.
+  - *Why:* a designer's file stays theirs, comments and all, however much the editor changes in it.
 
 ## Open
 

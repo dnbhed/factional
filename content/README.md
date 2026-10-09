@@ -47,7 +47,7 @@ The schema checks one value at a time. Checks across values, such as whether a f
 
 ## The editor
 
-`cargo run -q -p factional-editor -- content/sample` opens a folder in the editor: every file and its entries on the left, with how many problems and warnings each has, and the entry you pick in the middle, with its TOML and everything the loader says about it. "Read again" picks up edits you've made in your text editor. It's read-only for now; editing comes next (DESIGN.md §18). In the REPL, `outline <dir>` prints the same view as text.
+`cargo run -q -p factional-editor -- content/sample` opens a folder in the editor: every file and its entries on the left, with how many problems and warnings each has, and the entry you pick in the middle, with its TOML and everything the loader says about it. Each of the entry's values is in a field: change one and press Enter, and the problems update at once. Undo steps back, Save writes the files, keeping every comment and space as you wrote them, and "Read again" picks up edits made in your text editor, discarding unsaved ones. Adding and removing keys and entries comes next (DESIGN.md §18). In the REPL, `outline <dir>` prints the same view as text.
 
 ## Trying things out
 

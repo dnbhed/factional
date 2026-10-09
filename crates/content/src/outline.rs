@@ -4,12 +4,11 @@
 
 use std::path::Path;
 
-use toml::{Table, Value};
-
+use crate::edit::{ValuePath, entries_as_written};
 use crate::quests::{QUESTLINES_FILE, QUESTS_FILE};
 use crate::{
-    ACTIONS_FILE, BALANCE_FILE, CHARACTERS_FILE, Diagnostic, FACTIONS_FILE, OUTCOMES_FILE,
-    RELATIONS_FILE, Texts, parse_quests, quest_warnings, warnings,
+    ACTIONS_FILE, BALANCE_FILE, CHARACTERS_FILE, ContentError, Diagnostic, FACTIONS_FILE,
+    OUTCOMES_FILE, RELATIONS_FILE, Sources, Texts, parse_quests, quest_warnings, warnings,
 };
 
 /// The content files, in the order an outline lists them.
@@ -144,23 +143,60 @@ impl OutlineEntry {
     }
 }
 
+/// The text of each content file, in [`CONTENT_FILES`]' order; `None` for a file that isn't
+/// there.
+pub type ContentTexts = [Option<String>; 8];
+
+/// Reads the text of each content file in `dir`.
+pub fn read_texts(dir: &Path) -> Result<ContentTexts, ContentError> {
+    let texts = Texts::read(dir)?;
+    Ok(CONTENT_FILES.map(|name| texts.of(name).map(str::to_owned)))
+}
+
 /// The outline of the content in `dir`, with every problem or warning the loader gives.
 pub fn outline(dir: &Path) -> Outline {
-    let (texts, problems, found) = match Texts::read(dir) {
-        Err(error) => (None, error.diagnostics, Vec::new()),
-        Ok(texts) => match parse_quests(texts.sources()) {
-            Ok((content, quests)) => {
-                let mut found = warnings(&content);
-                found.extend(quest_warnings(&content, &quests));
-                (Some(texts), Vec::new(), found)
-            }
-            Err(error) => (Some(texts), error.diagnostics, Vec::new()),
+    match read_texts(dir) {
+        Ok(texts) => outline_texts(&texts),
+        Err(error) => Outline {
+            files: CONTENT_FILES
+                .iter()
+                .map(|name| read_file(name, None))
+                .collect(),
+            problems: error.diagnostics,
         },
+    }
+}
+
+/// The outline of content held in memory, such as the editor's, as [`outline`] gives it for
+/// files on disk.
+pub fn outline_texts(texts: &ContentTexts) -> Outline {
+    let text = |name: &str| {
+        let place = CONTENT_FILES.iter().position(|file| *file == name)?;
+        texts[place].as_deref()
+    };
+    let sources = Sources {
+        balance: text(BALANCE_FILE),
+        factions: text(FACTIONS_FILE),
+        characters: text(CHARACTERS_FILE),
+        actions: text(ACTIONS_FILE),
+        relations: text(RELATIONS_FILE),
+        outcomes: text(OUTCOMES_FILE),
+        quests: text(QUESTS_FILE),
+        questlines: text(QUESTLINES_FILE),
+    };
+    let (problems, found) = match parse_quests(sources) {
+        Ok((content, quests)) => {
+            let mut found = warnings(&content);
+            found.extend(quest_warnings(&content, &quests));
+            (Vec::new(), found)
+        }
+        Err(error) => (error.diagnostics, Vec::new()),
     };
     let files = CONTENT_FILES
         .iter()
-        .map(|name| {
-            let mut file = read_file(name, texts.as_ref().and_then(|texts| texts.of(name)));
+        .zip(texts)
+        .map(|(name, text)| {
+            let mut file = read_file(name, text.as_deref());
             for problem in problems.iter().filter(|d| d.file == *name) {
                 file.place(problem.clone(), true);
             }
@@ -177,7 +213,7 @@ pub fn outline(dir: &Path) -> Outline {
     Outline { files, problems }
 }
 
-/// A file's entries, from its text; none if it isn't there or isn't TOML.
+/// A file's entries as written, in id order; none if it isn't there or isn't TOML.
 fn read_file(name: &'static str, text: Option<&str>) -> OutlineFile {
     let mut file = OutlineFile {
         name,
@@ -189,48 +225,23 @@ fn read_file(name: &'static str, text: Option<&str>) -> OutlineFile {
     let Some(text) = text else {
         return file;
     };
-    let Ok(table) = text.parse::<Table>() else {
+    let Some(mut entries) = entries_as_written(text) else {
         file.state = FileState::Unreadable;
         return file;
     };
     file.state = FileState::Read;
-    for (key, value) in table {
-        let tables = match &value {
-            Value::Array(items) if !items.is_empty() && items.iter().all(Value::is_table) => {
-                Some(items.clone())
-            }
-            _ => None,
-        };
-        match tables {
-            Some(items) => {
-                for (index, item) in items.into_iter().enumerate() {
-                    let toml = as_toml(&key, Value::Array(vec![item]));
-                    file.entries.push(entry(format!("{key}[{index}]"), toml));
-                }
-            }
-            None => {
-                let toml = as_toml(&key, value);
-                file.entries.push(entry(key, toml));
-            }
-        }
-    }
+    // Id order, with a list's tables in their places: `relation[2]` before `relation[10]`.
+    entries.sort_by_key(|(key, _)| ValuePath::parse(key));
+    file.entries = entries
+        .into_iter()
+        .map(|(key, toml)| OutlineEntry {
+            key,
+            toml,
+            problems: Vec::new(),
+            warnings: Vec::new(),
+        })
+        .collect();
     file
-}
-
-fn entry(key: String, toml: String) -> OutlineEntry {
-    OutlineEntry {
-        key,
-        toml,
-        problems: Vec::new(),
-        warnings: Vec::new(),
-    }
-}
-
-/// `key = value` as a TOML document.
-fn as_toml(key: &str, value: Value) -> String {
-    let mut table = Table::new();
-    table.insert(key.to_owned(), value);
-    toml::to_string(&table).expect("a table of values always writes")
 }
 
 impl OutlineFile {
