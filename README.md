@@ -51,7 +51,7 @@ The engine knows nothing about maps, graphics or combat. Those modules come late
    cargo run -p factional-cli -- run scenarios/smoke.scenario
    ```
 
-5. Or browse a content folder, and everything wrong with it, in the editor:
+5. Or browse and edit a content folder, and see everything wrong with it, in the editor:
 
    ```bash
    cargo run -p factional-editor -- content/sample

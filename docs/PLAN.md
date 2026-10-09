@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → U4 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → U4 → U5 → E1 → T5`
 
 ## Done
 
@@ -77,6 +77,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Q7 — saving quest progress: the quest log keeps a journal (each command, where it came in the world's, what it sent and produced); saves, now version 2, hold it and the quest events, restored without running rules once checked to fit, and version 1 saves restore with no progress; `reload` re-runs quest commands where they came among the world's, stopping on any change of acceptance and reporting changed progress; `save` and `restore` count quest commands and events; invariant 11 extended, with a property test (P-73); `scenarios/quest_saves.scenario`; done 2026-10-08 (#46)
 - U0 — editor and host engine design pass: the user chose egui for the editor (D-32, settling X-5) and Bevy as the host engine (D-33, settling X-2); DESIGN.md §18 and §19, with P-74 and P-75; U1 to U4 outlined, E1 and T5 no longer deferred; done 2026-10-08 (#47)
 - U1 — the editor shell: `factional-editor <dir>`, an eframe app showing each content file, its entries, and every problem and warning at its entry, with the selected entry's TOML and a button to read again; the outline it shows is `factional-content`'s `outline(dir)`, also printed by `outline <dir>` in the REPL; UI tested headless with `egui_kittest` (P-76); `scenarios/outline.scenario`; done 2026-10-09 (#48)
+- U2 — editing values: a format-preserving writer in `factional-content` (`set_value`, `entry_fields`, through `toml_edit`), changing one value read as the kind already there and nothing else; the outline made from texts in memory and showing each entry as written; the editor's fields for an entry's values, with problems updating on every change, undo, save and discarding; split from adding and removing, now U3 (P-77); done 2026-10-09 (#49)
 
 ---
 
@@ -102,15 +103,15 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U2 · Editing content — P3 · Next
+### U3 · Adding and removing — P3 · Next
 
-A format-preserving TOML writer in `factional-content` (`toml_edit`); forms for characters, factions, actions, outcomes and relations; validation after every change; undo; save.
+Adding and removing keys, entries and list items in the editor, through the same writer, with the schema's keys to choose from.
 
-### U3 · Quests in the editor — P3 · Outline
+### U4 · Quests in the editor — P3 · Outline
 
 Graphs of questlines' steps and quests' stages and choices (`egui-snarl`), `locks` as edges, reach and lockout problems on their nodes.
 
-### U4 · Previews — P3 · Outline
+### U5 · Previews — P3 · Outline
 
 From engine queries on the content as it stands: the disposition matrix, the alignment map, curves, and whether a character can start a quest.
 

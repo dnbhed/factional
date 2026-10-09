@@ -1,13 +1,18 @@
 //! Loads designer content (TOML) from disk, validates it, and turns mistakes into diagnostics
 //! that name the file and the key path (DESIGN.md §12.1).
 
+mod edit;
 mod outline;
 mod quests;
 mod reader;
 mod save;
 mod schema;
 
-pub use outline::{CONTENT_FILES, FileState, Outline, OutlineEntry, OutlineFile, outline};
+pub use edit::{EditError, Field, Step, ValueKind, ValuePath, entry_fields, set_value};
+pub use outline::{
+    CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, outline,
+    outline_texts, read_texts,
+};
 pub use save::{Fingerprint, Restored, SAVE_VERSION, SaveError, fingerprint_of, restore, save};
 pub use schema::{SCHEMA_FILES, schema, schema_text};
 

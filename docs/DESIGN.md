@@ -1130,14 +1130,16 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 - **It never re-implements a rule** (D-20, P-24). Previews, such as a disposition matrix, the alignment map, a curve, or whether a character can start a quest, come from engine queries on a world built from the content as it stands, and show the engine's own working.
 - **Panels:** a browser of every file's entries; a form for each entry, with the schema's ranges and enumerations; a graph of each questline's steps and each quest's stages and choices (`egui-snarl`), with `locks` drawn as edges; the diagnostics; the previews.
 - **A model under the UI.** Opening a directory, editing a field, undoing and saving are plain Rust on the editor's state, tested with `cargo test` and mutation testing like everything else. The egui layer stays thin: it draws the state and turns clicks into model calls, and is tested headless through AccessKit (`egui_kittest`). Floats in layout are egui's own; content numbers are edited as text and read as `Fixed`.
+- **Editing goes through the writer** (U2, P-77): `set_value` changes one value in a file's text, read as the kind already there (text, a number, or `true` or `false`), and nothing else; `entry_fields` lists an entry's values at any depth. The editor keeps each file's text in memory, makes the outline again after every change, and writes only on Save.
 - **The outline is the content crate's** (U1, P-76): `outline(dir)` lists each content file, whether it's there, its entries (a top-level table, or one table of a top-level list, such as `relation[2]`) in id order, and the loader's problems and warnings, each at the entry its key starts with or else at its file. The editor shows it, and `outline <dir>` in the REPL prints it, so the CLI's scenarios cover what the editor shows.
 
 | Increment | Builds |
 | --- | --- |
 | U1 (done) | The editor shell: open a content directory, browse every entry, and see every problem and warning at its entry, read-only |
-| U2 | Editing: the format-preserving writer, forms for characters, factions, actions, outcomes and relations, validation on every change, undo, save |
-| U3 | Quests in the editor: graphs of questlines and of quests' stages and choices, `locks` as edges, reach and lockout problems on nodes |
-| U4 | Previews from engine queries: the disposition matrix, the alignment map, curves, and whether a character can start a quest |
+| U2 (done) | Editing values: the format-preserving writer, each entry's values in fields, validation on every change, undo, save |
+| U3 | Adding and removing keys, entries and list items, with the schema's keys to choose from |
+| U4 | Quests in the editor: graphs of questlines and of quests' stages and choices, `locks` as edges, reach and lockout problems on nodes |
+| U5 | Previews from engine queries: the disposition matrix, the alignment map, curves, and whether a character can start a quest |
 
 ## 19. The host engine: Bevy (designed in U0; D-33, P-75)
 
