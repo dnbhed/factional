@@ -76,6 +76,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - Q6 — playing quests: a quest log in `factional-quests` keeping every character's progress, changed only by `StartQuest` and `MakeChoice` through their events (`QuestStarted`, `StageReached`, `ChoiceMade`, `QuestFinished`, `QuestClosed`); starting needs its gate and every step before complete, and closes earlier steps' untouched leftovers; a character waits at a stage until its requirements hold (D-31); effects go to the world in the same command, so a refused command changes nothing; `assess_start` and refusals say what's missing, with the numbers; save and reload refuse quest progress until Q7; `can-start`, `start`, `choose`, `progress`; invariants 14 and 15 with a property test (P-72); `scenarios/play.scenario`; done 2026-10-08 (#45)
 - Q7 — saving quest progress: the quest log keeps a journal (each command, where it came in the world's, what it sent and produced); saves, now version 2, hold it and the quest events, restored without running rules once checked to fit, and version 1 saves restore with no progress; `reload` re-runs quest commands where they came among the world's, stopping on any change of acceptance and reporting changed progress; `save` and `restore` count quest commands and events; invariant 11 extended, with a property test (P-73); `scenarios/quest_saves.scenario`; done 2026-10-08 (#46)
 - U0 — editor and host engine design pass: the user chose egui for the editor (D-32, settling X-5) and Bevy as the host engine (D-33, settling X-2); DESIGN.md §18 and §19, with P-74 and P-75; U1 to U4 outlined, E1 and T5 no longer deferred; done 2026-10-08 (#47)
+- U1 — the editor shell: `factional-editor <dir>`, an eframe app showing each content file, its entries, and every problem and warning at its entry, with the selected entry's TOML and a button to read again; the outline it shows is `factional-content`'s `outline(dir)`, also printed by `outline <dir>` in the REPL; UI tested headless with `egui_kittest` (P-76); `scenarios/outline.scenario`; done 2026-10-09 (#48)
 
 ---
 
@@ -101,11 +102,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U1 · The editor shell — P3 · Next
-
-`factional-editor` (D-32, P-74, DESIGN.md §18): open a content directory, browse every entry of every file, and see every problem and warning at its entry, read-only; a tested model under a thin egui layer.
-
-### U2 · Editing content — P3 · Outline
+### U2 · Editing content — P3 · Next
 
 A format-preserving TOML writer in `factional-content` (`toml_edit`); forms for characters, factions, actions, outcomes and relations; validation after every change; undo; save.
 

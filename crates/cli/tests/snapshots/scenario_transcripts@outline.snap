@@ -1,0 +1,37 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/outline.scenario
+---
+> outline crates/cli/tests/fixtures/worlds/broken
+balance.toml — not there
+factions.toml — not there
+characters.toml — 2 entries
+  hale — 2 problems
+    error: missing 'alignment'
+    error: unknown key 'alignmnet' (did you mean 'alignment'?)
+  vex — 1 problem
+    error: alignment.law: 120.00 is outside -100.00..100.00
+actions.toml — not there
+relations.toml — not there
+outcomes.toml — not there
+quests.toml — not there
+questlines.toml — not there
+crates/cli/tests/fixtures/worlds/broken doesn't load: 3 problems
+> outline crates/cli/tests/fixtures/worlds/odd_jobs
+balance.toml — not there
+factions.toml — 1 entry
+  watch — 1 warning
+    warning: tolerance: no one starts within The Watch's tolerance of 40.00: there are no characters
+characters.toml — not there
+actions.toml — not there
+relations.toml — not there
+outcomes.toml — not there
+quests.toml — 2 entries
+  inspect
+  patrol
+questlines.toml — 1 entry
+  jobs — 1 warning
+    warning: steps[0].leftovers: leftovers = "close" has no effect: the step needs all its quests, so none are left over
+crates/cli/tests/fixtures/worlds/odd_jobs loads, with 2 warnings: 0 characters, 1 faction, 0 actions, 0 relations, 0 outcomes, 2 quests and 1 questline
+> assert outline == error: outline needs the form: outline <dir>

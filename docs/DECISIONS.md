@@ -540,6 +540,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Left to E1:** the Bevy version, configuration, and whether the crate builds in the main workspace or its own, so CI's gates stay fast.
   - *Why:* the plugin is an adapter over §11's one way in, so a game uses the module exactly as the CLI does.
 
+- **P-76 · How the editor shell is built** (made in U1, 2026-10-09).
+  - **The outline lives in `factional-content`,** beside the loader whose diagnostics it places, so the editor and the REPL's `outline <dir>` show the same thing and the CLI's scenarios and tests cover it.
+  - **An entry is a top-level table, or one table of a top-level list,** keyed `relation[2]` as the loader's diagnostics key it. Entries are listed in id order, as everything that reaches output is.
+  - **A diagnostic belongs to the entry its key starts with,** up to the first dot; any other, such as a TOML syntax error's line, stays with its file, and one about no file, such as a directory that can't be read, with the outline.
+  - **An entry's TOML is shown as the TOML writer gives it,** not as written, so comments don't show yet; the format-preserving writer comes in U2.
+  - **The editor's summary is its own** (`loads`, `loads, with 2 warnings`, `doesn't load: 3 problems`), counted from the outline; the CLI keeps `validate`'s summary with its counts of characters and the rest.
+  - **The editor is a member of the main workspace,** built and tested in CI with everything else; its UI tests run headless through AccessKit, needing no display. E1 still decides this for the Bevy plugin.
+  - *Why:* the editor stays a view: what it shows is the loader's, placed by one tested function.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

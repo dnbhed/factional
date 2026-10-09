@@ -806,6 +806,7 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 ### 12.3 Designer workflow
 
 - `factional validate <dir>` to check a world without starting a session (T1).
+- `outline <dir>` in the REPL for each content file, its entries, and every problem and warning at the entry it's about; `factional-editor <dir>` shows the same in the editor (U1).
 - `quests <dir> [<quest>]` in the REPL to list a world's quests and questlines, or one quest's stages and choices with what each locks, read and checked without loading it (Q1, Q4); `quests` alone lists the loaded world's (Q5).
 - `can-start <character> <quest>`, `start <character> <quest>`, `choose <character> <quest> <choice> [--seen-by <id>,… | --unseen]` and `progress <character>` to play quests (Q6).
 - `factional schema <file>` for a content file's JSON Schema, to get completion and checking in an editor (T1).
@@ -1128,11 +1129,12 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 - **It never checks anything itself.** After every change it validates through the loader (`parse_content`, P-32) and shows each `Diagnostic` at its field, by its file and key, with the "did you mean" the loader gives. Quests' reach and lockout problems show on the graph's nodes. Warnings show beside errors, as in `validate`.
 - **It never re-implements a rule** (D-20, P-24). Previews, such as a disposition matrix, the alignment map, a curve, or whether a character can start a quest, come from engine queries on a world built from the content as it stands, and show the engine's own working.
 - **Panels:** a browser of every file's entries; a form for each entry, with the schema's ranges and enumerations; a graph of each questline's steps and each quest's stages and choices (`egui-snarl`), with `locks` drawn as edges; the diagnostics; the previews.
-- **A model under the UI.** Opening a directory, editing a field, undoing and saving are plain Rust on the editor's state, tested with `cargo test` and mutation testing like everything else. The egui layer stays thin: it draws the state and turns clicks into model calls. Floats in layout are egui's own; content numbers are edited as text and read as `Fixed`.
+- **A model under the UI.** Opening a directory, editing a field, undoing and saving are plain Rust on the editor's state, tested with `cargo test` and mutation testing like everything else. The egui layer stays thin: it draws the state and turns clicks into model calls, and is tested headless through AccessKit (`egui_kittest`). Floats in layout are egui's own; content numbers are edited as text and read as `Fixed`.
+- **The outline is the content crate's** (U1, P-76): `outline(dir)` lists each content file, whether it's there, its entries (a top-level table, or one table of a top-level list, such as `relation[2]`) in id order, and the loader's problems and warnings, each at the entry its key starts with or else at its file. The editor shows it, and `outline <dir>` in the REPL prints it, so the CLI's scenarios cover what the editor shows.
 
 | Increment | Builds |
 | --- | --- |
-| U1 | The editor shell: open a content directory, browse every entry, and see every problem and warning at its entry, read-only |
+| U1 (done) | The editor shell: open a content directory, browse every entry, and see every problem and warning at its entry, read-only |
 | U2 | Editing: the format-preserving writer, forms for characters, factions, actions, outcomes and relations, validation on every change, undo, save |
 | U3 | Quests in the editor: graphs of questlines and of quests' stages and choices, `locks` as edges, reach and lockout problems on nodes |
 | U4 | Previews from engine queries: the disposition matrix, the alignment map, curves, and whether a character can start a quest |
