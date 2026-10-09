@@ -45,6 +45,10 @@ There's a JSON Schema for each file in [`schema/`](../schema). An editor that un
 
 The schema checks one value at a time. Checks across values, such as whether a faction named in `characters.toml` exists, are `validate`'s.
 
+## The editor
+
+`cargo run -q -p factional-editor -- content/sample` opens a folder in the editor: every file and its entries on the left, with how many problems and warnings each has, and the entry you pick in the middle, with its TOML and everything the loader says about it. "Read again" picks up edits you've made in your text editor. It's read-only for now; editing comes next (DESIGN.md §18). In the REPL, `outline <dir>` prints the same view as text.
+
 ## Trying things out
 
 - `cargo run -q -p factional-cli -- repl`, then `load content/sample` and `help`.

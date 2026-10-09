@@ -12,6 +12,7 @@ restore <file>                                                                  
 reload                                                                                          re-read the loaded content, replay this session's commands on it, and show what changed
 validate <dir>                                                                                  check the content files in <dir> as load would, without loading them
 quests <dir> [<quest>]                                                                          the quests and questlines in <dir>, read and checked without loading them, or one quest's stages and choices
+outline <dir>                                                                                   each content file in <dir>, its entries, and every problem and warning at the entry it's about
 quests                                                                                          list the loaded world's quests and questlines
 can-start <character> <quest>                                                                   whether the character can start the quest now, and every reason not
 start <character> <quest>                                                                       start a quest whose gate and step allow it

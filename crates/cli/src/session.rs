@@ -46,6 +46,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "quests <dir> [<quest>]",
         "the quests and questlines in <dir>, read and checked without loading them, or one quest's stages and choices",
     ),
+    (
+        "outline <dir>",
+        "each content file in <dir>, its entries, and every problem and warning at the entry it's about",
+    ),
     ("quests", "list the loaded world's quests and questlines"),
     (
         "can-start <character> <quest>",
@@ -325,6 +329,7 @@ impl Session {
                 None => no_world(),
             }),
             "quests" => Ok(crate::quests::quests(&self.base_dir, rest)),
+            "outline" => Ok(crate::outline::outline(&self.base_dir, rest)),
             "reload" => Ok(self.reload()),
             "save" => Ok(self.save(rest)),
             "restore" => Ok(self.restore(rest)),
@@ -5142,6 +5147,7 @@ mod tests {
             "quit",
             "load <dir>",
             "quests <dir> [<quest>]",
+            "outline <dir>",
             "quests",
             "can-start <character> <quest>",
             "start <character> <quest>",

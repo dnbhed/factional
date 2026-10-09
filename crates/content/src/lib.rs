@@ -1,11 +1,13 @@
 //! Loads designer content (TOML) from disk, validates it, and turns mistakes into diagnostics
 //! that name the file and the key path (DESIGN.md §12.1).
 
+mod outline;
 mod quests;
 mod reader;
 mod save;
 mod schema;
 
+pub use outline::{CONTENT_FILES, FileState, Outline, OutlineEntry, OutlineFile, outline};
 pub use save::{Fingerprint, Restored, SAVE_VERSION, SaveError, fingerprint_of, restore, save};
 pub use schema::{SCHEMA_FILES, schema, schema_text};
 
@@ -79,6 +81,22 @@ struct Texts {
 }
 
 impl Texts {
+    /// The text of one content file, by name; `None` if it isn't there.
+    fn of(&self, file: &str) -> Option<&str> {
+        let text = match file {
+            BALANCE_FILE => &self.balance,
+            FACTIONS_FILE => &self.factions,
+            CHARACTERS_FILE => &self.characters,
+            ACTIONS_FILE => &self.actions,
+            RELATIONS_FILE => &self.relations,
+            OUTCOMES_FILE => &self.outcomes,
+            quests::QUESTS_FILE => &self.quests,
+            quests::QUESTLINES_FILE => &self.questlines,
+            _ => return None,
+        };
+        text.as_deref()
+    }
+
     /// Reads every content file in `dir`.
     fn read(dir: &Path) -> Result<Texts, ContentError> {
         let unreadable = |error: io::Error| ContentError {

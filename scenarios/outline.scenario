@@ -1,0 +1,10 @@
+# The outline of a content directory (U1): each file, its entries, and every problem and
+# warning at the entry it's about, as `factional-editor <dir>` shows them.
+
+# Three mistakes in one file, each at its character.
+outline crates/cli/tests/fixtures/worlds/broken
+
+# A warning sits at its questline, and another at the faction no one starts near.
+outline crates/cli/tests/fixtures/worlds/odd_jobs
+
+assert outline == error: outline needs the form: outline <dir>
