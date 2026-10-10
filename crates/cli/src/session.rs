@@ -62,6 +62,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "an entry's values grouped by what they mean, with their comments, the defaults of what's left out, and what each may be",
     ),
     (
+        "keys <dir> <file> [<path>]",
+        "what can be added at a place in a content file: each key, what it is, its default and its description",
+    ),
+    (
         "graph <dir> <questline|quest>",
         "a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about",
     ),
@@ -349,6 +353,7 @@ impl Session {
             "references" => Ok(crate::references::references(&self.base_dir, rest)),
             "form" => Ok(crate::form::form(&self.base_dir, rest)),
             "fixes" => Ok(crate::fixes::fixes(&self.base_dir, rest)),
+            "keys" => Ok(crate::keys::keys(&self.base_dir, rest)),
             "reload" => Ok(self.reload()),
             "save" => Ok(self.save(rest)),
             "restore" => Ok(self.restore(rest)),

@@ -100,7 +100,7 @@ impl ValuePath {
     }
 
     /// This path with `step` after it.
-    pub(crate) fn then(&self, step: Step) -> ValuePath {
+    pub fn then(&self, step: Step) -> ValuePath {
         let mut steps = self.0.clone();
         steps.push(step);
         ValuePath(steps)
@@ -334,6 +334,8 @@ pub fn rename_key(text: &str, path: &ValuePath, to: &str) -> Result<String, Edit
 pub struct KeyInfo {
     pub description: Option<String>,
     pub default: Option<String>,
+    /// What it is, in words, such as `a number from -100.00 to 100.00` (U6d).
+    pub kind: String,
 }
 
 /// What the schema of `file` says of the key at `path`; `None` if it doesn't know it.
@@ -358,7 +360,71 @@ pub fn key_info(file: &str, path: &ValuePath) -> Option<KeyInfo> {
     Some(KeyInfo {
         description,
         default,
+        kind: kind_in_words(&root, node),
     })
+}
+
+/// What the schema `node` allows, in words: text, true or false, a number or a whole number
+/// with its range, one of an enumeration, the id of what it names, a table or a list; each
+/// form of one that may be several, joined by "or".
+fn kind_in_words(root: &Json, node: &Json) -> String {
+    let resolved = resolve(root, node);
+    if let Some(forms) = resolved.get("oneOf").and_then(Json::as_array)
+        && resolved.get("type").is_none()
+    {
+        let kinds: Vec<String> = forms.iter().map(|form| kind_in_words(root, form)).collect();
+        return kinds.join(" or ");
+    }
+    let names = node
+        .get("x-names")
+        .or_else(|| resolved.get("x-names"))
+        .and_then(Json::as_str);
+    if let Some(names) = names {
+        let what = match names {
+            "faction" => "a faction",
+            "character" => "a character",
+            "party" => "a faction or character",
+            "quest" => "a quest",
+            "outcome" => "an outcome",
+            "profile" => "an inertia profile",
+            other => other,
+        };
+        return format!("the id of {what}");
+    }
+    if let Some(choices) = resolved.get("enum").and_then(Json::as_array) {
+        let choices: Vec<&str> = choices.iter().filter_map(Json::as_str).collect();
+        return match choices.split_last() {
+            Some((last, [])) => (*last).to_owned(),
+            Some((last, rest)) => format!("one of {} or {last}", rest.join(", ")),
+            None => "nothing".to_owned(),
+        };
+    }
+    let bound = |key: &str, whole: bool| {
+        let value = resolved.get(key)?;
+        Some(match whole {
+            true => value.to_string(),
+            false => value
+                .to_string()
+                .parse::<Fixed>()
+                .map_or_else(|_| value.to_string(), |fixed| fixed.to_string()),
+        })
+    };
+    let number = |what: &str, whole: bool| match (bound("minimum", whole), bound("maximum", whole))
+    {
+        (Some(low), Some(high)) => format!("{what} from {low} to {high}"),
+        (Some(low), None) => format!("{what} at least {low}"),
+        (None, Some(high)) => format!("{what} at most {high}"),
+        (None, None) => what.to_owned(),
+    };
+    match resolved.get("type").and_then(Json::as_str) {
+        Some("string") => "text".to_owned(),
+        Some("boolean") => "true or false".to_owned(),
+        Some("number") => number("a number", false),
+        Some("integer") => number("a whole number", true),
+        Some("object") => "a table".to_owned(),
+        Some("array") => "a list".to_owned(),
+        _ => "a value".to_owned(),
+    }
 }
 
 /// The schema for what's at `path`, as the schema `root` names it, before any `$ref` is
@@ -1167,6 +1233,37 @@ fn header_at(table: &mut Table, position: isize) -> Option<&mut Table> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_kind_is_said_in_words_whatever_the_schema_allows() {
+        use serde_json::json;
+        let said = |node: serde_json::Value| super::kind_in_words(&node, &node);
+        assert_eq!(said(json!({ "enum": ["only"] })), "only");
+        assert_eq!(said(json!({ "enum": ["a", "b"] })), "one of a or b");
+        assert_eq!(said(json!({ "enum": [] })), "nothing");
+        assert_eq!(
+            said(json!({ "type": "number", "maximum": 1 })),
+            "a number at most 1.00"
+        );
+        assert_eq!(said(json!({ "type": "number" })), "a number");
+        assert_eq!(
+            said(json!({ "type": "integer", "minimum": 0, "maximum": 9 })),
+            "a whole number from 0 to 9"
+        );
+        assert_eq!(said(json!({})), "a value");
+        assert_eq!(
+            said(json!({ "x-names": "quest", "type": "string" })),
+            "the id of a quest"
+        );
+        assert_eq!(
+            said(json!({ "oneOf": [{ "type": "number" }, { "type": "array" }] })),
+            "a number or a list"
+        );
+        // A form that says its type isn't read as several.
+        assert_eq!(
+            said(json!({ "type": "object", "oneOf": [{ "required": ["a"] }] })),
+            "a table"
+        );
+    }
     use serde_json::json;
 
     use super::*;
