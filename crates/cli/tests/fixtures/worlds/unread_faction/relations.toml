@@ -1,0 +1,3 @@
+[[relation]]
+between = ["city_watch", "lantern_guild"]
+value = -80.0

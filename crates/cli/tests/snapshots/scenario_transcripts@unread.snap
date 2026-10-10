@@ -1,0 +1,12 @@
+---
+source: crates/cli/tests/scenarios.rs
+assertion_line: 24
+expression: transcript
+input_file: scenarios/unread.scenario
+---
+> assert load crates/cli/tests/fixtures/worlds/unread_faction == error: factions.toml: city_watch.member_tolerance: 50.00 must be at least the faction's tolerance, 140.00
+> assert load crates/cli/tests/fixtures/worlds/unparsed_factions == error: factions.toml: line 4: unclosed table, expected `]`
+> assert load crates/cli/tests/fixtures/worlds/unparsed_balance == error: balance.toml: line 5: unclosed table, expected `]`
+> validate crates/cli/tests/fixtures/worlds/unread_faction
+error: factions.toml: city_watch.member_tolerance: 50.00 must be at least the faction's tolerance, 140.00
+crates/cli/tests/fixtures/worlds/unread_faction doesn't load: 1 problem

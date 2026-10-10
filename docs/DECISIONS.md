@@ -60,6 +60,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-31 · A character waits at a stage until its requirements hold** (agreed 2026-10-08 in Q6, at the user's direction). A choice leading to a stage whose requirements don't hold yet still reaches it; the character can't choose there until they do, and goes off to meet them, such as raising their standing. So `done` on a stage means reached (DESIGN.md §17.4).
 - **D-32 · The editor is built in egui** (agreed 2026-10-08 in U0, at the user's direction; settles X-5). All Rust, through eframe, using the engine's own types; it's chiefly the designer's own tool. It reads and writes the content TOML, so hand edits, the CLI and the editor stay interchangeable (DESIGN.md §18).
 - **D-33 · The host engine is Bevy** (agreed 2026-10-08 in U0, at the user's direction; settles X-2, left open in E0). The module embeds as a Bevy plugin; the core stays engine-agnostic (§19).
+- **D-34 · The editor's workspaces are tabs** (agreed 2026-10-10, at the user's direction, from the editor design canvas). One window with three workspaces along the top, Content, Quests and Previews, rather than a dock of panels that can sit anywhere (§18).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
 ## Proposed — 2026-10-04
@@ -567,6 +568,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **In the editor,** each place in the selected entry (the entry, and every table and list in it) has its additions as buttons and a field for a new id, and a button to remove it; each value has one too. Each file has its own, for new entries, and a file not there is started by adding to it. A new entry is selected; removing the selected entry leaves nothing selected. Each is one step of undo, and a refusal shows at the top.
   - **No CLI command,** as P-77.
   - *Why:* the designer chooses only among what the schema allows, written as the file already is, and every check stays the loader's.
+- **P-79 · What couldn't be read isn't reported again** (made in T6, 2026-10-10).
+  - **There but unread counts as there** for the checks across files: a faction or character whose table has a problem or that isn't a table at all, and an inertia profile that isn't a table, keep their ids, so a reference to them isn't reported unknown.
+  - **A file that doesn't parse might hold anything:** no reference to a faction or character is reported when its file didn't parse, and no profile when `balance.toml`, `[inertia]` or its `profiles` couldn't be read.
+  - **A default standing in isn't judged by:** when `knowledge.model` is there but couldn't be read (or `[knowledge]`, or the whole file), secret members aren't checked against the default model. A model left out is the default, and is.
+  - **Suppressed, not folded:** the problems that would follow aren't reported at all, rather than grouped under their cause, as the quest checks already wait for clean reading. Fixing the cause and reading again reports anything genuinely wrong behind it.
+  - **The "did you mean" doesn't yet offer what couldn't be read:** a misspelt reference to an unread faction is reported without a suggestion.
+  - *Why:* one mistake should read as one problem, in `validate` and at its key in the editor (P-76); thirty-three for an unclosed `[temple` hid the one that mattered.
 
 ## Open
 

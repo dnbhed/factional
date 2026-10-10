@@ -1,0 +1,18 @@
+# The Watch's header is never closed, so nothing in this file can be read. Hale names the
+# Watch, and Vex the Guild; neither is reported, only the line (T6).
+
+[city_watch
+name = "The City Watch"
+alignment = { law = 70.0, good = 20.0 }
+tolerance = 40.0
+
+[[city_watch.ranks]]
+id = "recruit"
+
+[lantern_guild]
+name = "The Lantern Guild"
+alignment = { law = -60.0, good = -10.0 }
+tolerance = 40.0
+
+[[lantern_guild.ranks]]
+id = "cutpurse"

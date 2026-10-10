@@ -1,0 +1,17 @@
+# What couldn't be read isn't reported again wherever it's named (T6): each world below has
+# one thing wrong, and loading it reports that one thing. Without this, a faction that can't
+# be read is "unknown" in every file that mentions it.
+
+# The Watch's tolerances are the wrong way round; Hale's membership, his standing and the
+# relation all name the Watch.
+assert load crates/cli/tests/fixtures/worlds/unread_faction == error: factions.toml: city_watch.member_tolerance: 50.00 must be at least the faction's tolerance, 140.00
+
+# factions.toml doesn't parse, so any faction might be in it.
+assert load crates/cli/tests/fixtures/worlds/unparsed_factions == error: factions.toml: line 4: unclosed table, expected `]`
+
+# balance.toml doesn't parse: Hale's profile and the Guild's secret members aren't judged by
+# the defaults standing in for it.
+assert load crates/cli/tests/fixtures/worlds/unparsed_balance == error: balance.toml: line 5: unclosed table, expected `]`
+
+# The same, without loading.
+validate crates/cli/tests/fixtures/worlds/unread_faction

@@ -1,0 +1,9 @@
+[captain_hale]
+name = "Captain Hale"
+alignment = { law = 75.0, good = 30.0 }
+memberships = [{ faction = "city_watch" }]
+
+[vex]
+name = "Vex"
+alignment = { law = -55.0, good = -20.0 }
+memberships = [{ faction = "lantern_guild" }]

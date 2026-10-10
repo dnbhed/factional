@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → U4 → U5 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → E1 → T5`
 
 ## Done
 
@@ -79,6 +79,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U1 — the editor shell: `factional-editor <dir>`, an eframe app showing each content file, its entries, and every problem and warning at its entry, with the selected entry's TOML and a button to read again; the outline it shows is `factional-content`'s `outline(dir)`, also printed by `outline <dir>` in the REPL; UI tested headless with `egui_kittest` (P-76); `scenarios/outline.scenario`; done 2026-10-09 (#48)
 - U2 — editing values: a format-preserving writer in `factional-content` (`set_value`, `entry_fields`, through `toml_edit`), changing one value read as the kind already there and nothing else; the outline made from texts in memory and showing each entry as written; the editor's fields for an entry's values, with problems updating on every change, undo, save and discarding; split from adding and removing, now U3 (P-77); done 2026-10-09 (#49)
 - U3 — adding and removing: the writer's `additions` (from the schema: keys not yet there, in its order; an id where it takes any; a list item while there's room), `add` (each new value at its starting value: the default, else the least the schema allows, with the keys and items it must have; tables with their own headers at the top and among headed tables, inline elsewhere) and `remove` (with the comments directly above; those set apart by a blank line stay); `file_places` and `entry_places`; the editor's buttons for each, new ids typed in, files not there started by adding to them, the new entry selected, all undoable; a round trip over every place in the sample (P-78); done 2026-10-09 (#50)
+- T6 — nothing reported only because something else couldn't be read: a faction or character with a problem keeps its id for the checks across files, a file that doesn't parse hides no reference to what it might hold, and a `balance.toml`, profile or `knowledge.model` that can't be read judges nothing by its default; the Watch's tolerance set above its member tolerance reported fourteen problems and an unclosed `[temple` thirty-four, now one each; `scenarios/unread.scenario` (P-79); the editor's workspaces are tabs (D-34); done 2026-10-10 (#51)
 
 ---
 
