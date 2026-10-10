@@ -89,6 +89,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U6d — adding and removing, to board 2: `KeyInfo::kind` says what a key is in words (text, true or false, a number or whole number with its range, one of an enumeration, the id of what it names, a table, a list); each place's additions under one "Add to <place>…" menu with each key's kind, default and description; × to remove; an entry that something names is removed only after "Remove anyway"; the last change and the problems it brought, with "Show it" and "Undo it"; `ValuePath::then` public; `keys <dir> <file> [<path>]`, `scenarios/keys.scenario`; lists of tables and new entries split off as U6f (P-86); done 2026-10-10 (#58)
 - U6f — lists of tables as tables, to boards 1 and 2: `layout::blocks` works out which of a group's fields make a table (a list whose items are flat tables, such as `ranks` or `memberships`; a list of values or with lists inside stays rows); each drawn as a row an item and a column a key, each cell its field labelled with its key, its choices, problems or default, its comment under the row, and × and "Add to <item>…" for each item; board 2's separate new-entry panel not built (P-87); done 2026-10-10 (#59)
 - U6e — the visual language, to board 6 without its fonts: `theme::visuals()`, egui's dark visuals with the canvas's colours, set as the editor draws, with the editor's own (loads, locks, comment green, a problem's fill); comments in comment green; the summary as a pill; a value changed since the last save marked amber beside its key and around its field, with its file "edited", until Undo or Save; a refused value or one with a problem bordered red; a quest node with a problem filled red; a table row's "Add to" shown as "+…"; IBM Plex split off as U6g (P-88); done 2026-10-10 (#60)
+- U6g — IBM Plex in the editor, to board 6: Plex Sans Regular and SemiBold and Plex Mono Regular in `crates/editor/fonts/` with `OFL.txt` (from IBM's `@ibm/plex-sans@1.1.0` and `@ibm/plex-mono@2.5.0` releases), built into the editor; `theme::fonts()` puts Plex first in each family with egui's faces after; `theme::text_styles()` gives board 6's sizes; the form's keys and values in Plex Mono; fonts, sizes and visuals set once as the editor first draws (P-89); done 2026-10-10 (#61)
 
 ---
 
@@ -114,11 +115,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U6g · IBM Plex in the editor — P3 · Next (needs the user's agreement)
-
-Board 6's faces: IBM Plex Sans for prose and Plex Mono for keys, ids and values, loaded through egui's `FontDefinitions` from files in the repository (both are OFL). Needs the user's agreement to bring the font files in.
-
-### U8 · Quest graphs in egui-snarl? — P3 · Deferred (X-6)
+### U8 · Quest graphs in egui-snarl? — P3 · Next (needs the user's decision, X-6)
 
 Revisit P-80's choice of egui's own painter over `egui-snarl` once U5 to U7 are done, by the user's choice (2026-10-10): whether editing in the graph is wanted, and if so whether snarl fits it.
 ---

@@ -654,6 +654,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **IBM Plex split off as U6g:** both faces are OFL, but their files must be brought into the repository, which is the user's to agree.
   - *Why:* colour is kept for what the loader says and what's changed, as board 6 asks, so a designer sees at a glance what's unsaved and what's wrong.
 
+- **P-89 · How the editor's faces are brought in** (made in U6g, 2026-10-10, with the user's agreement).
+  - **Three faces, built in:** Plex Sans Regular for prose, Plex Sans SemiBold for headings, Plex Mono Regular for keys, ids and values, from IBM's own releases (`@ibm/plex-sans@1.1.0`, `@ibm/plex-mono@2.5.0`), with their licence (SIL OFL 1.1) beside them in `crates/editor/fonts/`. `include_bytes!` builds them into the editor, so it needs nothing installed and a wasm build would look the same. About 576 KB in all; italics and other weights aren't needed yet.
+  - **Plex first, egui's faces after,** in each family, so a glyph Plex hasn't, such as ⏷, still draws.
+  - **SemiBold is a family of its own,** as egui has no weights within a family, and headings use it.
+  - **Set once, as the editor first draws:** fonts, sizes and visuals together, as setting fonts rebuilds egui's atlas.
+  - *Why:* the editor reads as the canvas does, prose apart from what's typed into the content.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

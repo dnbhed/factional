@@ -104,6 +104,8 @@ pub struct Editor {
     consequence: Option<Consequence>,
     /// The selected entry, which something names, asked about before it's removed.
     confirming: Option<ValuePath>,
+    /// Whether the editor's look has been set on the context it draws in.
+    styled: bool,
 }
 
 /// A change: what it was, in words, and the problems it brought, in the loader's words
@@ -197,6 +199,7 @@ impl Editor {
             only_problems: false,
             consequence: None,
             confirming: None,
+            styled: false,
         };
         editor.reload();
         editor
@@ -800,10 +803,14 @@ impl Editor {
     /// Draws the editor into `ui`: buttons, the summary and the tabs at the top (D-34), then
     /// the tab showing.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        // The canvas's colours (U6e), set once and kept.
-        if ui.ctx().global_style().visuals != theme::visuals() {
-            ui.ctx()
-                .all_styles_mut(|style| style.visuals = theme::visuals());
+        // The canvas's colours, faces and sizes (U6e, U6g), set as the editor first draws.
+        if !self.styled {
+            ui.ctx().set_fonts(theme::fonts());
+            ui.ctx().all_styles_mut(|style| {
+                style.visuals = theme::visuals();
+                style.text_styles = theme::text_styles();
+            });
+            self.styled = true;
         }
         egui::Panel::top("summary").show(ui, |ui| {
             // The buttons first, so a long directory never pushes them out of reach.
