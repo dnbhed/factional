@@ -82,6 +82,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - T6 — nothing reported only because something else couldn't be read: a faction or character with a problem keeps its id for the checks across files, a file that doesn't parse hides no reference to what it might hold, and a `balance.toml`, profile or `knowledge.model` that can't be read judges nothing by its default; the Watch's tolerance set above its member tolerance reported fourteen problems and an unclosed `[temple` thirty-four, now one each; `scenarios/unread.scenario` (P-79); the editor's workspaces are tabs (D-34); done 2026-10-10 (#51)
 - U4 — quests in the editor: tabs along the top (D-34), Content and Quests; `QuestGraph` in `factional-content`, from the quests as far as they read, with edges (`needs`, `locks`), each questline's outsiders one hop away, and every quest problem and warning at its questline, step, quest, stage or choice; the quest wording moved there from the CLI; the Quests tab draws questlines as steps in columns and quests as stages, marks nodes by their problems, lists edges, and shows the chosen quest with "Edit in Content"; drawn with egui's painter rather than `egui-snarl` (P-80); `graph <dir> <questline|quest>`, `scenarios/graph.scenario`; U6 outlined for the rest of the design canvas; done 2026-10-10 (#52)
 - U5 — previews: `World::alignment_map` and `World::disposition_matrix`, which the CLI's `map` and `matrix` now render from, unchanged; the editor's Previews tab with the matrix, each score tinted by its band, and a chosen faction's map with its key; previews from the last world that loaded, marked while the content doesn't load (D-35, the user's choice); curves and quests split off as U7; snarl's revisit deferred as U8 (X-6) (P-81); done 2026-10-10 (#53)
+- U7 — previews of curves and quests: `World::named_curves`, which the CLI's `curve` now renders from, unchanged; in the Previews tab, a chosen knob plotted through its points with each listed in words (or left out, 1.00 everywhere), and whether a chosen character can start a chosen quest at the start of play, in the engine's words (P-82); done 2026-10-10 (#54)
 
 ---
 
@@ -107,11 +108,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U7 · Previews: curves and quests — P3 · Next
-
-The rest of board 5: each named curve plotted (the knobs `curve` lists), and whether a chosen character can start a chosen quest, with every reason not, from `assess_start` on the last world that loaded.
-
-### U6 · The Content tab to the design — P3 · Outline
+### U6 · The Content tab to the design — P3 · Next
 
 The design canvas's boards 1 to 3 and 6, against what U1 to U3 built: values grouped by what they mean, with the comments above them and defaults shown where a key is left out (from the schema), a summary that says whether the world loads, a problems panel, and the visual language (theme and fonts). Some of it needs `factional-content` first: an entry's display name, what refers to it, and each key's default and description.
 

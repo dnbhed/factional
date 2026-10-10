@@ -13,7 +13,9 @@ use factional_content::{
     OutlineEntry, QuestGraph, ValuePath, additions, entry_fields, entry_places, file_places,
     load_texts, outline, outline_texts, read_texts, set_value,
 };
-use factional_reputation::World;
+use factional_core::Curve;
+use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
+use factional_reputation::{CharacterId, World};
 
 pub use eframe::egui;
 
@@ -52,6 +54,13 @@ pub struct Editor {
     preview: Option<World>,
     /// The faction whose alignment map is shown.
     map_faction: Option<String>,
+    /// The quests of the previewed world, for whether a character can start one.
+    preview_quests: Quests,
+    /// The knob whose curve is shown.
+    curve: Option<String>,
+    /// The character and quest asked about: can they start it?
+    starter: Option<String>,
+    start_quest: Option<String>,
 }
 
 /// The tabs along the top (D-34).
@@ -112,6 +121,10 @@ impl Editor {
             chosen: None,
             preview: None,
             map_faction: None,
+            preview_quests: Quests::default(),
+            curve: None,
+            starter: None,
+            start_quest: None,
         };
         editor.reload();
         editor
@@ -223,6 +236,66 @@ impl Editor {
         if there {
             self.map_faction = Some(faction.to_owned());
         }
+    }
+
+    /// The knob whose curve is shown, the one chosen or else the first, with its curve
+    /// (`None` if it's left out).
+    pub fn curve(&self) -> Option<(String, Option<Curve>)> {
+        let curves = self.preview.as_ref()?.named_curves();
+        let chosen = self.curve.as_deref();
+        let found = match chosen {
+            Some(chosen) => curves.iter().find(|(name, _)| name == chosen),
+            None => curves.first(),
+        };
+        found.cloned()
+    }
+
+    /// Shows a knob's curve; nothing changes if the preview has no such knob.
+    pub fn show_curve(&mut self, knob: &str) {
+        let there = self
+            .preview
+            .as_ref()
+            .is_some_and(|world| world.named_curves().iter().any(|(name, _)| name == knob));
+        if there {
+            self.curve = Some(knob.to_owned());
+        }
+    }
+
+    /// Asks whether `character` can start `quest`: either may be chosen first. Nothing
+    /// changes for one the preview doesn't have.
+    pub fn ask_start(&mut self, character: Option<&str>, quest: Option<&str>) {
+        let Some(world) = &self.preview else {
+            return;
+        };
+        if let Some(character) = character
+            && world.characters().any(|c| c.id.as_str() == character)
+        {
+            self.starter = Some(character.to_owned());
+        }
+        if let Some(quest) = quest
+            && self
+                .preview_quests
+                .quests
+                .keys()
+                .any(|q| q.as_str() == quest)
+        {
+            self.start_quest = Some(quest.to_owned());
+        }
+    }
+
+    /// The character and quest asked about, as far as they're chosen.
+    pub fn asked(&self) -> (Option<&str>, Option<&str>) {
+        (self.starter.as_deref(), self.start_quest.as_deref())
+    }
+
+    /// Whether the character asked about can start the quest asked about, at the start of
+    /// play on the previewed world, with every reason not.
+    pub fn start_assessment(&self) -> Option<StartAssessment> {
+        let world = self.preview.as_ref()?;
+        let character = CharacterId::new(self.starter.as_deref()?).ok()?;
+        let quest = QuestId::new(self.start_quest.as_deref()?).ok()?;
+        let log = QuestLog::new(self.preview_quests.clone());
+        log.assess_start(world, &character, &quest).ok()
     }
 
     /// Selects the chosen quest's entry in `quests.toml` and shows the Content tab.
@@ -377,10 +450,11 @@ impl Editor {
         });
         if self.outline.loads()
             && let Some(texts) = &self.texts
-            && let Ok((content, _)) = load_texts(texts)
+            && let Ok((content, quests)) = load_texts(texts)
             && let Ok(world) = World::new(content)
         {
             self.preview = Some(world);
+            self.preview_quests = quests;
         }
         self.graph = match &self.texts {
             Some(texts) => QuestGraph::new(texts, &self.outline),
@@ -816,6 +890,45 @@ mod tests {
         editor.show_map("city_watch");
         assert_eq!(editor.map_faction(), Some("city_watch"));
         assert_eq!(broken().map_faction(), None);
+    }
+
+    #[test]
+    fn the_curve_shown_is_the_knob_chosen_or_else_the_first() {
+        let mut editor = sample();
+        let (name, curve) = editor.curve().expect("the sample has curves");
+        assert_eq!(name, "disposition.affinity");
+        assert!(curve.is_some());
+        editor.show_curve("nowhere");
+        assert_eq!(
+            editor.curve().map(|(name, _)| name).as_deref(),
+            Some("disposition.affinity")
+        );
+        editor.show_curve("inertia.steady.law.toward_lawful");
+        let (name, curve) = editor.curve().expect("chosen");
+        assert_eq!(name, "inertia.steady.law.toward_lawful");
+        assert!(curve.is_none());
+        assert!(broken().curve().is_none());
+    }
+
+    #[test]
+    fn whether_a_character_can_start_a_quest_is_asked_once_both_are_chosen() {
+        let mut editor = sample();
+        assert!(editor.start_assessment().is_none());
+        editor.ask_start(Some("player"), None);
+        assert_eq!(editor.asked(), (Some("player"), None));
+        assert!(editor.start_assessment().is_none());
+        editor.ask_start(None, Some("watch_captain"));
+        assert_eq!(editor.asked(), (Some("player"), Some("watch_captain")));
+        let assessment = editor.start_assessment().expect("both chosen");
+        assert!(!assessment.allowed());
+        assert_eq!(assessment.blocks.len(), 3);
+        editor.ask_start(Some("nobody"), Some("nowhere"));
+        assert_eq!(editor.asked(), (Some("player"), Some("watch_captain")));
+        editor.ask_start(None, Some("watch_oath"));
+        assert!(editor.start_assessment().expect("both chosen").allowed());
+        let mut broken = broken();
+        broken.ask_start(Some("hale"), None);
+        assert_eq!(broken.asked(), (None, None));
     }
 
     #[test]

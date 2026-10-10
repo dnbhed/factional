@@ -596,6 +596,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Curves and quests split off as U7,** to keep each increment reviewable.
   - *Why:* the designer sees what the numbers do without leaving the editor, while every figure is still the engine's.
 
+- **P-82 · How curves and quests are previewed** (made in U7, 2026-10-10).
+  - **`World::named_curves`** holds the knobs the CLI's `curve` names, moved from the CLI beside U5's queries; `curve` renders from it, unchanged.
+  - **A curve is plotted through its own points,** straight between them, from the lowest x to the highest, as the engine reads it (DESIGN.md §4.2), and each point is listed in words; a knob left out says it's 1.00 everywhere.
+  - **Whether a character can start a quest is asked of a fresh quest log** on the previewed world: at the start of play, before anything is done, since the editor previews content, not a game in progress. The answer is the engine's `StartAssessment`, in its own words, as `can-start` prints it.
+  - **The Previews tab scrolls only up and down,** so its choices wrap; the matrix scrolls sideways on its own when a world has many characters.
+  - *Why:* every figure and every reason is still the engine's; the tab only chooses what to ask.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

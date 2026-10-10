@@ -1256,6 +1256,7 @@ dependencies = [
  "eframe",
  "egui_kittest",
  "factional-content",
+ "factional-core",
  "factional-quests",
  "factional-reputation",
 ]

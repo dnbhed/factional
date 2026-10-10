@@ -8,21 +8,34 @@ use std::cmp::Ordering;
 use factional_content::{describe_mark, map_heading};
 use factional_reputation::{CharacterId, World};
 
+use factional_core::{Curve, Fixed};
+
 use crate::Editor;
-use crate::egui::{self, Align2, Color32, FontId, Sense, WidgetInfo, WidgetType};
-use crate::layout::{map_cell, map_size};
+use crate::egui::{
+    self, Align2, Color32, FontId, Sense, Shape, Stroke, WidgetInfo, WidgetType, vec2,
+};
+use crate::layout::{curve_plot, map_cell, map_size};
 
 /// Scores in bands below the middle one are tinted orange, above it blue: the design's
 /// hostile and friendly colours.
 const HOSTILE: (u8, u8, u8) = (0xf0, 0xa3, 0x5e);
 const FRIENDLY: (u8, u8, u8) = (0x5a, 0xa9, 0xe6);
 
+/// What was clicked in the Previews tab.
+enum Choice {
+    Map(String),
+    Curve(String),
+    Starter(String),
+    Quest(String),
+}
+
 impl Editor {
-    /// The Previews tab: whether the previews are current, then the matrix, then the map.
+    /// The Previews tab: whether the previews are current, then the matrix, the map, a curve,
+    /// and whether a character can start a quest.
     pub(crate) fn previews_ui(&mut self, ui: &mut egui::Ui) {
-        let mut show = None;
+        let mut chosen = None;
         egui::CentralPanel::default().show(ui, |ui| {
-            egui::ScrollArea::both().show(ui, |ui| {
+            egui::ScrollArea::vertical().show(ui, |ui| {
                 let problems = problems(self.outline.problem_count());
                 let Some(world) = &self.preview else {
                     ui.label(format!(
@@ -37,15 +50,62 @@ impl Editor {
                     );
                 }
                 ui.heading("Disposition: each observer, down, toward each character, across");
-                matrix_ui(ui, world);
+                // A world with many characters scrolls its matrix sideways, on its own.
+                egui::ScrollArea::horizontal()
+                    .id_salt("matrix")
+                    .show(ui, |ui| matrix_ui(ui, world));
                 ui.separator();
                 ui.heading("Alignment map");
-                show = map_ui(ui, world, self.map_faction());
+                chosen = map_ui(ui, world, self.map_faction()).map(Choice::Map);
+                ui.separator();
+                ui.heading("Curve");
+                let curve = self.curve();
+                chosen = curve_ui(ui, world, curve)
+                    .map(Choice::Curve)
+                    .or(chosen.take());
+                ui.separator();
+                ui.heading("Can they start it?");
+                chosen = self.start_ui(ui, world).or(chosen.take());
             });
         });
-        if let Some(faction) = show {
-            self.show_map(&faction);
+        match chosen {
+            Some(Choice::Map(faction)) => self.show_map(&faction),
+            Some(Choice::Curve(knob)) => self.show_curve(&knob),
+            Some(Choice::Starter(character)) => self.ask_start(Some(&character), None),
+            Some(Choice::Quest(quest)) => self.ask_start(None, Some(&quest)),
+            None => {}
         }
+    }
+
+    /// A choice of character and of quest, then whether they can start it at the start of
+    /// play, in the engine's words.
+    fn start_ui(&self, ui: &mut egui::Ui, world: &World) -> Option<Choice> {
+        let mut chosen = None;
+        let (starter, quest) = self.asked();
+        ui.horizontal_wrapped(|ui| {
+            for character in world.characters() {
+                let id = character.id.as_str();
+                let label = format!("Can start: {id}");
+                if ui.selectable_label(starter == Some(id), label).clicked() {
+                    chosen = Some(Choice::Starter(id.to_owned()));
+                }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            for id in self.preview_quests.quests.keys() {
+                let id = id.as_str();
+                let label = format!("Quest: {id}");
+                if ui.selectable_label(quest == Some(id), label).clicked() {
+                    chosen = Some(Choice::Quest(id.to_owned()));
+                }
+            }
+        });
+        if let Some(assessment) = self.start_assessment() {
+            for line in assessment.to_string().lines() {
+                ui.label(line);
+            }
+        }
+        chosen
     }
 }
 
@@ -116,6 +176,55 @@ fn tint(index: usize, count: usize) -> Option<Color32> {
     let strength = from_middle.unsigned_abs() as f32 / span as f32;
     let alpha = (40.0 + 120.0 * strength).round() as u8;
     Some(Color32::from_rgba_unmultiplied(r, g, b, alpha))
+}
+
+/// A choice of knob, then its curve plotted with each point in words, or that it's left
+/// out. The knob clicked, if one was.
+fn curve_ui(
+    ui: &mut egui::Ui,
+    world: &World,
+    shown: Option<(String, Option<Curve>)>,
+) -> Option<String> {
+    let mut clicked = None;
+    let shown_name = shown.as_ref().map(|(name, _)| name.as_str());
+    ui.horizontal_wrapped(|ui| {
+        for (name, _) in world.named_curves() {
+            if ui
+                .selectable_label(shown_name == Some(&name), &name)
+                .clicked()
+            {
+                clicked = Some(name.clone());
+            }
+        }
+    });
+    let Some((_, curve)) = shown else {
+        return clicked;
+    };
+    let Some(curve) = curve else {
+        ui.label(format!("left out, so {} everywhere", Fixed::ONE));
+        return clicked;
+    };
+    let points = curve.points();
+    let (area, _) = ui.allocate_exact_size(vec2(360.0, 160.0), Sense::hover());
+    let plotted: Vec<(f32, f32)> = points
+        .iter()
+        .map(|(x, y)| (points_of(*x), points_of(*y)))
+        .collect();
+    let line = curve_plot(&plotted, area.shrink(8.0));
+    let visuals = ui.visuals().clone();
+    ui.painter()
+        .rect_filled(area, 4.0, visuals.extreme_bg_color);
+    ui.painter()
+        .add(Shape::line(line, Stroke::new(2.0, visuals.hyperlink_color)));
+    for (x, y) in &points {
+        ui.label(format!("at {x}: {y}"));
+    }
+    clicked
+}
+
+/// A number as a point in the plot: hundredths, as egui's layout reads them.
+fn points_of(value: Fixed) -> f32 {
+    value.hundredths() as f32 / 100.0
 }
 
 /// A choice of faction, then its map: the cells within its tolerance filled, the faction
@@ -213,6 +322,13 @@ mod tests {
         // One band, or none, can't be told apart.
         assert_eq!(tint(0, 1), None);
         assert_eq!(tint(0, 0), None);
+    }
+
+    #[test]
+    fn a_curves_numbers_are_plotted_at_their_value() {
+        assert_eq!(points_of("50".parse().expect("a number")), 50.0);
+        assert_eq!(points_of("-0.25".parse().expect("a number")), -0.25);
+        assert_eq!(points_of(Fixed::ZERO), 0.0);
     }
 
     #[test]

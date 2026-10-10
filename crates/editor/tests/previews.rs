@@ -15,7 +15,8 @@ const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 fn previews_tab(dir: PathBuf) -> Harness<'static, Editor> {
     let mut harness =
         Harness::new_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
-    harness.set_size(factional_editor::egui::vec2(1440.0, 900.0));
+    // Tall enough to hold every preview, since egui ignores clicks outside what's shown.
+    harness.set_size(factional_editor::egui::vec2(1440.0, 3000.0));
     harness.run();
     harness.get_by_label("Previews").click();
     harness.run();
@@ -179,4 +180,60 @@ fn marks_sharing_a_cell_are_listed_together() {
     let harness = previews_tab(dir);
     harness.get_by_label("* at law -60, good -20: A, B");
     assert_eq!(harness.query_all_by_label_contains("* at law").count(), 1);
+}
+
+#[test]
+fn a_knob_is_plotted_with_its_points_in_words() {
+    let mut harness = previews_tab(sample());
+    harness.get_by_label("at 0.00: 50.00");
+    harness.get_by_label("at 60.00: 0.00");
+    harness.get_by_label("at 200.00: -50.00");
+    let on = |harness: &Harness<'static, Editor>, label: &str| {
+        harness.get_by_label(label).accesskit_node().toggled()
+    };
+    assert_eq!(on(&harness, "disposition.affinity"), Some(Toggled::True));
+    assert_eq!(on(&harness, "standing.spillover"), Some(Toggled::False));
+    // Plotted as one line through its three points, on a panel of its own.
+    let visuals = harness.ctx.global_style().visuals.clone();
+    let shapes = painted(&harness);
+    let lines = shapes
+        .iter()
+        .filter(
+            |shape| matches!(shape, Shape::Path(path) if !path.closed && path.points.len() == 3),
+        )
+        .count();
+    assert_eq!(lines, 1);
+    let panels = shapes
+        .iter()
+        .filter(|shape| {
+            matches!(shape, Shape::Rect(rect)
+                if rect.fill == visuals.extreme_bg_color && rect.rect.size() == vec2(360.0, 160.0))
+        })
+        .count();
+    assert_eq!(panels, 1);
+    harness
+        .get_by_label("inertia.steady.law.toward_lawful")
+        .click();
+    harness.run();
+    harness.get_by_label("left out, so 1.00 everywhere");
+    assert!(harness.query_by_label("at 0.00: 50.00").is_none());
+}
+
+#[test]
+fn choosing_a_character_and_a_quest_says_whether_they_can_start_it() {
+    let mut harness = previews_tab(sample());
+    harness.get_by_label("Can start: player").click();
+    harness.run();
+    harness.get_by_label("Quest: watch_captain").click();
+    harness.run();
+    harness.get_by_label("player can't start watch_captain:");
+    harness.get_by_label_contains("step 1 of watch_career isn't complete: 0 of 1 done");
+    harness.get_by_label("Quest: watch_oath").click();
+    harness.run();
+    harness.get_by_label("player can start watch_oath");
+    let on = |label: &str| harness.get_by_label(label).accesskit_node().toggled();
+    assert_eq!(on("Can start: player"), Some(Toggled::True));
+    assert_eq!(on("Can start: vex"), Some(Toggled::False));
+    assert_eq!(on("Quest: watch_oath"), Some(Toggled::True));
+    assert_eq!(on("Quest: watch_captain"), Some(Toggled::False));
 }
