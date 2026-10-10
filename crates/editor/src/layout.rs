@@ -3,7 +3,10 @@
 //! at, so the egui layer only paints and places what it's given. Floats here are egui's
 //! layout, never content (DESIGN.md §18).
 
-use factional_content::LineView;
+use std::collections::BTreeMap;
+use std::ops::Range;
+
+use factional_content::{LineView, Step, ValuePath};
 use factional_quests::{Next, Quest};
 use factional_reputation::{MAP_CELLS, MapCell};
 
@@ -246,6 +249,97 @@ pub fn arrow_ends(from: Rect, to: Rect) -> Option<(Pos2, Pos2)> {
     }
 }
 
+/// One part of a group of an entry's form (U6f): a value on its row, or a list whose items
+/// are tables, drawn as a table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Block {
+    /// The field at this place in the form.
+    Row(usize),
+    Table(ListTable),
+}
+
+/// A list of tables as a table: a row an item, a column a key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListTable {
+    /// The list's key in the entry, such as `ranks`.
+    pub list: String,
+    /// Each key any item has, such as `requires.standing`, in the order first met.
+    pub columns: Vec<String>,
+    /// Each item's field in each column, if it has one.
+    pub rows: Vec<Vec<Option<usize>>>,
+}
+
+/// Where each group of a form begins and ends, from each field's group in order: a run of
+/// fields in the same group.
+pub fn groups(names: &[Option<&str>]) -> Vec<Range<usize>> {
+    let mut groups: Vec<Range<usize>> = Vec::new();
+    for (place, name) in names.iter().enumerate() {
+        match groups.last_mut() {
+            Some(group) if names[group.start] == *name => group.end = place + 1,
+            _ => groups.push(place..place + 1),
+        }
+    }
+    groups
+}
+
+/// The blocks of a group, from each field's place in the form and its key within the entry,
+/// such as `ranks[1].requires.standing`: a list whose every key goes on to a key of an item,
+/// with no list within it, is a table where its first field is; every other field is a row.
+pub fn blocks(keys: &[(usize, ValuePath)]) -> Vec<Block> {
+    // An item's key: the list, the item, and the key within it.
+    let in_item = |path: &ValuePath| match &path.0[..] {
+        [Step::Key(list), Step::Index(item), within @ ..] => {
+            Some((list.clone(), *item, ValuePath(within.to_vec())))
+        }
+        _ => None,
+    };
+    let mut flat: BTreeMap<String, bool> = BTreeMap::new();
+    for (_, path) in keys {
+        if let [Step::Key(list), Step::Index(_), within @ ..] = &path.0[..] {
+            let keyed =
+                !within.is_empty() && within.iter().all(|step| matches!(step, Step::Key(_)));
+            *flat.entry(list.clone()).or_insert(true) &= keyed;
+        }
+    }
+    let mut blocks = Vec::new();
+    let mut placed: BTreeMap<String, usize> = BTreeMap::new();
+    for (field, path) in keys {
+        let Some((list, item, within)) =
+            in_item(path).filter(|(list, ..)| flat.get(list) == Some(&true))
+        else {
+            blocks.push(Block::Row(*field));
+            continue;
+        };
+        let at = *placed.entry(list.clone()).or_insert_with(|| {
+            blocks.push(Block::Table(ListTable {
+                list,
+                columns: Vec::new(),
+                rows: Vec::new(),
+            }));
+            blocks.len() - 1
+        });
+        let Some(Block::Table(table)) = blocks.get_mut(at) else {
+            continue;
+        };
+        let column = within.to_string();
+        let column = match table.columns.iter().position(|known| *known == column) {
+            Some(known) => known,
+            None => {
+                table.columns.push(column);
+                for row in &mut table.rows {
+                    row.push(None);
+                }
+                table.columns.len() - 1
+            }
+        };
+        while table.rows.len() <= item {
+            table.rows.push(vec![None; table.columns.len()]);
+        }
+        table.rows[item][column] = Some(*field);
+    }
+    blocks
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -260,6 +354,84 @@ mod tests {
             .join(dir);
         let texts = read_texts(&dir).expect("there");
         QuestGraph::new(&texts, &outline_texts(&texts))
+    }
+
+    fn keys(keys: &[&str]) -> Vec<(usize, ValuePath)> {
+        keys.iter()
+            .enumerate()
+            .map(|(field, key)| (field + 10, ValuePath::parse(key).expect("a key")))
+            .collect()
+    }
+
+    #[test]
+    fn a_list_of_tables_is_a_table_with_a_row_an_item_and_a_column_a_key() {
+        let ranks = keys(&[
+            "ranks[0].id",
+            "ranks[1].id",
+            "ranks[1].requires.standing",
+            "ranks[2].id",
+            "ranks[2].requires.standing",
+            "ranks[2].tolerance",
+        ]);
+        assert_eq!(
+            blocks(&ranks),
+            [Block::Table(ListTable {
+                list: "ranks".to_owned(),
+                columns: vec![
+                    "id".to_owned(),
+                    "requires.standing".to_owned(),
+                    "tolerance".to_owned(),
+                ],
+                rows: vec![
+                    vec![Some(10), None, None],
+                    vec![Some(11), Some(12), None],
+                    vec![Some(13), Some(14), Some(15)],
+                ],
+            })]
+        );
+    }
+
+    #[test]
+    fn a_table_sits_where_its_first_field_is_and_takes_its_later_fields() {
+        // A membership's default comes after what's written, but it's still in its row.
+        let hale = keys(&[
+            "memberships[0].faction",
+            "memberships[0].rank",
+            "standing.factions.city_watch",
+            "memberships[0].secret",
+        ]);
+        assert_eq!(
+            blocks(&hale),
+            [
+                Block::Table(ListTable {
+                    list: "memberships".to_owned(),
+                    columns: vec!["faction".to_owned(), "rank".to_owned(), "secret".to_owned()],
+                    rows: vec![vec![Some(10), Some(11), Some(13)]],
+                }),
+                Block::Row(12),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_group_is_a_run_of_fields_in_it() {
+        let names = [Some("A"), Some("A"), Some("B"), None, None, Some("A")];
+        assert_eq!(groups(&names), [0..2, 2..3, 3..5, 5..6]);
+        assert_eq!(groups(&[]), []);
+    }
+
+    #[test]
+    fn plain_values_and_lists_with_lists_in_them_stay_rows() {
+        let mira = keys(&["name", "contacts[0]", "contacts[1]"]);
+        assert_eq!(
+            blocks(&mira),
+            [Block::Row(10), Block::Row(11), Block::Row(12)]
+        );
+        let quest = keys(&["stages[0].id", "stages[0].choices[0].id", "stages[1].id"]);
+        assert_eq!(
+            blocks(&quest),
+            [Block::Row(10), Block::Row(11), Block::Row(12)]
+        );
     }
 
     fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {

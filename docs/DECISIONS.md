@@ -638,6 +638,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Lists of tables as tables, and new entries, split off as U6f,** to keep this reviewable.
   - *Why:* a designer sees what they're about to add, what a removal will break before it does, and what a change broke, in the loader's words, with the way back beside it (board 2's "Undo is never more than one click from a change that broke something").
 
+- **P-87 · How a list of tables is drawn** (made in U6f, 2026-10-10).
+  - **Only a list of flat tables is a table:** every key under it goes on to a key of an item, with no list inside the item, so a rank ladder and memberships are tables and a quest's stages, with their lists of choices, stay rows. A list of plain values, such as contacts, stays one row a value.
+  - **A table sits where its first field is** and takes its later fields too, such as a membership's `secret` left out, so its row is whole.
+  - **Cells have a fixed width,** not a grid within the form's grid, so the form settles at once (a nested grid kept resizing), and a three-key table fits beside the form's keys at the window's 1440 by 900. A cell's field is labelled with its full key, such as `ranks[1].requires.standing`, and its comment goes under its row, after its column.
+  - **Each item's row has its × and "Add to <item>…",** which leave the list of places below the form.
+  - **No separate new-entry panel:** board 2's "New character" isn't built, since adding an entry by its id already writes the keys it must have and selects it, so its form is the new entry's form.
+  - *Why:* a ladder reads as a ladder, as the canvas draws it, with every value still edited through the same fields.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

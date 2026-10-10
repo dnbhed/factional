@@ -87,6 +87,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U6b — the Content tab's form, to board 1: the schema groups each entry's keys (`x-groups`, `x-group`); `entry_form` gives an entry's values group by group, each with the comments above it and after it, the defaults of what's left out and its choices (the ids that exist, an enumeration, or true and false); the tab shows the form under the entry's name with Set for a default and a choice menu, and beside it what the loader says, what refers to the entry (each a link to it) and the entry as written; the browser shows names; the window opens at the canvas's 1440 by 900; `form <dir> <file> <entry>`, `scenarios/form.scenario`; board 2 split off as U6d (P-84); done 2026-10-10 (#56)
 - U6c — problems at their keys, with the loader's fixes, to board 3: `Suggestion` in `factional-core`, offered by every engine error and content reader that says "did you mean" and carried on each `Diagnostic`; `fix_for` finds the change in the text (a misspelt key renamed, a misspelt word or part of a quest path set), `apply_fix` makes it through the writer, which gains `rename_key`; the outline lists `every_problem` and `every_warning`; the Content tab's problems panel, each with its key as a link and "Use 'right'", each problem also under its field, and the entries narrowed to those with problems; `fixes <dir>`, `scenarios/fixes.scenario`, fixture `typos`; board 6's look split off as U6e (P-85); done 2026-10-10 (#57)
 - U6d — adding and removing, to board 2: `KeyInfo::kind` says what a key is in words (text, true or false, a number or whole number with its range, one of an enumeration, the id of what it names, a table, a list); each place's additions under one "Add to <place>…" menu with each key's kind, default and description; × to remove; an entry that something names is removed only after "Remove anyway"; the last change and the problems it brought, with "Show it" and "Undo it"; `ValuePath::then` public; `keys <dir> <file> [<path>]`, `scenarios/keys.scenario`; lists of tables and new entries split off as U6f (P-86); done 2026-10-10 (#58)
+- U6f — lists of tables as tables, to boards 1 and 2: `layout::blocks` works out which of a group's fields make a table (a list whose items are flat tables, such as `ranks` or `memberships`; a list of values or with lists inside stays rows); each drawn as a row an item and a column a key, each cell its field labelled with its key, its choices, problems or default, its comment under the row, and × and "Add to <item>…" for each item; board 2's separate new-entry panel not built (P-87); done 2026-10-10 (#59)
 
 ---
 
@@ -112,11 +113,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U6f · Lists of tables, and new entries — P3 · Next
-
-Board 2's rank ladder as a table, a row a table and a column a key, with each cell's default; and a new entry from the keys it must have, with its id, its name and its alignment, as board 2's "New character" shows.
-
-### U6e · The visual language — P3 · Outline
+### U6e · The visual language — P3 · Next
 
 Board 6: egui's dark visuals tuned to the canvas's colours, IBM Plex Sans and Mono loaded through `FontDefinitions` (OFL, so they can be brought into the repository), comment green, a field's states (set, default, edited, refused, a problem), the summary as a pill, and the graph's nodes and edges as drawn.
 
