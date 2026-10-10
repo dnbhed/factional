@@ -45,31 +45,39 @@
           },
           "maxItems": 2,
           "minItems": 2,
-          "type": "array"
+          "type": "array",
+          "x-group": "Factions"
         },
         "from": {
           "description": "The faction doing the regarding.",
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string",
+          "x-group": "Factions",
           "x-names": "faction"
         },
         "to": {
           "description": "The faction regarded.",
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string",
+          "x-group": "Factions",
           "x-names": "faction"
         },
         "value": {
           "description": "-100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
-          "type": "number"
+          "type": "number",
+          "x-group": "Regard"
         }
       },
       "required": [
         "value"
       ],
-      "type": "object"
+      "type": "object",
+      "x-groups": [
+        "Factions",
+        "Regard"
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

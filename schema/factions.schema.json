@@ -155,42 +155,51 @@
       "additionalProperties": false,
       "properties": {
         "alignment": {
-          "$ref": "#/$defs/alignment"
+          "$ref": "#/$defs/alignment",
+          "x-group": "Where it stands"
         },
         "defectors": {
-          "$ref": "#/$defs/rule_tables/properties/defectors"
+          "$ref": "#/$defs/rule_tables/properties/defectors",
+          "x-group": "Its own rules"
         },
         "deserters": {
-          "$ref": "#/$defs/rule_tables/properties/deserters"
+          "$ref": "#/$defs/rule_tables/properties/deserters",
+          "x-group": "Its own rules"
         },
         "drift": {
-          "$ref": "#/$defs/drift"
+          "$ref": "#/$defs/drift",
+          "x-group": "Drift"
         },
         "expel_standing_change": {
           "default": -20.0,
           "description": "The change in standing with the faction when it expels someone.",
           "maximum": 100.0,
           "minimum": -100.0,
-          "type": "number"
+          "type": "number",
+          "x-group": "Membership"
         },
         "exposed": {
-          "$ref": "#/$defs/rule_tables/properties/exposed"
+          "$ref": "#/$defs/rule_tables/properties/exposed",
+          "x-group": "Its own rules"
         },
         "leave_standing_change": {
           "default": 0.0,
           "description": "The change in standing with the faction when someone leaves of their own accord.",
           "maximum": 100.0,
           "minimum": -100.0,
-          "type": "number"
+          "type": "number",
+          "x-group": "Membership"
         },
         "member_tolerance": {
           "description": "How far a member may drift before it matters; at least the tolerance, which it defaults to.",
           "minimum": 0.0,
-          "type": "number"
+          "type": "number",
+          "x-group": "Membership"
         },
         "name": {
           "description": "The faction's name, as shown.",
-          "type": "string"
+          "type": "string",
+          "x-group": "Identity"
         },
         "ranks": {
           "description": "The rank ladder, lowest first; new members start on the first rung.",
@@ -198,20 +207,24 @@
             "$ref": "#/$defs/rank"
           },
           "minItems": 1,
-          "type": "array"
+          "type": "array",
+          "x-group": "Ranks"
         },
         "secret_members": {
           "default": false,
           "description": "Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4).",
-          "type": "boolean"
+          "type": "boolean",
+          "x-group": "Membership"
         },
         "tolerance": {
           "description": "How close to the faction's alignment someone must be to join it.",
           "minimum": 0.0,
-          "type": "number"
+          "type": "number",
+          "x-group": "Membership"
         },
         "weights": {
-          "$ref": "#/$defs/weights"
+          "$ref": "#/$defs/weights",
+          "x-group": "Where it stands"
         }
       },
       "required": [
@@ -220,7 +233,15 @@
         "tolerance",
         "ranks"
       ],
-      "type": "object"
+      "type": "object",
+      "x-groups": [
+        "Identity",
+        "Where it stands",
+        "Membership",
+        "Drift",
+        "Ranks",
+        "Its own rules"
+      ]
     },
     "rank": {
       "additionalProperties": false,

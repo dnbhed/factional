@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use factional_editor::Editor;
+use factional_editor::{Editor, WINDOW};
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
@@ -24,8 +24,9 @@ fn broken_copy(name: &str) -> PathBuf {
 }
 
 fn open(dir: &Path) -> Harness<'static, Editor> {
-    let mut harness =
-        Harness::new_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
+    let mut harness = Harness::builder()
+        .with_size(WINDOW)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
     harness.run();
     harness
 }
@@ -58,7 +59,7 @@ fn a_new_entry_is_added_by_its_id_and_selected() {
     let dir = broken_copy("adding_entry");
     let mut harness = open(&dir);
     add_id(&mut harness, "characters.toml", "ava");
-    harness.get_by_label("characters.toml: ava");
+    harness.get_by_label("characters.toml › ava");
     assert_eq!(harness.get_by_label("name").value().as_deref(), Some(""));
     assert_eq!(
         harness.get_by_label("alignment.law").value().as_deref(),
@@ -125,7 +126,7 @@ fn a_file_not_there_is_started_by_adding_to_it() {
     let dir = broken_copy("adding_new_file");
     let mut harness = open(&dir);
     click(&mut harness, "Add relation to relations.toml");
-    harness.get_by_label("relations.toml: relation[0]");
+    harness.get_by_label("relations.toml › relation[0]");
     click(&mut harness, "Save");
     assert_eq!(
         fs::read_to_string(dir.join("relations.toml")).expect("written"),

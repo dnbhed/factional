@@ -611,6 +611,16 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A key's description and default come from the schema** (`key_info`), the default read as the loader reads it (`-20.00`, `false`), so the form can show what a key left out means.
   - *Why:* "Referenced by" and defaults are the content crate's knowledge, never the editor's search through text (canvas note q2).
 
+- **P-84 · How an entry's form is made** (made in U6b, 2026-10-10).
+  - **The schema groups an entry's keys,** by what they mean, as board 1 does: each definition lists its groups in order (`x-groups`), and each key names its own (`x-group`). The order is explicit because the schema's keys are kept in alphabetical order. A test holds every key of every entry's definition to one of its groups. Balance's entries are themselves groups, so their keys have none.
+  - **What's written comes first,** in the order written, so the form reads like the file; then the keys left out that have a default, in the schema's order. A key left out with no default isn't shown, as it means nothing until it's written; adding it stays with the place's additions (U6d).
+  - **A comment belongs to the value below it:** the lines directly above a key, or above a table's header for the table's first value, as `remove` keeps them with what they're above (P-78), and a comment after a value on its line. A blank line sets a comment apart, so a file's opening notes stay the file's.
+  - **Choices come from the text and the schema,** not from a world that loads: the ids defined for what `x-names` says (in id order, steady always among the profiles), an enumeration, or `false` and `true`. A rank isn't chosen, since it's named within its faction. The field stays free to type beside its choices, as a `done` or a `locks` may name a stage.
+  - **Beside the form:** what the loader says about the entry, what refers to it, for the files whose entries can be named, each reference choosing the entry it's in, and the entry as written.
+  - **The window opens at the canvas's 1440 by 900,** and the UI tests run at that size, so the entries, the form and what's beside it fit side by side.
+  - **Board 2 split off as U6d,** to keep this reviewable: keys to add with their descriptions, "Remove…" listing what refers first, what a change broke with Undo beside it, lists of tables as tables, and new entries.
+  - *Why:* the designer reads an entry as they wrote it, with what each value means and may be, while everything said about it is still the content crate's and the loader's (canvas note q2).
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

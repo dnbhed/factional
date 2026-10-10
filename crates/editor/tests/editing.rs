@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use factional_editor::Editor;
 use factional_editor::egui::{Key, Modifiers};
+use factional_editor::{Editor, WINDOW};
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
@@ -26,8 +26,9 @@ fn broken_copy(name: &str) -> PathBuf {
 
 /// The editor on `dir`, with `vex` selected.
 fn on_vex(dir: &Path) -> Harness<'static, Editor> {
-    let mut harness =
-        Harness::new_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
+    let mut harness = Harness::builder()
+        .with_size(WINDOW)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
     harness.run();
     harness.get_by_label("vex — 1 problem").click();
     harness.run();

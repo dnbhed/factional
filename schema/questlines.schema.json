@@ -7,11 +7,13 @@
           "description": "Whose questline it is: a faction or a character, by id; left out, the world's own.",
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string",
+          "x-group": "Identity",
           "x-names": "party"
         },
         "name": {
           "description": "The questline's name, as shown.",
-          "type": "string"
+          "type": "string",
+          "x-group": "Identity"
         },
         "steps": {
           "description": "The steps, in order: each opens once the one before is complete and its own requirements hold.",
@@ -19,14 +21,19 @@
             "$ref": "#/$defs/step"
           },
           "minItems": 1,
-          "type": "array"
+          "type": "array",
+          "x-group": "Steps"
         }
       },
       "required": [
         "name",
         "steps"
       ],
-      "type": "object"
+      "type": "object",
+      "x-groups": [
+        "Identity",
+        "Steps"
+      ]
     },
     "requires": {
       "additionalProperties": false,

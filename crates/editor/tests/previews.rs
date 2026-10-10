@@ -5,16 +5,17 @@ use std::path::{Path, PathBuf};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use factional_editor::Editor;
 use factional_editor::egui::accesskit::Toggled;
 use factional_editor::egui::{Color32, Shape, vec2};
+use factional_editor::{Editor, WINDOW};
 use factional_reputation::FactionId;
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 fn previews_tab(dir: PathBuf) -> Harness<'static, Editor> {
-    let mut harness =
-        Harness::new_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
+    let mut harness = Harness::builder()
+        .with_size(WINDOW)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
     // Tall enough to hold every preview, since egui ignores clicks outside what's shown.
     harness.set_size(factional_editor::egui::vec2(1440.0, 3000.0));
     harness.run();
@@ -66,7 +67,7 @@ fn previews_stay_while_the_content_doesnt_load_marked_as_the_last_that_did() {
         let tolerance = editor
             .fields()
             .iter()
-            .position(|f| f.field.path.to_string() == "city_watch.tolerance")
+            .position(|f| f.row.path.to_string() == "city_watch.tolerance")
             .expect("the Watch's tolerance");
         editor.set(tolerance, "140.0").expect("a number");
     }

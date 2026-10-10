@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use factional_editor::Editor;
+use factional_editor::{Editor, options};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -12,11 +12,7 @@ fn main() -> ExitCode {
     };
     let editor = Editor::open(dir);
     let title = format!("Factional — {dir}");
-    let shown = eframe::run_native(
-        &title,
-        eframe::NativeOptions::default(),
-        Box::new(|_| Ok(Box::new(editor))),
-    );
+    let shown = eframe::run_native(&title, options(), Box::new(|_| Ok(Box::new(editor))));
     match shown {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

@@ -188,6 +188,22 @@ fn names(mut schema: Value, names: &str) -> Value {
 }
 
 /// A table whose keys name one of `names`, as [`names`] says.
+/// `schema`, an entry's definition, with its keys grouped by what they mean (U6b, P-84): its
+/// groups in order, and each key's own.
+fn grouped(mut schema: Value, groups: &[(&str, &[&str])]) -> Value {
+    let names: Vec<&str> = groups.iter().map(|(name, _)| *name).collect();
+    schema["x-groups"] = json!(names);
+    for (name, keys) in groups {
+        for key in *keys {
+            let property = schema["properties"]
+                .get_mut(*key)
+                .expect("a key of the definition");
+            property["x-group"] = (*name).into();
+        }
+    }
+    schema
+}
+
 fn keys_name(mut schema: Value, names: &str) -> Value {
     schema["x-names-keys"] = names.into();
     schema
@@ -811,60 +827,83 @@ fn rank() -> Value {
 
 fn faction() -> Value {
     let [defectors, deserters, exposed] = rule_table_keys();
-    object(
-        [
-            ("name", text("The faction's name, as shown.")),
-            ("alignment", json!({ "$ref": "#/$defs/alignment" })),
-            ("weights", json!({ "$ref": "#/$defs/weights" })),
-            (
-                "tolerance",
-                at_least_zero("How close to the faction's alignment someone must be to join it."),
-            ),
-            (
-                "member_tolerance",
-                at_least_zero(
-                    "How far a member may drift before it matters; at least the tolerance, which it defaults to.",
-                ),
-            ),
-            (
-                "leave_standing_change",
-                with_default(
-                    within_axis(
-                        "The change in standing with the faction when someone leaves of their own accord.",
+    grouped(
+        object(
+            [
+                ("name", text("The faction's name, as shown.")),
+                ("alignment", json!({ "$ref": "#/$defs/alignment" })),
+                ("weights", json!({ "$ref": "#/$defs/weights" })),
+                (
+                    "tolerance",
+                    at_least_zero(
+                        "How close to the faction's alignment someone must be to join it.",
                     ),
-                    number(Fixed::ZERO),
                 ),
-            ),
-            (
-                "expel_standing_change",
-                with_default(
-                    within_axis("The change in standing with the faction when it expels someone."),
-                    number(Faction::DEFAULT_EXPEL_STANDING_CHANGE),
+                (
+                    "member_tolerance",
+                    at_least_zero(
+                        "How far a member may drift before it matters; at least the tolerance, which it defaults to.",
+                    ),
                 ),
-            ),
-            (
-                "secret_members",
-                with_default(
-                    json!({ "type": "boolean", "description": "Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4)." }),
-                    false.into(),
+                (
+                    "leave_standing_change",
+                    with_default(
+                        within_axis(
+                            "The change in standing with the faction when someone leaves of their own accord.",
+                        ),
+                        number(Fixed::ZERO),
+                    ),
                 ),
-            ),
+                (
+                    "expel_standing_change",
+                    with_default(
+                        within_axis(
+                            "The change in standing with the faction when it expels someone.",
+                        ),
+                        number(Faction::DEFAULT_EXPEL_STANDING_CHANGE),
+                    ),
+                ),
+                (
+                    "secret_members",
+                    with_default(
+                        json!({ "type": "boolean", "description": "Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4)." }),
+                        false.into(),
+                    ),
+                ),
+                (
+                    "ranks",
+                    json!({
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "$ref": "#/$defs/rank" },
+                        "description": "The rank ladder, lowest first; new members start on the first rung.",
+                    }),
+                ),
+                ("drift", json!({ "$ref": "#/$defs/drift" })),
+                defectors,
+                deserters,
+                exposed,
+            ],
+            &["name", "alignment", "tolerance", "ranks"],
+            None,
+        ),
+        &[
+            ("Identity", &["name"]),
+            ("Where it stands", &["alignment", "weights"]),
             (
-                "ranks",
-                json!({
-                    "type": "array",
-                    "minItems": 1,
-                    "items": { "$ref": "#/$defs/rank" },
-                    "description": "The rank ladder, lowest first; new members start on the first rung.",
-                }),
+                "Membership",
+                &[
+                    "tolerance",
+                    "member_tolerance",
+                    "leave_standing_change",
+                    "expel_standing_change",
+                    "secret_members",
+                ],
             ),
-            ("drift", json!({ "$ref": "#/$defs/drift" })),
-            defectors,
-            deserters,
-            exposed,
+            ("Drift", &["drift"]),
+            ("Ranks", &["ranks"]),
+            ("Its own rules", &["defectors", "deserters", "exposed"]),
         ],
-        &["name", "alignment", "tolerance", "ranks"],
-        None,
     )
 }
 
@@ -884,33 +923,42 @@ fn character() -> Value {
         &["faction"],
         None,
     );
-    object(
-        [
-            ("name", text("The character's name, as shown.")),
-            ("alignment", json!({ "$ref": "#/$defs/alignment" })),
-            ("weights", json!({ "$ref": "#/$defs/weights" })),
-            (
-                "inertia",
-                names(
-                    id("Their inertia profile, from balance.toml; left out, the default."),
-                    "profile",
+    grouped(
+        object(
+            [
+                ("name", text("The character's name, as shown.")),
+                ("alignment", json!({ "$ref": "#/$defs/alignment" })),
+                ("weights", json!({ "$ref": "#/$defs/weights" })),
+                (
+                    "inertia",
+                    names(
+                        id("Their inertia profile, from balance.toml; left out, the default."),
+                        "profile",
+                    ),
                 ),
-            ),
-            (
-                "memberships",
-                list(membership, "The factions they start in."),
-            ),
-            ("standing", json!({ "$ref": "#/$defs/standing" })),
-            (
-                "contacts",
-                list(
-                    names(id("A character's id."), "character"),
-                    "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
+                (
+                    "memberships",
+                    list(membership, "The factions they start in."),
                 ),
-            ),
+                ("standing", json!({ "$ref": "#/$defs/standing" })),
+                (
+                    "contacts",
+                    list(
+                        names(id("A character's id."), "character"),
+                        "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
+                    ),
+                ),
+            ],
+            &["name", "alignment"],
+            None,
+        ),
+        &[
+            ("Identity", &["name"]),
+            ("Where they stand", &["alignment", "weights", "inertia"]),
+            ("Memberships", &["memberships"]),
+            ("Standing", &["standing"]),
+            ("Contacts", &["contacts"]),
         ],
-        &["name", "alignment"],
-        None,
     )
 }
 
@@ -965,33 +1013,48 @@ fn action() -> Value {
         .collect();
     let [law, good, relation]: [(&str, Value); 3] =
         by_target.try_into().expect("three target curves");
-    object(
-        [
-            ("alignment", json!({ "$ref": "#/$defs/delta" })),
-            ("standing", standing),
-            (
-                "by_target",
-                object(
-                    [law, good, relation],
-                    &[],
-                    Some("How the act's alignment change depends on its target (DESIGN.md §5.4)."),
+    grouped(
+        object(
+            [
+                ("alignment", json!({ "$ref": "#/$defs/delta" })),
+                ("standing", standing),
+                (
+                    "by_target",
+                    object(
+                        [law, good, relation],
+                        &[],
+                        Some(
+                            "How the act's alignment change depends on its target (DESIGN.md §5.4).",
+                        ),
+                    ),
                 ),
-            ),
+            ],
+            &[],
+            None,
+        ),
+        &[
+            ("Alignment", &["alignment", "by_target"]),
+            ("Standing", &["standing"]),
         ],
-        &[],
-        None,
     )
 }
 
 fn outcome() -> Value {
-    object(
-        [
-            ("alignment", json!({ "$ref": "#/$defs/delta" })),
-            ("standing", json!({ "$ref": "#/$defs/standing" })),
-            ("relations", relation_shifts()),
+    grouped(
+        object(
+            [
+                ("alignment", json!({ "$ref": "#/$defs/delta" })),
+                ("standing", json!({ "$ref": "#/$defs/standing" })),
+                ("relations", relation_shifts()),
+            ],
+            &[],
+            None,
+        ),
+        &[
+            ("Alignment", &["alignment"]),
+            ("Standing", &["standing"]),
+            ("Relations", &["relations"]),
         ],
-        &[],
-        None,
     )
 }
 
@@ -1068,7 +1131,13 @@ fn relation() -> Value {
         { "required": ["between"], "not": { "anyOf": [{ "required": ["from"] }, { "required": ["to"] }] } },
         { "required": ["from", "to"], "not": { "required": ["between"] } },
     ]);
-    relation
+    grouped(
+        relation,
+        &[
+            ("Factions", &["between", "from", "to"]),
+            ("Regard", &["value"]),
+        ],
+    )
 }
 
 /// A quest's or a questline's `giver`.
@@ -1130,26 +1199,33 @@ const PROGRESS_PATTERN: &str = "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$";
 const LOCK_PATTERN: &str = "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$";
 
 fn quest() -> Value {
-    object(
-        [
-            ("name", text("The quest's name, as shown.")),
-            ("giver", giver("quest")),
-            (
-                "requires",
-                json!({ "$ref": "#/$defs/requires", "description": "What must hold to start it." }),
-            ),
-            (
-                "stages",
-                json!({
-                    "type": "array",
-                    "minItems": 1,
-                    "items": { "$ref": "#/$defs/stage" },
-                    "description": "The stages, in order.",
-                }),
-            ),
+    grouped(
+        object(
+            [
+                ("name", text("The quest's name, as shown.")),
+                ("giver", giver("quest")),
+                (
+                    "requires",
+                    json!({ "$ref": "#/$defs/requires", "description": "What must hold to start it." }),
+                ),
+                (
+                    "stages",
+                    json!({
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "$ref": "#/$defs/stage" },
+                        "description": "The stages, in order.",
+                    }),
+                ),
+            ],
+            &["name", "stages"],
+            None,
+        ),
+        &[
+            ("Identity", &["name", "giver"]),
+            ("Requirements", &["requires"]),
+            ("Stages", &["stages"]),
         ],
-        &["name", "stages"],
-        None,
     )
 }
 
@@ -1225,22 +1301,25 @@ fn choice() -> Value {
 }
 
 fn questline() -> Value {
-    object(
-        [
-            ("name", text("The questline's name, as shown.")),
-            ("giver", giver("questline")),
-            (
-                "steps",
-                json!({
-                    "type": "array",
-                    "minItems": 1,
-                    "items": { "$ref": "#/$defs/step" },
-                    "description": "The steps, in order: each opens once the one before is complete and its own requirements hold.",
-                }),
-            ),
-        ],
-        &["name", "steps"],
-        None,
+    grouped(
+        object(
+            [
+                ("name", text("The questline's name, as shown.")),
+                ("giver", giver("questline")),
+                (
+                    "steps",
+                    json!({
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "$ref": "#/$defs/step" },
+                        "description": "The steps, in order: each opens once the one before is complete and its own requirements hold.",
+                    }),
+                ),
+            ],
+            &["name", "steps"],
+            None,
+        ),
+        &[("Identity", &["name", "giver"]), ("Steps", &["steps"])],
     )
 }
 
