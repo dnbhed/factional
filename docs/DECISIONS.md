@@ -61,6 +61,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-32 · The editor is built in egui** (agreed 2026-10-08 in U0, at the user's direction; settles X-5). All Rust, through eframe, using the engine's own types; it's chiefly the designer's own tool. It reads and writes the content TOML, so hand edits, the CLI and the editor stay interchangeable (DESIGN.md §18).
 - **D-33 · The host engine is Bevy** (agreed 2026-10-08 in U0, at the user's direction; settles X-2, left open in E0). The module embeds as a Bevy plugin; the core stays engine-agnostic (§19).
 - **D-34 · The editor's workspaces are tabs** (agreed 2026-10-10, at the user's direction, from the editor design canvas). One window with three workspaces along the top, Content, Quests and Previews, rather than a dock of panels that can sit anywhere (§18).
+- **D-35 · Previews keep the last world that loaded** (agreed 2026-10-10 in U5, at the user's direction). Previews come from a world built from the content as it stands; while it doesn't load, the Previews tab shows the last world that did, marked as such with how many problems there are now, rather than going blank mid-edit (§18).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
 ## Proposed — 2026-10-04
@@ -587,6 +588,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Where things go is worked out apart from drawing** (`layout` in the editor): node, heading and arrow positions as plain values, tested exactly, so the egui layer only paints and places what it's given (§18's model under a thin UI).
   - *Why:* the designer sees what needs and locks what, and where the loader found a dead end, in the same words the CLI uses, without the editor working anything out.
 
+- **P-81 · How previews are built** (made in U5, 2026-10-10).
+  - **Two engine queries,** `World::alignment_map` and `World::disposition_matrix`, so the CLI's `map` and `matrix` and the editor's Previews tab show the same thing. They moved from the CLI, whose output didn't change, as the quest wording did (P-80). The map's heading and key are worded once, in `factional-content`.
+  - **The previewed world is rebuilt whenever the content loads** (`load_texts`, then `World::new`), from the texts in memory; while it doesn't, the last stays, marked (D-35).
+  - **A score is tinted by its band's place among the world's bands,** not by any number in the code: below the middle band orange, above it blue, stronger further out; the middle band, if there is one, plain.
+  - **Every cell of the matrix is labelled in full** for AccessKit (`captain_hale → player: -5.49, neutral`), so it can be read without the grid; the map's key says in words what its cells show.
+  - **Curves and quests split off as U7,** to keep each increment reviewable.
+  - *Why:* the designer sees what the numbers do without leaving the editor, while every figure is still the engine's.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.
@@ -598,3 +607,4 @@ None right now. A new question gets the next free number, starting at O-5.
 - **X-3 · Save format and versioning.** Settled in T4 by the user's choices; see P-54.
 - **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Settled in Q0 by the user's choices: D-25 to D-29, with P-64 to P-66 for how (DESIGN.md §17).
 - **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). The candidates were a web frontend (Tauri and wasm, with schema-driven forms and React Flow) and egui (all Rust, `egui-snarl` for graphs). Settled in U0 by the user's choice: egui (D-32, P-74).
+- **X-6 · `egui-snarl` for the quest graphs** (raised 2026-10-10 after U4). P-80 drew the quest graphs with egui's own painter, as read-only views laid out by the content. The user chose to revisit snarl once U5 to U7 are done (PLAN.md U8): whether editing in the graph is wanted, and if so whether snarl fits it.

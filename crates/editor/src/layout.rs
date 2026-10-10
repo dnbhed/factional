@@ -5,6 +5,7 @@
 
 use factional_content::LineView;
 use factional_quests::{Next, Quest};
+use factional_reputation::{MAP_CELLS, MapCell};
 
 use crate::egui::{Pos2, Rect, Vec2};
 
@@ -22,6 +23,20 @@ pub const OUTSIDE_LABEL: f32 = 28.0;
 pub const STAGE_HEADING: f32 = 23.0;
 pub const CHOICE: f32 = 18.0;
 pub const STAGE_FOOT: f32 = 12.0;
+
+/// A cell of the alignment map: its side, with a point between cells.
+pub const MAP_CELL: f32 = 16.0;
+
+/// The whole alignment map, 21 cells each way.
+pub fn map_size() -> Vec2 {
+    Vec2::splat(MAP_CELLS as f32 * MAP_CELL)
+}
+
+/// Where a cell of the alignment map goes, drawn from `origin`.
+pub fn map_cell(origin: Pos2, cell: MapCell) -> Rect {
+    let corner = origin + Vec2::new(cell.column as f32, cell.row as f32) * MAP_CELL;
+    Rect::from_min_size(corner, Vec2::splat(MAP_CELL - 1.0))
+}
 
 /// A questline laid out: its steps' headings, its quests and the quests outside it, and an
 /// arrow for each of its edges between two of them.
@@ -350,6 +365,20 @@ mod tests {
         assert_eq!(
             layout.arrows[0],
             Some((Pos2::new(220.0, 52.0), Pos2::new(276.0, 37.5)))
+        );
+    }
+
+    #[test]
+    fn the_map_is_twenty_one_cells_each_way_from_its_origin() {
+        assert_eq!(map_size(), Vec2::new(336.0, 336.0));
+        let origin = Pos2::new(10.0, 20.0);
+        assert_eq!(
+            map_cell(origin, MapCell { row: 0, column: 0 }),
+            rect(10.0, 20.0, 15.0, 15.0)
+        );
+        assert_eq!(
+            map_cell(origin, MapCell { row: 8, column: 17 }),
+            rect(10.0 + 17.0 * 16.0, 20.0 + 8.0 * 16.0, 15.0, 15.0)
         );
     }
 

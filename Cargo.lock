@@ -1257,6 +1257,7 @@ dependencies = [
  "egui_kittest",
  "factional-content",
  "factional-quests",
+ "factional-reputation",
 ]
 
 [[package]]

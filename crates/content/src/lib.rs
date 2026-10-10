@@ -12,7 +12,8 @@ mod schema;
 mod unread;
 
 pub use describe::{
-    describe_choice, describe_step, named_effects, named_shifts, needs, quest_heading,
+    describe_choice, describe_mark, describe_step, map_heading, named_effects, named_shifts, needs,
+    quest_heading,
 };
 pub use edit::{
     Addition, EditError, Field, Step, ValueKind, ValuePath, add, additions, entry_fields,
@@ -20,8 +21,8 @@ pub use edit::{
 };
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
-    CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, outline,
-    outline_texts, read_texts,
+    CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, load_texts,
+    outline, outline_texts, read_texts,
 };
 pub use save::{Fingerprint, Restored, SAVE_VERSION, SaveError, fingerprint_of, restore, save};
 pub use schema::{SCHEMA_FILES, schema, schema_text};

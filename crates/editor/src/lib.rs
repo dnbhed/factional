@@ -11,12 +11,14 @@ use std::path::{Path, PathBuf};
 use factional_content::{
     Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, Field, FileState, Outline,
     OutlineEntry, QuestGraph, ValuePath, additions, entry_fields, entry_places, file_places,
-    outline, outline_texts, read_texts, set_value,
+    load_texts, outline, outline_texts, read_texts, set_value,
 };
+use factional_reputation::World;
 
 pub use eframe::egui;
 
 mod layout;
+mod previews_ui;
 mod quests_ui;
 
 /// The file whose entries are quests, for "Edit in Content".
@@ -46,6 +48,10 @@ pub struct Editor {
     shown: Option<Shown>,
     /// The quest whose stages and choices show beside the graph.
     chosen: Option<String>,
+    /// The world built from the last content that loaded, for the previews (D-35).
+    preview: Option<World>,
+    /// The faction whose alignment map is shown.
+    map_faction: Option<String>,
 }
 
 /// The tabs along the top (D-34).
@@ -53,6 +59,7 @@ pub struct Editor {
 pub enum Workspace {
     Content,
     Quests,
+    Previews,
 }
 
 /// What the Quests tab draws: a questline's steps, or a quest's stages.
@@ -103,6 +110,8 @@ impl Editor {
             graph: QuestGraph::default(),
             shown: None,
             chosen: None,
+            preview: None,
+            map_faction: None,
         };
         editor.reload();
         editor
@@ -179,6 +188,40 @@ impl Editor {
     pub fn choose(&mut self, quest: &str) {
         if self.is_there(&Shown::Quest(quest.to_owned())) {
             self.chosen = Some(quest.to_owned());
+        }
+    }
+
+    /// The world the previews come from: built from the content in memory when it last
+    /// loaded (D-35); `None` if it never has.
+    pub fn preview(&self) -> Option<&World> {
+        self.preview.as_ref()
+    }
+
+    /// Whether the previews are from content that has changed since it last loaded, because
+    /// it doesn't load now.
+    pub fn preview_is_stale(&self) -> bool {
+        self.preview.is_some() && !self.outline.loads()
+    }
+
+    /// The faction whose alignment map is shown: the one chosen, else the first.
+    pub fn map_faction(&self) -> Option<&str> {
+        let mut factions = self.preview.as_ref()?.factions();
+        let chosen = self.map_faction.as_deref();
+        match chosen {
+            Some(chosen) => factions.find(|f| f.id.as_str() == chosen),
+            None => factions.next(),
+        }
+        .map(|faction| faction.id.as_str())
+    }
+
+    /// Shows `faction`'s alignment map; nothing changes if the preview has no such faction.
+    pub fn show_map(&mut self, faction: &str) {
+        let there = self
+            .preview
+            .as_ref()
+            .is_some_and(|world| world.factions().any(|f| f.id.as_str() == faction));
+        if there {
+            self.map_faction = Some(faction.to_owned());
         }
     }
 
@@ -332,6 +375,13 @@ impl Editor {
                 .position(|e| e.key == key)?;
             Some((place, entry))
         });
+        if self.outline.loads()
+            && let Some(texts) = &self.texts
+            && let Ok((content, _)) = load_texts(texts)
+            && let Ok(world) = World::new(content)
+        {
+            self.preview = Some(world);
+        }
         self.graph = match &self.texts {
             Some(texts) => QuestGraph::new(texts, &self.outline),
             None => QuestGraph::default(),
@@ -457,6 +507,7 @@ impl Editor {
                 for (workspace, name) in [
                     (Workspace::Content, "Content"),
                     (Workspace::Quests, "Quests"),
+                    (Workspace::Previews, "Previews"),
                 ] {
                     if ui
                         .selectable_label(self.workspace == workspace, name)
@@ -470,6 +521,7 @@ impl Editor {
         match self.workspace {
             Workspace::Content => self.content_ui(ui),
             Workspace::Quests => self.quests_ui(ui),
+            Workspace::Previews => self.previews_ui(ui),
         }
     }
 
@@ -704,6 +756,66 @@ mod tests {
 
     fn sample() -> Editor {
         Editor::open(Path::new(REPO).join("content/sample"))
+    }
+
+    /// The sample with the City Watch's tolerance above its member tolerance, so it doesn't
+    /// load.
+    fn sample_broken() -> Editor {
+        let mut editor = sample();
+        let factions = CONTENT_FILES
+            .iter()
+            .position(|name| *name == "factions.toml")
+            .expect("a content file");
+        editor.select(factions, 1);
+        let tolerance = editor
+            .fields()
+            .iter()
+            .position(|f| f.field.path.to_string() == "city_watch.tolerance")
+            .expect("the Watch's tolerance");
+        editor.set(tolerance, "140.0").expect("a number");
+        editor
+    }
+
+    #[test]
+    fn previews_come_from_the_content_as_it_stands_while_it_loads() {
+        let editor = sample();
+        let world = editor.preview().expect("the sample loads");
+        assert_eq!(world.characters().count(), 6);
+        assert!(!editor.preview_is_stale());
+        assert!(broken().preview().is_none());
+        assert!(!broken().preview_is_stale());
+    }
+
+    #[test]
+    fn previews_keep_the_last_world_that_loaded_until_it_loads_again() {
+        let mut editor = sample_broken();
+        assert!(!editor.outline().loads());
+        assert!(editor.preview().is_some());
+        assert!(editor.preview_is_stale());
+        editor.undo();
+        assert!(!editor.preview_is_stale());
+        // An edit that loads is previewed at once: the Watch's tolerance as now set.
+        let tolerance = editor
+            .fields()
+            .iter()
+            .position(|f| f.field.path.to_string() == "city_watch.tolerance")
+            .expect("the Watch's tolerance");
+        editor.set(tolerance, "45.0").expect("a number");
+        let watch = factional_reputation::FactionId::new("city_watch").expect("valid id");
+        let world = editor.preview().expect("it loads");
+        let map = world.alignment_map(&watch).expect("the Watch");
+        assert_eq!(map.tolerance.to_string(), "45.00");
+    }
+
+    #[test]
+    fn the_map_shows_the_faction_chosen_or_else_the_first() {
+        let mut editor = sample();
+        assert_eq!(editor.map_faction(), Some("ashen_circle"));
+        editor.show_map("nowhere");
+        assert_eq!(editor.map_faction(), Some("ashen_circle"));
+        editor.show_map("city_watch");
+        assert_eq!(editor.map_faction(), Some("city_watch"));
+        assert_eq!(broken().map_faction(), None);
     }
 
     #[test]
