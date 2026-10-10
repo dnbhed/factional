@@ -50,6 +50,7 @@ fn set_tolerance(harness: &mut Harness<'static, Editor>) {
 fn the_editor_draws_with_the_canvas_colours() {
     let harness = open(Path::new(SAMPLE));
     assert_eq!(harness.ctx.global_style().visuals, theme::visuals());
+    assert_eq!(harness.ctx.global_style().text_styles, theme::text_styles());
 }
 
 #[test]

@@ -198,9 +198,11 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Act
     let row = &field.row;
     let label = ui
         .horizontal(|ui| {
+            // Keys, ids and values are always monospace (board 6).
+            let key = RichText::new(&row.key).monospace();
             let label = match &row.written {
-                Some(_) => ui.label(&row.key),
-                None => ui.label(RichText::new(&row.key).weak()),
+                Some(_) => ui.label(key),
+                None => ui.label(key.weak()),
             };
             if field.edited {
                 edited_mark(ui, &row.key);
@@ -275,6 +277,7 @@ fn value_ui(
                 ui.add(
                     egui::TextEdit::singleline(&mut *input)
                         .id_salt(row.path.to_string())
+                        .font(egui::TextStyle::Monospace)
                         .desired_width(width),
                 )
             })
