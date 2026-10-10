@@ -90,6 +90,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U6f — lists of tables as tables, to boards 1 and 2: `layout::blocks` works out which of a group's fields make a table (a list whose items are flat tables, such as `ranks` or `memberships`; a list of values or with lists inside stays rows); each drawn as a row an item and a column a key, each cell its field labelled with its key, its choices, problems or default, its comment under the row, and × and "Add to <item>…" for each item; board 2's separate new-entry panel not built (P-87); done 2026-10-10 (#59)
 - U6e — the visual language, to board 6 without its fonts: `theme::visuals()`, egui's dark visuals with the canvas's colours, set as the editor draws, with the editor's own (loads, locks, comment green, a problem's fill); comments in comment green; the summary as a pill; a value changed since the last save marked amber beside its key and around its field, with its file "edited", until Undo or Save; a refused value or one with a problem bordered red; a quest node with a problem filled red; a table row's "Add to" shown as "+…"; IBM Plex split off as U6g (P-88); done 2026-10-10 (#60)
 - U6g — IBM Plex in the editor, to board 6: Plex Sans Regular and SemiBold and Plex Mono Regular in `crates/editor/fonts/` with `OFL.txt` (from IBM's `@ibm/plex-sans@1.1.0` and `@ibm/plex-mono@2.5.0` releases), built into the editor; `theme::fonts()` puts Plex first in each family with egui's faces after; `theme::text_styles()` gives board 6's sizes; the form's keys and values in Plex Mono; fonts, sizes and visuals set once as the editor first draws (P-89); done 2026-10-10 (#61)
+- U8 — quest graphs that don't cross their boxes: every line routed through the gaps between columns, or along a corridor below the boxes when it goes further than the next column, each with its own lane and its own point on a box's side, its turns rounded as drawn; a questline's outside quests in a column after its last step; a quest's end as tall as its tallest stage; a test holds every graph in the repository to no line through a box; settles X-6 as the user chose, without egui-snarl (D-36, P-90); done 2026-10-10 (#62)
 
 ---
 
@@ -109,15 +110,12 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 6 — Embedding
 
-### E1 · The Bevy plugin — P3 · Outline
+### E1 · The Bevy plugin — P3 · Next
 
 `factional-bevy` (D-33, P-75, DESIGN.md §19): the world and quest log as a resource loaded at startup, commands in and events out as Bevy messages, time by `AdvanceTime` at a rate the game sets, and an example app. Settles the Bevy version and whether the crate builds in the main workspace.
 
 ## Beyond this module
 
-### U8 · Quest graphs in egui-snarl? — P3 · Next (needs the user's decision, X-6)
-
-Revisit P-80's choice of egui's own painter over `egui-snarl` once U5 to U7 are done, by the user's choice (2026-10-10): whether editing in the graph is wanted, and if so whether snarl fits it.
 ---
 
 ## Adding an increment
