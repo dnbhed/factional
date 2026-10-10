@@ -813,7 +813,7 @@ impl Editor {
             self.styled = true;
         }
         egui::Panel::top("summary").show(ui, |ui| {
-            // The buttons first, so a long directory never pushes them out of reach.
+            // The buttons and tabs first, so a long directory never pushes them out of reach.
             ui.horizontal(|ui| {
                 if ui.button("Read again").clicked() {
                     self.reload();
@@ -833,19 +833,6 @@ impl Editor {
                         .err()
                         .map(|error| format!("couldn't save: {error}"));
                 }
-                // The one place that says whether the world loads, as a pill.
-                let (fill, colour) = match self.outline.loads() {
-                    true => (theme::LOADS_FILL, theme::LOADS),
-                    false => (theme::BROKEN_FILL, ui.visuals().error_fg_color),
-                };
-                egui::Frame::new()
-                    .fill(fill)
-                    .corner_radius(10.0)
-                    .inner_margin(egui::Margin::symmetric(8, 2))
-                    .show(ui, |ui| ui.colored_label(colour, self.summary()));
-                if let Some(note) = &self.note {
-                    ui.label(note);
-                }
                 ui.separator();
                 for (workspace, name) in [
                     (Workspace::Content, "Content"),
@@ -858,6 +845,20 @@ impl Editor {
                     {
                         self.workspace = workspace;
                     }
+                }
+                ui.separator();
+                // The one place that says whether the world loads, as a pill.
+                let (fill, colour) = match self.outline.loads() {
+                    true => (theme::LOADS_FILL, theme::LOADS),
+                    false => (theme::BROKEN_FILL, ui.visuals().error_fg_color),
+                };
+                egui::Frame::new()
+                    .fill(fill)
+                    .corner_radius(10.0)
+                    .inner_margin(egui::Margin::symmetric(8, 2))
+                    .show(ui, |ui| ui.colored_label(colour, self.summary()));
+                if let Some(note) = &self.note {
+                    ui.label(note);
                 }
             });
         });

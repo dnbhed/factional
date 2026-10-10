@@ -8,7 +8,7 @@ use factional_content::{
 use factional_quests::{Next, Quest};
 
 use crate::egui::{self, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2};
-use crate::layout::{GAP_Y, line_layout, quest_layout};
+use crate::layout::{GAP_Y, line_layout, quest_layout, rounded};
 use crate::theme;
 use crate::{Editor, Shown};
 
@@ -142,9 +142,9 @@ fn line_ui(
         let marked = mark(&graph.in_quest(id));
         node_box(canvas, *rect, *outside, marked);
     }
-    for (edge, ends) in view.edges.iter().zip(&layout.arrows) {
-        if let Some((start, tip)) = ends {
-            arrow(canvas, *start, *tip, edge_colour(canvas, edge));
+    for (edge, route) in view.edges.iter().zip(&layout.routes) {
+        if let Some(route) = route {
+            arrow(canvas, route, edge_colour(canvas, edge));
         }
     }
     for (column, (step, heading)) in view.line.steps.iter().zip(&layout.headings).enumerate() {
@@ -207,8 +207,8 @@ fn quest_ui(ui: &mut egui::Ui, graph: &QuestGraph, quest: &str) {
     let canvas = &mut canvas;
 
     let stroke = canvas.visuals().widgets.noninteractive.fg_stroke.color;
-    for (start, tip) in layout.arrows.iter().flatten() {
-        arrow(canvas, *start, *tip, stroke);
+    for route in layout.routes.iter().flatten() {
+        arrow(canvas, route, stroke);
     }
     for (column, (stage, rect)) in found.stages.iter().zip(&layout.stages).enumerate() {
         let rect = *rect;
@@ -345,13 +345,16 @@ fn colour_of(visuals: &egui::Visuals, edge: &Edge) -> Color32 {
     }
 }
 
-/// A dashed arrow from `start` to `tip`.
-fn arrow(ui: &egui::Ui, start: Pos2, tip: Pos2, colour: Color32) {
+/// A dashed arrow along `route`, its turns rounded, with its head along its last leg.
+fn arrow(ui: &egui::Ui, route: &[Pos2], colour: Color32) {
+    let [.., before, tip] = route else {
+        return;
+    };
     let stroke = Stroke::new(1.5, colour);
     ui.painter()
-        .extend(Shape::dashed_line(&[start, tip], stroke, 6.0, 4.0));
+        .extend(Shape::dashed_line(&rounded(route, 8.0), stroke, 6.0, 4.0));
     ui.painter().add(Shape::convex_polygon(
-        arrowhead(start, tip).to_vec(),
+        arrowhead(*before, *tip).to_vec(),
         colour,
         Stroke::NONE,
     ));
