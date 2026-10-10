@@ -941,10 +941,22 @@ impl Editor {
             }
             ui.separator();
             let prefix = format!("{key}.");
+            let entry_path = ValuePath::parse(&key).unwrap_or(ValuePath::ROOT);
             egui::ScrollArea::vertical().show(ui, |ui| {
-                acted = form_ui::form_ui(ui, &mut self.fields);
+                let mut drawn = Vec::new();
+                acted = form_ui::form_ui(
+                    ui,
+                    file,
+                    &entry_path,
+                    &mut self.fields,
+                    &mut self.places,
+                    &mut drawn,
+                );
                 ui.separator();
                 for at in &mut self.places {
+                    if drawn.contains(&at.path) {
+                        continue;
+                    }
                     let path = at.path.to_string();
                     let name = match path == key {
                         true => key.clone(),
@@ -991,6 +1003,11 @@ impl Editor {
             }
             Some(Acted::Remove(path)) => removing = Some(path),
             Some(Acted::Fix(fix)) => fixing = Some(fix),
+            Some(Acted::Add(at, key)) => {
+                if let Some((file, _)) = self.selected {
+                    adding = Some((file, at, key));
+                }
+            }
             None => {}
         }
         if let Some(fix) = fixing
