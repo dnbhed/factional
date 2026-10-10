@@ -1,0 +1,28 @@
+---
+source: crates/cli/tests/scenarios.rs
+assertion_line: 24
+expression: transcript
+input_file: scenarios/keys.scenario
+---
+> keys content/sample factions.toml city_watch
+factions.toml › city_watch can have:
+  defectors: a table
+    Does the faction joined take a member of its enemies? The last rule must have no conditions.
+  deserters: a table
+    Does each enemy faction someone is in let them go? The last rule must have no conditions.
+  expel_standing_change: a number from -100.00 to 100.00, -20.00 by default
+    The change in standing with the faction when it expels someone.
+  exposed: a table
+    On learning a member is secretly in a faction it's in conflict with: keep, demote or expel them? "Current" is the faction that found out, "target" the secret one. The last rule must have no conditions.
+  leave_standing_change: a number from -100.00 to 100.00, 0.00 by default
+    The change in standing with the faction when someone leaves of their own accord.
+  secret_members: true or false, false by default
+    Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4).
+> keys content/sample factions.toml city_watch.ranks
+factions.toml › city_watch.ranks can have:
+  an item at the end
+> keys content/sample characters.toml
+characters.toml can have:
+  an entry by a new id
+> assert keys content/sample factions.toml city_watch.alignment == factions.toml › city_watch.alignment has every key it can
+> assert keys content/sample factions.toml nobody == error: nothing at nobody in factions.toml

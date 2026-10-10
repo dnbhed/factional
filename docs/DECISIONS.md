@@ -630,6 +630,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Board 6 split off as U6e:** the theme and IBM Plex need the font files brought into the repository, which is the user's to agree.
   - *Why:* a misspelt id is one click to fix, in the loader's own words, and nothing in the editor guesses what was meant.
 
+- **P-86 · How adding and removing say what they do** (made in U6d, 2026-10-10).
+  - **A key's kind is said from the schema,** in a designer's words: the range of a number with the loader's own figures (`-100.00`), a whole number's plainly, an enumeration's choices, and what an id names; a key that may be several kinds, such as a curve, says each, joined by "or".
+  - **One menu per place,** "Add to <place>…", rather than a button per key, so the form stays readable; each key in it shows what it is, its default and its description, and an item or a new id where the place takes one.
+  - **Removing an entry that's named asks first,** saying how many places name it; what names it is already listed beside the form. "Keep it" leaves it; "Remove anyway" removes it, and the notice says what broke. Removing anything else, or an entry nothing names, doesn't ask: Undo is one click away.
+  - **The last change is kept with the problems it brought:** those there after it that weren't before. The notice shows only when there are some, with "Show it" for the first one's entry and "Undo it"; the next change, Undo or reading again replaces it.
+  - **Lists of tables as tables, and new entries, split off as U6f,** to keep this reviewable.
+  - *Why:* a designer sees what they're about to add, what a removal will break before it does, and what a change broke, in the loader's words, with the way back beside it (board 2's "Undo is never more than one click from a change that broke something").
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

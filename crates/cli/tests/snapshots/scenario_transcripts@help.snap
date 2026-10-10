@@ -17,6 +17,7 @@ outline <dir>                                                                   
 references <dir> <id>                                                                           every place in <dir>'s content that names a faction, character, quest, outcome or inertia profile
 fixes <dir>                                                                                     each problem in <dir>'s content that the loader's "did you mean" fixes, and the change that fixes it
 form <dir> <file> <entry>                                                                       an entry's values grouped by what they mean, with their comments, the defaults of what's left out, and what each may be
+keys <dir> <file> [<path>]                                                                      what can be added at a place in a content file: each key, what it is, its default and its description
 graph <dir> <questline|quest>                                                                   a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about
 quests                                                                                          list the loaded world's quests and questlines
 can-start <character> <quest>                                                                   whether the character can start the quest now, and every reason not

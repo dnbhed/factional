@@ -8,6 +8,7 @@ mod compare;
 mod fixes;
 mod form;
 mod graph;
+mod keys;
 mod outline;
 mod play;
 mod quests;

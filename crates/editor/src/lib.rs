@@ -9,9 +9,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use factional_content::{
-    Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow, Outline,
-    OutlineEntry, QuestGraph, Reference, Step, ValuePath, additions, apply_fix, entry_form,
-    entry_places, file_places, fix_for, load_texts, outline, outline_texts, read_texts,
+    Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
+    Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, additions, apply_fix,
+    entry_form, entry_places, file_places, fix_for, load_texts, outline, outline_texts, read_texts,
     referenced_by, set_value,
 };
 use factional_core::Curve;
@@ -37,9 +37,11 @@ mod layout;
 
 use form_ui::Acted;
 use problems_ui::Listed;
+use removing_ui::Noticed;
 mod previews_ui;
 mod problems_ui;
 mod quests_ui;
+mod removing_ui;
 
 /// The file whose entries are quests, for "Edit in Content".
 const QUESTS_FILE: &str = "quests.toml";
@@ -97,6 +99,18 @@ pub struct Editor {
     listing_warnings: bool,
     /// Whether the entries shown are only those with problems.
     only_problems: bool,
+    /// The last change, and what it broke (U6d).
+    consequence: Option<Consequence>,
+    /// The selected entry, which something names, asked about before it's removed.
+    confirming: Option<ValuePath>,
+}
+
+/// A change: what it was, in words, and the problems it brought, in the loader's words
+/// (U6d).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Consequence {
+    pub said: String,
+    pub problems: Vec<Said>,
 }
 
 /// A problem or a warning, with the change its "did you mean" asks for, if any (U6c).
@@ -178,6 +192,8 @@ impl Editor {
             said: Vec::new(),
             listing_warnings: false,
             only_problems: false,
+            consequence: None,
+            confirming: None,
         };
         editor.reload();
         editor
@@ -226,7 +242,33 @@ impl Editor {
         let Some(file) = CONTENT_FILES.iter().position(|name| *name == fix.file) else {
             return Ok(());
         };
-        self.change(file, |text| apply_fix(text, fix))
+        let named = self.named(file, &fix.path);
+        let said = match &fix.change {
+            Change::Set(value) => format!("Set {named} to {value}"),
+            Change::Rename(key) => format!("Renamed {named} to {key}"),
+        };
+        self.change(file, said, |text| apply_fix(text, fix))
+    }
+
+    /// The last change, with what it broke, until the next change or Undo.
+    pub fn consequence(&self) -> Option<&Consequence> {
+        self.consequence.as_ref()
+    }
+
+    /// `path` in the `file`th file, as the form names it: within the selected entry, if
+    /// it's in it, such as `tolerance`; else whole, such as `city_watch.tolerance`.
+    fn named(&self, file: usize, path: &ValuePath) -> String {
+        let entry = self
+            .selected
+            .filter(|(selected, _)| *selected == file)
+            .and_then(|_| self.selected_entry())
+            .and_then(|(_, entry)| ValuePath::parse(&entry.key));
+        match entry {
+            Some(entry) if path.0.len() > entry.0.len() && path.0.starts_with(&entry.0) => {
+                ValuePath(path.0[entry.0.len()..].to_vec()).to_string()
+            }
+            _ => path.to_string(),
+        }
     }
 
     /// What names the selected entry, as written; `None` if it's in a file nothing names.
@@ -421,6 +463,7 @@ impl Editor {
         self.saved = self.texts.clone();
         self.undo.clear();
         self.note = None;
+        self.consequence = None;
         self.refresh();
     }
 
@@ -432,7 +475,8 @@ impl Editor {
             return Ok(());
         };
         let path = field.row.path.clone();
-        self.change(file, |text| set_value(text, &path, input))
+        let said = format!("Set {} to {input}", self.named(file, &path));
+        self.change(file, said, |text| set_value(text, &path, input))
     }
 
     /// Writes the `field`th value of the selected entry, one left out, at its default: the
@@ -458,8 +502,15 @@ impl Editor {
         let Some(name) = CONTENT_FILES.get(file) else {
             return Ok(());
         };
+        let said = match key {
+            Some(key) => format!(
+                "Added {}",
+                self.named(file, &at.then(Step::Key(key.to_owned())))
+            ),
+            None => format!("Added an item to {}", self.named(file, at)),
+        };
         let mut added = None;
-        self.change(file, |text| {
+        self.change(file, said, |text| {
             let (text, path) = factional_content::add(name, text, at, key)?;
             added = Some(path);
             Ok(text)
@@ -505,7 +556,8 @@ impl Editor {
         let whole = self
             .selected_entry()
             .is_some_and(|(_, entry)| ValuePath::parse(&entry.key).as_ref() == Some(path));
-        self.change(file, |text| factional_content::remove(text, path))?;
+        let said = format!("Removed {}", self.named(file, path));
+        self.change(file, said, |text| factional_content::remove(text, path))?;
         if whole {
             self.selected = None;
             self.show_fields();
@@ -514,10 +566,12 @@ impl Editor {
     }
 
     /// Changes the `file`th file's text in memory by `edit`, keeping what it was to undo, and
-    /// makes the outline again. Nothing changes if `edit` refuses.
+    /// makes the outline again, noting the problems it brought, as `said`. Nothing changes if
+    /// `edit` refuses.
     fn change(
         &mut self,
         file: usize,
+        said: String,
         edit: impl FnOnce(&str) -> Result<String, EditError>,
     ) -> Result<(), EditError> {
         let Some(texts) = self.texts.as_mut() else {
@@ -530,7 +584,15 @@ impl Editor {
         self.undo.push(texts.clone());
         texts[file] = Some(changed);
         self.note = None;
+        let before = self.said.clone();
         self.refresh();
+        let problems: Vec<Said> = self
+            .said
+            .iter()
+            .filter(|said| !said.warning && !before.contains(said))
+            .cloned()
+            .collect();
+        self.consequence = Some(Consequence { said, problems });
         Ok(())
     }
 
@@ -538,6 +600,7 @@ impl Editor {
     pub fn undo(&mut self) {
         if let Some(before) = self.undo.pop() {
             self.texts = Some(before);
+            self.consequence = None;
             self.refresh();
         }
     }
@@ -629,6 +692,7 @@ impl Editor {
 
     /// The selected entry's form, its places, and what names it.
     fn show_fields(&mut self) {
+        self.confirming = None;
         let (Some((file, entry)), Some(texts)) = (self.selected, &self.texts) else {
             self.fields.clear();
             self.places.clear();
@@ -849,7 +913,14 @@ impl Editor {
         }
         let mut acted = None;
         let mut removing = None;
+        let mut noticed = None;
+        let mut confirmed = None;
         egui::CentralPanel::default().show(ui, |ui| {
+            if let Some(consequence) = &self.consequence
+                && !consequence.problems.is_empty()
+            {
+                noticed = removing_ui::consequence_ui(ui, consequence);
+            }
             let (Some((place, _)), Some((file, entry))) = (self.selected, self.selected_entry())
             else {
                 ui.label(
@@ -863,8 +934,12 @@ impl Editor {
                     .weak(),
             );
             ui.heading(entry.name.as_deref().unwrap_or(&entry.key));
-            ui.separator();
             let key = entry.key.clone();
+            if self.confirming.is_some() {
+                let count = self.referenced_by().map_or(0, <[_]>::len);
+                confirmed = removing_ui::confirm_ui(ui, &key, count);
+            }
+            ui.separator();
             let prefix = format!("{key}.");
             egui::ScrollArea::vertical().show(ui, |ui| {
                 acted = form_ui::form_ui(ui, &mut self.fields);
@@ -877,10 +952,10 @@ impl Editor {
                     };
                     let mut added = None;
                     ui.horizontal_wrapped(|ui| {
-                        if ui.button(format!("Remove {name}")).clicked() {
+                        if removing_ui::remove_button(ui, &name) {
                             removing = Some(at.path.clone());
                         }
-                        adding_ui(ui, at, &name, &mut added);
+                        removing_ui::adding_menu(ui, file, at, &name, &mut added);
                     });
                     if let Some((at, key)) = added {
                         adding = Some((place, at, key));
@@ -888,6 +963,16 @@ impl Editor {
                 }
             });
         });
+        match noticed {
+            Some(Noticed::Show(file, key)) => self.select_at(&file, &key),
+            Some(Noticed::Undo) => self.undo(),
+            None => {}
+        }
+        match confirmed {
+            Some(true) => removing = self.confirming.take(),
+            Some(false) => self.confirming = None,
+            None => {}
+        }
         match going {
             Some(Listed::Go(file, key)) => self.select_at(&file, &key),
             Some(Listed::Fix(fix)) => fixing = Some(fix),
@@ -918,10 +1003,17 @@ impl Editor {
         {
             self.note = Some(format!("couldn't add: {refused}"));
         }
-        if let Some(path) = removing
-            && let Err(refused) = self.remove(&path)
-        {
-            self.note = Some(format!("couldn't remove: {refused}"));
+        if let Some(path) = removing {
+            // An entry something names is removed only once the designer has seen what.
+            let whole = self
+                .selected_entry()
+                .is_some_and(|(_, entry)| ValuePath::parse(&entry.key).as_ref() == Some(&path));
+            let named = self.referenced_by().is_some_and(|names| !names.is_empty());
+            if whole && named && confirmed.is_none() {
+                self.confirming = Some(path);
+            } else if let Err(refused) = self.remove(&path) {
+                self.note = Some(format!("couldn't remove: {refused}"));
+            }
         }
     }
 }
@@ -1651,5 +1743,64 @@ mod tests {
         editor.list_warnings(true);
         editor.show_only_problems(true);
         assert!(editor.listing_warnings() && editor.only_problems());
+    }
+
+    fn said(editor: &Editor) -> Option<(String, usize)> {
+        editor
+            .consequence()
+            .map(|consequence| (consequence.said.clone(), consequence.problems.len()))
+    }
+
+    #[test]
+    fn each_change_says_what_it_did_and_what_it_broke() {
+        let mut editor = sample_on(1, "city_watch");
+        assert_eq!(said(&editor), None);
+        let tolerance = field(&editor, "tolerance");
+        assert_eq!(editor.set(tolerance, "45.0"), Ok(()));
+        assert_eq!(said(&editor), Some(("Set tolerance to 45.0".to_owned(), 0)));
+        assert_eq!(editor.remove(&path("city_watch.tolerance")), Ok(()));
+        assert_eq!(said(&editor), Some(("Removed tolerance".to_owned(), 1)));
+        editor.undo();
+        assert_eq!(said(&editor), None);
+        let expel = field(&editor, "expel_standing_change");
+        assert_eq!(editor.write_default(expel), Ok(()));
+        assert_eq!(
+            said(&editor),
+            Some(("Added expel_standing_change".to_owned(), 0))
+        );
+        assert_eq!(editor.add(1, &path("city_watch.ranks"), None), Ok(()));
+        assert_eq!(
+            said(&editor),
+            Some(("Added an item to ranks".to_owned(), 1))
+        );
+        // Outside the selected entry, a key is named whole.
+        assert_eq!(editor.add(2, &ValuePath::ROOT, Some("ava")), Ok(()));
+        assert_eq!(
+            said(&editor).map(|(said, _)| said).as_deref(),
+            Some("Added ava")
+        );
+        editor.reload();
+        assert_eq!(said(&editor), None);
+    }
+
+    #[test]
+    fn a_fix_says_what_it_changed() {
+        let mut editor = typos();
+        let fixes: Vec<Fix> = editor
+            .said()
+            .iter()
+            .filter_map(|said| said.fix.clone())
+            .collect();
+        assert_eq!(editor.apply(&fixes[1]), Ok(()));
+        assert_eq!(
+            said(&editor),
+            Some(("Renamed captain_hale.weigths to weights".to_owned(), 0))
+        );
+        editor.select_at("characters.toml", "vex");
+        assert_eq!(editor.apply(&fixes[2]), Ok(()));
+        assert_eq!(
+            said(&editor),
+            Some(("Set memberships[0].faction to lantern_guild".to_owned(), 0))
+        );
     }
 }

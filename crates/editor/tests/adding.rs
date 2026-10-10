@@ -71,12 +71,15 @@ fn a_new_entry_is_added_by_its_id_and_selected() {
 fn the_schemas_keys_are_offered_where_they_fit() {
     let dir = broken_copy("adding_keys");
     let mut harness = on_vex(&dir);
+    click(&mut harness, "Add to vex…");
     assert!(
         harness.query_by_label("Add name to vex").is_none(),
         "already there"
     );
     click(&mut harness, "Add standing to vex");
+    click(&mut harness, "Add to standing…");
     click(&mut harness, "Add factions to standing");
+    click(&mut harness, "Add to standing.factions…");
     add_id(&mut harness, "standing.factions", "city_watch");
     assert_eq!(
         harness

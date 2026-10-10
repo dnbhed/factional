@@ -1,0 +1,11 @@
+# What a key is (U6d): what can be added at a place in a content file, each key with what it
+# is, its default and its description, as the editor's "Add to" menu offers it.
+
+# The Watch can still have its own rule tables, its expulsion and leaving costs, and secret members.
+keys content/sample factions.toml city_watch
+
+# A list takes items, and a file of entries takes new ids.
+keys content/sample factions.toml city_watch.ranks
+keys content/sample characters.toml
+assert keys content/sample factions.toml city_watch.alignment == factions.toml › city_watch.alignment has every key it can
+assert keys content/sample factions.toml nobody == error: nothing at nobody in factions.toml

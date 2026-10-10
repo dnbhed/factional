@@ -7,6 +7,7 @@ use factional_content::{Fix, ValuePath};
 
 use crate::egui::{self, RichText, WidgetInfo, WidgetType};
 use crate::problems_ui::{Listed, fix_button};
+use crate::removing_ui::remove_button;
 use crate::{Editor, FieldInput, Said};
 
 /// What was done in the form.
@@ -106,7 +107,7 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Act
             menu.response
                 .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
         }
-        if ui.button(format!("Remove {key}")).clicked() {
+        if remove_button(ui, key) {
             acted = Some(Acted::Remove(row.path.clone()));
         }
         if let Some(refused) = refused {
