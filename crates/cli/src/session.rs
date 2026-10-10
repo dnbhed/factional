@@ -50,6 +50,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "each content file in <dir>, its entries, and every problem and warning at the entry it's about",
     ),
     (
+        "references <dir> <id>",
+        "every place in <dir>'s content that names a faction, character, quest, outcome or inertia profile",
+    ),
+    (
         "graph <dir> <questline|quest>",
         "a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about",
     ),
@@ -334,6 +338,7 @@ impl Session {
             "quests" => Ok(crate::quests::quests(&self.base_dir, rest)),
             "outline" => Ok(crate::outline::outline(&self.base_dir, rest)),
             "graph" => Ok(crate::graph::graph(&self.base_dir, rest)),
+            "references" => Ok(crate::references::references(&self.base_dir, rest)),
             "reload" => Ok(self.reload()),
             "save" => Ok(self.save(rest)),
             "restore" => Ok(self.restore(rest)),

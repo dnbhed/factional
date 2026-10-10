@@ -40,7 +40,8 @@
           "description": "Two factions that regard each other the same way.",
           "items": {
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "maxItems": 2,
           "minItems": 2,
@@ -49,12 +50,14 @@
         "from": {
           "description": "The faction doing the regarding.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "faction"
         },
         "to": {
           "description": "The faction regarded.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "faction"
         },
         "value": {
           "description": "-100 to 100.",

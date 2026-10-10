@@ -180,6 +180,19 @@ fn id(description: &str) -> Value {
     json!({ "type": "string", "pattern": ID_PATTERN, "description": description })
 }
 
+/// An id naming one of `names`: `faction`, `character`, `party` (either), `quest`, `outcome`
+/// or `profile` (U6a). References are found by this; the loader checks them.
+fn names(mut schema: Value, names: &str) -> Value {
+    schema["x-names"] = names.into();
+    schema
+}
+
+/// A table whose keys name one of `names`, as [`names`] says.
+fn keys_name(mut schema: Value, names: &str) -> Value {
+    schema["x-names-keys"] = names.into();
+    schema
+}
+
 fn text(description: &str) -> Value {
     json!({ "type": "string", "description": description })
 }
@@ -307,11 +320,17 @@ fn named_standing() -> Value {
         [
             (
                 "factions",
-                id_table(within_axis("-100 to 100."), "By faction id."),
+                keys_name(
+                    id_table(within_axis("-100 to 100."), "By faction id."),
+                    "faction",
+                ),
             ),
             (
                 "characters",
-                id_table(within_axis("-100 to 100."), "By character id."),
+                keys_name(
+                    id_table(within_axis("-100 to 100."), "By character id."),
+                    "character",
+                ),
             ),
         ],
         &[],
@@ -647,7 +666,10 @@ fn balance() -> Value {
             (
                 "default_profile",
                 with_default(
-                    id("The profile of a character without their own."),
+                    names(
+                        id("The profile of a character without their own."),
+                        "profile",
+                    ),
                     defaults.inertia.default_profile.as_str().into(),
                 ),
             ),
@@ -849,7 +871,7 @@ fn faction() -> Value {
 fn character() -> Value {
     let membership = object(
         [
-            ("faction", id("The faction's id.")),
+            ("faction", names(id("The faction's id."), "faction")),
             ("rank", id("A rank on its ladder; left out, the lowest.")),
             (
                 "secret",
@@ -869,7 +891,10 @@ fn character() -> Value {
             ("weights", json!({ "$ref": "#/$defs/weights" })),
             (
                 "inertia",
-                id("Their inertia profile, from balance.toml; left out, the default."),
+                names(
+                    id("Their inertia profile, from balance.toml; left out, the default."),
+                    "profile",
+                ),
             ),
             (
                 "memberships",
@@ -879,7 +904,7 @@ fn character() -> Value {
             (
                 "contacts",
                 list(
-                    id("A character's id."),
+                    names(id("A character's id."), "character"),
                     "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
                 ),
             ),
@@ -902,11 +927,17 @@ fn action() -> Value {
             ),
             (
                 "factions",
-                id_table(within_axis("-100 to 100."), "By faction id."),
+                keys_name(
+                    id_table(within_axis("-100 to 100."), "By faction id."),
+                    "faction",
+                ),
             ),
             (
                 "characters",
-                id_table(within_axis("-100 to 100."), "By character id."),
+                keys_name(
+                    id_table(within_axis("-100 to 100."), "By character id."),
+                    "character",
+                ),
             ),
         ],
         &[],
@@ -980,14 +1011,17 @@ fn relation_shift() -> Value {
                 "between",
                 json!({
                     "type": "array",
-                    "items": { "type": "string", "pattern": ID_PATTERN },
+                    "items": { "type": "string", "pattern": ID_PATTERN, "x-names": "faction" },
                     "minItems": 2,
                     "maxItems": 2,
                     "description": "Two factions whose regard for each other both shift.",
                 }),
             ),
-            ("from", id("The faction whose regard shifts.")),
-            ("to", id("The faction it regards.")),
+            (
+                "from",
+                names(id("The faction whose regard shifts."), "faction"),
+            ),
+            ("to", names(id("The faction it regards."), "faction")),
             (
                 "by",
                 ranged(
@@ -1014,14 +1048,17 @@ fn relation() -> Value {
                 "between",
                 json!({
                     "type": "array",
-                    "items": { "type": "string", "pattern": ID_PATTERN },
+                    "items": { "type": "string", "pattern": ID_PATTERN, "x-names": "faction" },
                     "minItems": 2,
                     "maxItems": 2,
                     "description": "Two factions that regard each other the same way.",
                 }),
             ),
-            ("from", id("The faction doing the regarding.")),
-            ("to", id("The faction regarded.")),
+            (
+                "from",
+                names(id("The faction doing the regarding."), "faction"),
+            ),
+            ("to", names(id("The faction regarded."), "faction")),
             ("value", within_axis("-100 to 100.")),
         ],
         &["value"],
@@ -1036,33 +1073,42 @@ fn relation() -> Value {
 
 /// A quest's or a questline's `giver`.
 fn giver(whose: &str) -> Value {
-    id(&format!(
-        "Whose {whose} it is: a faction or a character, by id; left out, the world's own."
-    ))
+    names(
+        id(&format!(
+            "Whose {whose} it is: a faction or a character, by id; left out, the world's own."
+        )),
+        "party",
+    )
 }
 
 /// A `requires` table: what must hold for the character doing the quest.
 fn requires() -> Value {
-    let factions = |description: &str| list(id("A faction's id."), description);
+    let factions = |description: &str| list(names(id("A faction's id."), "faction"), description);
     let keys: Map<String, Value> = Requirements::KEYS
         .into_iter()
         .map(|key| {
             let schema = match key {
-                "standing" => id_table(
-                    within_axis("At least this, -100 to 100."),
-                    "Standing with each faction or character, by id.",
+                "standing" => keys_name(
+                    id_table(
+                        within_axis("At least this, -100 to 100."),
+                        "Standing with each faction or character, by id.",
+                    ),
+                    "party",
                 ),
                 "member" => factions("Factions the character must be in."),
                 "not_member" => factions("Factions the character must not be in."),
-                "rank_at_least" => id_table(
-                    id("A rank on the faction's ladder."),
-                    "At least this rank in each faction, by faction id.",
+                "rank_at_least" => keys_name(
+                    id_table(
+                        id("A rank on the faction's ladder."),
+                        "At least this rank in each faction, by faction id.",
+                    ),
+                    "faction",
                 ),
                 "within_tolerance" => factions(
                     "Factions whose member tolerance the character must be within, as the faction pictures them.",
                 ),
                 _ => list(
-                    json!({ "type": "string", "pattern": PROGRESS_PATTERN }),
+                    json!({ "type": "string", "pattern": PROGRESS_PATTERN, "x-names": "quest" }),
                     "Progress through other quests: quest (finished), quest.stage (reached) or quest.stage.choice (made).",
                 ),
             };
@@ -1140,7 +1186,10 @@ fn choice() -> Value {
     let mut choice = object(
         [
             ("id", id("The choice's id, unique within its stage.")),
-            ("outcome", id("An outcome from outcomes.toml.")),
+            (
+                "outcome",
+                names(id("An outcome from outcomes.toml."), "outcome"),
+            ),
             (
                 "effects",
                 object(
@@ -1163,7 +1212,7 @@ fn choice() -> Value {
             (
                 "locks",
                 list(
-                    json!({ "type": "string", "pattern": LOCK_PATTERN }),
+                    json!({ "type": "string", "pattern": LOCK_PATTERN, "x-names": "quest" }),
                     "Every other quest, or stage of one, the choice can shut off for good, once each: quest for its gate (its step's requirements included), quest.stage for a stage. Loading refuses a lockout left out; one listed that can't happen is a warning.",
                 ),
             ),
@@ -1203,7 +1252,7 @@ fn step() -> Value {
                 json!({
                     "type": "array",
                     "minItems": 1,
-                    "items": { "type": "string", "pattern": ID_PATTERN },
+                    "items": { "type": "string", "pattern": ID_PATTERN, "x-names": "quest" },
                     "description": "The step's quests, open together and done in any order. A quest is in at most one questline, at one step.",
                 }),
             ),

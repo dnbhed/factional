@@ -74,7 +74,8 @@
           "description": "Two factions whose regard for each other both shift.",
           "items": {
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "maxItems": 2,
           "minItems": 2,
@@ -89,12 +90,14 @@
         "from": {
           "description": "The faction whose regard shifts.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "faction"
         },
         "to": {
           "description": "The faction it regards.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "faction"
         }
       },
       "required": [
@@ -117,7 +120,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "character"
         },
         "factions": {
           "additionalProperties": {
@@ -130,7 +134,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "faction"
         }
       },
       "type": "object"

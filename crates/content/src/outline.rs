@@ -62,6 +62,8 @@ pub struct OutlineFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutlineEntry {
     pub key: String,
+    /// Its `name`, if it has one, such as `The City Watch`.
+    pub name: Option<String>,
     /// The entry as TOML.
     pub toml: String,
     pub problems: Vec<Diagnostic>,
@@ -248,6 +250,7 @@ fn read_file(name: &'static str, text: Option<&str>) -> OutlineFile {
     file.entries = entries
         .into_iter()
         .map(|(key, toml)| OutlineEntry {
+            name: name_in(&toml),
             key,
             toml,
             problems: Vec::new(),
@@ -255,6 +258,16 @@ fn read_file(name: &'static str, text: Option<&str>) -> OutlineFile {
         })
         .collect();
     file
+}
+
+/// The `name` an entry written as `toml` gives itself, if it's a table with one.
+fn name_in(toml: &str) -> Option<String> {
+    let entry: toml::Table = toml.parse().ok()?;
+    let (_, value) = entry.into_iter().next()?;
+    match value.get("name")? {
+        toml::Value::String(name) => Some(name.clone()),
+        _ => None,
+    }
 }
 
 impl OutlineFile {
@@ -440,6 +453,7 @@ mod tests {
         assert_eq!(file.label(), "characters.toml — 1 entry");
         let entry = |problems: usize, warnings: usize| OutlineEntry {
             key: "hale".to_owned(),
+            name: Some("Captain Hale".to_owned()),
             toml: String::new(),
             problems: vec![diagnostic(CHARACTERS_FILE, None, "p"); problems],
             warnings: vec![diagnostic(CHARACTERS_FILE, None, "w"); warnings],

@@ -6,7 +6,8 @@
         "giver": {
           "description": "Whose questline it is: a faction or a character, by id; left out, the world's own.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "party"
         },
         "name": {
           "description": "The questline's name, as shown.",
@@ -35,7 +36,8 @@
           "description": "Progress through other quests: quest (finished), quest.stage (reached) or quest.stage.choice (made).",
           "items": {
             "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$",
-            "type": "string"
+            "type": "string",
+            "x-names": "quest"
           },
           "type": "array"
         },
@@ -44,7 +46,8 @@
           "items": {
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "type": "array"
         },
@@ -53,7 +56,8 @@
           "items": {
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "type": "array"
         },
@@ -67,7 +71,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "faction"
         },
         "standing": {
           "additionalProperties": {
@@ -80,14 +85,16 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "party"
         },
         "within_tolerance": {
           "description": "Factions whose member tolerance the character must be within, as the faction pictures them.",
           "items": {
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "type": "array"
         }
@@ -115,7 +122,8 @@
           "description": "The step's quests, open together and done in any order. A quest is in at most one questline, at one step.",
           "items": {
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "quest"
           },
           "minItems": 1,
           "type": "array"
