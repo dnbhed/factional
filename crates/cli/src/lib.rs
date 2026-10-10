@@ -5,6 +5,7 @@
 mod charts;
 mod check;
 mod compare;
+mod graph;
 mod outline;
 mod play;
 mod quests;

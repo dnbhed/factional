@@ -3,13 +3,11 @@
 
 use std::path::Path;
 
-use factional_quests::{
-    ChoiceEffects, Leftovers, Next, Quest, QuestId, Quests, Requirements, Step,
-};
-use factional_reputation::AlignmentDelta;
+use factional_content::{describe_choice, describe_step, needs, quest_heading};
+use factional_quests::{QuestId, Quests};
 
 use crate::check::count;
-use crate::session::{Outcome, hint, lines, named_effects, named_shifts};
+use crate::session::{Outcome, hint, lines};
 
 /// `quests <dir> [<quest>]`: every quest and questline in `dir`, or one quest's stages and
 /// choices, then any warnings.
@@ -60,7 +58,7 @@ fn list(quests: &Quests) -> Vec<String> {
     for quest in quests.quests.values() {
         let mut line = format!(
             "  {} — {}",
-            heading(quests, quest, false),
+            quest_heading(quests, quest, false),
             count(quest.stages.len(), "stage")
         );
         line += &needs(&quest.requires);
@@ -95,7 +93,7 @@ fn list(quests: &Quests) -> Vec<String> {
 /// One quest: its heading and gate, then each stage with its requirements and choices.
 fn show(quests: &Quests, id: &QuestId) -> Vec<String> {
     let quest = &quests.quests[id];
-    let mut shown = vec![heading(quests, quest, true) + &needs(&quest.requires)];
+    let mut shown = vec![quest_heading(quests, quest, true) + &needs(&quest.requires)];
     for (index, stage) in quest.stages.iter().enumerate() {
         shown.push(format!(
             "{}. {}{}",
@@ -104,114 +102,14 @@ fn show(quests: &Quests, id: &QuestId) -> Vec<String> {
             needs(&stage.requires)
         ));
         for choice in &stage.choices {
-            let mut line = format!("   {}", choice.id);
-            match &choice.effects {
-                ChoiceEffects::None => {}
-                ChoiceEffects::Outcome(outcome) => line += &format!(" — outcome {outcome}"),
-                ChoiceEffects::Inline(effects) => {
-                    if effects.alignment != AlignmentDelta::default() {
-                        line += &format!(
-                            " — alignment: law {}, good {}",
-                            effects.alignment.law, effects.alignment.good
-                        );
-                    }
-                    let standing = named_effects(&effects.standing);
-                    if !standing.is_empty() {
-                        line += &format!(" — standing: {}", standing.join(", "));
-                    }
-                    let relations = named_shifts(&effects.relations);
-                    if !relations.is_empty() {
-                        line += &format!(" — relations: {}", relations.join(", "));
-                    }
-                }
-            }
-            if !choice.locks.is_empty() {
-                let locks: Vec<String> = choice.locks.iter().map(ToString::to_string).collect();
-                line += &format!(" — locks {}", locks.join(", "));
-            }
-            line += &match &choice.next {
-                Next::Stage(stage) => format!(" — then {stage}"),
-                Next::End => " — then the end".to_owned(),
-            };
-            shown.push(line);
+            shown.push(format!("   {}", describe_choice(choice)));
         }
     }
     shown
 }
 
-/// `watch_oath — The Watch's Oath — from city_watch, in watch_career`, with the step when
-/// `at_step`.
-fn heading(quests: &Quests, quest: &Quest, at_step: bool) -> String {
-    let mut whose = quests.giver_of(&quest.id).map_or_else(
-        || "the world's own".to_owned(),
-        |giver| format!("from {giver}"),
-    );
-    if let Some((line, step)) = quests.place_of(&quest.id) {
-        whose += &format!(", in {line}");
-        if at_step {
-            whose += &format!(" at step {}", step + 1);
-        }
-    }
-    format!("{} — {} — {whose}", quest.id, quest.name)
-}
-
-/// A step's quests and how many it needs: `2 of a, b, c, in any order; the rest close`.
-fn describe_step(step: &Step) -> String {
-    let quests: Vec<&str> = step.quests.iter().map(QuestId::as_str).collect();
-    let listed = quests.join(", ");
-    let mut described = match step.needed() {
-        _ if quests.len() == 1 && step.needed() == 1 => listed,
-        0 => format!("any of {listed}, or none"),
-        needed if needed == quests.len() => format!("all of {listed}, in any order"),
-        needed => format!("{needed} of {listed}, in any order"),
-    };
-    if step.leftovers == Leftovers::Close && step.needed() < quests.len() {
-        described += "; the rest close";
-    }
-    described
-}
-
-/// ` — needs standing 10.00 with city_watch, and …`, or nothing when nothing is required.
-fn needs(requires: &Requirements) -> String {
-    let mut needs: Vec<String> = Vec::new();
-    needs.extend(
-        requires
-            .standing
-            .iter()
-            .map(|(party, value)| format!("standing {value} with {party}")),
-    );
-    needs.extend(requires.member.iter().map(|f| format!("to be in {f}")));
-    needs.extend(
-        requires
-            .not_member
-            .iter()
-            .map(|f| format!("not to be in {f}")),
-    );
-    needs.extend(
-        requires
-            .rank_at_least
-            .iter()
-            .map(|(faction, rank)| format!("rank {rank} or higher in {faction}")),
-    );
-    needs.extend(
-        requires
-            .within_tolerance
-            .iter()
-            .map(|f| format!("to be within {f}'s member tolerance")),
-    );
-    needs.extend(requires.done.iter().map(|done| format!("{done} done")));
-    if needs.is_empty() {
-        String::new()
-    } else {
-        format!(" — needs {}", needs.join(", and "))
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use factional_quests::{Leftovers, QuestId, Requirements, Step};
-
-    use super::describe_step;
     use crate::session::{Outcome, ScriptError, Session};
 
     fn run(line: &str) -> Result<Outcome, ScriptError> {
@@ -342,41 +240,6 @@ mod tests {
                  \x20   1. all of patrol, inspect, in any order\n\
                  warning: questlines.toml: jobs.steps[0].leftovers: leftovers = \"close\" has no effect: the step needs all its quests, so none are left over"
             )
-        );
-    }
-
-    #[test]
-    fn a_step_says_how_many_of_its_quests_it_needs() {
-        let step = |quests: &[&str], need: Option<usize>, leftovers: Leftovers| Step {
-            quests: quests
-                .iter()
-                .map(|id| QuestId::new(id).expect("valid id"))
-                .collect(),
-            need,
-            requires: Requirements::default(),
-            leftovers,
-        };
-        let described: Vec<String> = [
-            step(&["oath"], None, Leftovers::Open),
-            step(&["oath"], Some(0), Leftovers::Open),
-            step(&["oath", "errand"], Some(1), Leftovers::Open),
-            step(&["oath", "errand"], None, Leftovers::Close),
-            step(&["oath", "errand", "dog"], Some(1), Leftovers::Close),
-            step(&["oath", "errand"], Some(0), Leftovers::Close),
-        ]
-        .iter()
-        .map(describe_step)
-        .collect();
-        assert_eq!(
-            described,
-            [
-                "oath",
-                "any of oath, or none",
-                "1 of oath, errand, in any order",
-                "all of oath, errand, in any order",
-                "1 of oath, errand, dog, in any order; the rest close",
-                "any of oath, errand, or none; the rest close",
-            ]
         );
     }
 

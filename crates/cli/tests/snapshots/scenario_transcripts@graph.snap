@@ -1,0 +1,70 @@
+---
+source: crates/cli/tests/scenarios.rs
+assertion_line: 24
+expression: transcript
+input_file: scenarios/graph.scenario
+---
+> graph content/sample watch_career
+watch_career — A Life in the Watch — from city_watch — 4 steps
+step 1 — watch_oath
+  watch_oath — The Watch's Oath — 2 stages
+step 2 — 2 of night_patrol, dock_inspection, smugglers_cove, in any order; the rest close
+  night_patrol — Night Patrol — 1 stage
+  dock_inspection — Inspecting the Docks — 1 stage
+  smugglers_cove — The Smugglers' Cove — 2 stages
+step 3 — any of harbour_errands, lost_dog, or none
+  harbour_errands — Harbour Errands — 1 stage
+  lost_dog — The Captain's Dog — 1 stage
+step 4 — watch_captain — needs standing 40.00 with city_watch, and rank sergeant or higher in city_watch
+  watch_captain — Captain of the Watch — 1 stage
+outside
+  circle_rite — The Ashen Rite — 1 stage
+edges
+  circle_rite.whisper.set_them_at_war locks watch_captain
+  circle_rite.whisper.set_them_at_war locks watch_captain.command
+  smugglers_cove needs watch_oath.patrol.report done
+> graph content/sample watch_oath
+watch_oath — The Watch's Oath — from city_watch, in watch_career at step 1 — needs not to be in lantern_guild
+1. patrol
+   report — outcome turned_in_vex — then oath
+   look_away — outcome took_a_bribe — then the end
+2. oath — needs standing 10.00 with city_watch
+   swear — alignment: law 5.00, good 0.00 — then the end
+edges
+  smugglers_cove needs watch_oath.patrol.report done
+> graph crates/cli/tests/fixtures/worlds/dead_ends jobs
+jobs — Odd Jobs — from watch — 2 steps
+step 1 — 1 of patrol, inspect, in any order; the rest close
+  patrol — Patrol — 1 stage
+    error: it can never start: what it needs only comes after jobs moves on from steps[0], which closes it
+  inspect — Inspect — 1 stage
+step 2 — promotion
+  promotion — Promotion — 1 stage
+edges
+  patrol needs promotion done
+> graph crates/cli/tests/fixtures/worlds/dead_ends siege
+siege — The Siege — the world's own
+1. camp
+   wait — then assault
+   leave — then the end
+2. assault — needs aftermath done
+   error: requires.done[0]: aftermath can only happen once siege is over, so this stage can never be reached
+   storm — then the end
+edges
+  aftermath needs siege done
+  siege.assault needs aftermath done
+> graph crates/cli/tests/fixtures/worlds/lockouts confession
+confession — Confession — the world's own
+1. chapel
+   repent — alignment: law 5.00, good 0.00 — then the end
+     error: may lock out heist: it moves alignment toward lawful, which no action moves back toward chaotic, so it can take the character outside guild's member tolerance, which its gate needs; declare it in locks
+     error: may lock out muster.drill: it moves alignment toward lawful, and watch expels members who drift out of its tolerance, which can end the membership of watch that the stage needs; declare it in locks
+> graph crates/cli/tests/fixtures/worlds/stale_lock chores
+chores — Chores — the world's own
+1. yard
+   skip — standing: watch -5.00 — locks muster.drill — then the end
+     warning: locks[0]: it can't lock out muster.drill: nothing it does can make that stage's requirements false for good; remove it
+edges
+  chores.yard.skip locks muster.drill
+> assert graph content/sample watch_oth == error: unknown questline or quest 'watch_oth' (did you mean 'watch_oath'?)
+> assert graph content/sample == error: graph needs the form: graph <dir> <questline|quest>

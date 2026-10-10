@@ -576,6 +576,17 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The "did you mean" doesn't yet offer what couldn't be read:** a misspelt reference to an unread faction is reported without a suggestion.
   - *Why:* one mistake should read as one problem, in `validate` and at its key in the editor (P-76); thirty-three for an unclosed `[temple` hid the one that mattered.
 
+- **P-80 · How quests are drawn** (made in U4, 2026-10-10).
+  - **The graph is `factional-content`'s** `QuestGraph`, made from the quests as far as they read, not only from a world that loads, since a graph is most useful while something's wrong. The CLI's `graph` prints it, so scenarios cover what the editor draws.
+  - **Edges are what content declares:** a gate's or stage's `done` (needs), and a choice's `locks`. A step's own requirements are written in its heading, not drawn. An undeclared lockout is an error at its choice, not an edge, since only declared locks are content.
+  - **A questline brings one hop of outsiders:** the quests at the far end of its edges that aren't in it, such as the Ashen Rite locking the Watch's captaincy; not quests that only reach those.
+  - **A note sits at the deepest node its key names:** a choice (`q.stages[i].choices[j]…`), else a stage (`q.stages[i]…`), else the quest; a step (`l.steps[i]…`), else the questline. A questline's count includes its quests'.
+  - **The words for quests moved from the CLI to `factional-content`** (`quest_heading`, `describe_step`, `needs`, `describe_choice`, `named_effects`, `named_shifts`), so the CLI and the editor say the same thing; the CLI's output didn't change.
+  - **Drawn with egui's own painter, not `egui-snarl`:** the graphs are read-only, laid out by the content (steps as columns, stages in order), and snarl's free node editing fits neither. Snarl stays the choice if editing in the graph comes later.
+  - **Read-only:** "Edit in Content" selects the chosen quest's entry; the graph is made again from the text on every change.
+  - **Where things go is worked out apart from drawing** (`layout` in the editor): node, heading and arrow positions as plain values, tested exactly, so the egui layer only paints and places what it's given (§18's model under a thin UI).
+  - *Why:* the designer sees what needs and locks what, and where the loader found a dead end, in the same words the CLI uses, without the editor working anything out.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

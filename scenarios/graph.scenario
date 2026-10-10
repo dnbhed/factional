@@ -1,0 +1,20 @@
+# Quests as graphs (U4): a questline's steps, quests and edges, or a quest's stages and
+# choices, with every problem and warning at the node it's about, as the editor's Quests tab
+# draws them. It reads the quests as far as they go, so it works while a world doesn't load.
+
+# The Watch's career: four steps, and the Ashen Rite outside it, locking its last quest.
+graph content/sample watch_career
+
+# One quest's stages and choices, and the edge from the Smugglers' Cove that needs it.
+graph content/sample watch_oath
+
+# A quest that can never start, at its node in the questline; a stage never reached; an
+# undeclared lockout at its choice; and a lock that can't happen, warned of.
+graph crates/cli/tests/fixtures/worlds/dead_ends jobs
+graph crates/cli/tests/fixtures/worlds/dead_ends siege
+graph crates/cli/tests/fixtures/worlds/lockouts confession
+graph crates/cli/tests/fixtures/worlds/stale_lock chores
+
+# Quests and questlines share the graph's ids: a misspelt one is offered the nearest.
+assert graph content/sample watch_oth == error: unknown questline or quest 'watch_oth' (did you mean 'watch_oath'?)
+assert graph content/sample == error: graph needs the form: graph <dir> <questline|quest>
