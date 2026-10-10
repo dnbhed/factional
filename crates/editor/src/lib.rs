@@ -10,11 +10,17 @@ use std::path::{Path, PathBuf};
 
 use factional_content::{
     Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, Field, FileState, Outline,
-    OutlineEntry, ValuePath, additions, entry_fields, entry_places, file_places, outline,
-    outline_texts, read_texts, set_value,
+    OutlineEntry, QuestGraph, ValuePath, additions, entry_fields, entry_places, file_places,
+    outline, outline_texts, read_texts, set_value,
 };
 
 pub use eframe::egui;
+
+mod layout;
+mod quests_ui;
+
+/// The file whose entries are quests, for "Edit in Content".
+const QUESTS_FILE: &str = "quests.toml";
 
 /// The editor's state: the directory; each file's text as edited and as saved; the changes
 /// that can be undone; the outline of the text as edited, with where each file's entries go;
@@ -33,6 +39,27 @@ pub struct Editor {
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
     note: Option<String>,
+    workspace: Workspace,
+    /// The quests as graphs, made again with the outline.
+    graph: QuestGraph,
+    /// The questline or quest drawn in the Quests tab.
+    shown: Option<Shown>,
+    /// The quest whose stages and choices show beside the graph.
+    chosen: Option<String>,
+}
+
+/// The tabs along the top (D-34).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Workspace {
+    Content,
+    Quests,
+}
+
+/// What the Quests tab draws: a questline's steps, or a quest's stages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Shown {
+    Questline(String),
+    Quest(String),
 }
 
 /// One of the selected entry's values, as its field shows it.
@@ -72,6 +99,10 @@ impl Editor {
             places: Vec::new(),
             file_places: Vec::new(),
             note: None,
+            workspace: Workspace::Content,
+            graph: QuestGraph::default(),
+            shown: None,
+            chosen: None,
         };
         editor.reload();
         editor
@@ -98,6 +129,72 @@ impl Editor {
     /// Where the `file`th file's entries go: its top, and each list of tables there.
     pub fn file_places(&self, file: usize) -> &[PlaceInput] {
         self.file_places.get(file).map_or(&[], Vec::as_slice)
+    }
+
+    /// The tab showing.
+    pub fn workspace(&self) -> Workspace {
+        self.workspace
+    }
+
+    pub fn show_workspace(&mut self, workspace: Workspace) {
+        self.workspace = workspace;
+    }
+
+    pub fn graph(&self) -> &QuestGraph {
+        &self.graph
+    }
+
+    /// The questline or quest drawn in the Quests tab.
+    pub fn shown(&self) -> Option<&Shown> {
+        self.shown.as_ref()
+    }
+
+    /// Draws a questline or a quest; a quest is chosen too. Nothing changes if there's no
+    /// such questline or quest.
+    pub fn show(&mut self, shown: Shown) {
+        if !self.is_there(&shown) {
+            return;
+        }
+        if let Shown::Quest(quest) = &shown {
+            self.chosen = Some(quest.clone());
+        }
+        self.shown = Some(shown);
+    }
+
+    /// Whether the questline or quest is in the graph.
+    fn is_there(&self, shown: &Shown) -> bool {
+        let quests = &self.graph.quests;
+        match shown {
+            Shown::Questline(id) => quests.questlines.keys().any(|line| line.as_str() == id),
+            Shown::Quest(id) => quests.quests.keys().any(|quest| quest.as_str() == id),
+        }
+    }
+
+    /// The quest whose stages and choices show beside the graph.
+    pub fn chosen(&self) -> Option<&str> {
+        self.chosen.as_deref()
+    }
+
+    /// Chooses a quest; nothing changes if there's no such quest.
+    pub fn choose(&mut self, quest: &str) {
+        if self.is_there(&Shown::Quest(quest.to_owned())) {
+            self.chosen = Some(quest.to_owned());
+        }
+    }
+
+    /// Selects the chosen quest's entry in `quests.toml` and shows the Content tab.
+    pub fn edit_in_content(&mut self) {
+        let Some(quest) = &self.chosen else {
+            return;
+        };
+        let place = self.outline.files.iter().enumerate().find_map(|(file, f)| {
+            let entry = f.entries.iter().position(|entry| &entry.key == quest)?;
+            (f.name == QUESTS_FILE).then_some((file, entry))
+        });
+        if let Some((file, entry)) = place {
+            self.select(file, entry);
+            self.workspace = Workspace::Content;
+        }
     }
 
     /// Whether anything has changed since the files were read or saved.
@@ -235,6 +332,20 @@ impl Editor {
                 .position(|e| e.key == key)?;
             Some((place, entry))
         });
+        self.graph = match &self.texts {
+            Some(texts) => QuestGraph::new(texts, &self.outline),
+            None => QuestGraph::default(),
+        };
+        if self
+            .shown
+            .as_ref()
+            .is_some_and(|shown| !self.is_there(shown))
+        {
+            self.shown = None;
+        }
+        if let Some(quest) = self.chosen.take() {
+            self.choose(&quest);
+        }
         self.file_places = match &self.texts {
             Some(texts) => self
                 .outline
@@ -314,9 +425,8 @@ impl Editor {
         }
     }
 
-    /// Draws the editor into `ui`: buttons and the summary at the top, the files and their
-    /// entries on the left, each with what can be added, and the selected entry in the
-    /// middle: its values, then its places, each with what can be added or removed.
+    /// Draws the editor into `ui`: buttons, the summary and the tabs at the top (D-34), then
+    /// the tab showing.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("summary").show(ui, |ui| {
             // The buttons first, so a long directory never pushes them out of reach.
@@ -343,8 +453,30 @@ impl Editor {
                 if let Some(note) = &self.note {
                     ui.label(note);
                 }
+                ui.separator();
+                for (workspace, name) in [
+                    (Workspace::Content, "Content"),
+                    (Workspace::Quests, "Quests"),
+                ] {
+                    if ui
+                        .selectable_label(self.workspace == workspace, name)
+                        .clicked()
+                    {
+                        self.workspace = workspace;
+                    }
+                }
             });
         });
+        match self.workspace {
+            Workspace::Content => self.content_ui(ui),
+            Workspace::Quests => self.quests_ui(ui),
+        }
+    }
+
+    /// The Content tab: the files and their entries on the left, each with what can be added,
+    /// and the selected entry in the middle: its values, then its places, each with what can
+    /// be added or removed.
+    fn content_ui(&mut self, ui: &mut egui::Ui) {
         let mut clicked = None;
         let mut adding = None;
         egui::Panel::left("files")
@@ -568,6 +700,78 @@ mod tests {
 
     fn broken() -> Editor {
         Editor::open(Path::new(REPO).join("crates/cli/tests/fixtures/worlds/broken"))
+    }
+
+    fn sample() -> Editor {
+        Editor::open(Path::new(REPO).join("content/sample"))
+    }
+
+    #[test]
+    fn a_questline_or_quest_is_shown_only_if_its_there() {
+        let mut editor = sample();
+        assert_eq!(editor.workspace(), Workspace::Content);
+        let line = Shown::Questline("watch_career".to_owned());
+        editor.show(Shown::Questline("nowhere".to_owned()));
+        assert_eq!(editor.shown(), None);
+        editor.show(line.clone());
+        assert_eq!(editor.shown(), Some(&line));
+        assert_eq!(editor.chosen(), None);
+        editor.show(Shown::Quest("watch_oath".to_owned()));
+        assert_eq!(editor.chosen(), Some("watch_oath"));
+        editor.show(Shown::Quest("nowhere".to_owned()));
+        assert_eq!(editor.shown(), Some(&Shown::Quest("watch_oath".to_owned())));
+        editor.choose("nowhere");
+        assert_eq!(editor.chosen(), Some("watch_oath"));
+        editor.choose("circle_rite");
+        assert_eq!(editor.chosen(), Some("circle_rite"));
+        editor.show_workspace(Workspace::Quests);
+        assert_eq!(editor.workspace(), Workspace::Quests);
+    }
+
+    #[test]
+    fn edit_in_content_selects_the_chosen_quests_entry() {
+        let mut editor = sample();
+        editor.show_workspace(Workspace::Quests);
+        editor.edit_in_content();
+        assert_eq!(editor.workspace(), Workspace::Quests);
+        assert!(editor.selected_entry().is_none());
+        editor.choose("watch_oath");
+        editor.edit_in_content();
+        assert_eq!(editor.workspace(), Workspace::Content);
+        let (file, entry) = editor.selected_entry().expect("selected");
+        assert_eq!((file, entry.key.as_str()), ("quests.toml", "watch_oath"));
+    }
+
+    #[test]
+    fn the_graph_follows_the_text_as_edited() {
+        let mut editor = sample();
+        editor.show(Shown::Quest("circle_rite".to_owned()));
+        let quests = CONTENT_FILES
+            .iter()
+            .position(|name| *name == "quests.toml")
+            .expect("a content file");
+        editor.select(quests, 0);
+        let circle_rite = ValuePath::parse("circle_rite").expect("a path");
+        editor.remove(&circle_rite).expect("removed");
+        assert!(
+            !editor
+                .graph()
+                .quests
+                .quests
+                .keys()
+                .any(|q| q.as_str() == "circle_rite")
+        );
+        assert_eq!(editor.shown(), None);
+        assert_eq!(editor.chosen(), None);
+        editor.undo();
+        assert!(
+            editor
+                .graph()
+                .quests
+                .quests
+                .keys()
+                .any(|q| q.as_str() == "circle_rite")
+        );
     }
 
     #[test]

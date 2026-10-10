@@ -1,7 +1,9 @@
 //! Loads designer content (TOML) from disk, validates it, and turns mistakes into diagnostics
 //! that name the file and the key path (DESIGN.md §12.1).
 
+mod describe;
 mod edit;
+mod graph;
 mod outline;
 mod quests;
 mod reader;
@@ -9,10 +11,14 @@ mod save;
 mod schema;
 mod unread;
 
+pub use describe::{
+    describe_choice, describe_step, named_effects, named_shifts, needs, quest_heading,
+};
 pub use edit::{
     Addition, EditError, Field, Step, ValueKind, ValuePath, add, additions, entry_fields,
     entry_places, file_places, remove, set_value,
 };
+pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
     CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, outline,
     outline_texts, read_texts,

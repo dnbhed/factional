@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use factional_content::Fingerprint;
+use factional_content::{Fingerprint, named_effects, named_shifts};
 use factional_quests::QuestLog;
 
 use crate::charts;
@@ -13,9 +13,8 @@ use factional_reputation::{
     ActionId, Alignment, AlignmentDelta, Axis, Change, Character, CharacterId, Command,
     ComponentKind, Condition, ConditionCheck, Distance, DriftPolicy, Event, Faction, FactionId,
     KnowledgeModel, Learned, LeaveReason, Membership, ModifierId, ModifierObserver, NextHop,
-    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Reached, RelationEnds, RelationShift,
-    Shift, StandingEffects, TableDecision, TableSource, Toward, Verdict, WeightsFrom, Witnesses,
-    World,
+    Observed, Observer, OutcomeId, Party, RankCheck, RankRef, Reached, Shift, TableDecision,
+    TableSource, Toward, Verdict, WeightsFrom, Witnesses, World,
 };
 
 /// Every command as `(usage, description)`, in the order `help` lists them.
@@ -49,6 +48,10 @@ const COMMANDS: &[(&str, &str)] = &[
     (
         "outline <dir>",
         "each content file in <dir>, its entries, and every problem and warning at the entry it's about",
+    ),
+    (
+        "graph <dir> <questline|quest>",
+        "a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about",
     ),
     ("quests", "list the loaded world's quests and questlines"),
     (
@@ -330,6 +333,7 @@ impl Session {
             }),
             "quests" => Ok(crate::quests::quests(&self.base_dir, rest)),
             "outline" => Ok(crate::outline::outline(&self.base_dir, rest)),
+            "graph" => Ok(crate::graph::graph(&self.base_dir, rest)),
             "reload" => Ok(self.reload()),
             "save" => Ok(self.save(rest)),
             "restore" => Ok(self.restore(rest)),
@@ -2345,27 +2349,6 @@ fn member_ids(character: &str, faction: &str) -> Result<(CharacterId, FactionId)
         CharacterId::new(character).map_err(|invalid| invalid.to_string())?,
         FactionId::new(faction).map_err(|invalid| invalid.to_string())?,
     ))
-}
-
-/// Named standing effects as `city_watch -20.00, captain_hale -10.00`: factions first.
-/// Each relation shift: `city_watch ↔ temple -40.00`, or `city_watch → ashen_circle -20.00`
-/// for one way.
-pub(crate) fn named_shifts(shifts: &[RelationShift]) -> Vec<String> {
-    shifts
-        .iter()
-        .map(|shift| match &shift.ends {
-            RelationEnds::Between(a, b) => format!("{a} ↔ {b} {}", shift.by),
-            RelationEnds::Directed { from, to } => format!("{from} → {to} {}", shift.by),
-        })
-        .collect()
-}
-
-pub(crate) fn named_effects(effects: &StandingEffects) -> Vec<String> {
-    effects
-        .parties()
-        .into_iter()
-        .map(|(party, value)| format!("{party} {value}"))
-        .collect()
 }
 
 /// Whether a word is an option such as `--one-way`, rather than a value. Negative numbers

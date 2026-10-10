@@ -170,21 +170,7 @@ pub fn outline(dir: &Path) -> Outline {
 /// The outline of content held in memory, such as the editor's, as [`outline`] gives it for
 /// files on disk.
 pub fn outline_texts(texts: &ContentTexts) -> Outline {
-    let text = |name: &str| {
-        let place = CONTENT_FILES.iter().position(|file| *file == name)?;
-        texts[place].as_deref()
-    };
-    let sources = Sources {
-        balance: text(BALANCE_FILE),
-        factions: text(FACTIONS_FILE),
-        characters: text(CHARACTERS_FILE),
-        actions: text(ACTIONS_FILE),
-        relations: text(RELATIONS_FILE),
-        outcomes: text(OUTCOMES_FILE),
-        quests: text(QUESTS_FILE),
-        questlines: text(QUESTLINES_FILE),
-    };
-    let (problems, found) = match parse_quests(sources) {
+    let (problems, found) = match parse_quests(sources(texts)) {
         Ok((content, quests)) => {
             let mut found = warnings(&content);
             found.extend(quest_warnings(&content, &quests));
@@ -211,6 +197,24 @@ pub fn outline_texts(texts: &ContentTexts) -> Outline {
         .filter(|d| !CONTENT_FILES.contains(&d.file.as_str()))
         .collect();
     Outline { files, problems }
+}
+
+/// Each content file's text in `texts`, for the loader.
+pub(crate) fn sources(texts: &ContentTexts) -> Sources<'_> {
+    let text = |name: &str| {
+        let place = CONTENT_FILES.iter().position(|file| *file == name)?;
+        texts[place].as_deref()
+    };
+    Sources {
+        balance: text(BALANCE_FILE),
+        factions: text(FACTIONS_FILE),
+        characters: text(CHARACTERS_FILE),
+        actions: text(ACTIONS_FILE),
+        relations: text(RELATIONS_FILE),
+        outcomes: text(OUTCOMES_FILE),
+        quests: text(QUESTS_FILE),
+        questlines: text(QUESTLINES_FILE),
+    }
 }
 
 /// A file's entries as written, in id order; none if it isn't there or isn't TOML.
