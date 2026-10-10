@@ -9,9 +9,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use factional_content::{
-    Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, FileState, FormRow, Outline,
-    OutlineEntry, QuestGraph, Reference, Step, ValuePath, additions, entry_form, entry_places,
-    file_places, load_texts, outline, outline_texts, read_texts, referenced_by, set_value,
+    Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow, Outline,
+    OutlineEntry, QuestGraph, Reference, Step, ValuePath, additions, apply_fix, entry_form,
+    entry_places, file_places, fix_for, load_texts, outline, outline_texts, read_texts,
+    referenced_by, set_value,
 };
 use factional_core::Curve;
 use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
@@ -35,7 +36,9 @@ mod form_ui;
 mod layout;
 
 use form_ui::Acted;
+use problems_ui::Listed;
 mod previews_ui;
+mod problems_ui;
 mod quests_ui;
 
 /// The file whose entries are quests, for "Edit in Content".
@@ -88,6 +91,20 @@ pub struct Editor {
     /// The character and quest asked about: can they start it?
     starter: Option<String>,
     start_quest: Option<String>,
+    /// Every problem, then every warning, each with the loader's fix if it has one (U6c).
+    said: Vec<Said>,
+    /// Whether the problems panel lists warnings rather than problems.
+    listing_warnings: bool,
+    /// Whether the entries shown are only those with problems.
+    only_problems: bool,
+}
+
+/// A problem or a warning, with the change its "did you mean" asks for, if any (U6c).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Said {
+    pub diagnostic: Diagnostic,
+    pub warning: bool,
+    pub fix: Option<Fix>,
 }
 
 /// The tabs along the top (D-34).
@@ -114,6 +131,8 @@ pub struct FieldInput {
     pub row: FormRow,
     /// What's typed in the field; empty for a value left out.
     pub input: String,
+    /// The problems and warnings at it, with their fixes (U6c).
+    pub said: Vec<Said>,
     /// Why the last value entered here was refused.
     pub refused: Option<String>,
 }
@@ -156,6 +175,9 @@ impl Editor {
             curve: None,
             starter: None,
             start_quest: None,
+            said: Vec::new(),
+            listing_warnings: false,
+            only_problems: false,
         };
         editor.reload();
         editor
@@ -173,6 +195,38 @@ impl Editor {
     /// what's left out.
     pub fn fields(&self) -> &[FieldInput] {
         &self.fields
+    }
+
+    /// Every problem, then every warning, each with the loader's fix if it has one.
+    pub fn said(&self) -> &[Said] {
+        &self.said
+    }
+
+    /// Whether the problems panel lists warnings rather than problems.
+    pub fn listing_warnings(&self) -> bool {
+        self.listing_warnings
+    }
+
+    pub fn list_warnings(&mut self, warnings: bool) {
+        self.listing_warnings = warnings;
+    }
+
+    /// Whether the entries shown are only those with problems.
+    pub fn only_problems(&self) -> bool {
+        self.only_problems
+    }
+
+    pub fn show_only_problems(&mut self, only: bool) {
+        self.only_problems = only;
+    }
+
+    /// Makes `fix` through the writer, as a change that can be undone. Nothing changes if
+    /// there's no such file or the writer refuses.
+    pub fn apply(&mut self, fix: &Fix) -> Result<(), EditError> {
+        let Some(file) = CONTENT_FILES.iter().position(|name| *name == fix.file) else {
+            return Ok(());
+        };
+        self.change(file, |text| apply_fix(text, fix))
     }
 
     /// What names the selected entry, as written; `None` if it's in a file nothing names.
@@ -534,6 +588,19 @@ impl Editor {
             Some(texts) => QuestGraph::new(texts, &self.outline),
             None => QuestGraph::default(),
         };
+        let problems = self.outline.every_problem().into_iter().map(|d| (d, false));
+        let warnings = self.outline.every_warning().into_iter().map(|d| (d, true));
+        self.said = problems
+            .chain(warnings)
+            .map(|(diagnostic, warning)| Said {
+                fix: self
+                    .texts
+                    .as_ref()
+                    .and_then(|texts| fix_for(texts, diagnostic)),
+                diagnostic: diagnostic.clone(),
+                warning,
+            })
+            .collect();
         if self
             .shown
             .as_ref()
@@ -571,10 +638,19 @@ impl Editor {
         let text = texts[file].as_deref().unwrap_or_default();
         let name = self.outline.files[file].name;
         let key = &self.outline.files[file].entries[entry].key;
+        let said = &self.said;
         self.fields = entry_form(texts, name, key)
             .into_iter()
             .flat_map(|group| {
                 group.rows.into_iter().map(move |row| FieldInput {
+                    said: said
+                        .iter()
+                        .filter(|said| {
+                            said.diagnostic.file == name
+                                && said.diagnostic.key.as_deref() == Some(&row.path.to_string())
+                        })
+                        .cloned()
+                        .collect(),
                     group: group.name.clone(),
                     input: row
                         .written
@@ -687,10 +763,16 @@ impl Editor {
     fn content_ui(&mut self, ui: &mut egui::Ui) {
         let mut clicked = None;
         let mut adding = None;
+        let mut listed = None;
+        egui::Panel::bottom("problems")
+            .resizable(true)
+            .default_size(160.0)
+            .show(ui, |ui| listed = self.problems_ui(ui));
         egui::Panel::left("files")
             .resizable(true)
             .default_size(280.0)
             .show(ui, |ui| {
+                ui.checkbox(&mut self.only_problems, "Only entries with problems");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (place, file) in self.outline.files.iter().enumerate() {
                         let mut new_entries = |ui: &mut egui::Ui| {
@@ -723,6 +805,9 @@ impl Editor {
                                     d.key.as_deref()
                                 });
                                 for (index, entry) in file.entries.iter().enumerate() {
+                                    if self.only_problems && entry.problems.is_empty() {
+                                        continue;
+                                    }
                                     let chosen = self.selected == Some((place, index));
                                     ui.horizontal(|ui| {
                                         if ui.selectable_label(chosen, entry.label()).clicked() {
@@ -743,6 +828,13 @@ impl Editor {
             });
         if let Some((file, entry)) = clicked {
             self.select(file, entry);
+        }
+        let mut fixing = None;
+        match listed {
+            Some(Listed::Go(file, key)) => self.select_at(&file, &key),
+            Some(Listed::Fix(fix)) => fixing = Some(fix),
+            Some(Listed::Warnings(warnings)) => self.listing_warnings = warnings,
+            None => {}
         }
         let mut going = None;
         if self.selected.is_some() {
@@ -796,8 +888,10 @@ impl Editor {
                 }
             });
         });
-        if let Some((file, key)) = going {
-            self.select_at(file, &key);
+        match going {
+            Some(Listed::Go(file, key)) => self.select_at(&file, &key),
+            Some(Listed::Fix(fix)) => fixing = Some(fix),
+            Some(Listed::Warnings(_)) | None => {}
         }
         match acted {
             Some(Acted::Enter(place, input)) => {
@@ -811,7 +905,13 @@ impl Editor {
                 }
             }
             Some(Acted::Remove(path)) => removing = Some(path),
+            Some(Acted::Fix(fix)) => fixing = Some(fix),
             None => {}
+        }
+        if let Some(fix) = fixing
+            && let Err(refused) = self.apply(&fix)
+        {
+            self.note = Some(format!("couldn't fix: {refused}"));
         }
         if let Some((file, at, key)) = adding
             && let Err(refused) = self.add(file, &at, key.as_deref())
@@ -1484,5 +1584,72 @@ mod tests {
         );
         assert_eq!(sample_on(4, "relation[0]").referenced_by(), None);
         assert_eq!(sample().referenced_by(), None);
+    }
+
+    fn typos() -> Editor {
+        Editor::open(Path::new(REPO).join("crates/cli/tests/fixtures/worlds/typos"))
+    }
+
+    #[test]
+    fn every_problem_comes_with_the_loaders_fix_which_can_be_undone() {
+        let mut editor = typos();
+        let fixes: Vec<String> = editor
+            .said()
+            .iter()
+            .map(|said| {
+                assert!(!said.warning);
+                said.fix
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_default()
+            })
+            .collect();
+        assert_eq!(
+            fixes,
+            [
+                "factions.toml: temple.drift.policy: set it to 'demote'",
+                "characters.toml: captain_hale.weigths: rename it 'weights'",
+                "characters.toml: vex.memberships[0].faction: set it to 'lantern_guild'",
+            ]
+        );
+        let fix = editor.said()[2].fix.clone().expect("a fix");
+        assert_eq!(editor.apply(&fix), Ok(()));
+        assert_eq!(editor.said().len(), 2);
+        assert!(editor.can_undo());
+        editor.undo();
+        assert_eq!(editor.said().len(), 3);
+    }
+
+    #[test]
+    fn a_fix_for_a_file_that_isnt_one_changes_nothing() {
+        let mut editor = typos();
+        let mut fix = editor.said()[1].fix.clone().expect("a fix");
+        fix.file = "nowhere.toml".to_owned();
+        assert_eq!(editor.apply(&fix), Ok(()));
+        assert!(!editor.has_changes());
+    }
+
+    #[test]
+    fn a_problem_at_a_field_is_said_there() {
+        let mut editor = typos();
+        editor.select_at("characters.toml", "vex");
+        let faction = field(&editor, "memberships[0].faction");
+        let said = &editor.fields()[faction].said;
+        assert_eq!(said.len(), 1);
+        assert!(said[0].fix.is_some());
+        let name = field(&editor, "name");
+        assert!(editor.fields()[name].said.is_empty());
+        // Captain Hale's misspelt key is at the entry, so at none of its fields.
+        editor.select_at("characters.toml", "captain_hale");
+        assert!(editor.fields().iter().all(|field| field.said.is_empty()));
+    }
+
+    #[test]
+    fn the_panel_and_the_entries_shown_are_chosen() {
+        let mut editor = typos();
+        assert!(!editor.listing_warnings() && !editor.only_problems());
+        editor.list_warnings(true);
+        editor.show_only_problems(true);
+        assert!(editor.listing_warnings() && editor.only_problems());
     }
 }

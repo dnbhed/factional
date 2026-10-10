@@ -1,4 +1,4 @@
-use factional_core::Fixed;
+use factional_core::{Fixed, Suggestion};
 
 use crate::{AXIS_LIMIT, FactionId};
 
@@ -107,6 +107,21 @@ pub enum ShiftProblem {
 }
 
 impl ShiftProblem {
+    /// What it suggests instead of a misspelt faction, as its message says (U6c).
+    pub fn suggestion(&self) -> Option<Suggestion> {
+        match self {
+            ShiftProblem::UnknownFaction {
+                faction,
+                suggestion: Some(close),
+                ..
+            } => Some(Suggestion {
+                wrong: faction.to_string(),
+                right: close.to_string(),
+            }),
+            _ => None,
+        }
+    }
+
     /// The shift's place in its list.
     pub fn index(&self) -> usize {
         match self {

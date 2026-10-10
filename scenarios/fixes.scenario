@@ -1,0 +1,10 @@
+# The loader's fixes (U6c): each "did you mean" as the change that makes it, as the editor's
+# problems panel offers it. A misspelt word is set; a misspelt key is renamed.
+
+# The sample with three typos: a drift policy, a key and a faction.
+validate crates/cli/tests/fixtures/worlds/typos
+fixes crates/cli/tests/fixtures/worlds/typos
+
+# A world that loads has nothing to fix, and a syntax error has no suggestion.
+assert fixes content/sample == content/sample loads: nothing to fix
+assert fixes crates/cli/tests/fixtures/worlds/unparsed_balance == crates/cli/tests/fixtures/worlds/unparsed_balance doesn't load: 1 problem, none with a fix

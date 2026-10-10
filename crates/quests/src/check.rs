@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use factional_core::{Fixed, suggest};
+use factional_core::{Fixed, Suggestion, suggest};
 use factional_reputation::{
     AXIS_LIMIT, CharacterId, Consequence, Content, FactionId, OutcomeId, Party, RankId,
     ShiftProblem,
@@ -767,6 +767,80 @@ fn out_of_range(f: &mut fmt::Formatter<'_>, value: Fixed) -> fmt::Result {
     write!(f, "{value} is outside {}..{}", -AXIS_LIMIT, AXIS_LIMIT)
 }
 
+impl QuestProblem {
+    /// What it suggests instead of a misspelt id, as its message says (U6c): the quest, stage,
+    /// choice or other id it names that doesn't exist, and the nearest that does.
+    pub fn suggestion(&self) -> Option<Suggestion> {
+        let said = |wrong: &dyn fmt::Display, right: &dyn fmt::Display| {
+            Some(Suggestion {
+                wrong: wrong.to_string(),
+                right: right.to_string(),
+            })
+        };
+        match self {
+            QuestProblem::UnknownGiver {
+                giver: wrong,
+                suggestion: Some(right),
+                ..
+            }
+            | QuestProblem::UnknownParty {
+                party: wrong,
+                suggestion: Some(right),
+                ..
+            } => said(wrong, right),
+            QuestProblem::UnknownEffectParty {
+                party,
+                suggestion: Some(right),
+                ..
+            } => said(party, right),
+            QuestProblem::UnknownOutcome {
+                outcome,
+                suggestion: Some(right),
+                ..
+            } => said(outcome, right),
+            QuestProblem::UnknownNext {
+                next,
+                suggestion: Some(right),
+                ..
+            } => said(next, right),
+            QuestProblem::UnknownFaction {
+                faction,
+                suggestion: Some(right),
+                ..
+            } => said(faction, right),
+            QuestProblem::UnknownRank {
+                rank,
+                suggestion: Some(right),
+                ..
+            } => said(rank, right),
+            QuestProblem::UnknownQuest {
+                quest,
+                suggestion: Some(right),
+                ..
+            } => said(quest, right),
+            QuestProblem::UnknownProgress {
+                missing,
+                suggestion: Some(right),
+                ..
+            } => match missing {
+                Progress::Quest(quest) => said(quest, right),
+                Progress::Stage(_, stage) => said(stage, right),
+                Progress::Choice(_, _, choice) => said(choice, right),
+            },
+            QuestProblem::UnknownLock {
+                missing,
+                suggestion: Some(right),
+                ..
+            } => match missing {
+                Lock::Gate(quest) => said(quest, right),
+                Lock::Stage(_, stage) => said(stage, right),
+            },
+            QuestProblem::EffectRelation { problem, .. } => problem.suggestion(),
+            _ => None,
+        }
+    }
+}
+
 impl fmt::Display for QuestProblem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1062,6 +1136,43 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn a_choices_misspelt_relation_faction_offers_its_suggestion() {
+        let shift = |suggestion| QuestProblem::EffectRelation {
+            at: at("oath", 0, 0),
+            problem: factional_reputation::ShiftProblem::UnknownFaction {
+                index: 0,
+                side: RelationSide::To,
+                faction: faction_id("guil"),
+                suggestion,
+            },
+        };
+        let offered = shift(Some(faction_id("guild")));
+        suggestions_agree(std::slice::from_ref(&offered));
+        assert_eq!(offered.suggestion(), Some(Suggestion::new("guil", "guild")));
+        assert_eq!(shift(None).suggestion(), None);
+    }
+
+    /// Each problem's suggestion is the one its message offers, misspelt word and all, and
+    /// one that offers none has none (U6c).
+    fn suggestions_agree(problems: &[QuestProblem]) {
+        for problem in problems {
+            let message = problem.to_string();
+            let offered = message
+                .split_once(" (did you mean '")
+                .map(|(_, rest)| rest.trim_end_matches("'?)"));
+            let suggestion = problem.suggestion();
+            assert_eq!(
+                suggestion.as_ref().map(|s| s.right.as_str()),
+                offered,
+                "{message}"
+            );
+            if let Some(Suggestion { wrong, .. }) = suggestion {
+                assert!(message.contains(&format!("'{wrong}'")), "{message}");
+            }
+        }
+    }
     use crate::{
         Choice, ChoiceEffects, Leftovers, Next, Quest, Questline, Requirements, Stage, Step,
     };
@@ -1301,6 +1412,7 @@ mod tests {
                 },
             ]
         );
+        suggestions_agree(&found);
         assert_eq!(
             found.iter().map(ToString::to_string).collect::<Vec<_>>(),
             [
@@ -1810,7 +1922,7 @@ mod tests {
 
     #[test]
     fn problems_say_what_is_wrong_in_a_designers_words() {
-        let messages: Vec<String> = [
+        let problems = [
             QuestProblem::UnknownGiver {
                 owner: Owner::Quest(quest_id("oath")),
                 giver: party("wach"),
@@ -1939,10 +2051,9 @@ mod tests {
                 need: 4,
                 quests: 3,
             },
-        ]
-        .iter()
-        .map(ToString::to_string)
-        .collect();
+        ];
+        suggestions_agree(&problems);
+        let messages: Vec<String> = problems.iter().map(ToString::to_string).collect();
         assert_eq!(
             messages,
             [

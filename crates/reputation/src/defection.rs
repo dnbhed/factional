@@ -1,6 +1,6 @@
 use std::fmt;
 
-use factional_core::{Fixed, suggest};
+use factional_core::{Fixed, Suggestion, suggest};
 
 use crate::{AXIS_LIMIT, Faction, FactionId, RankId};
 
@@ -414,6 +414,20 @@ pub enum TableProblem {
     },
     /// The last rule has conditions, or there are no rules, so the table might not decide.
     MightNotDecide { rules: usize },
+}
+
+impl TableProblem {
+    /// What it suggests instead of a misspelt rank, as its message says (U6c).
+    pub fn suggestion(&self) -> Option<Suggestion> {
+        match self {
+            TableProblem::UnknownRank {
+                rank,
+                suggestion: Some(close),
+                ..
+            } => Some(Suggestion::new(rank.as_str(), close.as_str())),
+            _ => None,
+        }
+    }
 }
 
 /// Every problem with one table, in rule order (DESIGN.md §12.2). `owner` is the faction

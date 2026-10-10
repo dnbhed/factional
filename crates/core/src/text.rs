@@ -6,6 +6,22 @@ pub fn is_valid_id(id: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// A misspelt word and the nearest one known, as a "did you mean" offers it (U6c).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Suggestion {
+    pub wrong: String,
+    pub right: String,
+}
+
+impl Suggestion {
+    pub fn new(wrong: &str, right: &str) -> Suggestion {
+        Suggestion {
+            wrong: wrong.to_owned(),
+            right: right.to_owned(),
+        }
+    }
+}
+
 /// The candidate closest to `word`, if it's close enough to be a likely typo: for "did you
 /// mean …?" hints. Ties go to the earliest candidate, so hints are deterministic. Close
 /// enough means at most one edit per three letters, and always at least one; swapping two

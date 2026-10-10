@@ -493,6 +493,7 @@ pub(crate) fn problem_diagnostic(problem: &QuestProblem) -> Diagnostic {
         file: file.to_owned(),
         key: Some(key),
         message: problem.to_string(),
+        suggestion: problem.suggestion(),
     }
 }
 
@@ -511,6 +512,7 @@ pub(crate) fn warning_diagnostic(warning: &QuestWarning) -> Diagnostic {
         file: file.to_owned(),
         key: Some(key),
         message: warning.to_string(),
+        suggestion: None,
     }
 }
 

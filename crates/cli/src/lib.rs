@@ -5,6 +5,7 @@
 mod charts;
 mod check;
 mod compare;
+mod fixes;
 mod form;
 mod graph;
 mod outline;

@@ -1,0 +1,18 @@
+---
+source: crates/cli/tests/scenarios.rs
+assertion_line: 24
+expression: transcript
+input_file: scenarios/fixes.scenario
+---
+> validate crates/cli/tests/fixtures/worlds/typos
+error: factions.toml: temple.drift.policy: unknown drift policy 'demot' (did you mean 'demote'?)
+error: characters.toml: captain_hale: unknown key 'weigths' (did you mean 'weights'?)
+error: characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)
+crates/cli/tests/fixtures/worlds/typos doesn't load: 3 problems
+> fixes crates/cli/tests/fixtures/worlds/typos
+crates/cli/tests/fixtures/worlds/typos doesn't load: 3 problems, 3 with a fix
+factions.toml: temple.drift.policy: set it to 'demote'
+characters.toml: captain_hale.weigths: rename it 'weights'
+characters.toml: vex.memberships[0].faction: set it to 'lantern_guild'
+> assert fixes content/sample == content/sample loads: nothing to fix
+> assert fixes crates/cli/tests/fixtures/worlds/unparsed_balance == crates/cli/tests/fixtures/worlds/unparsed_balance doesn't load: 1 problem, none with a fix

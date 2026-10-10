@@ -271,6 +271,63 @@ fn walk<'d, 's>(
     Some((place, node))
 }
 
+/// `text` with the key at `path` renamed `to`, keeping its value, its place and its comments
+/// (U6c).
+pub fn rename_key(text: &str, path: &ValuePath, to: &str) -> Result<String, EditError> {
+    if to.trim().is_empty() {
+        return Err(EditError::Blank);
+    }
+    let mut document = parse(text)?;
+    let not_there = || EditError::NotThere(path.clone());
+    let Some((Step::Key(old), parent)) = path.0.split_last() else {
+        return Err(not_there());
+    };
+    let taken = || EditError::Taken(ValuePath(parent.to_vec()).then(Step::Key(to.to_owned())));
+    let renamed = |key: &toml_edit::Key| {
+        toml_edit::Key::new(to)
+            .with_leaf_decor(key.leaf_decor().clone())
+            .with_dotted_decor(key.dotted_decor().clone())
+    };
+    match walk(&mut document, None, parent).map(|(place, _)| place) {
+        Some(Place::Table(table)) => {
+            if !table.contains_key(old) {
+                return Err(not_there());
+            }
+            if table.contains_key(to) {
+                return Err(taken());
+            }
+            let entries: Vec<(toml_edit::Key, Item)> = table
+                .iter()
+                .filter_map(|(key, item)| Some((table.key(key)?.clone(), item.clone())))
+                .collect();
+            table.clear();
+            for (key, item) in entries {
+                let key = if key.get() == old { renamed(&key) } else { key };
+                table.insert_formatted(&key, item);
+            }
+        }
+        Some(Place::Inline(table)) => {
+            if !table.contains_key(old) {
+                return Err(not_there());
+            }
+            if table.contains_key(to) {
+                return Err(taken());
+            }
+            let entries: Vec<(toml_edit::Key, Value)> = table
+                .iter()
+                .filter_map(|(key, value)| Some((table.key(key)?.clone(), value.clone())))
+                .collect();
+            table.clear();
+            for (key, value) in entries {
+                let key = if key.get() == old { renamed(&key) } else { key };
+                table.insert_formatted(&key, value);
+            }
+        }
+        _ => return Err(not_there()),
+    }
+    Ok(document.to_string())
+}
+
 /// What the schema says of a key: what it's for, and its default if it has one, as the
 /// loader would read it (U6a).
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -621,6 +621,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Board 2 split off as U6d,** to keep this reviewable: keys to add with their descriptions, "Remove…" listing what refers first, what a change broke with Undo beside it, lists of tables as tables, and new entries.
   - *Why:* the designer reads an entry as they wrote it, with what each value means and may be, while everything said about it is still the content crate's and the loader's (canvas note q2).
 
+- **P-85 · How the loader's fixes are made** (made in U6c, 2026-10-10).
+  - **A suggestion is data, where it's made:** each error that offers "did you mean" already held its suggestion as a value; `suggestion()` on the engine's problems (`ContentProblem`, `ShiftProblem`, `TableProblem`, `QuestProblem`) and the content readers' `Report::suggesting` hand it on, beside the words. The tests that read every problem's message now check its suggestion agrees, misspelt word and all, which found the rule tables' unknown ranks.
+  - **The change is found in the text, not the message:** if the table at the problem's key has a key spelt as the misspelt word, it's renamed; if the value at its key is the word, or has it as a part between dots (a `done` or `locks` naming a stage or choice), it's set with the suggestion in its place. Anything else has no fix. Every problem that names a list item points at the item, so a list is never searched.
+  - **Renaming rebuilds the table** with the one key renamed, keeping each key's decor, as toml_edit can't rename in place; the value, the order and the comments stay.
+  - **Every fix goes through the writer** and is a change like any other, so Undo takes it back.
+  - **Where problems show:** all of them in a panel along the bottom of the Content tab, problems or warnings, each counted; each also under the field at its key, and the entry's own beside the form, saying when some are at their fields. The entries can be narrowed to those with problems.
+  - **Board 6 split off as U6e:** the theme and IBM Plex need the font files brought into the repository, which is the user's to agree.
+  - *Why:* a misspelt id is one click to fix, in the loader's own words, and nothing in the editor guesses what was meant.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

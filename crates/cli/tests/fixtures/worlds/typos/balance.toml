@@ -1,0 +1,154 @@
+#:schema ../../../../../../schema/balance.schema.json
+# World-wide rules and defaults (DESIGN.md §12). Anything left out uses its default.
+
+[alignment]
+# An axis at or beyond ±label_threshold reads as Lawful/Chaotic or Good/Evil, so 33 splits
+# each axis into thirds. Labels are for display only: no rule ever uses them.
+label_threshold = 33.0
+
+# How the weighted gaps on the two axes combine into one distance (DESIGN.md §6):
+#   "euclidean": the straight line; who seems close forms an ellipse
+#   "manhattan": the two added together; a diamond
+#   "chebyshev": the larger of the two; a rectangle
+metric = "euclidean"
+
+# The weights of any faction or character without their own, 0 to 1 per axis.
+default_weights = { law = 1.0, good = 1.0 }
+
+[inertia]
+# How hard alignment is to move (DESIGN.md §5.3). A profile gives up to four curves, one per
+# axis and direction: law.toward_lawful, law.toward_chaotic, good.toward_good and
+# good.toward_evil. Each is read at the character's position before the act and multiplies
+# that axis's shift; a curve left out is 1.0, and none may go below 0. The shift is
+# base × scale × inertia, rounded once. Characters choose a profile with `inertia = "<id>"`;
+# without one, default_profile applies. Try `act <character> <action> --explain`.
+default_profile = "steady"
+
+[inertia.profiles.steady]
+# Every act counts in full. Always there, even if left out here.
+
+[inertia.profiles.hardening]
+# Convictions harden toward the extremes: the more good someone is, the less a good deed
+# moves them, and evil acts move them less than they would someone neutral.
+good.toward_good = [[-100.0, 0.5], [0.0, 1.0], [100.0, 0.3]]
+good.toward_evil = [[-100.0, 0.3], [0.0, 1.0], [100.0, 0.5]]
+
+[disposition]
+# How alignment distance turns into liking (DESIGN.md §8.1): 50 when identical, 0 at 60
+# apart, -50 at 200. A curve is [x, y] points, straight between them and flat beyond the
+# ends; its values must stay within -100 to 100. Try a shape with `curve <curve> at <x>`.
+affinity = [[0.0, 50.0], [60.0, 0.0], [200.0, -50.0]]
+
+# The bands a score falls into, lowest first: a score lands in the first band whose up_to
+# it doesn't exceed, and the last band, with no up_to, takes everything above. Add or
+# rename bands freely; names are ids, like hostile or allied.
+# A disposition adds up five parts, each from -100 to 100, times its weight (DESIGN.md §8.1):
+#   affinity         how close the two alignments are (the curve above)
+#   standing         how the observer regards them from what has passed between them
+#   kinship          how the two sides' factions regard each other
+#   faction_opinion  a character adopting their factions' view of them
+#   modifiers        from other modules (always 0 for now)
+weights = { affinity = 1.0, standing = 1.0, kinship = 0.5, faction_opinion = 0.5, modifiers = 1.0 }
+
+# What sharing a faction counts for, in kinship.
+same_faction = 50.0
+
+# For watched characters (`watch <character>`), how far past a band's edge a score must go
+# to leave the band, at least 0. It stops a score hovering on an edge from flickering
+# between bands. With 0, the band is always the score's own.
+hysteresis = 0.0
+
+bands = [
+  { name = "unfriendly", up_to = -25.0 },
+  { name = "neutral", up_to = 25.0 },
+  { name = "friendly" },
+]
+
+[standing]
+# When your standing with one faction changes, every other faction's changes too, by
+# change × spillover(how that faction regards the first), rounded once (DESIGN.md §7.1).
+# Bitter enemies feel a little of the opposite and allies share up to half; anything
+# between -50 and 50 shares nothing. It's one hop: a spilled change spills no further.
+# Values must stay within -1 to 1. Each spill shows in the event, after "spilled from".
+spillover = [[-100.0, -0.3], [-50.0, 0.0], [50.0, 0.0], [100.0, 0.5]]
+
+[relations]
+# Two factions are in conflict when either regards the other at or below this. A member of
+# one joins the other only if the [membership] tables below allow it.
+conflict_threshold = -50.0
+
+# Names for relation values, lowest first, with the same rules as disposition bands.
+bands = [
+  { name = "enemy", up_to = -50.0 },
+  { name = "rival", up_to = -15.0 },
+  { name = "neutral", up_to = 15.0 },
+  { name = "friendly", up_to = 50.0 },
+  { name = "allied" },
+]
+
+# Joining a faction while a member of one of its enemies (DESIGN.md §9.2). Two tables
+# decide, each tried top to bottom until a rule whose conditions all hold:
+#   defectors: does the faction you're joining take you? "accept" or "refuse"
+#   deserters: does each enemy faction you're in let you go? "release" or "refuse"
+# If both agree, you leave the enemy factions and join, paying any standing_change (toward
+# the faction joined, or the one left). A refusal gives a reason. Conditions, all of which
+# must hold:
+#   rank_at_least, rank_below: your rung in the faction you're leaving, 1 the lowest. In a
+#       faction's own tables, one of its rank ids stands for that rank's rung.
+#   standing_with_current_at_least, standing_with_current_below: with the faction you're
+#       leaving; standing_with_target_at_least, standing_with_target_below: with the other.
+#   closer_to_target: nearer the faction you're joining than the one you're leaving.
+#   outside_member_tolerance: drifted past your tolerance in the faction you're leaving.
+# The last rule must have no conditions, so a table always decides. Left out, defectors
+# refuses everyone and deserters releases everyone. A faction can replace either table with
+# its own, in factions.toml. Try `can-join <character> <faction> --explain`.
+[membership]
+# The drift policy of any faction without its own (see factions.toml): ignore, flag,
+# demote or expel.
+default_drift = { policy = "flag" }
+
+# When a relation change puts two of a character's factions in conflict, a war between their
+# own factions opens. "ask" waits for the game or a quest to choose (`resolve <character>
+# <faction-to-keep>`); add auto_after_ticks = N to settle it automatically if nobody has
+# within N ticks. "auto" settles it straight away. Settling automatically keeps the higher
+# rank, then the higher standing, then the longer service, then the lower faction id.
+# Leaving costs the faction's leave_standing_change.
+conflict = { resolve = "ask" }
+
+[membership.defectors]
+rules = [
+  { when = { standing_with_target_at_least = 50.0 }, then = "accept" },
+  { when = { closer_to_target = true }, then = "accept", standing_change = -10.0 },
+  { then = "refuse", reason = "You serve our enemies." },
+]
+
+[membership.deserters]
+rules = [
+  { when = { rank_at_least = 3 }, then = "refuse", reason = "Officers don't walk away." },
+  { when = { outside_member_tolerance = true }, then = "release" },
+  { then = "release", standing_change = -40.0 },
+]
+
+# When a faction learns that one of its members is secretly in a faction it's in conflict
+# with: "keep" (a membership conflict then opens for them), "demote" or "expel", each with
+# an optional standing change. "Current" is the faction that found out, "target" the secret
+# one (DESIGN.md §10.4).
+[membership.exposed]
+rules = [
+  { when = { standing_with_current_at_least = 60.0 }, then = "keep", standing_change = -30.0 },
+  { then = "expel", standing_change = -40.0 },
+]
+
+[knowledge]
+# Who learns of an act: "omniscient" (everyone, fully and at once, whoever saw it),
+# "witnessed" (only the witnesses, the parties the act names, and the factions of those who
+# learned), or "ripple" (those, then onward through contacts and factions). A party that
+# hasn't learned of an act keeps its standing (DESIGN.md §10).
+model = "ripple"
+
+[knowledge.ripple]
+# How strongly news arrives at each hop beyond those who saw it; it goes no further than
+# the last. Standing changes scale with it.
+strength = [0.5, 0.25, 0.1]
+# How many ticks each hop takes.
+hop_ticks = 10

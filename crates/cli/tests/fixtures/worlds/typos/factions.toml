@@ -1,0 +1,146 @@
+#:schema ../../../../../../schema/factions.schema.json
+# Riverhold's factions (DESIGN.md §9, §13).
+#
+# Each [table] is one faction; its name is the id you type in the CLI. Factions and
+# characters share one set of ids, so no faction may have a character's id.
+#
+# alignment: where the faction stands, on the same axes as characters (-100 to 100).
+# weights:   how much the faction cares about each axis when judging how far away someone
+#            is, 0 to 1, with at least one above 0. Leave it out to use balance.toml's
+#            default_weights.
+# tolerance: how close to the faction's alignment someone must be to join it, measured as
+#            `distance <faction> <character>` does.
+# member_tolerance (optional): how far a member may drift before it matters; at least the
+#            tolerance, which it defaults to. Easier to stay than to get in.
+# leave_standing_change (optional): the change in someone's standing with the faction when
+#            they leave of their own accord, -100 to 100; 0 if left out.
+#
+# Each faction has a rank ladder, lowest first, as [[<faction>.ranks]] entries; new members
+# start on the first rung. A rung may require a minimum standing with the faction, and may
+# set a stricter tolerance than the faction's own. Promotion only happens when a quest,
+# dialogue or the CLI asks for it: `promote <character> <faction>`.
+#
+# A faction may also set its own [<faction>.defectors] or [<faction>.deserters] table,
+# replacing balance.toml's; see there for how they work.
+#
+# drift (optional): what the faction does when a member's alignment moves them past their
+# member tolerance (their rank's tolerance, if stricter). Without it, balance.toml's
+# membership.default_drift applies.
+#   { policy = "ignore" }  nothing
+#   { policy = "flag" }    report it, and report when they're back
+#   { policy = "demote" }  down a rung at a time until their rank allows them; expelled if
+#                          they're still out on the lowest rung
+#   { policy = "expel" }   thrown out, costing expel_standing_change with the faction
+#   { policy = "probation", grace_ticks = 100, then = "expel" }
+#                          put on probation; if they're still out once grace_ticks have
+#                          passed, then applies ("demote" or "expel"). Back in time clears it.
+# A faction's alignment can also change during play (`faction-shift`, `faction-align`), and
+# its members are reviewed the same way.
+# expel_standing_change (optional): -100 to 100; -20 if left out. It spills to other
+# factions like any standing change.
+
+[city_watch]
+name = "The City Watch"
+alignment = { law = 70.0, good = 20.0 }
+# Cares about order far more than kindness.
+weights = { law = 1.0, good = 0.25 }
+tolerance = 40.0
+member_tolerance = 50.0
+# The Watch gives a straying officer a hundred ticks to mend their ways.
+drift = { policy = "probation", grace_ticks = 100, then = "expel" }
+
+[[city_watch.ranks]]
+id = "recruit"
+
+[[city_watch.ranks]]
+id = "sergeant"
+requires = { standing = 30.0 }
+
+[[city_watch.ranks]]
+id = "captain"
+requires = { standing = 70.0 }
+# Captains are held to a stricter standard than the faction's member tolerance.
+tolerance = 25.0
+
+[temple]
+name = "Temple of the Dawn"
+alignment = { law = 30.0, good = 80.0 }
+weights = { law = 0.5, good = 1.0 }
+tolerance = 35.0
+member_tolerance = 45.0
+# The Temple steps a lapsing priest down rather than casting them out.
+drift = { policy = "demot" }
+
+[[temple.ranks]]
+id = "acolyte"
+
+[[temple.ranks]]
+id = "ordained"
+requires = { standing = 30.0 }
+
+[[temple.ranks]]
+id = "high_priest"
+requires = { standing = 80.0 }
+tolerance = 20.0
+
+[lantern_guild]
+name = "The Lantern Guild"
+alignment = { law = -60.0, good = -10.0 }
+weights = { law = 1.0, good = 0.5 }
+tolerance = 45.0
+member_tolerance = 60.0
+drift = { policy = "flag" }
+# Members may belong secretly, known only to the Guild and its members (DESIGN.md §10.4).
+secret_members = true
+
+[[lantern_guild.ranks]]
+id = "cutpurse"
+
+[[lantern_guild.ranks]]
+id = "fence"
+requires = { standing = 25.0 }
+
+[[lantern_guild.ranks]]
+id = "shadow"
+requires = { standing = 60.0 }
+
+[free_company]
+name = "The Free Company"
+alignment = { law = -10.0, good = 0.0 }
+# Mercenaries barely care about either axis, so almost anyone seems close.
+weights = { law = 0.25, good = 0.25 }
+tolerance = 60.0
+member_tolerance = 80.0
+# Mercenaries don't take kindly to deserters, but don't care what you believe.
+leave_standing_change = -10.0
+drift = { policy = "ignore" }
+
+[[free_company.ranks]]
+id = "sellsword"
+
+[[free_company.ranks]]
+id = "sergeant"
+requires = { standing = 30.0 }
+
+[ashen_circle]
+name = "The Ashen Circle"
+alignment = { law = 20.0, good = -80.0 }
+weights = { law = 0.25, good = 1.0 }
+tolerance = 30.0
+member_tolerance = 40.0
+# Stray from the Circle's path and you're out.
+drift = { policy = "expel" }
+secret_members = true
+
+# The Circle replaces balance.toml's deserters table with its own: no one leaves.
+[ashen_circle.deserters]
+rules = [
+  { then = "refuse", reason = "No one leaves the Circle." },
+]
+
+[[ashen_circle.ranks]]
+id = "initiate"
+
+[[ashen_circle.ranks]]
+id = "adept"
+requires = { standing = 40.0 }
