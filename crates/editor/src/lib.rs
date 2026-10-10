@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use factional_content::{
     Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
     Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, additions, apply_fix,
-    entry_form, entry_places, file_places, fix_for, load_texts, outline, outline_texts, read_texts,
-    referenced_by, set_value,
+    entry_fields, entry_form, entry_places, file_places, fix_for, load_texts, outline,
+    outline_texts, read_texts, referenced_by, set_value,
 };
 use factional_core::Curve;
 use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
@@ -42,6 +42,7 @@ mod previews_ui;
 mod problems_ui;
 mod quests_ui;
 mod removing_ui;
+pub mod theme;
 
 /// The file whose entries are quests, for "Edit in Content".
 const QUESTS_FILE: &str = "quests.toml";
@@ -142,6 +143,8 @@ pub enum Shown {
 pub struct FieldInput {
     /// The group it's in, such as a faction's *Membership*.
     pub group: Option<String>,
+    /// Whether it's changed since the file was last read or saved (U6e).
+    pub edited: bool,
     pub row: FormRow,
     /// What's typed in the field; empty for a value left out.
     pub input: String,
@@ -451,6 +454,12 @@ impl Editor {
         self.texts != self.saved
     }
 
+    /// Whether the `file`th file has changed since it was last read or saved.
+    pub fn is_edited(&self, file: usize) -> bool {
+        let text = |texts: &Option<ContentTexts>| texts.as_ref().map(|texts| texts[file].clone());
+        text(&self.texts) != text(&self.saved)
+    }
+
     /// Whether there's a change to undo.
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
@@ -605,7 +614,7 @@ impl Editor {
         }
     }
 
-    /// Writes every file that has changed.
+    /// Writes every file that has changed; what's written is no longer edited.
     pub fn save(&mut self) -> io::Result<()> {
         let (Some(texts), Some(saved)) = (&self.texts, &mut self.saved) else {
             return Ok(());
@@ -618,6 +627,8 @@ impl Editor {
                 saved[place] = Some(text.clone());
             }
         }
+        // What's saved is no longer edited.
+        self.show_fields();
         Ok(())
     }
 
@@ -703,6 +714,16 @@ impl Editor {
         let name = self.outline.files[file].name;
         let key = &self.outline.files[file].entries[entry].key;
         let said = &self.said;
+        let saved_text = self
+            .saved
+            .as_ref()
+            .and_then(|saved| saved[file].as_deref())
+            .unwrap_or_default();
+        let saved: Vec<(ValuePath, String)> = entry_fields(saved_text, key)
+            .into_iter()
+            .map(|field| (field.path, field.value))
+            .collect();
+        let saved = &saved;
         self.fields = entry_form(texts, name, key)
             .into_iter()
             .flat_map(|group| {
@@ -716,6 +737,11 @@ impl Editor {
                         .cloned()
                         .collect(),
                     group: group.name.clone(),
+                    edited: {
+                        let was = saved.iter().find(|(path, _)| *path == row.path);
+                        let now = row.written.as_ref().map(|field| &field.value);
+                        was.map(|(_, value)| value) != now
+                    },
                     input: row
                         .written
                         .as_ref()
@@ -774,6 +800,11 @@ impl Editor {
     /// Draws the editor into `ui`: buttons, the summary and the tabs at the top (D-34), then
     /// the tab showing.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        // The canvas's colours (U6e), set once and kept.
+        if ui.ctx().global_style().visuals != theme::visuals() {
+            ui.ctx()
+                .all_styles_mut(|style| style.visuals = theme::visuals());
+        }
         egui::Panel::top("summary").show(ui, |ui| {
             // The buttons first, so a long directory never pushes them out of reach.
             ui.horizontal(|ui| {
@@ -795,7 +826,16 @@ impl Editor {
                         .err()
                         .map(|error| format!("couldn't save: {error}"));
                 }
-                ui.label(self.summary());
+                // The one place that says whether the world loads, as a pill.
+                let (fill, colour) = match self.outline.loads() {
+                    true => (theme::LOADS_FILL, theme::LOADS),
+                    false => (theme::BROKEN_FILL, ui.visuals().error_fg_color),
+                };
+                egui::Frame::new()
+                    .fill(fill)
+                    .corner_radius(10.0)
+                    .inner_margin(egui::Margin::symmetric(8, 2))
+                    .show(ui, |ui| ui.colored_label(colour, self.summary()));
                 if let Some(note) = &self.note {
                     ui.label(note);
                 }
@@ -832,6 +872,9 @@ impl Editor {
             .resizable(true)
             .default_size(160.0)
             .show(ui, |ui| listed = self.problems_ui(ui));
+        let edited: Vec<bool> = (0..self.outline.files.len())
+            .map(|file| self.is_edited(file))
+            .collect();
         egui::Panel::left("files")
             .resizable(true)
             .default_size(280.0)
@@ -861,7 +904,11 @@ impl Editor {
                             new_entries(ui);
                             continue;
                         }
-                        egui::CollapsingHeader::new(file.label())
+                        let label = match edited.get(place).copied().unwrap_or_default() {
+                            true => format!("{}, edited", file.label()),
+                            false => file.label(),
+                        };
+                        egui::CollapsingHeader::new(label)
                             .id_salt(file.name)
                             .default_open(true)
                             .show(ui, |ui| {
@@ -967,7 +1014,7 @@ impl Editor {
                         if removing_ui::remove_button(ui, &name) {
                             removing = Some(at.path.clone());
                         }
-                        removing_ui::adding_menu(ui, file, at, &name, &mut added);
+                        removing_ui::adding_menu(ui, file, at, &name, false, &mut added);
                     });
                     if let Some((at, key)) = added {
                         adding = Some((place, at, key));
@@ -1819,5 +1866,31 @@ mod tests {
             said(&editor),
             Some(("Set memberships[0].faction to lantern_guild".to_owned(), 0))
         );
+    }
+
+    #[test]
+    fn a_change_marks_its_field_and_file_edited_until_undone() {
+        let mut editor = sample_on(1, "city_watch");
+        assert!(!editor.is_edited(1));
+        assert!(editor.fields().iter().all(|field| !field.edited));
+        let tolerance = field(&editor, "tolerance");
+        assert_eq!(editor.set(tolerance, "45.0"), Ok(()));
+        assert!(editor.is_edited(1) && !editor.is_edited(2));
+        let edited: Vec<&str> = editor
+            .fields()
+            .iter()
+            .filter(|field| field.edited)
+            .map(|field| field.row.key.as_str())
+            .collect();
+        assert_eq!(edited, ["tolerance"]);
+        // A default written in is edited too, as it wasn't there before.
+        let expel = field(&editor, "expel_standing_change");
+        assert_eq!(editor.write_default(expel), Ok(()));
+        let expel = field(&editor, "expel_standing_change");
+        assert!(editor.fields()[expel].edited);
+        editor.undo();
+        editor.undo();
+        assert!(!editor.is_edited(1));
+        assert!(editor.fields().iter().all(|field| !field.edited));
     }
 }

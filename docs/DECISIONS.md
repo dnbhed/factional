@@ -646,6 +646,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **No separate new-entry panel:** board 2's "New character" isn't built, since adding an entry by its id already writes the keys it must have and selects it, so its form is the new entry's form.
   - *Why:* a ladder reads as a ladder, as the canvas draws it, with every value still edited through the same fields.
 
+- **P-88 · How the editor looks** (made in U6e, 2026-10-10).
+  - **egui's dark visuals, tuned, not replaced:** `theme::visuals()` sets the canvas's colours on egui's own, and the editor sets them for both of egui's themes as it draws, so the desktop app and the tests look the same. The colours that are the editor's own (loads, locks, comment green, a problem's fill) are constants beside it.
+  - **Edited means changed since the last read or save,** compared value by value with the text as saved, so a value set back to what it was is no longer edited; a default written in is edited, as it wasn't there. Save and Undo clear it.
+  - **A red border outweighs an amber one:** a refused value or a problem at a field matters more than an unsaved change. A warning alone doesn't colour the border; it's said under the field.
+  - **What isn't in egui's font is painted:** the edited mark is a painted dot, and a table row's menu is "+…", each keeping its full name for AccessKit.
+  - **IBM Plex split off as U6g:** both faces are OFL, but their files must be brought into the repository, which is the user's to agree.
+  - *Why:* colour is kept for what the loader says and what's changed, as board 6 asks, so a designer sees at a glance what's unsaved and what's wrong.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

@@ -78,19 +78,23 @@ pub(crate) fn remove_button(ui: &mut egui::Ui, name: &str) -> bool {
 
 /// "Add to <name>…": a menu of what the schema allows at the place, each key with what it
 /// is, its default and its description, an item for a list, or a new id where it takes one;
-/// just its name where nothing more fits. What's chosen goes in `adding`.
+/// just its name where nothing more fits. `short` shows it as "+…", as in a table's row,
+/// keeping its name for anyone who can't see it. What's chosen goes in `adding`.
 pub(crate) fn adding_menu(
     ui: &mut egui::Ui,
     file: &str,
     place: &mut PlaceInput,
     name: &str,
+    short: bool,
     adding: &mut Option<(ValuePath, Option<String>)>,
 ) {
     if place.additions.is_empty() {
         ui.label(RichText::new(name).monospace().weak());
         return;
     }
-    ui.menu_button(format!("Add to {name}…"), |ui| {
+    let said = format!("Add to {name}…");
+    let shown = if short { "+…" } else { said.as_str() };
+    let menu = ui.menu_button(shown, |ui| {
         let PlaceInput {
             path,
             additions,
@@ -130,4 +134,6 @@ pub(crate) fn adding_menu(
             }
         }
     });
+    menu.response
+        .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
 }
