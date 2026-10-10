@@ -1,6 +1,6 @@
 //! Reading TOML tables while collecting every problem with the file and key path it's at.
 
-use factional_core::{Curve, Fixed, suggest};
+use factional_core::{Curve, Fixed, Suggestion, suggest};
 use serde::Deserialize;
 use toml::{Table, Value};
 
@@ -22,10 +22,21 @@ impl Report {
 
     /// Records a problem at `path`, such as `vex.alignment`; an empty path means the file.
     pub(crate) fn error(&mut self, path: &str, message: impl Into<String>) {
+        self.suggesting(path, message, None);
+    }
+
+    /// Records a problem at `path` with the word its message suggests instead, if any.
+    pub(crate) fn suggesting(
+        &mut self,
+        path: &str,
+        message: impl Into<String>,
+        suggestion: Option<Suggestion>,
+    ) {
         self.diagnostics.push(Diagnostic {
             file: self.file.to_owned(),
             key: (!path.is_empty()).then(|| path.to_owned()),
             message: message.into(),
+            suggestion,
         });
     }
 
@@ -345,10 +356,15 @@ impl<'t> Section<'t> {
             if self.read.contains(key) {
                 continue;
             }
-            let hint = suggest(key, self.read.iter().map(String::as_str))
+            let close = suggest(key, self.read.iter().map(String::as_str));
+            let hint = close
                 .map(|known| format!(" (did you mean '{known}'?)"))
                 .unwrap_or_default();
-            report.error(&self.path, format!("unknown key '{key}'{hint}"));
+            report.suggesting(
+                &self.path,
+                format!("unknown key '{key}'{hint}"),
+                close.map(|close| Suggestion::new(key, close)),
+            );
         }
     }
 }

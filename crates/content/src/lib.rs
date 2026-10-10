@@ -3,6 +3,7 @@
 
 mod describe;
 mod edit;
+mod fix;
 mod form;
 mod graph;
 mod outline;
@@ -19,8 +20,9 @@ pub use describe::{
 };
 pub use edit::{
     Addition, EditError, Field, KeyInfo, Step, ValueKind, ValuePath, add, additions, entry_fields,
-    entry_places, file_places, key_info, remove, set_value,
+    entry_places, file_places, key_info, remove, rename_key, set_value,
 };
+pub use fix::{Change, Fix, apply_fix, fix_for};
 pub use form::{FormGroup, FormRow, entry_form};
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
@@ -35,7 +37,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::{fmt, fs, io};
 
-use factional_core::{Curve, Fixed, suggest};
+use factional_core::{Curve, Fixed, Suggestion, suggest};
 use factional_quests::Quests;
 use factional_reputation::{
     Action, ActionId, ActionStanding, Alignment, AlignmentDelta, Axis, Balance, Band, BandProblem,
@@ -60,6 +62,8 @@ pub struct Diagnostic {
     /// Where in the file, like `vex.alignment.law`; `None` for the file as a whole.
     pub key: Option<String>,
     pub message: String,
+    /// What the loader suggests instead of a misspelt word, as its message says (U6c).
+    pub suggestion: Option<Suggestion>,
 }
 
 /// Every problem found, so a designer can fix them all in one pass.
@@ -125,6 +129,7 @@ impl Texts {
                 file: dir.display().to_string(),
                 key: None,
                 message: format!("cannot read the directory: {error}"),
+                suggestion: None,
             }],
         };
         if let Err(error) = fs::read_dir(dir) {
@@ -138,6 +143,7 @@ impl Texts {
                     file: file.to_owned(),
                     key: None,
                     message: format!("cannot read the file: {error}"),
+                    suggestion: None,
                 }],
             }),
         };
@@ -515,6 +521,7 @@ fn read_all(sources: Sources<'_>) -> Read {
             file: file.to_owned(),
             key: Some(key),
             message: problem.to_string(),
+            suggestion: problem.suggestion(),
         }
     }));
     // The checks across quests wait until every file reads cleanly, so they never report
@@ -547,6 +554,7 @@ pub fn warnings(content: &Content) -> Vec<Diagnostic> {
                 file: CHARACTERS_FILE.to_owned(),
                 key: Some(format!("{character}.memberships[{index}]")),
                 message: warning.to_string(),
+                suggestion: None,
             },
             ContentWarning::BelowRankStanding {
                 character, index, ..
@@ -554,21 +562,25 @@ pub fn warnings(content: &Content) -> Vec<Diagnostic> {
                 file: CHARACTERS_FILE.to_owned(),
                 key: Some(format!("{character}.memberships[{index}].rank")),
                 message: warning.to_string(),
+                suggestion: None,
             },
             ContentWarning::RankToleranceLooser { faction, index, .. } => Diagnostic {
                 file: FACTIONS_FILE.to_owned(),
                 key: Some(format!("{faction}.ranks[{index}].tolerance")),
                 message: warning.to_string(),
+                suggestion: None,
             },
             ContentWarning::NoOneWithinTolerance { faction, .. } => Diagnostic {
                 file: FACTIONS_FILE.to_owned(),
                 key: Some(format!("{faction}.tolerance")),
                 message: warning.to_string(),
+                suggestion: None,
             },
             ContentWarning::ContactsUnused { character } => Diagnostic {
                 file: CHARACTERS_FILE.to_owned(),
                 key: Some(format!("{character}.contacts")),
                 message: warning.to_string(),
+                suggestion: None,
             },
         })
         .collect()
@@ -615,14 +627,19 @@ fn read_balance(text: &str, report: &mut Report, unread: &mut Unread) -> Balance
                 Some(metric) => balance.metric = metric,
                 None => {
                     let keys = Metric::ALL.map(Metric::key);
-                    let message = match suggest(&key, keys) {
+                    let close = suggest(&key, keys);
+                    let message = match close {
                         Some(close) => format!("unknown metric '{key}' (did you mean '{close}'?)"),
                         None => format!(
                             "unknown metric '{key}': use {}, {} or {}",
                             keys[0], keys[1], keys[2]
                         ),
                     };
-                    report.error(&alignment.path_to("metric"), message);
+                    report.suggesting(
+                        &alignment.path_to("metric"),
+                        message,
+                        close.map(|close| Suggestion::new(&key, close)),
+                    );
                 }
             }
         }
@@ -712,7 +729,8 @@ fn read_balance(text: &str, report: &mut Report, unread: &mut Unread) -> Balance
                 }
                 None => {
                     let keys = KnowledgeModel::ALL.map(KnowledgeModel::key);
-                    let message = match suggest(&key, keys) {
+                    let close = suggest(&key, keys);
+                    let message = match close {
                         Some(close) => {
                             format!("unknown knowledge model '{key}' (did you mean '{close}'?)")
                         }
@@ -721,7 +739,11 @@ fn read_balance(text: &str, report: &mut Report, unread: &mut Unread) -> Balance
                             keys[0], keys[1], keys[2]
                         ),
                     };
-                    report.error(&knowledge.path_to("model"), message);
+                    report.suggesting(
+                        &knowledge.path_to("model"),
+                        message,
+                        close.map(|close| Suggestion::new(&key, close)),
+                    );
                 }
             }
         }
@@ -1287,7 +1309,8 @@ fn read_drift(
             let policy = DriftPolicy::simple(text);
             if policy.is_none() {
                 let keys = DriftPolicy::KEYS;
-                let message = match suggest(text, keys) {
+                let close = suggest(text, keys);
+                let message = match close {
                     Some(close) => {
                         format!("unknown drift policy '{text}' (did you mean '{close}'?)")
                     }
@@ -1296,7 +1319,11 @@ fn read_drift(
                         keys[0], keys[1], keys[2], keys[3], keys[4]
                     ),
                 };
-                report.error(&drift.path_to("policy"), message);
+                report.suggesting(
+                    &drift.path_to("policy"),
+                    message,
+                    close.map(|close| Suggestion::new(text, close)),
+                );
             }
             policy
         }
@@ -1333,13 +1360,18 @@ fn read_conflict_rule(section: &mut Section<'_>, report: &mut Report) -> Option<
             None
         }
         (Some(other), _) => {
-            let message = match suggest(other, ["ask", "auto"]) {
+            let close = suggest(other, ["ask", "auto"]);
+            let message = match close {
                 Some(close) => {
                     format!("unknown way to resolve '{other}' (did you mean '{close}'?)")
                 }
                 None => format!("unknown way to resolve '{other}': use ask or auto"),
             };
-            report.error(&rule.path_to("resolve"), message);
+            report.suggesting(
+                &rule.path_to("resolve"),
+                message,
+                close.map(|close| Suggestion::new(other, close)),
+            );
             None
         }
     };
@@ -1361,14 +1393,19 @@ fn read_probation(drift: &mut Section<'_>, report: &mut Report) -> Option<DriftP
         let found = Consequence::ALL.into_iter().find(|then| then.key() == text);
         if found.is_none() {
             let keys = Consequence::ALL.map(Consequence::key);
-            let message = match suggest(&text, keys) {
+            let close = suggest(&text, keys);
+            let message = match close {
                 Some(close) => format!("unknown consequence '{text}' (did you mean '{close}'?)"),
                 None => format!(
                     "unknown consequence '{text}': use {} or {}",
                     keys[0], keys[1]
                 ),
             };
-            report.error(&drift.path_to("then"), message);
+            report.suggesting(
+                &drift.path_to("then"),
+                message,
+                close.map(|close| Suggestion::new(&text, close)),
+            );
         }
         found
     });
@@ -1464,7 +1501,8 @@ fn read_rule(mut rule: Section<'_>, kind: TableKind, report: &mut Report) -> Opt
             })
         }
         Some(unknown) => {
-            let message = match suggest(unknown, outcomes.iter().copied()) {
+            let close = suggest(unknown, outcomes.iter().copied());
+            let message = match close {
                 Some(close) => {
                     format!("unknown outcome '{unknown}' for {kind} (did you mean '{close}'?)")
                 }
@@ -1480,7 +1518,11 @@ fn read_rule(mut rule: Section<'_>, kind: TableKind, report: &mut Report) -> Opt
                     )
                 }
             };
-            report.error(&rule.path_to("then"), message);
+            report.suggesting(
+                &rule.path_to("then"),
+                message,
+                close.map(|close| Suggestion::new(unknown, close)),
+            );
             None
         }
     };
@@ -1777,13 +1819,23 @@ mod tests {
     }
 
     /// The problems reported, one string per diagnostic.
+    /// Each problem, as written; checking on the way that its suggestion is the one its
+    /// message offers, misspelt word and all, and that one offering none has none (U6c).
     fn problems(result: Result<Content, ContentError>) -> Vec<String> {
-        result
-            .expect_err("the content has problems")
-            .diagnostics
-            .iter()
-            .map(Diagnostic::to_string)
-            .collect()
+        let diagnostics = result.expect_err("the content has problems").diagnostics;
+        for diagnostic in &diagnostics {
+            let message = &diagnostic.message;
+            let offered = message
+                .split_once(" (did you mean '")
+                .map(|(_, rest)| rest.trim_end_matches("'?)"));
+            let suggestion = diagnostic.suggestion.as_ref();
+            assert_eq!(suggestion.map(|s| s.right.as_str()), offered, "{message}");
+            if let Some(suggestion) = suggestion {
+                let wrong = format!("'{}'", suggestion.wrong);
+                assert!(message.contains(&wrong), "{message}");
+            }
+        }
+        diagnostics.iter().map(Diagnostic::to_string).collect()
     }
 
     const VEX: &str = r#"
@@ -4007,6 +4059,7 @@ mod tests {
             file: "characters.toml".into(),
             key: None,
             message: "line 2: broken".into(),
+            suggestion: None,
         };
         assert_eq!(diagnostic.to_string(), "characters.toml: line 2: broken");
         let error = ContentError {

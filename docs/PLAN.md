@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U8 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6e → U8 → E1 → T5`
 
 ## Done
 
@@ -85,6 +85,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U7 — previews of curves and quests: `World::named_curves`, which the CLI's `curve` now renders from, unchanged; in the Previews tab, a chosen knob plotted through its points with each listed in words (or left out, 1.00 everywhere), and whether a chosen character can start a chosen quest at the start of play, in the engine's words (P-82); done 2026-10-10 (#54)
 - U6a — what the Content tab needs from the content crate: the schema marks what each id names (`x-names`, `x-names-keys`); `references`, `referenced_by` and `defined_in` read the text with it, held by a test to exactly the places the loader checks in every directory that loads; `key_info` gives a key's description and default; outline entries carry their `name`; `references <dir> <id>`, `scenarios/references.scenario`; U6 split into U6a to U6c (P-83); done 2026-10-10 (#55)
 - U6b — the Content tab's form, to board 1: the schema groups each entry's keys (`x-groups`, `x-group`); `entry_form` gives an entry's values group by group, each with the comments above it and after it, the defaults of what's left out and its choices (the ids that exist, an enumeration, or true and false); the tab shows the form under the entry's name with Set for a default and a choice menu, and beside it what the loader says, what refers to the entry (each a link to it) and the entry as written; the browser shows names; the window opens at the canvas's 1440 by 900; `form <dir> <file> <entry>`, `scenarios/form.scenario`; board 2 split off as U6d (P-84); done 2026-10-10 (#56)
+- U6c — problems at their keys, with the loader's fixes, to board 3: `Suggestion` in `factional-core`, offered by every engine error and content reader that says "did you mean" and carried on each `Diagnostic`; `fix_for` finds the change in the text (a misspelt key renamed, a misspelt word or part of a quest path set), `apply_fix` makes it through the writer, which gains `rename_key`; the outline lists `every_problem` and `every_warning`; the Content tab's problems panel, each with its key as a link and "Use 'right'", each problem also under its field, and the entries narrowed to those with problems; `fixes <dir>`, `scenarios/fixes.scenario`, fixture `typos`; board 6's look split off as U6e (P-85); done 2026-10-10 (#57)
 
 ---
 
@@ -110,13 +111,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U6c · Problems and the visual language — P3 · Next
-
-Boards 3 and 6: a problems panel with each problem's way to its key and the loader's "did you mean" as a fix, a summary that says whether the world loads, and the theme and fonts (IBM Plex) in egui's visuals.
-
-### U6d · Adding and removing, to board 2 — P3 · Outline
+### U6d · Adding and removing, to board 2 — P3 · Next
 
 Board 2: keys to add in a list with each one's description and default; "Remove…" on an entry listing what refers to it first; what the last change did to the world, with Undo beside it; a list of tables, such as a rank ladder, as a table; and a new entry with the keys it must have.
+
+### U6e · The visual language — P3 · Outline
+
+Board 6: egui's dark visuals tuned to the canvas's colours, IBM Plex Sans and Mono loaded through `FontDefinitions` (OFL, so they can be brought into the repository), comment green, a field's states (set, default, edited, refused, a problem), the summary as a pill, and the graph's nodes and edges as drawn.
 
 ### U8 · Quest graphs in egui-snarl? — P3 · Deferred (X-6)
 

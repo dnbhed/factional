@@ -1,0 +1,160 @@
+#:schema ../../../../../../schema/quests.schema.json
+# Riverhold's quests: each a list of stages with choices (DESIGN.md §17.1). List them with
+# `quests`, once the world is loaded.
+#
+# name:     the quest's name, as shown
+# giver:    whose quest it is: a faction or a character, by id; left out, the world's own
+# requires: what must hold to start it (see below)
+#
+# Each [[<quest>.stages]] is one stage, in order:
+#   id:       unique within the quest; not "end"
+#   requires: what must hold to reach it
+#   choices:  one or more, each with
+#     id:       unique within the stage
+#     outcome:  an outcome from outcomes.toml, or
+#     effects:  the same kinds written here: alignment, standing and relations; or neither.
+#               Joining, leaving and promotion are never a quest's effects: they're the
+#               character's own actions (D-30).
+#     next:     a later stage's id, or "end"; choices only lead forward
+#     locks:    every quest, or stage of one, the choice can shut off for good, declared:
+#               "quest" for its gate (its step's requirements included), "quest.stage" for
+#               a stage. Loading works out the worst each choice can do and refuses any
+#               lockout left undeclared; one declared that can't happen is a warning. A
+#               choice locks out a requirement it can make false when nothing the
+#               character can do makes it true again: standing no action raises; a
+#               membership or rank, which drift or a war can end; alignment no action
+#               moves back
+#
+# Requirements are about the character doing the quest, and all of them must hold:
+#   standing = { temple = 10.0 }                 at least this with a faction or character
+#   member = ["temple"], not_member = ["temple"] in, or not in, each of these factions
+#   rank_at_least = { city_watch = "sergeant" }  at least this rank in the faction
+#   within_tolerance = ["temple"]                within each faction's member tolerance, as
+#                                                the faction pictures them
+#   done = ["lost_ring.search.return_it"]        a quest finished (quest), a stage reached
+#                                                (quest.stage) or a choice made
+#                                                (quest.stage.choice)
+#
+# A quest in questlines.toml belongs to the questline's giver unless it names its own.
+
+[watch_oath]
+name = "The Watch's Oath"
+giver = "city_watch"
+requires = { not_member = ["lantern_guild"] }
+
+[[watch_oath.stages]]
+id = "patrol"
+choices = [
+  { id = "report", outcome = "turned_in_vex", next = "oath" },
+  { id = "look_away", outcome = "took_a_bribe", next = "end" },
+]
+
+# Swearing in is the oath; joining the Watch is the character's own act, never a
+# quest's (D-30).
+[[watch_oath.stages]]
+id = "oath"
+requires = { standing = { city_watch = 10.0 } }
+choices = [{ id = "swear", effects = { alignment = { law = 5.0 } }, next = "end" }]
+
+[night_patrol]
+name = "Night Patrol"
+
+[[night_patrol.stages]]
+id = "walk"
+choices = [
+  { id = "by_the_book", effects = { standing = { factions = { city_watch = 5.0 } } }, next = "end" },
+]
+
+[dock_inspection]
+name = "Inspecting the Docks"
+
+[[dock_inspection.stages]]
+id = "inspect"
+choices = [
+  { id = "seize", effects = { alignment = { law = 2.0 }, standing = { factions = { city_watch = 5.0, lantern_guild = -5.0 } } }, next = "end" },
+  { id = "wave_through", effects = { standing = { factions = { lantern_guild = 5.0 } } }, next = "end" },
+]
+
+# Only those who turned Vex in are trusted with the smugglers.
+[smugglers_cove]
+name = "The Smugglers' Cove"
+requires = { done = ["watch_oath.patrol.report"] }
+
+[[smugglers_cove.stages]]
+id = "find"
+choices = [{ id = "follow_the_lights", next = "raid" }]
+
+[[smugglers_cove.stages]]
+id = "raid"
+choices = [
+  { id = "arrest_them", effects = { standing = { factions = { city_watch = 10.0, lantern_guild = -10.0 } } }, next = "end" },
+]
+
+[harbour_errands]
+name = "Harbour Errands"
+
+[[harbour_errands.stages]]
+id = "run"
+choices = [
+  { id = "deliver", effects = { standing = { factions = { city_watch = 3.0 } } }, next = "end" },
+]
+
+# In the Watch's questline, but the captain's own favour.
+[lost_dog]
+name = "The Captain's Dog"
+giver = "captain_hale"
+
+[[lost_dog.stages]]
+id = "search"
+choices = [
+  { id = "found_it", effects = { standing = { factions = { city_watch = 2.0 }, characters = { captain_hale = 10.0 } } }, next = "end" },
+]
+
+[watch_captain]
+name = "Captain of the Watch"
+
+[[watch_captain.stages]]
+id = "command"
+requires = { member = ["city_watch"], within_tolerance = ["city_watch"] }
+choices = [
+  { id = "accept", effects = { alignment = { law = 5.0 }, standing = { factions = { city_watch = 10.0 } } }, next = "end" },
+]
+
+# A character's own errand, in no questline.
+[lost_ring]
+name = "Ava's Lost Ring"
+giver = "merchant_ava"
+
+[[lost_ring.stages]]
+id = "search"
+choices = [
+  { id = "return_it", outcome = "rescued_merchant", next = "end" },
+  { id = "pawn_it", effects = { alignment = { good = -4.0 }, standing = { factions = { lantern_guild = 5.0 } } }, next = "end" },
+]
+
+# The world's own: no giver. Sharing earns the Temple's thanks, and the Circle, which
+# regards the Temple at -90, resents it: some of it spills over as lost standing, which no
+# action wins back, so sharing can shut the Circle's rite.
+[the_long_winter]
+name = "The Long Winter"
+
+[[the_long_winter.stages]]
+id = "stores"
+choices = [
+  { id = "share", effects = { alignment = { good = 6.0 }, standing = { factions = { temple = 10.0 } }, relations = [{ between = ["temple", "city_watch"], by = 5.0 }] }, next = "end", locks = ["circle_rite"] },
+  { id = "hoard", effects = { alignment = { good = -6.0 } }, next = "end" },
+]
+
+# Setting the Watch and the Temple at war ends one membership of anyone in both, so it
+# declares the captaincy, which needs the Watch.
+[circle_rite]
+name = "The Ashen Rite"
+giver = "ashen_circle"
+requires = { standing = { ashen_circle = 10.0 } }
+
+[[circle_rite.stages]]
+id = "whisper"
+choices = [
+  { id = "refuse", next = "end" },
+  { id = "set_them_at_war", effects = { relations = [{ between = ["temple", "city_watch"], by = -120.0 }] }, next = "end", locks = ["watch_captain", "watch_captain.command"] },
+]

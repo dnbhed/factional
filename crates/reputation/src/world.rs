@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use factional_core::{Curve, CurveError, Fixed, Ratio, Tick, article, suggest};
+use factional_core::{Curve, CurveError, Fixed, Ratio, Suggestion, Tick, article, suggest};
 
 use crate::defection::{self, Situation};
 use crate::distance::gap;
@@ -1043,6 +1043,48 @@ impl Content {
             );
         }
         warnings
+    }
+}
+
+impl ContentProblem {
+    /// What it suggests instead of a misspelt id, as its message says (U6c).
+    pub fn suggestion(&self) -> Option<Suggestion> {
+        let (wrong, right) = match self {
+            ContentProblem::UnknownMembershipFaction {
+                faction,
+                suggestion: Some(close),
+                ..
+            }
+            | ContentProblem::UnknownRelationFaction {
+                faction,
+                suggestion: Some(close),
+                ..
+            } => (faction.to_string(), close.to_string()),
+            ContentProblem::UnknownStandingParty {
+                party,
+                suggestion: Some(close),
+                ..
+            } => (party.to_string(), close.to_string()),
+            ContentProblem::UnknownRank {
+                rank,
+                suggestion: Some(close),
+                ..
+            } => (rank.to_string(), close.to_string()),
+            ContentProblem::UnknownProfile {
+                profile,
+                suggestion: Some(close),
+                ..
+            } => (profile.to_string(), close.to_string()),
+            ContentProblem::UnknownContact {
+                contact,
+                suggestion: Some(close),
+                ..
+            } => (contact.to_string(), close.to_string()),
+            ContentProblem::OutcomeRelation { problem, .. } => return problem.suggestion(),
+            ContentProblem::RuleTable { problem, .. } => return problem.suggestion(),
+            _ => return None,
+        };
+        Some(Suggestion { wrong, right })
     }
 }
 
@@ -6738,6 +6780,105 @@ pub(crate) mod tests {
             "unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)"
         );
         assert_eq!(messages[3], "unknown character 'vx' (did you mean 'vex'?)");
+    }
+
+    #[test]
+    fn a_misspelt_id_offers_its_suggestion_as_data() {
+        let suggested = |problem: ContentProblem| {
+            problem
+                .suggestion()
+                .map(|Suggestion { wrong, right }| format!("{wrong} → {right}"))
+        };
+        let membership = |suggestion| ContentProblem::UnknownMembershipFaction {
+            character: id("vex"),
+            index: 0,
+            faction: faction_id("lantern_gild"),
+            suggestion,
+        };
+        assert_eq!(
+            suggested(membership(Some(faction_id("lantern_guild")))).as_deref(),
+            Some("lantern_gild → lantern_guild")
+        );
+        assert_eq!(suggested(membership(None)), None);
+        let found = [
+            ContentProblem::UnknownRelationFaction {
+                index: 0,
+                side: RelationSide::From,
+                faction: faction_id("tempel"),
+                suggestion: Some(faction_id("temple")),
+            },
+            ContentProblem::UnknownStandingParty {
+                owner: StandingOwner::Outcome(outcome_id("fine")),
+                party: party_faction("city_wach"),
+                suggestion: Some(party_faction("city_watch")),
+            },
+            ContentProblem::UnknownRank {
+                character: id("vex"),
+                index: 0,
+                faction: faction_id("lantern_guild"),
+                rank: rank_id("fense"),
+                suggestion: Some(rank_id("fence")),
+            },
+            ContentProblem::UnknownProfile {
+                user: ProfileUser::Default,
+                profile: profile_id("hardenning"),
+                suggestion: Some(profile_id("hardening")),
+            },
+            ContentProblem::UnknownContact {
+                character: id("vex"),
+                index: 0,
+                contact: id("avx"),
+                suggestion: Some(id("ava")),
+            },
+            ContentProblem::OutcomeRelation {
+                outcome: outcome_id("fine"),
+                problem: ShiftProblem::UnknownFaction {
+                    index: 0,
+                    side: RelationSide::To,
+                    faction: faction_id("guil"),
+                    suggestion: Some(faction_id("guild")),
+                },
+            },
+        ]
+        .map(suggested);
+        assert_eq!(
+            found,
+            [
+                "tempel → temple",
+                "city_wach → city_watch",
+                "fense → fence",
+                "hardenning → hardening",
+                "avx → ava",
+                "guil → guild",
+            ]
+            .map(|said| Some(said.to_owned()))
+        );
+        let table = |problem| ContentProblem::RuleTable {
+            owner: TableOwner::World,
+            kind: TableKind::Defectors,
+            problem,
+        };
+        assert_eq!(
+            suggested(table(TableProblem::UnknownRank {
+                rule: 0,
+                condition: "rank_at_least",
+                rank: rank_id("shadw"),
+                suggestion: Some(rank_id("shadow")),
+            }))
+            .as_deref(),
+            Some("shadw → shadow")
+        );
+        assert_eq!(
+            suggested(table(TableProblem::MightNotDecide { rules: 0 })),
+            None
+        );
+        // Nothing to suggest for a problem that isn't a misspelling.
+        assert_eq!(suggested(ContentProblem::NoHopTicks), None);
+        let shift = ContentProblem::OutcomeRelation {
+            outcome: outcome_id("fine"),
+            problem: ShiftProblem::SelfRelation { index: 0 },
+        };
+        assert_eq!(suggested(shift), None);
     }
 
     // Ranks (DESIGN.md §7.2)

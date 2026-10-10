@@ -3,10 +3,11 @@
 //! there are any; then what the loader says, what refers to the entry, and the entry as
 //! written. The form is `factional-content`'s `entry_form`; this draws it.
 
-use factional_content::ValuePath;
+use factional_content::{Fix, ValuePath};
 
 use crate::egui::{self, RichText, WidgetInfo, WidgetType};
-use crate::{Editor, FieldInput, diagnostics};
+use crate::problems_ui::{Listed, fix_button};
+use crate::{Editor, FieldInput, Said};
 
 /// What was done in the form.
 pub(crate) enum Acted {
@@ -15,6 +16,8 @@ pub(crate) enum Acted {
     /// Set on the `n`th field, a value left out.
     Default(usize),
     Remove(ValuePath),
+    /// A problem's fix chosen.
+    Fix(Fix),
 }
 
 /// How wide a value's field is, so every value lines up and what's after it fits.
@@ -47,6 +50,7 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Act
         row,
         input,
         refused,
+        said,
         ..
     } = field;
     for line in &row.comment {
@@ -110,6 +114,20 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Act
         }
     });
     ui.end_row();
+    for said in said.iter() {
+        ui.label("");
+        ui.horizontal_wrapped(|ui| {
+            let color = match said.warning {
+                true => ui.visuals().warn_fg_color,
+                false => ui.visuals().error_fg_color,
+            };
+            ui.colored_label(color, &said.diagnostic.message);
+            if let Some(fix) = fix_button(ui, said) {
+                acted = Some(Acted::Fix(fix));
+            }
+        });
+        ui.end_row();
+    }
     acted
 }
 
@@ -117,14 +135,39 @@ impl Editor {
     /// Beside the form: what the loader says about the entry, what refers to it, each
     /// reference a link to its entry, and the entry as written. The reference followed, as
     /// its file and key.
-    pub(crate) fn inspector_ui(&self, ui: &mut egui::Ui) -> Option<(&'static str, String)> {
+    pub(crate) fn inspector_ui(&self, ui: &mut egui::Ui) -> Option<Listed> {
         let (_, entry) = self.selected_entry()?;
         let mut going = None;
         ui.strong("What the loader says");
         if entry.problems.is_empty() && entry.warnings.is_empty() {
             ui.label(format!("Nothing at {}", entry.key));
         }
-        diagnostics(ui, &entry.problems, &entry.warnings, |d| entry.at(d));
+        // What's at a field is shown under it; the rest is the entry's.
+        let at_a_field = |said: &Said| self.fields.iter().any(|field| field.said.contains(said));
+        let about_it: Vec<&Said> = self
+            .said()
+            .iter()
+            .filter(|said| {
+                let about = &said.diagnostic;
+                entry.problems.contains(about) || entry.warnings.contains(about)
+            })
+            .collect();
+        if about_it.iter().any(|said| at_a_field(said)) {
+            ui.label("Some at their fields");
+        }
+        for said in about_it.into_iter().filter(|said| !at_a_field(said)) {
+            let kind = if said.warning { "warning" } else { "error" };
+            let message = &said.diagnostic.message;
+            ui.horizontal_wrapped(|ui| {
+                match entry.at(&said.diagnostic) {
+                    Some(key) => ui.label(format!("{kind}: {key}: {message}")),
+                    None => ui.label(format!("{kind}: {message}")),
+                };
+                if let Some(fix) = fix_button(ui, said) {
+                    going = Some(Listed::Fix(fix));
+                }
+            });
+        }
         if let Some(references) = self.referenced_by() {
             ui.separator();
             ui.strong("Referenced by");
@@ -138,7 +181,7 @@ impl Editor {
                     file = Some(reference.file);
                 }
                 if ui.link(&reference.key).clicked() {
-                    going = Some((reference.file, reference.key.clone()));
+                    going = Some(Listed::Go(reference.file.to_owned(), reference.key.clone()));
                 }
             }
         }

@@ -397,6 +397,7 @@ mod tests {
                 file: "quests.toml".to_owned(),
                 key: Some("siege".to_owned()),
                 message: "something".to_owned(),
+                suggestion: None,
             },
             problem,
         }

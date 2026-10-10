@@ -1,0 +1,39 @@
+#:schema ../../../../../../schema/questlines.schema.json
+# Riverhold's questlines: each an ordered list of steps (DESIGN.md §17.1, D-29).
+#
+# name:  the questline's name, as shown
+# giver: whose questline it is: a faction or a character, by id; left out, the world's own.
+#        Its quests are the giver's unless they name their own.
+#
+# Each [[<questline>.steps]] is one step, in order: a group of quests from quests.toml, open
+# together and done in any order. A step opens once the step before it is complete and its
+# own requirements hold.
+#   quests:    the step's quests; a quest is in at most one questline, at one step
+#   need:      how many of them must be done to move on; left out, all of them. 0 makes
+#              them optional, and the next step's requirements decide when to move on.
+#   requires:  added to the gate of every quest in the step, as in quests.toml
+#   leftovers: when need is fewer than all of them, what happens to the rest once the
+#              character starts a quest of any later step: "open" (the default) keeps them
+#              available; "close" shuts those not yet started
+
+[watch_career]
+name = "A Life in the Watch"
+giver = "city_watch"
+
+[[watch_career.steps]]
+quests = ["watch_oath"]
+
+# Odd jobs, in any order: two of the three, and the third goes.
+[[watch_career.steps]]
+quests = ["night_patrol", "dock_inspection", "smugglers_cove"]
+need = 2
+leftovers = "close"
+
+# Favours, done or not: they earn standing, and rank decides when to move on.
+[[watch_career.steps]]
+quests = ["harbour_errands", "lost_dog"]
+need = 0
+
+[[watch_career.steps]]
+requires = { rank_at_least = { city_watch = "sergeant" }, standing = { city_watch = 40.0 } }
+quests = ["watch_captain"]

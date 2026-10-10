@@ -54,6 +54,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "every place in <dir>'s content that names a faction, character, quest, outcome or inertia profile",
     ),
     (
+        "fixes <dir>",
+        "each problem in <dir>'s content that the loader's \"did you mean\" fixes, and the change that fixes it",
+    ),
+    (
         "form <dir> <file> <entry>",
         "an entry's values grouped by what they mean, with their comments, the defaults of what's left out, and what each may be",
     ),
@@ -344,6 +348,7 @@ impl Session {
             "graph" => Ok(crate::graph::graph(&self.base_dir, rest)),
             "references" => Ok(crate::references::references(&self.base_dir, rest)),
             "form" => Ok(crate::form::form(&self.base_dir, rest)),
+            "fixes" => Ok(crate::fixes::fixes(&self.base_dir, rest)),
             "reload" => Ok(self.reload()),
             "save" => Ok(self.save(rest)),
             "restore" => Ok(self.restore(rest)),

@@ -81,25 +81,34 @@ impl Outline {
 
     /// How many problems there are, everywhere.
     pub fn problem_count(&self) -> usize {
-        self.problems.len()
-            + self
-                .files
-                .iter()
-                .map(|file| {
-                    file.problems.len()
-                        + file.entries.iter().map(|e| e.problems.len()).sum::<usize>()
-                })
-                .sum::<usize>()
+        self.every_problem().len()
     }
 
     /// How many warnings there are, everywhere.
     pub fn warning_count(&self) -> usize {
+        self.every_warning().len()
+    }
+
+    /// Every problem (U6c): those about no one file, then each file's, about the file and
+    /// then at each entry, in the outline's order.
+    pub fn every_problem(&self) -> Vec<&Diagnostic> {
+        let files = self.files.iter().flat_map(|file| {
+            let entries = file.entries.iter().flat_map(|entry| &entry.problems);
+            file.problems.iter().chain(entries)
+        });
+        self.problems.iter().chain(files).collect()
+    }
+
+    /// Every warning, each file's about the file and then at each entry, in the outline's
+    /// order.
+    pub fn every_warning(&self) -> Vec<&Diagnostic> {
         self.files
             .iter()
-            .map(|file| {
-                file.warnings.len() + file.entries.iter().map(|e| e.warnings.len()).sum::<usize>()
+            .flat_map(|file| {
+                let entries = file.entries.iter().flat_map(|entry| &entry.warnings);
+                file.warnings.iter().chain(entries)
             })
-            .sum()
+            .collect()
     }
 }
 
@@ -310,6 +319,7 @@ mod tests {
             file: file.to_owned(),
             key: key.map(str::to_owned),
             message: message.to_owned(),
+            suggestion: None,
         }
     }
 
@@ -429,6 +439,30 @@ mod tests {
             None
         );
         assert_eq!(vex.at(&diagnostic(CHARACTERS_FILE, None, "x")), None);
+    }
+
+    #[test]
+    fn every_problem_and_warning_is_listed_outline_first_then_file_by_file() {
+        let mut outline = outline(&dir_with("listed", &[]));
+        let mut file = read_file(CHARACTERS_FILE, Some("[vex]\nname = \"Vex\"\n"));
+        file.place(
+            diagnostic(CHARACTERS_FILE, Some("vex.name"), "at vex"),
+            true,
+        );
+        file.place(diagnostic(CHARACTERS_FILE, None, "the file"), true);
+        file.place(diagnostic(CHARACTERS_FILE, Some("vex"), "careful"), false);
+        file.place(diagnostic(CHARACTERS_FILE, None, "the whole"), false);
+        outline.files[2] = file;
+        outline.problems = vec![diagnostic("", None, "everywhere")];
+        let said = |found: Vec<&Diagnostic>| -> Vec<String> {
+            found.iter().map(|d| d.message.clone()).collect()
+        };
+        assert_eq!(
+            said(outline.every_problem()),
+            ["everywhere", "the file", "at vex"]
+        );
+        assert_eq!(said(outline.every_warning()), ["the whole", "careful"]);
+        assert_eq!((outline.problem_count(), outline.warning_count()), (3, 2));
     }
 
     #[test]

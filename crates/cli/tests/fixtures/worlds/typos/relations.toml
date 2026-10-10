@@ -1,0 +1,41 @@
+#:schema ../../../../../../schema/relations.schema.json
+# How Riverhold's factions regard each other, -100 to 100 (DESIGN.md §9.4, §13).
+#
+# Each [[relation]] is one entry:
+#   between = ["a", "b"]   sets both directions to the same value;
+#   from = "a", to = "b"   sets one direction, for a grudge that isn't returned.
+# Any direction left out is 0 (neutral), and each direction may be set only once.
+#
+# Two factions are in conflict when either regards the other at or below balance.toml's
+# relations.conflict_threshold (-50). A member of one can't join the other.
+
+[[relation]]
+between = ["city_watch", "lantern_guild"]
+value = -80.0       # enemies, so in conflict
+
+[[relation]]
+between = ["temple", "ashen_circle"]
+value = -90.0       # enemies
+
+[[relation]]
+between = ["city_watch", "temple"]
+value = 60.0        # allied
+
+[[relation]]
+between = ["city_watch", "ashen_circle"]
+value = -40.0       # rivals, but not in conflict
+
+[[relation]]
+between = ["lantern_guild", "free_company"]
+value = 20.0        # friendly
+
+# The Watch distrusts mercenaries more than they distrust it.
+[[relation]]
+from = "city_watch"
+to = "free_company"
+value = -30.0
+
+[[relation]]
+from = "free_company"
+to = "city_watch"
+value = -10.0
