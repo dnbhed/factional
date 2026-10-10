@@ -1,0 +1,12 @@
+# The [inertia] header is never closed, so nothing in this file can be read. Hale's profile,
+# and the Guild's secret members under a knowledge model that couldn't be read, aren't
+# judged by the defaults standing in (T6).
+
+[inertia
+default_profile = "steady"
+
+[inertia.profiles.hardening]
+good.toward_good = [[-100.0, 0.5], [0.0, 1.0], [100.0, 0.3]]
+
+[knowledge]
+model = "witnessed"

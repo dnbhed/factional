@@ -1,0 +1,4 @@
+[captain_hale]
+name = "Captain Hale"
+alignment = { law = 75.0, good = 30.0 }
+inertia = "hardening"

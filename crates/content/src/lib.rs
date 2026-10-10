@@ -7,6 +7,7 @@ mod quests;
 mod reader;
 mod save;
 mod schema;
+mod unread;
 
 pub use edit::{
     Addition, EditError, Field, Step, ValueKind, ValuePath, add, additions, entry_fields,
@@ -38,6 +39,7 @@ use factional_reputation::{
 use reader::{Report, Section};
 use serde::Deserialize;
 use toml::Value;
+use unread::{Ids, Unread};
 
 /// One problem in the content, such as
 /// `characters.toml: vex.alignment.law: 120.00 is outside -100.00..100.00`.
@@ -221,12 +223,21 @@ struct Read {
 
 fn read_all(sources: Sources<'_>) -> Read {
     let mut reports = Vec::new();
-    let balance = read_file(BALANCE_FILE, sources.balance, &mut reports, read_balance);
+    let mut unread = Unread::default();
+    let balance = read_file(
+        BALANCE_FILE,
+        sources.balance,
+        &mut reports,
+        |text, report| read_balance(text, report, &mut unread),
+    );
     let factions = read_file(
         FACTIONS_FILE,
         sources.factions,
         &mut reports,
-        |text, report| read_tables(text, report, "faction", FactionId::new, read_faction),
+        |text, report| {
+            let ids = &mut unread.factions;
+            read_tables_noting(text, report, "faction", FactionId::new, read_faction, ids)
+        },
     );
     let relations = read_file(
         RELATIONS_FILE,
@@ -238,7 +249,17 @@ fn read_all(sources: Sources<'_>) -> Read {
         CHARACTERS_FILE,
         sources.characters,
         &mut reports,
-        |text, report| read_tables(text, report, "character", CharacterId::new, read_character),
+        |text, report| {
+            let ids = &mut unread.characters;
+            read_tables_noting(
+                text,
+                report,
+                "character",
+                CharacterId::new,
+                read_character,
+                ids,
+            )
+        },
     );
     let actions = read_file(
         ACTIONS_FILE,
@@ -299,7 +320,9 @@ fn read_all(sources: Sources<'_>) -> Read {
         .flat_map(|report| report.diagnostics)
         .collect();
     let read_cleanly = diagnostics.is_empty();
-    diagnostics.extend(content.problems().iter().map(|problem| {
+    let problems = content.problems();
+    let problems = problems.iter().filter(|problem| !unread.explains(problem));
+    diagnostics.extend(problems.map(|problem| {
         let (file, key) = match problem {
             ContentProblem::SharedId(id) => (FACTIONS_FILE, id.to_string()),
             ContentProblem::AffinityOutOfRange(_) => (BALANCE_FILE, "disposition.affinity".into()),
@@ -554,9 +577,13 @@ fn read_file<T>(
 }
 
 /// `balance.toml`: world-wide rules and defaults; anything left out keeps its default.
-fn read_balance(text: &str, report: &mut Report) -> Balance {
+/// Profiles and the knowledge model that are there but couldn't be read are noted in
+/// `unread` (P-79).
+fn read_balance(text: &str, report: &mut Report, unread: &mut Unread) -> Balance {
     let mut balance = Balance::default();
     let Some(table) = report.parse(text) else {
+        unread.profiles = Ids::All;
+        unread.knowledge_model = true;
         return balance;
     };
     let mut file = Section::new(&table, String::new());
@@ -631,9 +658,14 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         }
         standing.finish(report);
     }
-    if let Some(mut inertia) = file.optional_table("inertia", "[inertia]", report) {
-        balance.inertia = read_inertia(&mut inertia, report);
-        inertia.finish(report);
+    let inertia_there = file.has_any(&["inertia"]);
+    match file.optional_table("inertia", "[inertia]", report) {
+        Some(mut inertia) => {
+            balance.inertia = read_inertia(&mut inertia, report, &mut unread.profiles);
+            inertia.finish(report);
+        }
+        None if inertia_there => unread.profiles = Ids::All,
+        None => {}
     }
     if let Some(mut membership) = file.optional_table("membership", "[membership]", report) {
         if let Some(policy) = read_drift(&mut membership, "default_drift", report) {
@@ -654,10 +686,19 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
         }
         relations.finish(report);
     }
-    if let Some(mut knowledge) = file.optional_table("knowledge", "[knowledge]", report) {
+    let knowledge_there = file.has_any(&["knowledge"]);
+    let knowledge = file.optional_table("knowledge", "[knowledge]", report);
+    // A model there but not read leaves the default in its place, which nothing should be
+    // judged by.
+    unread.knowledge_model = knowledge_there;
+    if let Some(mut knowledge) = knowledge {
+        unread.knowledge_model = knowledge.has_any(&["model"]);
         if let Some(key) = knowledge.optional_text("model", report) {
             match KnowledgeModel::from_key(&key) {
-                Some(model) => balance.knowledge = model,
+                Some(model) => {
+                    balance.knowledge = model;
+                    unread.knowledge_model = false;
+                }
                 None => {
                     let keys = KnowledgeModel::ALL.map(KnowledgeModel::key);
                     let message = match suggest(&key, keys) {
@@ -703,7 +744,12 @@ fn read_balance(text: &str, report: &mut Report) -> Balance {
 /// curves, such as `good.toward_good` (DESIGN.md §5.3). `steady` is always there. Whether
 /// the profiles named exist, and the curves stay at or above 0, are the world's checks
 /// (P-32).
-fn read_inertia(section: &mut Section<'_>, report: &mut Report) -> Inertia {
+/// Profiles there that couldn't be read are noted in `unread` (P-79).
+fn read_inertia(
+    section: &mut Section<'_>,
+    report: &mut Report,
+    unread: &mut Ids<ProfileId>,
+) -> Inertia {
     let mut inertia = Inertia::default();
     if let Some(text) = section.optional_text("default_profile", report) {
         match ProfileId::new(&text) {
@@ -712,7 +758,11 @@ fn read_inertia(section: &mut Section<'_>, report: &mut Report) -> Inertia {
         }
     }
     let example = format!("[{}]", section.path_to("profiles.steady"));
+    let profiles_there = section.has_any(&["profiles"]);
     let Some(mut profiles) = section.optional_table("profiles", &example, report) else {
+        if profiles_there {
+            *unread = Ids::All;
+        }
         return inertia;
     };
     for key in profiles.keys() {
@@ -726,6 +776,7 @@ fn read_inertia(section: &mut Section<'_>, report: &mut Report) -> Inertia {
         };
         let example = format!("[{}]", profiles.path_to(&key));
         let Some(mut fields) = profiles.table_any(&key, &example, report) else {
+            unread.add(id);
             continue;
         };
         let mut curves = BTreeMap::new();
@@ -807,8 +858,22 @@ fn read_tables<Id: Ord + Clone, T>(
     new_id: impl Fn(&str) -> Result<Id, InvalidId>,
     read: impl Fn(Id, &toml::Table, &mut Report) -> Option<T>,
 ) -> BTreeMap<Id, T> {
+    read_tables_noting(text, report, kind, new_id, read, &mut Ids::default())
+}
+
+/// `read_tables`, noting in `unread` each entry that's there but couldn't be read, or that
+/// any might be, when the file doesn't parse (P-79).
+fn read_tables_noting<Id: Ord + Clone, T>(
+    text: &str,
+    report: &mut Report,
+    kind: &str,
+    new_id: impl Fn(&str) -> Result<Id, InvalidId>,
+    read: impl Fn(Id, &toml::Table, &mut Report) -> Option<T>,
+    unread: &mut Ids<Id>,
+) -> BTreeMap<Id, T> {
     let mut entries = BTreeMap::new();
     let Some(table) = report.parse(text) else {
+        *unread = Ids::All;
         return entries;
     };
     for (key, value) in &table {
@@ -824,10 +889,14 @@ fn read_tables<Id: Ord + Clone, T>(
                 key,
                 format!("expected a table of {kind} fields, like [{key}]"),
             );
+            unread.add(id);
             continue;
         };
-        if let Some(entry) = read(id.clone(), fields, report) {
-            entries.insert(id, entry);
+        match read(id.clone(), fields, report) {
+            Some(entry) => {
+                entries.insert(id, entry);
+            }
+            None => unread.add(id),
         }
     }
     entries

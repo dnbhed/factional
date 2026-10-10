@@ -1,0 +1,19 @@
+# The Watch's member tolerance is below its tolerance, so the Watch can't be read. Hale's
+# membership and the relation name it all the same; only the Watch itself is reported (T6).
+
+[city_watch]
+name = "The City Watch"
+alignment = { law = 70.0, good = 20.0 }
+tolerance = 140.0
+member_tolerance = 50.0
+
+[[city_watch.ranks]]
+id = "recruit"
+
+[lantern_guild]
+name = "The Lantern Guild"
+alignment = { law = -60.0, good = -10.0 }
+tolerance = 40.0
+
+[[lantern_guild.ranks]]
+id = "cutpurse"
