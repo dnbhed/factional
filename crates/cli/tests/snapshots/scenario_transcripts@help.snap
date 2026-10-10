@@ -15,6 +15,7 @@ validate <dir>                                                                  
 quests <dir> [<quest>]                                                                          the quests and questlines in <dir>, read and checked without loading them, or one quest's stages and choices
 outline <dir>                                                                                   each content file in <dir>, its entries, and every problem and warning at the entry it's about
 references <dir> <id>                                                                           every place in <dir>'s content that names a faction, character, quest, outcome or inertia profile
+form <dir> <file> <entry>                                                                       an entry's values grouped by what they mean, with their comments, the defaults of what's left out, and what each may be
 graph <dir> <questline|quest>                                                                   a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about
 quests                                                                                          list the loaded world's quests and questlines
 can-start <character> <quest>                                                                   whether the character can start the quest now, and every reason not

@@ -5,15 +5,16 @@ use std::path::{Path, PathBuf};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use factional_editor::Editor;
 use factional_editor::egui::accesskit::Toggled;
 use factional_editor::egui::{Color32, Shape, vec2};
+use factional_editor::{Editor, WINDOW};
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
 fn harness(dir: PathBuf) -> Harness<'static, Editor> {
-    let mut harness =
-        Harness::new_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
+    let mut harness = Harness::builder()
+        .with_size(WINDOW)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
     harness.set_size(factional_editor::egui::vec2(1440.0, 900.0));
     harness.run();
     harness
@@ -98,7 +99,7 @@ fn choosing_a_quest_shows_its_stages_and_edit_in_content_selects_it() {
     harness.get_by_label("2. oath — needs standing 10.00 with city_watch");
     harness.get_by_label("Edit in Content").click();
     harness.run();
-    harness.get_by_label("quests.toml: watch_oath");
+    harness.get_by_label("quests.toml › watch_oath");
 }
 
 #[test]

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
-use factional_editor::Editor;
 use factional_editor::egui::accesskit::Toggled;
+use factional_editor::{Editor, WINDOW};
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
@@ -15,8 +15,9 @@ fn broken() -> PathBuf {
 }
 
 fn harness(dir: PathBuf) -> Harness<'static, Editor> {
-    let mut harness =
-        Harness::new_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
+    let mut harness = Harness::builder()
+        .with_size(WINDOW)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(dir));
     harness.run();
     harness
 }
@@ -41,6 +42,7 @@ fn selecting_an_entry_shows_its_toml_and_its_problems() {
     harness.get_by_label("hale — 2 problems").click();
     harness.run();
     harness.get_by_label("error: missing 'alignment'");
+    assert!(harness.query_by_label("Nothing at hale").is_none());
     harness.get_by_label("error: unknown key 'alignmnet' (did you mean 'alignment'?)");
     harness.get_by_label_contains("name = \"Captain Hale\"");
     let toggled = |label: &str| harness.get_by_label(label).accesskit_node().toggled();

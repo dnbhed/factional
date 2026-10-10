@@ -3,6 +3,8 @@
 //! text, so it works while the world doesn't load. The loader still checks every reference;
 //! a test holds the two to the same places.
 
+use std::collections::BTreeSet;
+
 use serde_json::Value as Json;
 use toml_edit::{DocumentMut, Item, Table, Value};
 
@@ -70,14 +72,52 @@ pub fn referenced_by(texts: &ContentTexts, file: &str, id: &str) -> Vec<Referenc
         .collect()
 }
 
+/// The ids that exist for what `names` names, in id order: the entries of the file defining
+/// them, or the inertia profiles, steady always among them.
+pub(crate) fn ids_named(texts: &ContentTexts, names: Names) -> Vec<String> {
+    let files: &[&str] = match names {
+        Names::Faction => &["factions.toml"],
+        Names::Character => &["characters.toml"],
+        Names::Party => &["factions.toml", "characters.toml"],
+        Names::Quest => &["quests.toml"],
+        Names::Outcome => &["outcomes.toml"],
+        Names::Profile => &[],
+    };
+    let mut ids: BTreeSet<String> = files
+        .iter()
+        .filter_map(|file| document(texts, file))
+        .flat_map(|document| {
+            let ids: Vec<String> = document.iter().map(|(id, _)| id.to_owned()).collect();
+            ids
+        })
+        .collect();
+    if names == Names::Profile {
+        ids.insert("steady".to_owned());
+        ids.extend(profiles(texts));
+    }
+    ids.into_iter().collect()
+}
+
+/// The inertia profiles `balance.toml` writes.
+fn profiles(texts: &ContentTexts) -> Vec<String> {
+    document(texts, "balance.toml")
+        .and_then(|balance| {
+            let profiles = balance.get("inertia")?.get("profiles")?.as_table_like()?;
+            Some(profiles.iter().map(|(id, _)| id.to_owned()).collect())
+        })
+        .unwrap_or_default()
+}
+
+/// `file`'s text, read as TOML, if it's there and is.
+fn document(texts: &ContentTexts, file: &str) -> Option<DocumentMut> {
+    let place = CONTENT_FILES.iter().position(|name| *name == file)?;
+    texts[place].as_deref()?.parse::<DocumentMut>().ok()
+}
+
 /// The file that defines `id`: as an entry of `factions.toml`, `characters.toml`,
 /// `quests.toml` or `outcomes.toml`, or as an inertia profile in `balance.toml` (steady is
 /// always there).
 pub fn defined_in(texts: &ContentTexts, id: &str) -> Option<&'static str> {
-    let document = |file: &str| {
-        let place = CONTENT_FILES.iter().position(|name| *name == file)?;
-        texts[place].as_deref()?.parse::<DocumentMut>().ok()
-    };
     let entries = [
         "factions.toml",
         "characters.toml",
@@ -86,24 +126,17 @@ pub fn defined_in(texts: &ContentTexts, id: &str) -> Option<&'static str> {
     ];
     let entry = entries
         .into_iter()
-        .find(|file| document(file).is_some_and(|document| document.contains_key(id)));
+        .find(|file| document(texts, file).is_some_and(|document| document.contains_key(id)));
     if entry.is_some() {
         return entry;
     }
-    let profile = id == "steady"
-        || document("balance.toml").is_some_and(|balance| {
-            balance
-                .get("inertia")
-                .and_then(|inertia| inertia.get("profiles"))
-                .and_then(Item::as_table_like)
-                .is_some_and(|profiles| profiles.contains_key(id))
-        });
+    let profile = id == "steady" || profiles(texts).iter().any(|profile| profile == id);
     profile.then_some("balance.toml")
 }
 
 impl Names {
     /// What `x-names` or `x-names-keys` says, as the schema writes it.
-    fn from_key(key: &str) -> Option<Names> {
+    pub(crate) fn from_key(key: &str) -> Option<Names> {
         match key {
             "faction" => Some(Names::Faction),
             "character" => Some(Names::Character),
@@ -146,7 +179,7 @@ impl Walk<'_> {
         let node = node.map(|node| form(self.root, node, "object"));
         for (key, item) in table.iter() {
             let step = Step::Key(key.to_owned());
-            let at = within(path, step.clone());
+            let at = path.then(step.clone());
             self.note(node.and_then(|node| node.get("x-names-keys")), &at, key);
             self.item(item, node.and_then(|node| child(node, &step)), &at);
         }
@@ -160,7 +193,7 @@ impl Walk<'_> {
                 for (index, table) in tables.iter().enumerate() {
                     let step = Step::Index(index);
                     let item = node.and_then(|node| child(node, &step));
-                    self.table(table, item, &within(path, step));
+                    self.table(table, item, &path.then(step));
                 }
             }
             Item::Value(value) => self.value(value, node, path),
@@ -174,7 +207,7 @@ impl Walk<'_> {
                 let node = node.map(|node| form(self.root, node, "object"));
                 for (key, value) in table.iter() {
                     let step = Step::Key(key.to_owned());
-                    let at = within(path, step.clone());
+                    let at = path.then(step.clone());
                     self.note(node.and_then(|node| node.get("x-names-keys")), &at, key);
                     self.value(value, node.and_then(|node| child(node, &step)), &at);
                 }
@@ -184,7 +217,7 @@ impl Walk<'_> {
                 for (index, item) in items.iter().enumerate() {
                     let step = Step::Index(index);
                     let child = node.and_then(|node| child(node, &step));
-                    self.value(item, child, &within(path, step));
+                    self.value(item, child, &path.then(step));
                 }
             }
             Value::String(text) => {
@@ -198,11 +231,4 @@ impl Walk<'_> {
             _ => {}
         }
     }
-}
-
-/// `path`, one step further in.
-fn within(path: &ValuePath, step: Step) -> ValuePath {
-    let mut steps = path.0.clone();
-    steps.push(step);
-    ValuePath(steps)
 }

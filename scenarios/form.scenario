@@ -1,0 +1,17 @@
+# An entry's form (U6b): its values grouped by what they mean, with the comment written above
+# each, the defaults of what's left out, and what each may be, read without loading. The
+# editor's Content tab shows the same.
+
+# The Watch: its membership's defaults, its rungs, and its drift's choices.
+form content/sample factions.toml city_watch
+
+# Captain Hale chooses his faction from those that exist and his inertia from the profiles;
+# his membership is open, by default.
+form content/sample characters.toml captain_hale
+
+# A relation has no name; the comment after its value on its line is shown.
+form content/sample relations.toml relation[0]
+
+# A misspelt entry or file is offered the nearest.
+assert form content/sample factions.toml city_wach == error: no entry 'city_wach' in factions.toml (did you mean 'city_watch'?)
+assert form content/sample faction.toml city_watch == error: unknown file 'faction.toml' (did you mean 'factions.toml'?)

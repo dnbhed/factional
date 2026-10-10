@@ -100,7 +100,7 @@ impl ValuePath {
     }
 
     /// This path with `step` after it.
-    fn then(&self, step: Step) -> ValuePath {
+    pub(crate) fn then(&self, step: Step) -> ValuePath {
         let mut steps = self.0.clone();
         steps.push(step);
         ValuePath(steps)
@@ -282,10 +282,7 @@ pub struct KeyInfo {
 /// What the schema of `file` says of the key at `path`; `None` if it doesn't know it.
 pub fn key_info(file: &str, path: &ValuePath) -> Option<KeyInfo> {
     let root = schema_of(file)?;
-    let mut node = &root;
-    for step in &path.0 {
-        node = child(form(&root, node, ""), step)?;
-    }
+    let node = schema_at(&root, path)?;
     let outer = resolve(&root, node);
     let inner = form(&root, node, "");
     let said = |key: &str| outer.get(key).or_else(|| inner.get(key));
@@ -305,6 +302,16 @@ pub fn key_info(file: &str, path: &ValuePath) -> Option<KeyInfo> {
         description,
         default,
     })
+}
+
+/// The schema for what's at `path`, as the schema `root` names it, before any `$ref` is
+/// followed; `None` if it doesn't know it.
+pub(crate) fn schema_at<'s>(root: &'s Json, path: &ValuePath) -> Option<&'s Json> {
+    let mut node = root;
+    for step in &path.0 {
+        node = child(form(root, node, ""), step)?;
+    }
+    Some(node)
 }
 
 /// `file`'s schema, for a content file such as `characters.toml`.
@@ -492,7 +499,7 @@ fn alone_as_text(key: &str, item: Item) -> String {
 }
 
 /// The text before something, such as the comments above a table's header.
-fn prefix_of(decor: &toml_edit::Decor) -> &str {
+pub(crate) fn prefix_of(decor: &toml_edit::Decor) -> &str {
     decor
         .prefix()
         .and_then(|prefix| prefix.as_str())
@@ -506,7 +513,7 @@ fn is_blank(line: &str) -> bool {
 
 /// The text before something, split after its last blank line: what's set apart from it,
 /// and what's directly above it and belongs to it.
-fn split(prefix: &str) -> (&str, &str) {
+pub(crate) fn split(prefix: &str) -> (&str, &str) {
     let mut end = 0;
     let mut at = 0;
     for line in prefix.split_inclusive('\n') {

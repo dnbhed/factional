@@ -19,20 +19,28 @@
       "additionalProperties": false,
       "properties": {
         "alignment": {
-          "$ref": "#/$defs/delta"
+          "$ref": "#/$defs/delta",
+          "x-group": "Alignment"
         },
         "relations": {
           "description": "Shifts in how factions regard each other, applied after the standing changes, each direction stopping at -100 and 100. A direction is shifted at most once.",
           "items": {
             "$ref": "#/$defs/relation_shift"
           },
-          "type": "array"
+          "type": "array",
+          "x-group": "Relations"
         },
         "standing": {
-          "$ref": "#/$defs/standing"
+          "$ref": "#/$defs/standing",
+          "x-group": "Standing"
         }
       },
-      "type": "object"
+      "type": "object",
+      "x-groups": [
+        "Alignment",
+        "Standing",
+        "Relations"
+      ]
     },
     "relation_shift": {
       "additionalProperties": false,

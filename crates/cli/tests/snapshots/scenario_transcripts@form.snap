@@ -1,0 +1,63 @@
+---
+source: crates/cli/tests/scenarios.rs
+assertion_line: 24
+expression: transcript
+input_file: scenarios/form.scenario
+---
+> form content/sample factions.toml city_watch
+factions.toml › city_watch: The City Watch
+Identity
+  name = The City Watch
+Where it stands
+  alignment.law = 70.0
+  alignment.good = 20.0
+  # Cares about order far more than kindness.
+  weights.law = 1.0
+  weights.good = 0.25
+Membership
+  tolerance = 40.0
+  member_tolerance = 50.0
+  expel_standing_change: not set, -20.00
+  leave_standing_change: not set, 0.00
+  secret_members: not set, false (false or true)
+Drift
+  # The Watch gives a straying officer a hundred ticks to mend their ways.
+  drift.policy = probation (ignore, flag, demote, expel or probation)
+  drift.grace_ticks = 100
+  drift.then = expel (demote or expel)
+Ranks
+  ranks[0].id = recruit
+  ranks[1].id = sergeant
+  ranks[1].requires.standing = 30.0
+  ranks[2].id = captain
+  ranks[2].requires.standing = 70.0
+  # Captains are held to a stricter standard than the faction's member tolerance.
+  ranks[2].tolerance = 25.0
+> form content/sample characters.toml captain_hale
+characters.toml › captain_hale: Captain Hale
+Identity
+  name = Captain Hale
+Where they stand
+  alignment.law = 75.0
+  alignment.good = 30.0
+  # Like the Watch he serves, Hale judges people by their respect for the law.
+  weights.law = 1.0
+  weights.good = 0.25
+  # Hale's convictions have hardened over the years.
+  inertia = hardening (hardening or steady)
+Memberships
+  memberships[0].faction = city_watch (ashen_circle, city_watch, free_company, lantern_guild or temple)
+  memberships[0].rank = captain
+  memberships[0].secret: not set, false (false or true)
+Standing
+  standing.factions.city_watch = 75.0
+> form content/sample relations.toml relation[0]
+relations.toml › relation[0]
+Factions
+  between[0] = city_watch (ashen_circle, city_watch, free_company, lantern_guild or temple)
+  between[1] = lantern_guild (ashen_circle, city_watch, free_company, lantern_guild or temple)
+Regard
+  # enemies, so in conflict
+  value = -80.0
+> assert form content/sample factions.toml city_wach == error: no entry 'city_wach' in factions.toml (did you mean 'city_watch'?)
+> assert form content/sample faction.toml city_watch == error: unknown file 'faction.toml' (did you mean 'factions.toml'?)

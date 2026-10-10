@@ -27,7 +27,8 @@
       "additionalProperties": false,
       "properties": {
         "alignment": {
-          "$ref": "#/$defs/alignment"
+          "$ref": "#/$defs/alignment",
+          "x-group": "Where they stand"
         },
         "contacts": {
           "description": "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
@@ -37,12 +38,14 @@
             "type": "string",
             "x-names": "character"
           },
-          "type": "array"
+          "type": "array",
+          "x-group": "Contacts"
         },
         "inertia": {
           "description": "Their inertia profile, from balance.toml; left out, the default.",
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string",
+          "x-group": "Where they stand",
           "x-names": "profile"
         },
         "memberships": {
@@ -72,24 +75,35 @@
             ],
             "type": "object"
           },
-          "type": "array"
+          "type": "array",
+          "x-group": "Memberships"
         },
         "name": {
           "description": "The character's name, as shown.",
-          "type": "string"
+          "type": "string",
+          "x-group": "Identity"
         },
         "standing": {
-          "$ref": "#/$defs/standing"
+          "$ref": "#/$defs/standing",
+          "x-group": "Standing"
         },
         "weights": {
-          "$ref": "#/$defs/weights"
+          "$ref": "#/$defs/weights",
+          "x-group": "Where they stand"
         }
       },
       "required": [
         "name",
         "alignment"
       ],
-      "type": "object"
+      "type": "object",
+      "x-groups": [
+        "Identity",
+        "Where they stand",
+        "Memberships",
+        "Standing",
+        "Contacts"
+      ]
     },
     "standing": {
       "additionalProperties": false,

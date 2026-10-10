@@ -84,15 +84,18 @@
           "description": "Whose quest it is: a faction or a character, by id; left out, the world's own.",
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string",
+          "x-group": "Identity",
           "x-names": "party"
         },
         "name": {
           "description": "The quest's name, as shown.",
-          "type": "string"
+          "type": "string",
+          "x-group": "Identity"
         },
         "requires": {
           "$ref": "#/$defs/requires",
-          "description": "What must hold to start it."
+          "description": "What must hold to start it.",
+          "x-group": "Requirements"
         },
         "stages": {
           "description": "The stages, in order.",
@@ -100,14 +103,20 @@
             "$ref": "#/$defs/stage"
           },
           "minItems": 1,
-          "type": "array"
+          "type": "array",
+          "x-group": "Stages"
         }
       },
       "required": [
         "name",
         "stages"
       ],
-      "type": "object"
+      "type": "object",
+      "x-groups": [
+        "Identity",
+        "Requirements",
+        "Stages"
+      ]
     },
     "relation_shift": {
       "additionalProperties": false,

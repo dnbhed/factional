@@ -9,9 +9,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use factional_content::{
-    Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, Field, FileState, Outline,
-    OutlineEntry, QuestGraph, ValuePath, additions, entry_fields, entry_places, file_places,
-    load_texts, outline, outline_texts, read_texts, set_value,
+    Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, FileState, FormRow, Outline,
+    OutlineEntry, QuestGraph, Reference, Step, ValuePath, additions, entry_form, entry_places,
+    file_places, load_texts, outline, outline_texts, read_texts, referenced_by, set_value,
 };
 use factional_core::Curve;
 use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
@@ -19,16 +19,41 @@ use factional_reputation::{CharacterId, World};
 
 pub use eframe::egui;
 
+/// The window's size when it opens, as the design canvas draws it (1440 by 900), so the
+/// entries, the form and what's beside it all fit.
+pub const WINDOW: egui::Vec2 = egui::vec2(1440.0, 900.0);
+
+/// How the editor's window opens: at [`WINDOW`]'s size.
+pub fn options() -> eframe::NativeOptions {
+    eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size(WINDOW),
+        ..eframe::NativeOptions::default()
+    }
+}
+
+mod form_ui;
 mod layout;
+
+use form_ui::Acted;
 mod previews_ui;
 mod quests_ui;
 
 /// The file whose entries are quests, for "Edit in Content".
 const QUESTS_FILE: &str = "quests.toml";
 
+/// The files whose entries other content can name, so the Content tab says what refers to
+/// them.
+const NAMED_FILES: [&str; 4] = [
+    "factions.toml",
+    "characters.toml",
+    "quests.toml",
+    "outcomes.toml",
+];
+
 /// The editor's state: the directory; each file's text as edited and as saved; the changes
 /// that can be undone; the outline of the text as edited, with where each file's entries go;
-/// and the selected entry, with its values as fields and its places.
+/// and the selected entry, with its form's values as fields, its places, and what refers to
+/// it.
 pub struct Editor {
     dir: PathBuf,
     /// `None` if the directory couldn't be read, so there's nothing to edit.
@@ -39,6 +64,8 @@ pub struct Editor {
     selected: Option<(usize, usize)>,
     fields: Vec<FieldInput>,
     places: Vec<PlaceInput>,
+    /// What names the selected entry; `None` if nothing can, as for a relation.
+    referenced: Option<Vec<Reference>>,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -78,11 +105,14 @@ pub enum Shown {
     Quest(String),
 }
 
-/// One of the selected entry's values, as its field shows it.
+/// One of the selected entry's values, as its field shows it: written, or left out with its
+/// default (U6b).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldInput {
-    pub field: Field,
-    /// What's typed in the field.
+    /// The group it's in, such as a faction's *Membership*.
+    pub group: Option<String>,
+    pub row: FormRow,
+    /// What's typed in the field; empty for a value left out.
     pub input: String,
     /// Why the last value entered here was refused.
     pub refused: Option<String>,
@@ -113,6 +143,7 @@ impl Editor {
             selected: None,
             fields: Vec::new(),
             places: Vec::new(),
+            referenced: None,
             file_places: Vec::new(),
             note: None,
             workspace: Workspace::Content,
@@ -138,9 +169,15 @@ impl Editor {
         &self.outline
     }
 
-    /// The selected entry's values.
+    /// The selected entry's values, group by group: what's written, then the defaults of
+    /// what's left out.
     pub fn fields(&self) -> &[FieldInput] {
         &self.fields
+    }
+
+    /// What names the selected entry, as written; `None` if it's in a file nothing names.
+    pub fn referenced_by(&self) -> Option<&[Reference]> {
+        self.referenced.as_deref()
     }
 
     /// The selected entry's places: the entry, and every table and list in it.
@@ -340,8 +377,24 @@ impl Editor {
         let (Some((file, _)), Some(field)) = (self.selected, self.fields.get(field)) else {
             return Ok(());
         };
-        let path = field.field.path.clone();
+        let path = field.row.path.clone();
         self.change(file, |text| set_value(text, &path, input))
+    }
+
+    /// Writes the `field`th value of the selected entry, one left out, at its default: the
+    /// writer adds its key. Nothing changes for a value that's written.
+    pub fn write_default(&mut self, field: usize) -> Result<(), EditError> {
+        let Some((file, _)) = self.selected else {
+            return Ok(());
+        };
+        let Some(row) = self.fields.get(field).map(|field| &field.row) else {
+            return Ok(());
+        };
+        let mut place = row.path.clone();
+        let (None, Some(Step::Key(key))) = (&row.written, place.0.pop()) else {
+            return Ok(());
+        };
+        self.add(file, &place, Some(&key))
     }
 
     /// Adds `key` at `at` in the `file`th file, or with no key an item at the end of the list
@@ -357,15 +410,36 @@ impl Editor {
             added = Some(path);
             Ok(text)
         })?;
-        let entry = added.and_then(|added| {
-            self.outline.files[file].entries.iter().position(|entry| {
-                ValuePath::parse(&entry.key).is_some_and(|key| added.0.starts_with(&key.0))
-            })
-        });
-        if let Some(entry) = entry {
+        if let Some(entry) = added.and_then(|added| self.entry_containing(file, &added)) {
             self.select(file, entry);
         }
         Ok(())
+    }
+
+    /// The entry of the `file`th file that `path` is in.
+    fn entry_containing(&self, file: usize, path: &ValuePath) -> Option<usize> {
+        self.outline
+            .files
+            .get(file)?
+            .entries
+            .iter()
+            .position(|entry| {
+                ValuePath::parse(&entry.key).is_some_and(|key| path.0.starts_with(&key.0))
+            })
+    }
+
+    /// Selects the entry of `file` that the key `key` is in, such as a reference's place;
+    /// nothing if there's no such entry.
+    pub fn select_at(&mut self, file: &str, key: &str) {
+        let Some(path) = ValuePath::parse(key) else {
+            return;
+        };
+        let place = self.outline.files.iter().position(|f| f.name == file);
+        if let Some((file, entry)) =
+            place.and_then(|place| Some((place, self.entry_containing(place, &path)?)))
+        {
+            self.select(file, entry);
+        }
     }
 
     /// Removes what's at `path` in the selected entry's file, through the writer; removing
@@ -486,28 +560,36 @@ impl Editor {
         self.show_fields();
     }
 
-    /// The selected entry's values, as written, and its places.
+    /// The selected entry's form, its places, and what names it.
     fn show_fields(&mut self) {
-        let Some((file, entry)) = self.selected else {
+        let (Some((file, entry)), Some(texts)) = (self.selected, &self.texts) else {
             self.fields.clear();
             self.places.clear();
+            self.referenced = None;
             return;
         };
-        let text = self
-            .texts
-            .as_ref()
-            .and_then(|texts| texts[file].as_deref())
-            .unwrap_or_default();
+        let text = texts[file].as_deref().unwrap_or_default();
+        let name = self.outline.files[file].name;
         let key = &self.outline.files[file].entries[entry].key;
-        self.fields = entry_fields(text, key)
+        self.fields = entry_form(texts, name, key)
             .into_iter()
-            .map(|field| FieldInput {
-                input: field.value.clone(),
-                field,
-                refused: None,
+            .flat_map(|group| {
+                group.rows.into_iter().map(move |row| FieldInput {
+                    group: group.name.clone(),
+                    input: row
+                        .written
+                        .as_ref()
+                        .map(|field| field.value.clone())
+                        .unwrap_or_default(),
+                    row,
+                    refused: None,
+                })
             })
             .collect();
-        self.places = places_in(self.outline.files[file].name, text, entry_places(text, key));
+        self.places = places_in(name, text, entry_places(text, key));
+        self.referenced = NAMED_FILES
+            .contains(&name)
+            .then(|| referenced_by(texts, name, key));
     }
 
     /// Selects the `entry`th entry of the `file`th file; nothing if there's no such entry.
@@ -642,9 +724,14 @@ impl Editor {
                                 });
                                 for (index, entry) in file.entries.iter().enumerate() {
                                     let chosen = self.selected == Some((place, index));
-                                    if ui.selectable_label(chosen, entry.label()).clicked() {
-                                        clicked = Some((place, index));
-                                    }
+                                    ui.horizontal(|ui| {
+                                        if ui.selectable_label(chosen, entry.label()).clicked() {
+                                            clicked = Some((place, index));
+                                        }
+                                        if let Some(name) = &entry.name {
+                                            ui.weak(name);
+                                        }
+                                    });
                                 }
                                 new_entries(ui);
                             });
@@ -657,48 +744,38 @@ impl Editor {
         if let Some((file, entry)) = clicked {
             self.select(file, entry);
         }
-        let mut entered = None;
+        let mut going = None;
+        if self.selected.is_some() {
+            egui::Panel::right("entry")
+                .resizable(true)
+                .default_size(320.0)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("entry")
+                        .show(ui, |ui| going = self.inspector_ui(ui));
+                });
+        }
+        let mut acted = None;
         let mut removing = None;
         egui::CentralPanel::default().show(ui, |ui| {
-            let Some((place, _)) = self.selected else {
+            let (Some((place, _)), Some((file, entry))) = (self.selected, self.selected_entry())
+            else {
                 ui.label(
                     "Choose an entry on the left to see it and what the loader says about it.",
                 );
                 return;
             };
-            let Some((file, entry)) = self.selected_entry() else {
-                ui.label(
-                    "Choose an entry on the left to see it and what the loader says about it.",
-                );
-                return;
-            };
-            ui.heading(format!("{file}: {}", entry.key));
-            diagnostics(ui, &entry.problems, &entry.warnings, |d| entry.at(d));
+            ui.label(
+                egui::RichText::new(format!("{file} › {}", entry.key))
+                    .monospace()
+                    .weak(),
+            );
+            ui.heading(entry.name.as_deref().unwrap_or(&entry.key));
             ui.separator();
             let key = entry.key.clone();
             let prefix = format!("{key}.");
-            let toml = entry.toml.trim_end().to_owned();
             egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("fields").num_columns(4).show(ui, |ui| {
-                    for (place, field) in self.fields.iter_mut().enumerate() {
-                        let path = field.field.path.to_string();
-                        let name = path.strip_prefix(&prefix).unwrap_or(&path);
-                        let label = ui.label(name);
-                        let edited = ui
-                            .add(egui::TextEdit::singleline(&mut field.input).id_salt(&path))
-                            .labelled_by(label.id);
-                        if edited.lost_focus() && field.input != field.field.value {
-                            entered = Some((place, field.input.clone()));
-                        }
-                        if ui.button(format!("Remove {name}")).clicked() {
-                            removing = Some(field.field.path.clone());
-                        }
-                        if let Some(refused) = &field.refused {
-                            ui.label(refused);
-                        }
-                        ui.end_row();
-                    }
-                });
+                acted = form_ui::form_ui(ui, &mut self.fields);
                 ui.separator();
                 for at in &mut self.places {
                     let path = at.path.to_string();
@@ -717,18 +794,24 @@ impl Editor {
                         adding = Some((place, at, key));
                     }
                 }
-                ui.separator();
-                egui::CollapsingHeader::new("As written")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.monospace(toml);
-                    });
             });
         });
-        if let Some((place, input)) = entered
-            && let Err(refused) = self.set(place, &input)
-        {
-            self.fields[place].refused = Some(refused.to_string());
+        if let Some((file, key)) = going {
+            self.select_at(file, &key);
+        }
+        match acted {
+            Some(Acted::Enter(place, input)) => {
+                if let Err(refused) = self.set(place, &input) {
+                    self.fields[place].refused = Some(refused.to_string());
+                }
+            }
+            Some(Acted::Default(place)) => {
+                if let Err(refused) = self.write_default(place) {
+                    self.note = Some(format!("couldn't set: {refused}"));
+                }
+            }
+            Some(Acted::Remove(path)) => removing = Some(path),
+            None => {}
         }
         if let Some((file, at, key)) = adding
             && let Err(refused) = self.add(file, &at, key.as_deref())
@@ -844,7 +927,7 @@ mod tests {
         let tolerance = editor
             .fields()
             .iter()
-            .position(|f| f.field.path.to_string() == "city_watch.tolerance")
+            .position(|f| f.row.path.to_string() == "city_watch.tolerance")
             .expect("the Watch's tolerance");
         editor.set(tolerance, "140.0").expect("a number");
         editor
@@ -872,7 +955,7 @@ mod tests {
         let tolerance = editor
             .fields()
             .iter()
-            .position(|f| f.field.path.to_string() == "city_watch.tolerance")
+            .position(|f| f.row.path.to_string() == "city_watch.tolerance")
             .expect("the Watch's tolerance");
         editor.set(tolerance, "45.0").expect("a number");
         let watch = factional_reputation::FactionId::new("city_watch").expect("valid id");
@@ -1310,5 +1393,96 @@ mod tests {
         );
         let nowhere = Editor::open(std::env::temp_dir().join("factional_editor_nowhere"));
         assert!(nowhere.file_places(2).is_empty());
+    }
+
+    /// The sample with `key` of `file` selected.
+    fn sample_on(file: usize, key: &str) -> Editor {
+        let mut editor = sample();
+        let entry = editor.outline.files[file]
+            .entries
+            .iter()
+            .position(|entry| entry.key == key)
+            .expect("the entry");
+        editor.select(file, entry);
+        editor
+    }
+
+    fn field(editor: &Editor, key: &str) -> usize {
+        editor
+            .fields()
+            .iter()
+            .position(|field| field.row.key == key)
+            .expect("the field")
+    }
+
+    #[test]
+    fn the_window_opens_at_the_canvas_size() {
+        assert_eq!(options().viewport.inner_size, Some(WINDOW));
+    }
+
+    #[test]
+    fn a_default_is_written_in_only_where_a_value_is_left_out() {
+        let mut editor = sample_on(1, "city_watch");
+        let expel = field(&editor, "expel_standing_change");
+        assert_eq!(editor.fields()[expel].group.as_deref(), Some("Membership"));
+        assert_eq!(editor.fields()[expel].input, "");
+        assert_eq!(editor.write_default(expel), Ok(()));
+        let expel = field(&editor, "expel_standing_change");
+        assert_eq!(editor.fields()[expel].input, "-20.0");
+        assert!(editor.fields()[expel].row.written.is_some());
+        // A value written, or a field that isn't there, is left as it is.
+        let before = editor.texts.clone();
+        assert_eq!(editor.write_default(expel), Ok(()));
+        assert_eq!(editor.write_default(999), Ok(()));
+        assert_eq!(editor.texts, before);
+        let mut nothing = sample();
+        assert_eq!(nothing.write_default(0), Ok(()));
+        assert!(!nothing.has_changes());
+    }
+
+    #[test]
+    fn a_key_selects_the_entry_it_is_in() {
+        let mut editor = sample_on(1, "city_watch");
+        editor.select_at("characters.toml", "captain_hale.memberships[0].faction");
+        assert_eq!(
+            editor
+                .selected_entry()
+                .map(|(file, entry)| (file, entry.key.as_str())),
+            Some(("characters.toml", "captain_hale"))
+        );
+        editor.select_at("relations.toml", "relation[2].between[0]");
+        assert_eq!(
+            editor.selected_entry().map(|(_, entry)| entry.key.as_str()),
+            Some("relation[2]")
+        );
+        // Nothing changes for a file, an entry or a key that isn't there.
+        for (file, key) in [
+            ("nowhere.toml", "city_watch"),
+            ("factions.toml", "nobody.name"),
+            ("factions.toml", "["),
+        ] {
+            editor.select_at(file, key);
+            assert_eq!(
+                editor.selected_entry().map(|(_, entry)| entry.key.as_str()),
+                Some("relation[2]")
+            );
+        }
+    }
+
+    #[test]
+    fn what_names_an_entry_is_listed_only_where_it_can_be_named() {
+        let watch = sample_on(1, "city_watch");
+        let named = watch.referenced_by().expect("factions can be named");
+        assert!(
+            named
+                .iter()
+                .any(|r| r.key == "captain_hale.memberships[0].faction")
+        );
+        assert_eq!(
+            sample_on(2, "player").referenced_by().map(<[_]>::len),
+            Some(0)
+        );
+        assert_eq!(sample_on(4, "relation[0]").referenced_by(), None);
+        assert_eq!(sample().referenced_by(), None);
     }
 }

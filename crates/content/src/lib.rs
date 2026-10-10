@@ -3,6 +3,7 @@
 
 mod describe;
 mod edit;
+mod form;
 mod graph;
 mod outline;
 mod quests;
@@ -20,6 +21,7 @@ pub use edit::{
     Addition, EditError, Field, KeyInfo, Step, ValueKind, ValuePath, add, additions, entry_fields,
     entry_places, file_places, key_info, remove, set_value,
 };
+pub use form::{FormGroup, FormRow, entry_form};
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
     CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, load_texts,
