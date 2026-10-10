@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U8 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → E1 → T5`
 
 ## Done
 
@@ -88,6 +88,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U6c — problems at their keys, with the loader's fixes, to board 3: `Suggestion` in `factional-core`, offered by every engine error and content reader that says "did you mean" and carried on each `Diagnostic`; `fix_for` finds the change in the text (a misspelt key renamed, a misspelt word or part of a quest path set), `apply_fix` makes it through the writer, which gains `rename_key`; the outline lists `every_problem` and `every_warning`; the Content tab's problems panel, each with its key as a link and "Use 'right'", each problem also under its field, and the entries narrowed to those with problems; `fixes <dir>`, `scenarios/fixes.scenario`, fixture `typos`; board 6's look split off as U6e (P-85); done 2026-10-10 (#57)
 - U6d — adding and removing, to board 2: `KeyInfo::kind` says what a key is in words (text, true or false, a number or whole number with its range, one of an enumeration, the id of what it names, a table, a list); each place's additions under one "Add to <place>…" menu with each key's kind, default and description; × to remove; an entry that something names is removed only after "Remove anyway"; the last change and the problems it brought, with "Show it" and "Undo it"; `ValuePath::then` public; `keys <dir> <file> [<path>]`, `scenarios/keys.scenario`; lists of tables and new entries split off as U6f (P-86); done 2026-10-10 (#58)
 - U6f — lists of tables as tables, to boards 1 and 2: `layout::blocks` works out which of a group's fields make a table (a list whose items are flat tables, such as `ranks` or `memberships`; a list of values or with lists inside stays rows); each drawn as a row an item and a column a key, each cell its field labelled with its key, its choices, problems or default, its comment under the row, and × and "Add to <item>…" for each item; board 2's separate new-entry panel not built (P-87); done 2026-10-10 (#59)
+- U6e — the visual language, to board 6 without its fonts: `theme::visuals()`, egui's dark visuals with the canvas's colours, set as the editor draws, with the editor's own (loads, locks, comment green, a problem's fill); comments in comment green; the summary as a pill; a value changed since the last save marked amber beside its key and around its field, with its file "edited", until Undo or Save; a refused value or one with a problem bordered red; a quest node with a problem filled red; a table row's "Add to" shown as "+…"; IBM Plex split off as U6g (P-88); done 2026-10-10 (#60)
 
 ---
 
@@ -113,9 +114,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U6e · The visual language — P3 · Next
+### U6g · IBM Plex in the editor — P3 · Next (needs the user's agreement)
 
-Board 6: egui's dark visuals tuned to the canvas's colours, IBM Plex Sans and Mono loaded through `FontDefinitions` (OFL, so they can be brought into the repository), comment green, a field's states (set, default, edited, refused, a problem), the summary as a pill, and the graph's nodes and edges as drawn.
+Board 6's faces: IBM Plex Sans for prose and Plex Mono for keys, ids and values, loaded through egui's `FontDefinitions` from files in the repository (both are OFL). Needs the user's agreement to bring the font files in.
 
 ### U8 · Quest graphs in egui-snarl? — P3 · Deferred (X-6)
 

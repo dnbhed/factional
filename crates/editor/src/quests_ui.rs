@@ -9,10 +9,8 @@ use factional_quests::{Next, Quest};
 
 use crate::egui::{self, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2};
 use crate::layout::{GAP_Y, line_layout, quest_layout};
+use crate::theme;
 use crate::{Editor, Shown};
-
-/// What a locking edge is drawn in: the design's orange for locks.
-const LOCKS: Color32 = Color32::from_rgb(0xf0, 0xa3, 0x5e);
 
 impl Editor {
     /// The Quests tab: what can be shown on the left, the chosen quest on the right, and the
@@ -140,8 +138,9 @@ fn line_ui(
     let mut canvas = ui.new_child(egui::UiBuilder::new().max_rect(area));
     let canvas = &mut canvas;
 
-    for (_, rect, outside) in &layout.nodes {
-        node_box(canvas, *rect, *outside);
+    for (id, rect, outside) in &layout.nodes {
+        let marked = mark(&graph.in_quest(id));
+        node_box(canvas, *rect, *outside, marked);
     }
     for (edge, ends) in view.edges.iter().zip(&layout.arrows) {
         if let Some((start, tip)) = ends {
@@ -217,7 +216,7 @@ fn quest_ui(ui: &mut egui::Ui, graph: &QuestGraph, quest: &str) {
         for place in 0..stage.choices.len() {
             notes.extend(graph.at_choice(quest, column, place));
         }
-        node_box(canvas, rect, false);
+        node_box(canvas, rect, false, mark(&notes));
         outline_node(canvas, rect, &notes);
         canvas.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink(8.0)), |ui| {
             let heading = format!("{}{}", stage.id, counts(&notes));
@@ -232,7 +231,7 @@ fn quest_ui(ui: &mut egui::Ui, graph: &QuestGraph, quest: &str) {
             }
         });
     }
-    node_box(canvas, layout.end, false);
+    node_box(canvas, layout.end, false, None);
     canvas.put(layout.end, egui::Label::new("the end"));
 
     ui.add_space(GAP_Y);
@@ -266,8 +265,17 @@ fn notes_ui(ui: &mut egui::Ui, notes: &[&Note], node: &str) {
     }
 }
 
-/// A node's box: filled, or for a quest outside the questline, only a dashed outline.
-fn node_box(ui: &egui::Ui, rect: Rect, outside: bool) {
+/// A node's fill: red behind a problem (board 6), else the widgets' own.
+fn fill_of(visuals: &egui::Visuals, marked: Option<Mark>) -> Color32 {
+    match marked {
+        Some(Mark::Problem) => theme::PROBLEM_FILL,
+        _ => visuals.widgets.inactive.weak_bg_fill,
+    }
+}
+
+/// A node's box: filled as `marked` says, or for a quest outside the questline, only a dashed
+/// outline.
+fn node_box(ui: &egui::Ui, rect: Rect, outside: bool, marked: Option<Mark>) {
     let visuals = ui.visuals();
     if outside {
         let corners = [
@@ -282,7 +290,7 @@ fn node_box(ui: &egui::Ui, rect: Rect, outside: bool) {
             .extend(Shape::dashed_line(&corners, stroke, 5.0, 4.0));
     } else {
         ui.painter()
-            .rect_filled(rect, 6.0, visuals.widgets.inactive.weak_bg_fill);
+            .rect_filled(rect, 6.0, fill_of(visuals, marked));
         ui.painter().rect_stroke(
             rect,
             6.0,
@@ -333,7 +341,7 @@ fn edge_colour(ui: &egui::Ui, edge: &Edge) -> Color32 {
 fn colour_of(visuals: &egui::Visuals, edge: &Edge) -> Color32 {
     match edge {
         Edge::Needs { .. } => visuals.hyperlink_color,
-        Edge::Locks { .. } => LOCKS,
+        Edge::Locks { .. } => theme::LOCKS,
     }
 }
 
@@ -428,8 +436,13 @@ mod tests {
             lock: Lock::parse("muster").expect("a lock"),
         };
         assert_eq!(colour_of(&visuals, &needs), visuals.hyperlink_color);
-        assert_eq!(colour_of(&visuals, &locks), LOCKS);
-        assert_ne!(LOCKS, visuals.hyperlink_color);
+        assert_eq!(colour_of(&visuals, &locks), theme::LOCKS);
+        // A node with a problem is filled red; one with a warning, or none, as widgets are.
+        assert_eq!(fill_of(&visuals, Some(Mark::Problem)), theme::PROBLEM_FILL);
+        let plain = visuals.widgets.inactive.weak_bg_fill;
+        assert_eq!(fill_of(&visuals, Some(Mark::Warning)), plain);
+        assert_eq!(fill_of(&visuals, None), plain);
+        assert_ne!(theme::LOCKS, visuals.hyperlink_color);
     }
 
     #[test]

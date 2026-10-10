@@ -9,7 +9,7 @@ use crate::egui::{self, RichText, WidgetInfo, WidgetType};
 use crate::layout::{Block, ListTable, blocks, groups};
 use crate::problems_ui::{Listed, fix_button};
 use crate::removing_ui::{adding_menu, remove_button};
-use crate::{Editor, FieldInput, PlaceInput, Said};
+use crate::{Editor, FieldInput, PlaceInput, Said, theme};
 
 /// What was done in the form.
 pub(crate) enum Acted {
@@ -137,7 +137,7 @@ fn table_ui(
                 }
                 if let Some(place) = places.iter_mut().find(|place| place.path == path) {
                     let mut added = None;
-                    adding_menu(ui, file, place, &name, &mut added);
+                    adding_menu(ui, file, place, &name, true, &mut added);
                     if let Some((at, key)) = added {
                         acted = Some(Acted::Add(at, key));
                     }
@@ -154,7 +154,11 @@ fn table_ui(
                     ui.horizontal_wrapped(|ui| {
                         ui.weak(column)
                             .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
-                        ui.label(RichText::new(format!("# {line}")).monospace().weak());
+                        ui.label(
+                            RichText::new(format!("# {line}"))
+                                .monospace()
+                                .color(theme::COMMENT),
+                        );
                     });
                 }
             }
@@ -184,18 +188,29 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Act
     let mut acted = None;
     for line in &field.row.comment {
         ui.label("");
-        ui.label(RichText::new(format!("# {line}")).monospace().weak());
+        ui.label(
+            RichText::new(format!("# {line}"))
+                .monospace()
+                .color(theme::COMMENT),
+        );
         ui.end_row();
     }
     let row = &field.row;
-    let label = match &row.written {
-        Some(_) => ui.label(&row.key),
-        None => ui.label(RichText::new(&row.key).weak()),
-    };
-    let label = match &row.description {
-        Some(description) => label.on_hover_text(description),
-        None => label,
-    };
+    let label = ui
+        .horizontal(|ui| {
+            let label = match &row.written {
+                Some(_) => ui.label(&row.key),
+                None => ui.label(RichText::new(&row.key).weak()),
+            };
+            if field.edited {
+                edited_mark(ui, &row.key);
+            }
+            match &row.description {
+                Some(description) => label.on_hover_text(description),
+                None => label,
+            }
+        })
+        .inner;
     ui.horizontal(|ui| {
         acted = value_ui(ui, place, field, Some(label.id), FIELD_WIDTH);
         let FieldInput { row, refused, .. } = field;
@@ -229,6 +244,7 @@ fn value_ui(
     width: f32,
 ) -> Option<Acted> {
     let mut acted = None;
+    let stroke = border_of(ui.visuals(), field);
     let FieldInput { row, input, .. } = field;
     let key = &row.key;
     let Some(written) = &row.written else {
@@ -249,11 +265,20 @@ fn value_ui(
         return acted;
     };
     ui.horizontal(|ui| {
-        let edited = ui.add(
-            egui::TextEdit::singleline(input)
-                .id_salt(row.path.to_string())
-                .desired_width(width),
-        );
+        let edited = ui
+            .scope(|ui| {
+                if let Some(stroke) = stroke {
+                    let widgets = &mut ui.visuals_mut().widgets;
+                    widgets.inactive.bg_stroke = stroke;
+                    widgets.hovered.bg_stroke = stroke;
+                }
+                ui.add(
+                    egui::TextEdit::singleline(&mut *input)
+                        .id_salt(row.path.to_string())
+                        .desired_width(width),
+                )
+            })
+            .inner;
         let edited = match label {
             Some(label) => edited.labelled_by(label),
             None => {
@@ -280,6 +305,28 @@ fn value_ui(
         }
     });
     acted
+}
+
+/// The amber mark of a value changed since the last save, "<key>, edited" for anyone who
+/// can't see it.
+fn edited_mark(ui: &mut egui::Ui, key: &str) {
+    let said = format!("{key}, edited");
+    let (rect, mark) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), 3.0, ui.visuals().warn_fg_color);
+    mark.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
+}
+
+/// A field's border (board 6): red if the writer refused what was entered or the loader
+/// has a problem at it, amber if it's changed since the last save, else the usual.
+fn border_of(visuals: &egui::Visuals, field: &FieldInput) -> Option<egui::Stroke> {
+    let problem = field.refused.is_some() || field.said.iter().any(|said| !said.warning);
+    let colour = match (problem, field.edited) {
+        (true, _) => visuals.error_fg_color,
+        (false, true) => visuals.warn_fg_color,
+        (false, false) => return None,
+    };
+    Some(egui::Stroke::new(1.0, colour))
 }
 
 /// A problem or warning at a field, in the loader's words, with its fix.
@@ -350,5 +397,45 @@ impl Editor {
         ui.strong("As written");
         ui.monospace(entry.toml.trim_end());
         going
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn a_fields_border_is_red_for_a_problem_amber_for_an_edit_else_the_usual() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../cli/tests/fixtures/worlds/typos");
+        let mut editor = Editor::open(dir);
+        editor.select_at("characters.toml", "vex");
+        let visuals = crate::theme::visuals();
+        let red = Some(egui::Stroke::new(1.0, visuals.error_fg_color));
+        let amber = Some(egui::Stroke::new(1.0, visuals.warn_fg_color));
+        let find = |key: &str| {
+            editor
+                .fields()
+                .iter()
+                .find(|field| field.row.key == key)
+                .cloned()
+                .expect("the field")
+        };
+        let mut faction = find("memberships[0].faction");
+        assert_eq!(border_of(&visuals, &faction), red);
+        faction.edited = true;
+        assert_eq!(border_of(&visuals, &faction), red);
+        let mut name = find("name");
+        assert_eq!(border_of(&visuals, &name), None);
+        name.edited = true;
+        assert_eq!(border_of(&visuals, &name), amber);
+        name.refused = Some("expected a number".to_owned());
+        assert_eq!(border_of(&visuals, &name), red);
+        // A warning alone doesn't make the border red.
+        let mut warned = find("name");
+        warned.said = faction.said.clone();
+        warned.said[0].warning = true;
+        assert_eq!(border_of(&visuals, &warned), None);
     }
 }
