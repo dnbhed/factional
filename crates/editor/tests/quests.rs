@@ -7,6 +7,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use factional_editor::Editor;
 use factional_editor::egui::accesskit::Toggled;
+use factional_editor::egui::{Color32, Shape, vec2};
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
@@ -141,4 +142,88 @@ fn a_warning_shows_at_its_choice() {
     harness.run();
     harness.get_by_label("yard — 1 warning");
     harness.get_by_label_contains("warning: locks[0]: it can't lock out muster.drill");
+}
+
+/// Everything painted in the last frame, with groups opened up.
+fn painted(harness: &Harness<'static, Editor>) -> Vec<Shape> {
+    fn open(shape: &Shape, into: &mut Vec<Shape>) {
+        match shape {
+            Shape::Vec(shapes) => shapes.iter().for_each(|shape| open(shape, into)),
+            shape => into.push(shape.clone()),
+        }
+    }
+    let mut shapes = Vec::new();
+    for clipped in &harness.output().shapes {
+        open(&clipped.shape, &mut shapes);
+    }
+    shapes
+}
+
+/// The colour lines of `colour` are drawn in, counted.
+fn lines_in(shapes: &[Shape], colour: Color32) -> usize {
+    shapes
+        .iter()
+        .filter(
+            |shape| matches!(shape, Shape::LineSegment { stroke, .. } if stroke.color == colour),
+        )
+        .count()
+}
+
+/// The arrowheads filled with `colour`, counted.
+fn heads_in(shapes: &[Shape], colour: Color32) -> usize {
+    shapes
+        .iter()
+        .filter(|shape| matches!(shape, Shape::Path(path) if path.closed && path.fill == colour))
+        .count()
+}
+
+#[test]
+fn a_questline_is_painted_as_boxes_joined_by_coloured_arrows() {
+    let mut harness = quests_tab(sample());
+    harness
+        .get_by_label("watch_career — A Life in the Watch")
+        .click();
+    harness.run();
+    let visuals = harness.ctx.global_style().visuals.clone();
+    let shapes = painted(&harness);
+    // Seven quests in the questline, each in a filled box the size of a node.
+    let boxes = shapes
+        .iter()
+        .filter(|shape| {
+            matches!(shape, Shape::Rect(rect)
+                if rect.fill == visuals.widgets.inactive.weak_bg_fill
+                    && rect.rect.size() == vec2(210.0, 56.0))
+        })
+        .count();
+    assert_eq!(boxes, 7);
+    // The Ashen Rite, outside it, only dashed round.
+    assert!(lines_in(&shapes, visuals.weak_text_color()) >= 4);
+    // Two locks in orange and one need in the link colour, each with its head.
+    let locks = Color32::from_rgb(0xf0, 0xa3, 0x5e);
+    assert!(lines_in(&shapes, locks) >= 2);
+    assert!(lines_in(&shapes, visuals.hyperlink_color) >= 1);
+    assert_eq!(heads_in(&shapes, locks), 2);
+    assert_eq!(heads_in(&shapes, visuals.hyperlink_color), 1);
+}
+
+#[test]
+fn a_node_with_a_problem_is_outlined_in_the_error_colour() {
+    let mut harness = quests_tab(world("dead_ends"));
+    harness
+        .get_by_label("siege — The Siege — 1 problem")
+        .click();
+    harness.run();
+    let visuals = harness.ctx.global_style().visuals.clone();
+    let outlined = |colour: Color32| {
+        painted(&harness)
+            .iter()
+            .filter(|shape| {
+                matches!(shape, Shape::Rect(rect)
+                    if rect.stroke.color == colour && rect.stroke.width == 2.0)
+            })
+            .count()
+    };
+    // Only the assault stage, where the problem is.
+    assert_eq!(outlined(visuals.error_fg_color), 1);
+    assert_eq!(outlined(visuals.warn_fg_color), 0);
 }
