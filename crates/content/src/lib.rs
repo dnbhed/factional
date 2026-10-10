@@ -8,7 +8,10 @@ mod reader;
 mod save;
 mod schema;
 
-pub use edit::{EditError, Field, Step, ValueKind, ValuePath, entry_fields, set_value};
+pub use edit::{
+    Addition, EditError, Field, Step, ValueKind, ValuePath, add, additions, entry_fields,
+    entry_places, file_places, remove, set_value,
+};
 pub use outline::{
     CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, outline,
     outline_texts, read_texts,

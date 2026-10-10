@@ -1,6 +1,7 @@
 //! The Factional editor (DESIGN.md §18, D-32, P-74): a view of a content directory and of
-//! everything the loader says about it, where each value can be changed. It places no
-//! diagnostic, checks nothing and writes no TOML itself: the outline and the writer are
+//! everything the loader says about it, where each value can be changed and keys, entries
+//! and list items added and removed. It places no diagnostic, checks nothing, offers nothing
+//! the schema doesn't and writes no TOML itself: the outline, the schema and the writer are
 //! `factional-content`'s.
 
 use std::fs;
@@ -8,15 +9,16 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use factional_content::{
-    CONTENT_FILES, ContentTexts, Diagnostic, EditError, Field, FileState, Outline, OutlineEntry,
-    entry_fields, outline, outline_texts, read_texts, set_value,
+    Addition, CONTENT_FILES, ContentTexts, Diagnostic, EditError, Field, FileState, Outline,
+    OutlineEntry, ValuePath, additions, entry_fields, entry_places, file_places, outline,
+    outline_texts, read_texts, set_value,
 };
 
 pub use eframe::egui;
 
 /// The editor's state: the directory; each file's text as edited and as saved; the changes
-/// that can be undone; the outline of the text as edited; and the selected entry, with its
-/// values as fields.
+/// that can be undone; the outline of the text as edited, with where each file's entries go;
+/// and the selected entry, with its values as fields and its places.
 pub struct Editor {
     dir: PathBuf,
     /// `None` if the directory couldn't be read, so there's nothing to edit.
@@ -26,6 +28,9 @@ pub struct Editor {
     outline: Outline,
     selected: Option<(usize, usize)>,
     fields: Vec<FieldInput>,
+    places: Vec<PlaceInput>,
+    /// By file, in [`CONTENT_FILES`]' order.
+    file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
     note: Option<String>,
 }
@@ -38,6 +43,16 @@ pub struct FieldInput {
     pub input: String,
     /// Why the last value entered here was refused.
     pub refused: Option<String>,
+}
+
+/// A place in the selected entry, or where a file's entries go, with what the schema allows
+/// to be added there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaceInput {
+    pub path: ValuePath,
+    pub additions: Vec<Addition>,
+    /// A new id, as typed, for a place that takes one.
+    pub id: String,
 }
 
 impl Editor {
@@ -54,6 +69,8 @@ impl Editor {
             },
             selected: None,
             fields: Vec::new(),
+            places: Vec::new(),
+            file_places: Vec::new(),
             note: None,
         };
         editor.reload();
@@ -71,6 +88,16 @@ impl Editor {
     /// The selected entry's values.
     pub fn fields(&self) -> &[FieldInput] {
         &self.fields
+    }
+
+    /// The selected entry's places: the entry, and every table and list in it.
+    pub fn places(&self) -> &[PlaceInput] {
+        &self.places
+    }
+
+    /// Where the `file`th file's entries go: its top, and each list of tables there.
+    pub fn file_places(&self, file: usize) -> &[PlaceInput] {
+        self.file_places.get(file).map_or(&[], Vec::as_slice)
     }
 
     /// Whether anything has changed since the files were read or saved.
@@ -97,17 +124,71 @@ impl Editor {
     /// file's text in memory changes, and the outline is made again. Nothing changes if the
     /// writer refuses.
     pub fn set(&mut self, field: usize, input: &str) -> Result<(), EditError> {
-        let (Some((file, _)), Some(texts), Some(field)) =
-            (self.selected, self.texts.as_mut(), self.fields.get(field))
-        else {
+        let (Some((file, _)), Some(field)) = (self.selected, self.fields.get(field)) else {
             return Ok(());
         };
-        let Some(text) = &texts[file] else {
+        let path = field.field.path.clone();
+        self.change(file, |text| set_value(text, &path, input))
+    }
+
+    /// Adds `key` at `at` in the `file`th file, or with no key an item at the end of the list
+    /// there, through the writer, and selects the entry it's in. A file that isn't there is
+    /// started. Nothing changes if the writer refuses.
+    pub fn add(&mut self, file: usize, at: &ValuePath, key: Option<&str>) -> Result<(), EditError> {
+        let Some(name) = CONTENT_FILES.get(file) else {
             return Ok(());
         };
-        let changed = set_value(text, &field.field.path, input)?;
+        let mut added = None;
+        self.change(file, |text| {
+            let (text, path) = factional_content::add(name, text, at, key)?;
+            added = Some(path);
+            Ok(text)
+        })?;
+        let entry = added.and_then(|added| {
+            self.outline.files[file].entries.iter().position(|entry| {
+                ValuePath::parse(&entry.key).is_some_and(|key| added.0.starts_with(&key.0))
+            })
+        });
+        if let Some(entry) = entry {
+            self.select(file, entry);
+        }
+        Ok(())
+    }
+
+    /// Removes what's at `path` in the selected entry's file, through the writer; removing
+    /// the entry itself leaves nothing selected. Nothing changes if the writer refuses.
+    pub fn remove(&mut self, path: &ValuePath) -> Result<(), EditError> {
+        let Some((file, _)) = self.selected else {
+            return Ok(());
+        };
+        let whole = self
+            .selected_entry()
+            .is_some_and(|(_, entry)| ValuePath::parse(&entry.key).as_ref() == Some(path));
+        self.change(file, |text| factional_content::remove(text, path))?;
+        if whole {
+            self.selected = None;
+            self.show_fields();
+        }
+        Ok(())
+    }
+
+    /// Changes the `file`th file's text in memory by `edit`, keeping what it was to undo, and
+    /// makes the outline again. Nothing changes if `edit` refuses.
+    fn change(
+        &mut self,
+        file: usize,
+        edit: impl FnOnce(&str) -> Result<String, EditError>,
+    ) -> Result<(), EditError> {
+        let Some(texts) = self.texts.as_mut() else {
+            return Ok(());
+        };
+        let Some(text) = texts.get(file) else {
+            return Ok(());
+        };
+        let changed = edit(text.as_deref().unwrap_or_default())?;
         self.undo.push(texts.clone());
         texts[file] = Some(changed);
+        self.note = None;
         self.refresh();
         Ok(())
     }
@@ -154,13 +235,27 @@ impl Editor {
                 .position(|e| e.key == key)?;
             Some((place, entry))
         });
+        self.file_places = match &self.texts {
+            Some(texts) => self
+                .outline
+                .files
+                .iter()
+                .zip(texts)
+                .map(|(file, text)| {
+                    let text = text.as_deref().unwrap_or_default();
+                    places_in(file.name, text, file_places(text))
+                })
+                .collect(),
+            None => Vec::new(),
+        };
         self.show_fields();
     }
 
-    /// The selected entry's values, as written.
+    /// The selected entry's values, as written, and its places.
     fn show_fields(&mut self) {
         let Some((file, entry)) = self.selected else {
             self.fields.clear();
+            self.places.clear();
             return;
         };
         let text = self
@@ -177,6 +272,7 @@ impl Editor {
                 refused: None,
             })
             .collect();
+        self.places = places_in(self.outline.files[file].name, text, entry_places(text, key));
     }
 
     /// Selects the `entry`th entry of the `file`th file; nothing if there's no such entry.
@@ -219,7 +315,8 @@ impl Editor {
     }
 
     /// Draws the editor into `ui`: buttons and the summary at the top, the files and their
-    /// entries on the left, the selected entry's values in the middle.
+    /// entries on the left, each with what can be added, and the selected entry in the
+    /// middle: its values, then its places, each with what can be added or removed.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         egui::Panel::top("summary").show(ui, |ui| {
             // The buttons first, so a long directory never pushes them out of reach.
@@ -249,15 +346,33 @@ impl Editor {
             });
         });
         let mut clicked = None;
+        let mut adding = None;
         egui::Panel::left("files")
             .resizable(true)
             .default_size(280.0)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (place, file) in self.outline.files.iter().enumerate() {
+                        let mut new_entries = |ui: &mut egui::Ui| {
+                            let Some(places) = self.file_places.get_mut(place) else {
+                                return;
+                            };
+                            for at in places {
+                                let name = match at.path.0.is_empty() {
+                                    true => file.name.to_owned(),
+                                    false => at.path.to_string(),
+                                };
+                                let mut added = None;
+                                ui.horizontal_wrapped(|ui| adding_ui(ui, at, &name, &mut added));
+                                if let Some((at, key)) = added {
+                                    adding = Some((place, at, key));
+                                }
+                            }
+                        };
                         if file.state != FileState::Read {
                             ui.label(file.label());
                             diagnostics(ui, &file.problems, &file.warnings, |d| d.key.as_deref());
+                            new_entries(ui);
                             continue;
                         }
                         egui::CollapsingHeader::new(file.label())
@@ -273,6 +388,7 @@ impl Editor {
                                         clicked = Some((place, index));
                                     }
                                 }
+                                new_entries(ui);
                             });
                     }
                     for problem in &self.outline.problems {
@@ -284,7 +400,14 @@ impl Editor {
             self.select(file, entry);
         }
         let mut entered = None;
+        let mut removing = None;
         egui::CentralPanel::default().show(ui, |ui| {
+            let Some((place, _)) = self.selected else {
+                ui.label(
+                    "Choose an entry on the left to see it and what the loader says about it.",
+                );
+                return;
+            };
             let Some((file, entry)) = self.selected_entry() else {
                 ui.label(
                     "Choose an entry on the left to see it and what the loader says about it.",
@@ -294,10 +417,11 @@ impl Editor {
             ui.heading(format!("{file}: {}", entry.key));
             diagnostics(ui, &entry.problems, &entry.warnings, |d| entry.at(d));
             ui.separator();
-            let prefix = format!("{}.", entry.key);
+            let key = entry.key.clone();
+            let prefix = format!("{key}.");
             let toml = entry.toml.trim_end().to_owned();
             egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("fields").num_columns(3).show(ui, |ui| {
+                egui::Grid::new("fields").num_columns(4).show(ui, |ui| {
                     for (place, field) in self.fields.iter_mut().enumerate() {
                         let path = field.field.path.to_string();
                         let name = path.strip_prefix(&prefix).unwrap_or(&path);
@@ -308,12 +432,33 @@ impl Editor {
                         if edited.lost_focus() && field.input != field.field.value {
                             entered = Some((place, field.input.clone()));
                         }
+                        if ui.button(format!("Remove {name}")).clicked() {
+                            removing = Some(field.field.path.clone());
+                        }
                         if let Some(refused) = &field.refused {
                             ui.label(refused);
                         }
                         ui.end_row();
                     }
                 });
+                ui.separator();
+                for at in &mut self.places {
+                    let path = at.path.to_string();
+                    let name = match path == key {
+                        true => key.clone(),
+                        false => path.strip_prefix(&prefix).unwrap_or(&path).to_owned(),
+                    };
+                    let mut added = None;
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button(format!("Remove {name}")).clicked() {
+                            removing = Some(at.path.clone());
+                        }
+                        adding_ui(ui, at, &name, &mut added);
+                    });
+                    if let Some((at, key)) = added {
+                        adding = Some((place, at, key));
+                    }
+                }
                 ui.separator();
                 egui::CollapsingHeader::new("As written")
                     .default_open(true)
@@ -326,6 +471,65 @@ impl Editor {
             && let Err(refused) = self.set(place, &input)
         {
             self.fields[place].refused = Some(refused.to_string());
+        }
+        if let Some((file, at, key)) = adding
+            && let Err(refused) = self.add(file, &at, key.as_deref())
+        {
+            self.note = Some(format!("couldn't add: {refused}"));
+        }
+        if let Some(path) = removing
+            && let Err(refused) = self.remove(&path)
+        {
+            self.note = Some(format!("couldn't remove: {refused}"));
+        }
+    }
+}
+
+/// Each of `paths` in `file`'s `text`, with what can be added there.
+fn places_in(file: &str, text: &str, paths: Vec<ValuePath>) -> Vec<PlaceInput> {
+    paths
+        .into_iter()
+        .map(|path| PlaceInput {
+            additions: additions(file, text, &path),
+            path,
+            id: String::new(),
+        })
+        .collect()
+}
+
+/// A place's additions as buttons, named after the place as `name`, with a field for a new
+/// id where it takes one; what's chosen goes in `adding`.
+fn adding_ui(
+    ui: &mut egui::Ui,
+    place: &mut PlaceInput,
+    name: &str,
+    adding: &mut Option<(ValuePath, Option<String>)>,
+) {
+    let PlaceInput {
+        path,
+        additions,
+        id,
+    } = place;
+    for addition in additions.iter() {
+        match addition {
+            Addition::Key(key) => {
+                if ui.button(format!("Add {key} to {name}")).clicked() {
+                    *adding = Some((path.clone(), Some(key.clone())));
+                }
+            }
+            Addition::Item => {
+                if ui.button(format!("Add to {name}")).clicked() {
+                    *adding = Some((path.clone(), None));
+                }
+            }
+            Addition::Id => {
+                let label = ui.label(format!("New id in {name}"));
+                ui.add(egui::TextEdit::singleline(id).desired_width(120.0))
+                    .labelled_by(label.id);
+                if ui.button(format!("Add to {name}")).clicked() {
+                    *adding = Some((path.clone(), Some(id.clone())));
+                }
+            }
         }
     }
 }
@@ -533,5 +737,149 @@ mod tests {
         assert!(nowhere.save().is_ok());
         assert!(!nowhere.has_changes());
         assert_eq!(nowhere.outline().problems.len(), 1);
+    }
+
+    fn path(text: &str) -> ValuePath {
+        ValuePath::parse(text).expect("a path")
+    }
+
+    fn keys(names: &[&str]) -> Vec<Addition> {
+        names
+            .iter()
+            .map(|name| Addition::Key((*name).to_owned()))
+            .collect()
+    }
+
+    fn inputs(editor: &Editor) -> Vec<&str> {
+        editor.fields().iter().map(|f| f.input.as_str()).collect()
+    }
+
+    #[test]
+    fn adding_an_entry_selects_it_with_its_starting_values() {
+        let dir = with_characters("add_entry", VEX);
+        let mut editor = Editor::open(&dir);
+        let places: Vec<(&ValuePath, &[Addition])> = editor
+            .file_places(2)
+            .iter()
+            .map(|place| (&place.path, &place.additions[..]))
+            .collect();
+        assert_eq!(places, [(&ValuePath::ROOT, &[Addition::Id][..])]);
+        assert_eq!(editor.add(2, &ValuePath::ROOT, Some("ava")), Ok(()));
+        let (file, entry) = editor.selected_entry().expect("selected");
+        assert_eq!((file, entry.key.as_str()), ("characters.toml", "ava"));
+        assert_eq!(inputs(&editor), ["", "0.0", "0.0"]);
+        assert!(editor.has_changes() && editor.can_undo());
+        editor.undo();
+        assert!(editor.selected_entry().is_none());
+        assert!(!editor.has_changes());
+    }
+
+    #[test]
+    fn adding_to_a_file_not_there_starts_it() {
+        let dir = with_characters("add_file", VEX);
+        let mut editor = Editor::open(&dir);
+        let relations = editor.file_places(4);
+        assert_eq!(relations.len(), 1);
+        assert_eq!(relations[0].additions, keys(&["relation"]));
+        editor
+            .add(4, &ValuePath::ROOT, Some("relation"))
+            .expect("added");
+        let (file, entry) = editor.selected_entry().expect("selected");
+        assert_eq!(
+            (file, entry.key.as_str()),
+            ("relations.toml", "relation[0]")
+        );
+        let lists: Vec<&ValuePath> = editor.file_places(4).iter().map(|p| &p.path).collect();
+        assert_eq!(lists, [&ValuePath::ROOT, &path("relation")]);
+        editor.save().expect("saved");
+        assert_eq!(
+            fs::read_to_string(dir.join("relations.toml")).expect("written"),
+            "[[relation]]\nvalue = 0.0\nbetween = [\"\", \"\"]\n"
+        );
+    }
+
+    #[test]
+    fn the_selected_entrys_places_offer_what_the_schema_allows() {
+        let dir = with_characters("add_key", VEX);
+        let mut editor = Editor::open(&dir);
+        assert!(editor.places().is_empty());
+        editor.select(2, 0);
+        let places: Vec<(String, Vec<Addition>)> = editor
+            .places()
+            .iter()
+            .map(|place| (place.path.to_string(), place.additions.clone()))
+            .collect();
+        assert_eq!(
+            places,
+            [
+                (
+                    "vex".to_owned(),
+                    keys(&["contacts", "inertia", "memberships", "standing", "weights"])
+                ),
+                ("vex.alignment".to_owned(), Vec::new()),
+            ]
+        );
+        editor
+            .add(2, &path("vex"), Some("standing"))
+            .expect("added");
+        let (_, entry) = editor.selected_entry().expect("still selected");
+        assert_eq!(entry.key, "vex");
+        let standing = editor.places().last().expect("there");
+        assert_eq!(standing.path, path("vex.standing"));
+        assert_eq!(standing.additions, keys(&["characters", "factions"]));
+    }
+
+    #[test]
+    fn removing_goes_through_the_writer_and_can_be_undone() {
+        let dir = with_characters("remove", VEX);
+        let mut editor = Editor::open(&dir);
+        assert_eq!(editor.remove(&path("vex")), Ok(()), "nothing selected");
+        assert!(!editor.has_changes());
+        editor.select(2, 0);
+        editor.remove(&path("vex.alignment.good")).expect("removed");
+        assert_eq!(inputs(&editor), ["Vex", "120.0"]);
+        editor.undo();
+        assert_eq!(inputs(&editor), ["Vex", "120.0", "-20.0"]);
+        editor.remove(&path("vex")).expect("removed");
+        assert!(editor.selected_entry().is_none());
+        assert!(editor.fields().is_empty() && editor.places().is_empty());
+        assert!(editor.outline().files[2].entries.is_empty());
+        editor.undo();
+        assert_eq!(editor.outline().files[2].entries.len(), 1);
+    }
+
+    #[test]
+    fn a_refused_change_changes_nothing() {
+        let dir = with_characters("add_refused", VEX);
+        let mut editor = Editor::open(&dir);
+        assert_eq!(
+            editor.add(2, &ValuePath::ROOT, Some("vex")),
+            Err(EditError::Taken(path("vex")))
+        );
+        assert_eq!(
+            editor.add(9, &ValuePath::ROOT, Some("ava")),
+            Ok(()),
+            "no such file"
+        );
+        editor.select(2, 0);
+        assert_eq!(
+            editor.remove(&path("vex.speed")),
+            Err(EditError::NotThere(path("vex.speed")))
+        );
+        assert!(!editor.has_changes() && !editor.can_undo());
+    }
+
+    #[test]
+    fn a_file_that_cant_be_read_offers_nothing_to_add() {
+        let dir = with_characters("add_unreadable", "[vex\n");
+        let editor = Editor::open(&dir);
+        assert!(editor.file_places(2).is_empty());
+        assert_eq!(
+            editor.file_places(1).len(),
+            1,
+            "factions.toml can be started"
+        );
+        let nowhere = Editor::open(std::env::temp_dir().join("factional_editor_nowhere"));
+        assert!(nowhere.file_places(2).is_empty());
     }
 }

@@ -530,7 +530,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Every check is the loader's,** run after each change, its diagnostics placed by file and key; every preview is an engine query. The editor decides nothing itself (D-20, P-24, P-32).
   - **A tested model under a thin egui layer,** so the gates (tests, mutation testing) cover what the editor does, not only what the engine does.
   - **Desktop first;** a browser build follows when file access there is settled.
-  - **Four increments,** U1 to U4: read-only browsing with diagnostics, editing, quests as graphs, previews.
+  - **Four increments,** U1 to U4: read-only browsing with diagnostics, editing, quests as graphs, previews. Editing split in two as it was built (P-77), so they're U1 to U5: browsing, editing values, adding and removing, quests as graphs, previews.
   - *Why:* the editor stays a view of the content and the engine, never a second implementation of either.
 - **P-75 · How the Bevy plugin plugs in** (made in U0, 2026-10-08; built in E1).
   - **A leaf crate, `factional-bevy`,** with Bevy pinned to one version; nothing below it knows Bevy.
@@ -557,6 +557,16 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The editor edits text in memory:** a change commits on Enter or leaving the field, the outline is made again from the texts at once, undo keeps every earlier state, Save writes only the files that changed, and "Read again" discards what isn't saved.
   - **No CLI command:** editing is the editor's; the writer is tested in `factional-content` and the editor headless.
   - *Why:* a designer's file stays theirs, comments and all, however much the editor changes in it.
+
+- **P-78 · How keys, entries and list items are added and removed** (made in U3, 2026-10-09).
+  - **The schema says what can be added, and nothing else:** at a table, each key it names that isn't there yet, in the schema's order (alphabetical), and an id where it takes any key, such as a new character or a standing by faction; at a list, an item while it holds fewer than `maxItems`. A key the schema doesn't know, one already there and a blank one are refused, saying so.
+  - **A new value starts as the schema says:** its default; else the first of its choices (an enumeration, or the first of `oneOf`'s forms); empty text, 0 or the bound nearest it, `false`; a list with its `minItems` (and `prefixItems`) at their starting values; a table with its required keys, and those of its first form, such as a relation's `between`, at theirs. A new relation is `value = 0.0` and `between = ["", ""]`, and the loader then says what's wrong with it. The writer applies no rule between keys; the loader reports those.
+  - **Layout follows the file:** at the top, a table gets its own header and a list of tables starts as a `[[list]]` with one table, so each is an entry; so too inside a table written only as part of others' headers, such as `[inertia.profiles]`. Anywhere else, what's new is inline, an inline table or list keeping its spacing, and a list of `[[tables]]` gains one more. A new entry goes at the end of its file.
+  - **Removing takes the comments directly above** a table or a key; comments set apart by a blank line stay, above whatever's written next, so a file's opening comments stay with the file. A list of `[[tables]]` left empty goes, since TOML can't write it.
+  - **Added then removed is unchanged:** a test adds every addition offered at every place in `content/sample`, removes it, and expects the file back exactly.
+  - **In the editor,** each place in the selected entry (the entry, and every table and list in it) has its additions as buttons and a field for a new id, and a button to remove it; each value has one too. Each file has its own, for new entries, and a file not there is started by adding to it. A new entry is selected; removing the selected entry leaves nothing selected. Each is one step of undo, and a refusal shows at the top.
+  - **No CLI command,** as P-77.
+  - *Why:* the designer chooses only among what the schema allows, written as the file already is, and every check stays the loader's.
 
 ## Open
 

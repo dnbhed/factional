@@ -78,6 +78,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U0 — editor and host engine design pass: the user chose egui for the editor (D-32, settling X-5) and Bevy as the host engine (D-33, settling X-2); DESIGN.md §18 and §19, with P-74 and P-75; U1 to U4 outlined, E1 and T5 no longer deferred; done 2026-10-08 (#47)
 - U1 — the editor shell: `factional-editor <dir>`, an eframe app showing each content file, its entries, and every problem and warning at its entry, with the selected entry's TOML and a button to read again; the outline it shows is `factional-content`'s `outline(dir)`, also printed by `outline <dir>` in the REPL; UI tested headless with `egui_kittest` (P-76); `scenarios/outline.scenario`; done 2026-10-09 (#48)
 - U2 — editing values: a format-preserving writer in `factional-content` (`set_value`, `entry_fields`, through `toml_edit`), changing one value read as the kind already there and nothing else; the outline made from texts in memory and showing each entry as written; the editor's fields for an entry's values, with problems updating on every change, undo, save and discarding; split from adding and removing, now U3 (P-77); done 2026-10-09 (#49)
+- U3 — adding and removing: the writer's `additions` (from the schema: keys not yet there, in its order; an id where it takes any; a list item while there's room), `add` (each new value at its starting value: the default, else the least the schema allows, with the keys and items it must have; tables with their own headers at the top and among headed tables, inline elsewhere) and `remove` (with the comments directly above; those set apart by a blank line stay); `file_places` and `entry_places`; the editor's buttons for each, new ids typed in, files not there started by adding to them, the new entry selected, all undoable; a round trip over every place in the sample (P-78); done 2026-10-09 (#50)
 
 ---
 
@@ -103,11 +104,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U3 · Adding and removing — P3 · Next
-
-Adding and removing keys, entries and list items in the editor, through the same writer, with the schema's keys to choose from.
-
-### U4 · Quests in the editor — P3 · Outline
+### U4 · Quests in the editor — P3 · Next
 
 Graphs of questlines' steps and quests' stages and choices (`egui-snarl`), `locks` as edges, reach and lockout problems on their nodes.
 
