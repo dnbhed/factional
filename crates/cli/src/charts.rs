@@ -1,38 +1,17 @@
 //! Pictures of a world for tuning (DESIGN.md §12.3): `map` draws who could join a faction,
 //! `matrix` how everyone regards someone, and `curve` what a knob does across its range.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
+use factional_content::{describe_mark, map_heading};
 use factional_core::{Curve, Fixed, ParseFixedError};
-use factional_reputation::{Alignment, Observer, TargetCurve, Toward, World};
+use factional_reputation::{MapCell, TargetCurve, Toward, World};
 
 use crate::session::{Outcome, hint, lines, no_world};
 
-/// The map's cells are 10 apart on each axis, from -100 to 100: 21 by 21.
-const CELLS: i64 = 10;
-
-/// Which cell along an axis a value falls in, from 0 at -100 to 20 at 100: the nearest 10,
-/// halves away from zero.
-fn cell(value: Fixed) -> i64 {
-    let hundredths = value.hundredths();
-    let tens = (hundredths.abs() + 500) / 1000;
-    hundredths.signum() * tens + CELLS
-}
-
-/// A cell's centre on an axis, such as -100 for cell 0.
-fn centre(index: i64) -> i64 {
-    (index - CELLS) * 10
-}
-
-/// The letter for the `index`th character on the map: A to Z, then a to z, then `?`.
-fn letter(index: usize) -> char {
-    let letters: Vec<char> = ('A'..='Z').chain('a'..='z').collect();
-    letters.get(index).copied().unwrap_or('?')
-}
-
 /// `map <faction>`: the alignment plane, law across and good up, marking the cells within
 /// the faction's tolerance, the faction, and each character where it pictures them, with a
-/// key (P-53, DESIGN.md §10.3).
+/// key (P-53, DESIGN.md §10.3). The map is the world's `alignment_map` (U5).
 pub(crate) fn map(world: &World, args: &str) -> Outcome {
     let id = match args.split_whitespace().collect::<Vec<_>>()[..] {
         [id] => id,
@@ -45,81 +24,25 @@ pub(crate) fn map(world: &World, args: &str) -> Outcome {
             .collect();
         return Outcome::Error(format!("unknown faction '{id}'{}", hint(id, ids)));
     };
-    let at = world
-        .faction_alignment(&faction.id)
-        .expect("a faction has an alignment");
-    let tolerance = faction.tolerances.tolerance();
-    let mut marks: BTreeMap<(i64, i64), Vec<char>> = BTreeMap::new();
-    let mut place = |alignment: Alignment, mark: char| {
-        let row = 2 * CELLS - cell(alignment.on(factional_reputation::Axis::Good));
-        let column = cell(alignment.on(factional_reputation::Axis::Law));
-        marks.entry((row, column)).or_default().push(mark);
-    };
-    place(at, '@');
-    let observer = Observer::Faction(faction.id.clone());
-    let mut key = Vec::new();
-    // Each character where the faction pictures them (DESIGN.md §10.3).
-    for (index, character) in world.characters().enumerate() {
-        let mark = letter(index);
-        let measured = world
-            .distance(&observer, &character.id)
-            .expect("both exist");
-        place(measured.subject, mark);
-        let distance = measured.value;
-        let within = if distance <= tolerance {
-            "within"
-        } else {
-            "outside"
-        };
-        let pictured = if measured.subject == measured.truth {
-            String::new()
-        } else {
-            let axes = |alignment: Alignment| {
-                format!(
-                    "law {}, good {}",
-                    alignment.on(factional_reputation::Axis::Law),
-                    alignment.on(factional_reputation::Axis::Good)
-                )
-            };
-            format!(
-                "; pictured at {}, truly {}",
-                axes(measured.subject),
-                axes(measured.truth)
-            )
-        };
-        key.push(format!(
-            "{mark} {}: {distance} away, {within}{pictured}",
-            character.id
-        ));
-    }
-    let mut output = vec![format!(
-        "{} ({}): law {}, good {}, tolerance {tolerance}",
-        faction.name,
-        faction.id,
-        at.on(factional_reputation::Axis::Law),
-        at.on(factional_reputation::Axis::Good)
-    )];
-    for row in 0..=2 * CELLS {
-        let good = -centre(row);
-        let cells: Vec<String> = (0..=2 * CELLS)
+    let map = world
+        .alignment_map(&faction.id)
+        .expect("a faction has a map");
+    let marks = map.marks();
+    let mut output = vec![map_heading(&faction.name, &map)];
+    for (row, within) in map.within.iter().enumerate() {
+        let cells: Vec<String> = within
+            .iter()
+            .enumerate()
             .map(
-                |column| match marks.get(&(row, column)).map(Vec::as_slice) {
+                |(column, within)| match marks.get(&MapCell { row, column }).map(Vec::as_slice) {
                     Some([mark]) => mark.to_string(),
                     Some(_) => "*".to_owned(),
-                    None => {
-                        let point = Alignment::new(
-                            Fixed::from_hundredths(centre(column) * 100),
-                            Fixed::from_hundredths(good * 100),
-                        )
-                        .expect("every cell is on the plane");
-                        let distance = world
-                            .distance_to_point(&faction.id, point)
-                            .expect("the faction exists");
-                        if distance <= tolerance { "+" } else { "." }.to_owned()
-                    }
+                    None if *within => "+".to_owned(),
+                    None => ".".to_owned(),
                 },
             )
             .collect();
+        let good = MapCell { row, column: 0 }.good();
         let label = if good % 50 == 0 {
             good.to_string()
         } else {
@@ -132,14 +55,14 @@ pub(crate) fn map(world: &World, args: &str) -> Outcome {
         "@ {}, + within its tolerance, . outside; law runs across, good up",
         faction.name
     ));
-    output.extend(key);
-    for ((row, column), shared) in &marks {
+    output.extend(map.characters.iter().map(describe_mark));
+    for (cell, shared) in &marks {
         if shared.len() > 1 {
             let shared: Vec<String> = shared.iter().map(char::to_string).collect();
             output.push(format!(
                 "* at law {}, good {}: {}",
-                centre(*column),
-                -centre(*row),
+                cell.law(),
+                cell.good(),
                 shared.join(", ")
             ));
         }
@@ -175,34 +98,22 @@ pub(crate) fn matrix(world: &World, args: &str) -> Outcome {
             .map(|character| character.id.clone())
             .collect();
     }
-    let observers = world
-        .factions()
-        .map(|faction| Observer::Faction(faction.id.clone()))
-        .chain(
-            world
-                .characters()
-                .map(|character| Observer::Character(character.id.clone())),
-        );
+    let matrix = world
+        .disposition_matrix(&subjects)
+        .expect("every subject is known");
     let mut rows = vec![
         std::iter::once("observer".to_owned())
             .chain(subjects.iter().map(ToString::to_string))
             .collect::<Vec<_>>(),
     ];
-    for observer in observers {
-        let mut row = vec![observer.to_string()];
-        for subject in &subjects {
-            let themselves = observer == Observer::Character(subject.clone());
-            row.push(match (themselves, csv) {
-                (true, true) => String::new(),
-                (true, false) => "—".to_owned(),
-                (false, _) => world
-                    .disposition(&observer, subject)
-                    .expect("both exist")
-                    .score
-                    .to_string(),
-            });
-        }
-        rows.push(row);
+    for row in &matrix.rows {
+        let mut shown = vec![row.observer.to_string()];
+        shown.extend(row.cells.iter().map(|cell| match (cell, csv) {
+            (None, true) => String::new(),
+            (None, false) => "—".to_owned(),
+            (Some(disposition), _) => disposition.score.to_string(),
+        }));
+        rows.push(shown);
     }
     if csv {
         return Outcome::Output(lines(rows.into_iter().map(|row| row.join(","))));

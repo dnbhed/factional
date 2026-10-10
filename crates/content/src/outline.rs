@@ -4,6 +4,9 @@
 
 use std::path::Path;
 
+use factional_quests::Quests;
+use factional_reputation::Content;
+
 use crate::edit::{ValuePath, entries_as_written};
 use crate::quests::{QUESTLINES_FILE, QUESTS_FILE};
 use crate::{
@@ -197,6 +200,12 @@ pub fn outline_texts(texts: &ContentTexts) -> Outline {
         .filter(|d| !CONTENT_FILES.contains(&d.file.as_str()))
         .collect();
     Outline { files, problems }
+}
+
+/// The content and quests in `texts`, loaded as `load_dir` loads a directory, with every
+/// problem if they don't load (U5's previews).
+pub fn load_texts(texts: &ContentTexts) -> Result<(Content, Quests), ContentError> {
+    parse_quests(sources(texts))
 }
 
 /// Each content file's text in `texts`, for the loader.

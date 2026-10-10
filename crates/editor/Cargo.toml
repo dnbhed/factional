@@ -10,6 +10,7 @@ publish.workspace = true
 eframe = "0.36.2"
 factional-content = { path = "../content" }
 factional-quests = { path = "../quests" }
+factional-reputation = { path = "../reputation" }
 
 [dev-dependencies]
 egui_kittest = { version = "0.36.2", features = ["eframe"] }

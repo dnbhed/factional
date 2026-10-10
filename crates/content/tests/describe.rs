@@ -4,10 +4,11 @@
 use std::path::Path;
 
 use factional_content::{
-    describe_choice, load_quests, named_effects, named_shifts, needs, quest_heading,
+    CONTENT_FILES, describe_choice, describe_mark, load_quests, load_texts, map_heading,
+    named_effects, named_shifts, needs, quest_heading, read_texts,
 };
 use factional_quests::{Quest, Quests};
-use factional_reputation::{Content, OutcomeId};
+use factional_reputation::{Alignment, Content, FactionId, OutcomeId, World};
 
 fn sample() -> (Content, Quests) {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/sample");
@@ -129,4 +130,50 @@ fn relation_shifts_name_both_ends_and_which_way_they_go() {
         ]
     );
     assert!(named_effects(&outcome("sowed_discord").effects.standing).is_empty());
+}
+
+#[test]
+fn a_map_says_whose_it_is_and_where_everyone_stands_in_words() {
+    let (content, _) = sample();
+    let world = World::new(content).expect("the sample makes a world");
+    let watch = FactionId::new("city_watch").expect("valid id");
+    let map = world.alignment_map(&watch).expect("the Watch");
+    assert_eq!(
+        map_heading("The City Watch", &map),
+        "The City Watch (city_watch): law 70.00, good 20.00, tolerance 40.00"
+    );
+    let hale = map
+        .characters
+        .iter()
+        .find(|mark| mark.character.as_str() == "captain_hale")
+        .expect("on the map");
+    assert_eq!(describe_mark(hale), "B captain_hale: 5.59 away, within");
+    // Pictured somewhere they aren't, it says so.
+    let mut misjudged = hale.clone();
+    misjudged.within = false;
+    misjudged.distance.subject = Alignment::new(
+        "60".parse().expect("a number"),
+        "10".parse().expect("a number"),
+    )
+    .expect("on the plane");
+    assert_eq!(
+        describe_mark(&misjudged),
+        "B captain_hale: 5.59 away, outside; pictured at law 60.00, good 10.00, truly law 75.00, good 30.00"
+    );
+}
+
+#[test]
+fn content_held_in_memory_loads_as_a_directory_does() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/sample");
+    let mut texts = read_texts(&dir).expect("the sample is there");
+    let (content, quests) = load_texts(&texts).expect("it loads");
+    assert_eq!(content.characters.len(), 6);
+    assert_eq!(quests.quests.len(), 10);
+    let factions = CONTENT_FILES
+        .iter()
+        .position(|name| *name == "factions.toml")
+        .expect("a content file");
+    texts[factions] = Some("[city_watch\n".to_owned());
+    let problems = load_texts(&texts).expect_err("it doesn't load").diagnostics;
+    assert_eq!(problems.len(), 1);
 }

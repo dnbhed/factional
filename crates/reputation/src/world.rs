@@ -4229,7 +4229,7 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::{
         AXIS_LIMIT, ActionStanding, AlignmentDelta, AppliedModifier, AxisShift, Band, Condition,
@@ -4238,7 +4238,7 @@ mod tests {
         Tolerances, Verdict, Witnesses,
     };
 
-    const fn h(hundredths: i64) -> Fixed {
+    pub(crate) const fn h(hundredths: i64) -> Fixed {
         Fixed::from_hundredths(hundredths)
     }
 
@@ -4246,7 +4246,7 @@ mod tests {
         CharacterId::new(text).expect("a valid id")
     }
 
-    fn character(name: &str, law: i64, good: i64) -> Character {
+    pub(crate) fn character(name: &str, law: i64, good: i64) -> Character {
         Character {
             id: id(&name.to_lowercase()),
             name: name.to_owned(),
@@ -4381,7 +4381,7 @@ mod tests {
     }
 
     /// A world with these characters and the test actions.
-    fn world_of(characters: impl IntoIterator<Item = Character>) -> World {
+    pub(crate) fn world_of(characters: impl IntoIterator<Item = Character>) -> World {
         World::new(Content {
             balance: Balance::default(),
             characters: characters.into_iter().map(|c| (c.id.clone(), c)).collect(),

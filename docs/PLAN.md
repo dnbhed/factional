@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U6 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6 → U8 → E1 → T5`
 
 ## Done
 
@@ -81,6 +81,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U3 — adding and removing: the writer's `additions` (from the schema: keys not yet there, in its order; an id where it takes any; a list item while there's room), `add` (each new value at its starting value: the default, else the least the schema allows, with the keys and items it must have; tables with their own headers at the top and among headed tables, inline elsewhere) and `remove` (with the comments directly above; those set apart by a blank line stay); `file_places` and `entry_places`; the editor's buttons for each, new ids typed in, files not there started by adding to them, the new entry selected, all undoable; a round trip over every place in the sample (P-78); done 2026-10-09 (#50)
 - T6 — nothing reported only because something else couldn't be read: a faction or character with a problem keeps its id for the checks across files, a file that doesn't parse hides no reference to what it might hold, and a `balance.toml`, profile or `knowledge.model` that can't be read judges nothing by its default; the Watch's tolerance set above its member tolerance reported fourteen problems and an unclosed `[temple` thirty-four, now one each; `scenarios/unread.scenario` (P-79); the editor's workspaces are tabs (D-34); done 2026-10-10 (#51)
 - U4 — quests in the editor: tabs along the top (D-34), Content and Quests; `QuestGraph` in `factional-content`, from the quests as far as they read, with edges (`needs`, `locks`), each questline's outsiders one hop away, and every quest problem and warning at its questline, step, quest, stage or choice; the quest wording moved there from the CLI; the Quests tab draws questlines as steps in columns and quests as stages, marks nodes by their problems, lists edges, and shows the chosen quest with "Edit in Content"; drawn with egui's painter rather than `egui-snarl` (P-80); `graph <dir> <questline|quest>`, `scenarios/graph.scenario`; U6 outlined for the rest of the design canvas; done 2026-10-10 (#52)
+- U5 — previews: `World::alignment_map` and `World::disposition_matrix`, which the CLI's `map` and `matrix` now render from, unchanged; the editor's Previews tab with the matrix, each score tinted by its band, and a chosen faction's map with its key; previews from the last world that loaded, marked while the content doesn't load (D-35, the user's choice); curves and quests split off as U7; snarl's revisit deferred as U8 (X-6) (P-81); done 2026-10-10 (#53)
 
 ---
 
@@ -106,14 +107,18 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U5 · Previews — P3 · Next
+### U7 · Previews: curves and quests — P3 · Next
 
-From engine queries on the content as it stands: the disposition matrix, the alignment map, curves, and whether a character can start a quest.
+The rest of board 5: each named curve plotted (the knobs `curve` lists), and whether a chosen character can start a chosen quest, with every reason not, from `assess_start` on the last world that loaded.
 
 ### U6 · The Content tab to the design — P3 · Outline
 
 The design canvas's boards 1 to 3 and 6, against what U1 to U3 built: values grouped by what they mean, with the comments above them and defaults shown where a key is left out (from the schema), a summary that says whether the world loads, a problems panel, and the visual language (theme and fonts). Some of it needs `factional-content` first: an entry's display name, what refers to it, and each key's default and description.
 
+
+### U8 · Quest graphs in egui-snarl? — P3 · Deferred (X-6)
+
+Revisit P-80's choice of egui's own painter over `egui-snarl` once U5 to U7 are done, by the user's choice (2026-10-10): whether editing in the graph is wanted, and if so whether snarl fits it.
 ---
 
 ## Adding an increment

@@ -4,7 +4,10 @@
 use factional_quests::{
     Choice, ChoiceEffects, Leftovers, Next, Quest, QuestId, Quests, Requirements, Step,
 };
-use factional_reputation::{AlignmentDelta, RelationEnds, RelationShift, StandingEffects};
+use factional_reputation::{
+    Alignment, AlignmentDelta, AlignmentMap, Axis, MapMark, RelationEnds, RelationShift,
+    StandingEffects,
+};
 
 /// `watch_oath — The Watch's Oath — from city_watch, in watch_career`, with `at step 1` too
 /// when `at_step`.
@@ -108,6 +111,46 @@ pub fn describe_choice(choice: &Choice) -> String {
         Next::End => " — then the end".to_owned(),
     };
     line
+}
+
+/// `The City Watch (city_watch): law 70.00, good 20.00, tolerance 40.00`: a faction's map
+/// heading, with its name.
+pub fn map_heading(name: &str, map: &AlignmentMap) -> String {
+    format!(
+        "{name} ({}): {}, tolerance {}",
+        map.faction,
+        axes(map.at),
+        map.tolerance
+    )
+}
+
+/// `B captain_hale: 5.59 away, within`, saying where the faction pictures them when that
+/// isn't where they are.
+pub fn describe_mark(mark: &MapMark) -> String {
+    let within = if mark.within { "within" } else { "outside" };
+    let distance = &mark.distance;
+    let pictured = if distance.subject == distance.truth {
+        String::new()
+    } else {
+        format!(
+            "; pictured at {}, truly {}",
+            axes(distance.subject),
+            axes(distance.truth)
+        )
+    };
+    format!(
+        "{} {}: {} away, {within}{pictured}",
+        mark.letter, mark.character, distance.value
+    )
+}
+
+/// `law 70.00, good 20.00`.
+fn axes(alignment: Alignment) -> String {
+    format!(
+        "law {}, good {}",
+        alignment.on(Axis::Law),
+        alignment.on(Axis::Good)
+    )
 }
 
 /// Each relation shift: `city_watch ↔ temple -40.00`, or `city_watch → ashen_circle -20.00`
