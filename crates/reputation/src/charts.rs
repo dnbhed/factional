@@ -5,9 +5,12 @@
 
 use std::collections::BTreeMap;
 
-use factional_core::Fixed;
+use factional_core::{Curve, Fixed};
 
-use crate::{Alignment, Axis, CharacterId, Disposition, Distance, FactionId, Observer, World};
+use crate::{
+    Alignment, Axis, CharacterId, Disposition, Distance, FactionId, Observer, TargetCurve, Toward,
+    World,
+};
 
 /// The map's cells along each axis: 10 apart, from −100 to 100.
 pub const MAP_CELLS: usize = 21;
@@ -120,6 +123,40 @@ impl AlignmentMap {
 }
 
 impl World {
+    /// Every named knob that's a curve, with its curve; `None` for one left out, which is
+    /// 1.00 everywhere: `disposition.affinity`, `standing.spillover`, each inertia
+    /// profile's four, then each action's three `by_target` curves (U7, the CLI's `curve`).
+    pub fn named_curves(&self) -> Vec<(String, Option<Curve>)> {
+        let balance = self.balance();
+        let mut knobs = vec![
+            (
+                "disposition.affinity".to_owned(),
+                Some(balance.affinity.clone()),
+            ),
+            (
+                "standing.spillover".to_owned(),
+                Some(balance.spillover.clone()),
+            ),
+        ];
+        for (profile, curves) in &balance.inertia.profiles {
+            for toward in Toward::ALL {
+                knobs.push((
+                    format!("inertia.{profile}.{}.{}", toward.axis().key(), toward.key()),
+                    curves.curves.get(&toward).cloned(),
+                ));
+            }
+        }
+        for action in self.actions() {
+            for which in TargetCurve::ALL {
+                knobs.push((
+                    format!("{}.by_target.{}", action.id, which.key()),
+                    action.by_target.get(&which).cloned(),
+                ));
+            }
+        }
+        knobs
+    }
+
     /// The alignment plane as `faction` sees it; `None` for an unknown faction.
     pub fn alignment_map(&self, faction: &FactionId) -> Option<AlignmentMap> {
         let at = self.faction_alignment(faction)?;
@@ -399,5 +436,36 @@ mod tests {
                 .disposition_matrix(&[])
                 .is_some_and(|m| m.rows.len() == 7)
         );
+    }
+
+    #[test]
+    fn named_curves_are_the_worlds_knobs_in_order_with_those_left_out_as_none() {
+        let world = riverhold();
+        let curves = world.named_curves();
+        let names: Vec<&str> = curves.iter().map(|(name, _)| name.as_str()).collect();
+        // Two, the default profile's four, then three for each of the three test actions.
+        assert_eq!(
+            names,
+            [
+                "disposition.affinity",
+                "standing.spillover",
+                "inertia.steady.law.toward_lawful",
+                "inertia.steady.law.toward_chaotic",
+                "inertia.steady.good.toward_good",
+                "inertia.steady.good.toward_evil",
+                "donate_to_temple.by_target.law",
+                "donate_to_temple.by_target.good",
+                "donate_to_temple.by_target.relation",
+                "help_stranger.by_target.law",
+                "help_stranger.by_target.good",
+                "help_stranger.by_target.relation",
+                "steal.by_target.law",
+                "steal.by_target.good",
+                "steal.by_target.relation",
+            ]
+        );
+        assert_eq!(curves[0].1.as_ref(), Some(&world.balance().affinity));
+        assert_eq!(curves[1].1.as_ref(), Some(&world.balance().spillover));
+        assert!(curves[2..].iter().all(|(_, curve)| curve.is_none()));
     }
 }

@@ -118,3 +118,27 @@ fn the_watchs_map_marks_its_tolerance_and_where_it_pictures_everyone() {
     let nowhere = FactionId::new("nowhere").expect("valid id");
     assert!(world.alignment_map(&nowhere).is_none());
 }
+
+#[test]
+fn the_samples_named_curves_start_with_affinity_as_balance_toml_writes_it() {
+    let world = riverhold();
+    let curves = world.named_curves();
+    // 2, then 4 for each of 2 inertia profiles, then 3 for each of 6 actions.
+    assert_eq!(curves.len(), 2 + 4 * 2 + 3 * 6);
+    let (name, affinity) = &curves[0];
+    assert_eq!(name, "disposition.affinity");
+    let points = affinity.as_ref().expect("written").points();
+    assert_eq!(
+        points,
+        [
+            (fixed("0"), fixed("50")),
+            (fixed("60"), fixed("0")),
+            (fixed("200"), fixed("-50")),
+        ]
+    );
+    let steady = curves
+        .iter()
+        .find(|(name, _)| name == "inertia.steady.law.toward_lawful")
+        .expect("a knob");
+    assert!(steady.1.is_none());
+}

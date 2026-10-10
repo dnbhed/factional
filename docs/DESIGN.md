@@ -665,6 +665,7 @@ The module exposes commands, events and queries, and nothing else. Other modules
 - `assess_exposure`: how each faction that would learn of a secret membership at once would decide (K5)
 - `alignment_map`: the alignment plane as a faction sees it, 21 by 21 cells 10 apart, each within its tolerance or not, with the faction's cell and each character where it pictures them, lettered in id order (U5; the CLI's `map`)
 - `disposition_matrix`: every observer, factions first, toward each of some characters, with nothing toward themself (U5; the CLI's `matrix`)
+- `named_curves`: every knob that's a curve, by its name, with `None` for one left out (U7; the CLI's `curve`)
 
 `World::replay(content, events)` rebuilds a world from its event log without running any rules: what saves are built on. `saved_journal()` gives each journal entry's command and how many events it produced, and `World::restore(content, journal, events)` rebuilds a world and its journal from them (T4, P-54).
 
@@ -1132,7 +1133,7 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 - **It never checks anything itself.** After every change it validates through the loader (`parse_content`, P-32) and shows each `Diagnostic` at its field, by its file and key, with the "did you mean" the loader gives. Quests' reach and lockout problems show on the graph's nodes. Warnings show beside errors, as in `validate`.
 - **It never re-implements a rule** (D-20, P-24). Previews, such as a disposition matrix, the alignment map, a curve, or whether a character can start a quest, come from engine queries on a world built from the content as it stands, and show the engine's own working.
 - **Workspaces are tabs** (D-34): Content, Quests and Previews along the top of one window.
-- **Previews come from the last world that loaded** (U5, D-35, P-81): a world built from the content in memory, unsaved edits included, each time it loads. While it doesn't, the Previews tab keeps the last that did, saying so with how many problems there are now; before any has, it says previews need a world that loads. U5 shows the engine's `disposition_matrix`, each score tinted by its band, and a chosen faction's `alignment_map` with its key; U7 adds curves and quests.
+- **Previews come from the last world that loaded** (U5, D-35, P-81): a world built from the content in memory, unsaved edits included, each time it loads. While it doesn't, the Previews tab keeps the last that did, saying so with how many problems there are now; before any has, it says previews need a world that loads. It shows the engine's `disposition_matrix`, each score tinted by its band; a chosen faction's `alignment_map` with its key (U5); a chosen knob from `named_curves`, plotted with its points in words; and a chosen character's `StartAssessment` for a chosen quest at the start of play, in the engine's words (U7).
 - **Panels:** a browser of every file's entries; a form for each entry, with the schema's ranges and enumerations; a graph of each questline's steps and each quest's stages and choices, with `locks` drawn as edges (drawn with egui's own painter, P-80); the diagnostics; the previews.
 - **A model under the UI.** Opening a directory, editing a field, undoing and saving are plain Rust on the editor's state, tested with `cargo test` and mutation testing like everything else. The egui layer stays thin: it draws the state and turns clicks into model calls, and is tested headless through AccessKit (`egui_kittest`). Floats in layout are egui's own; content numbers are edited as text and read as `Fixed`.
 - **Editing goes through the writer** (U2, P-77): `set_value` changes one value in a file's text, read as the kind already there (text, a number, or `true` or `false`), and nothing else; `entry_fields` lists an entry's values at any depth. The editor keeps each file's text in memory, makes the outline again after every change, and writes only on Save.
@@ -1148,7 +1149,7 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 | U4 (done) | Quests in the editor: tabs, graphs of questlines and of quests' stages and choices, `locks` as edges, reach and lockout problems on nodes |
 | U6 | The Content tab to the design canvas: grouped values with their comments and defaults, the summary, the problems panel, the visual language |
 | U5 (done) | Previews from engine queries: the Previews tab, the last world that loaded, the disposition matrix and the alignment map |
-| U7 | Previews: curves, and whether a character can start a quest |
+| U7 (done) | Previews: curves, and whether a character can start a quest |
 
 ## 19. The host engine: Bevy (designed in U0; D-33, P-75)
 

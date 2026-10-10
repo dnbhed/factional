@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use factional_content::{describe_mark, map_heading};
 use factional_core::{Curve, Fixed, ParseFixedError};
-use factional_reputation::{MapCell, TargetCurve, Toward, World};
+use factional_reputation::{MapCell, World};
 
 use crate::session::{Outcome, hint, lines, no_world};
 
@@ -143,39 +143,6 @@ pub(crate) fn matrix(world: &World, args: &str) -> Outcome {
     })))
 }
 
-/// Every named knob that's a curve, with its curve; `None` for one left out, which is 1.00
-/// everywhere.
-fn knobs(world: &World) -> Vec<(String, Option<Curve>)> {
-    let balance = world.balance();
-    let mut knobs = vec![
-        (
-            "disposition.affinity".to_owned(),
-            Some(balance.affinity.clone()),
-        ),
-        (
-            "standing.spillover".to_owned(),
-            Some(balance.spillover.clone()),
-        ),
-    ];
-    for (profile, curves) in &balance.inertia.profiles {
-        for toward in Toward::ALL {
-            knobs.push((
-                format!("inertia.{profile}.{}.{}", toward.axis().key(), toward.key()),
-                curves.curves.get(&toward).cloned(),
-            ));
-        }
-    }
-    for action in world.actions() {
-        for which in TargetCurve::ALL {
-            knobs.push((
-                format!("{}.by_target.{}", action.id, which.key()),
-                action.by_target.get(&which).cloned(),
-            ));
-        }
-    }
-    knobs
-}
-
 /// `curve <curve> [at <x>]`: a curve's value at `x`, or without `at`, the whole curve as a
 /// table. `<curve>` is a named knob, such as `disposition.affinity`, or a curve written as in
 /// a content file, to try a shape before using it (DESIGN.md §4.2).
@@ -199,7 +166,7 @@ fn describe_curve(world: Option<&World>, args: &str) -> Result<String, Outcome> 
     };
     let (name, curve) = if spec.starts_with(|c: char| c.is_ascii_lowercase()) {
         let world = world.ok_or_else(no_world)?;
-        let knobs = knobs(world);
+        let knobs = world.named_curves();
         let Some((name, curve)) = knobs.iter().find(|(name, _)| name == spec) else {
             let names = knobs.iter().map(|(name, _)| name.as_str()).collect();
             return Err(Outcome::Error(format!(

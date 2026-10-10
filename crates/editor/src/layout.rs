@@ -38,6 +38,39 @@ pub fn map_cell(origin: Pos2, cell: MapCell) -> Rect {
     Rect::from_min_size(corner, Vec2::splat(MAP_CELL - 1.0))
 }
 
+/// A curve's plot: its points, in `(x, y)` order, placed in `area` with the lowest x at the
+/// left, the highest at the right, and y rising up the area. A curve of one value runs flat
+/// across the middle.
+pub fn curve_plot(points: &[(f32, f32)], area: Rect) -> Vec<Pos2> {
+    let range = |values: Vec<f32>| {
+        let low = values.iter().copied().fold(f32::INFINITY, f32::min);
+        let high = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        (low, high)
+    };
+    let (left, right) = range(points.iter().map(|(x, _)| *x).collect());
+    let (bottom, top) = range(points.iter().map(|(_, y)| *y).collect());
+    let across = |value: f32, low: f32, high: f32| match high > low {
+        true => (value - low) / (high - low),
+        false => 0.5,
+    };
+    let placed: Vec<Pos2> = points
+        .iter()
+        .map(|(x, y)| {
+            Pos2::new(
+                area.left() + across(*x, left, right) * area.width(),
+                area.bottom() - across(*y, bottom, top) * area.height(),
+            )
+        })
+        .collect();
+    match placed.as_slice() {
+        [only] => vec![
+            Pos2::new(area.left(), only.y),
+            Pos2::new(area.right(), only.y),
+        ],
+        _ => placed,
+    }
+}
+
 /// A questline laid out: its steps' headings, its quests and the quests outside it, and an
 /// arrow for each of its edges between two of them.
 #[derive(Debug, Clone, PartialEq)]
@@ -379,6 +412,29 @@ mod tests {
         assert_eq!(
             map_cell(origin, MapCell { row: 8, column: 17 }),
             rect(10.0 + 17.0 * 16.0, 20.0 + 8.0 * 16.0, 15.0, 15.0)
+        );
+    }
+
+    #[test]
+    fn a_curve_is_plotted_across_its_area_rising_upward() {
+        let area = rect(10.0, 20.0, 280.0, 100.0);
+        // The sample's affinity: 50 at 0, 0 at 60, -50 at 200.
+        assert_eq!(
+            curve_plot(&[(0.0, 50.0), (60.0, 0.0), (200.0, -50.0)], area),
+            [
+                Pos2::new(10.0, 20.0),
+                Pos2::new(10.0 + 280.0 * 60.0 / 200.0, 70.0),
+                Pos2::new(290.0, 120.0),
+            ]
+        );
+        // One value runs flat across the middle; a flat curve of two points too.
+        assert_eq!(
+            curve_plot(&[(0.0, 1.0)], area),
+            [Pos2::new(10.0, 70.0), Pos2::new(290.0, 70.0)]
+        );
+        assert_eq!(
+            curve_plot(&[(0.0, 1.0), (100.0, 1.0)], area),
+            [Pos2::new(10.0, 70.0), Pos2::new(290.0, 70.0)]
         );
     }
 
