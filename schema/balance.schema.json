@@ -491,7 +491,8 @@
           "default": "steady",
           "description": "The profile of a character without their own.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "profile"
         },
         "profiles": {
           "additionalProperties": {

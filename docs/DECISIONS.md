@@ -603,6 +603,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The Previews tab scrolls only up and down,** so its choices wrap; the matrix scrolls sideways on its own when a world has many characters.
   - *Why:* every figure and every reason is still the engine's; the tab only chooses what to ask.
 
+- **P-83 · What names what** (made in U6a, 2026-10-10).
+  - **The schema says what each id names,** with `x-names` on a key or a list's items and `x-names-keys` on a table keyed by ids: `faction`, `character`, `party` (a faction or character, as givers and requirement standings name), `quest` (the first part of a `done` or a `locks` too), `outcome` or `profile`. JSON Schema validators ignore keywords they don't know, so the checked-in schemas still validate as before.
+  - **One walk finds every reference,** reading each file's text with its schema, so the Content tab can say what refers to an entry while the world doesn't load. It finds; the loader still checks.
+  - **The loader is the test of the walk:** in every directory in the repository that loads, renaming where each faction, character, quest, outcome and inertia profile is defined must make the loader report unknown names at exactly the places the walk lists. A key the schema forgot to mark, or marked wrongly, fails it.
+  - **Ranks are left out:** a rank is named within its faction, and isn't an entry of its own.
+  - **A key's description and default come from the schema** (`key_info`), the default read as the loader reads it (`-20.00`, `false`), so the form can show what a key left out means.
+  - *Why:* "Referenced by" and defaults are the content crate's knowledge, never the editor's search through text (canvas note q2).
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.

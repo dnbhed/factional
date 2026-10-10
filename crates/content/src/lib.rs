@@ -7,6 +7,7 @@ mod graph;
 mod outline;
 mod quests;
 mod reader;
+mod references;
 mod save;
 mod schema;
 mod unread;
@@ -16,14 +17,15 @@ pub use describe::{
     quest_heading,
 };
 pub use edit::{
-    Addition, EditError, Field, Step, ValueKind, ValuePath, add, additions, entry_fields,
-    entry_places, file_places, remove, set_value,
+    Addition, EditError, Field, KeyInfo, Step, ValueKind, ValuePath, add, additions, entry_fields,
+    entry_places, file_places, key_info, remove, set_value,
 };
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
     CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, load_texts,
     outline, outline_texts, read_texts,
 };
+pub use references::{Names, Reference, defined_in, referenced_by, references};
 pub use save::{Fingerprint, Restored, SAVE_VERSION, SaveError, fingerprint_of, restore, save};
 pub use schema::{SCHEMA_FILES, schema, schema_text};
 

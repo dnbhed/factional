@@ -34,14 +34,16 @@
           "items": {
             "description": "A character's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "character"
           },
           "type": "array"
         },
         "inertia": {
           "description": "Their inertia profile, from balance.toml; left out, the default.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "profile"
         },
         "memberships": {
           "description": "The factions they start in.",
@@ -51,7 +53,8 @@
               "faction": {
                 "description": "The faction's id.",
                 "pattern": "^[a-z][a-z0-9_]*$",
-                "type": "string"
+                "type": "string",
+                "x-names": "faction"
               },
               "rank": {
                 "description": "A rank on its ladder; left out, the lowest.",
@@ -103,7 +106,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "character"
         },
         "factions": {
           "additionalProperties": {
@@ -116,7 +120,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "faction"
         }
       },
       "type": "object"

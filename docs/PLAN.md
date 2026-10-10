@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6 → U8 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U8 → E1 → T5`
 
 ## Done
 
@@ -83,6 +83,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U4 — quests in the editor: tabs along the top (D-34), Content and Quests; `QuestGraph` in `factional-content`, from the quests as far as they read, with edges (`needs`, `locks`), each questline's outsiders one hop away, and every quest problem and warning at its questline, step, quest, stage or choice; the quest wording moved there from the CLI; the Quests tab draws questlines as steps in columns and quests as stages, marks nodes by their problems, lists edges, and shows the chosen quest with "Edit in Content"; drawn with egui's painter rather than `egui-snarl` (P-80); `graph <dir> <questline|quest>`, `scenarios/graph.scenario`; U6 outlined for the rest of the design canvas; done 2026-10-10 (#52)
 - U5 — previews: `World::alignment_map` and `World::disposition_matrix`, which the CLI's `map` and `matrix` now render from, unchanged; the editor's Previews tab with the matrix, each score tinted by its band, and a chosen faction's map with its key; previews from the last world that loaded, marked while the content doesn't load (D-35, the user's choice); curves and quests split off as U7; snarl's revisit deferred as U8 (X-6) (P-81); done 2026-10-10 (#53)
 - U7 — previews of curves and quests: `World::named_curves`, which the CLI's `curve` now renders from, unchanged; in the Previews tab, a chosen knob plotted through its points with each listed in words (or left out, 1.00 everywhere), and whether a chosen character can start a chosen quest at the start of play, in the engine's words (P-82); done 2026-10-10 (#54)
+- U6a — what the Content tab needs from the content crate: the schema marks what each id names (`x-names`, `x-names-keys`); `references`, `referenced_by` and `defined_in` read the text with it, held by a test to exactly the places the loader checks in every directory that loads; `key_info` gives a key's description and default; outline entries carry their `name`; `references <dir> <id>`, `scenarios/references.scenario`; U6 split into U6a to U6c (P-83); done 2026-10-10 (#55)
 
 ---
 
@@ -108,10 +109,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U6 · The Content tab to the design — P3 · Next
+### U6b · The Content tab's form — P3 · Next
 
-The design canvas's boards 1 to 3 and 6, against what U1 to U3 built: values grouped by what they mean, with the comments above them and defaults shown where a key is left out (from the schema), a summary that says whether the world loads, a problems panel, and the visual language (theme and fonts). Some of it needs `factional-content` first: an entry's display name, what refers to it, and each key's default and description.
+The design canvas's boards 1 and 2: an entry's values grouped by what they mean, with its name, the comments above each value beside it, defaults shown where a key is left out, ids chosen from those that exist, and what refers to the entry, from U6a.
 
+### U6c · Problems and the visual language — P3 · Outline
+
+Boards 3 and 6: a problems panel with each problem's way to its key and the loader's "did you mean" as a fix, a summary that says whether the world loads, and the theme and fonts (IBM Plex) in egui's visuals.
 
 ### U8 · Quest graphs in egui-snarl? — P3 · Deferred (X-6)
 

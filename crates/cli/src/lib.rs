@@ -9,6 +9,7 @@ mod graph;
 mod outline;
 mod play;
 mod quests;
+mod references;
 mod repl;
 mod script;
 mod session;

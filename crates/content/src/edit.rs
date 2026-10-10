@@ -271,13 +271,49 @@ fn walk<'d, 's>(
     Some((place, node))
 }
 
+/// What the schema says of a key: what it's for, and its default if it has one, as the
+/// loader would read it (U6a).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyInfo {
+    pub description: Option<String>,
+    pub default: Option<String>,
+}
+
+/// What the schema of `file` says of the key at `path`; `None` if it doesn't know it.
+pub fn key_info(file: &str, path: &ValuePath) -> Option<KeyInfo> {
+    let root = schema_of(file)?;
+    let mut node = &root;
+    for step in &path.0 {
+        node = child(form(&root, node, ""), step)?;
+    }
+    let outer = resolve(&root, node);
+    let inner = form(&root, node, "");
+    let said = |key: &str| outer.get(key).or_else(|| inner.get(key));
+    let description = said("description")
+        .and_then(Json::as_str)
+        .map(str::to_owned);
+    let integer = inner.get("type").and_then(Json::as_str) == Some("integer");
+    let default = said("default").map(|value| match value {
+        Json::String(text) => text.clone(),
+        Json::Number(number) if !integer => number
+            .to_string()
+            .parse::<Fixed>()
+            .map_or_else(|_| number.to_string(), |fixed| fixed.to_string()),
+        other => other.to_string(),
+    });
+    Some(KeyInfo {
+        description,
+        default,
+    })
+}
+
 /// `file`'s schema, for a content file such as `characters.toml`.
-fn schema_of(file: &str) -> Option<Json> {
+pub(crate) fn schema_of(file: &str) -> Option<Json> {
     schema(file.strip_suffix(".toml")?)
 }
 
 /// `node`, with any `$ref` followed.
-fn resolve<'s>(root: &'s Json, mut node: &'s Json) -> &'s Json {
+pub(crate) fn resolve<'s>(root: &'s Json, mut node: &'s Json) -> &'s Json {
     while let Some(target) = node
         .get("$ref")
         .and_then(Json::as_str)
@@ -291,7 +327,7 @@ fn resolve<'s>(root: &'s Json, mut node: &'s Json) -> &'s Json {
 
 /// The form of `node` for what's there: itself if it says its type, else the first of its
 /// `oneOf` forms of the type `shape` (or, with `shape` empty, the first of them).
-fn form<'s>(root: &'s Json, node: &'s Json, shape: &str) -> &'s Json {
+pub(crate) fn form<'s>(root: &'s Json, node: &'s Json, shape: &str) -> &'s Json {
     let node = resolve(root, node);
     if node.get("type").is_some() {
         return node;
@@ -308,7 +344,7 @@ fn form<'s>(root: &'s Json, node: &'s Json, shape: &str) -> &'s Json {
 }
 
 /// The schema for `step` within a table or list `node`.
-fn child<'s>(node: &'s Json, step: &Step) -> Option<&'s Json> {
+pub(crate) fn child<'s>(node: &'s Json, step: &Step) -> Option<&'s Json> {
     match step {
         Step::Key(key) => key_schema(node, key),
         Step::Index(index) => item_schema(node, *index),

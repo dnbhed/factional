@@ -39,7 +39,8 @@
           "description": "Every other quest, or stage of one, the choice can shut off for good, once each: quest for its gate (its step's requirements included), quest.stage for a stage. Loading refuses a lockout left out; one listed that can't happen is a warning.",
           "items": {
             "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)?$",
-            "type": "string"
+            "type": "string",
+            "x-names": "quest"
           },
           "type": "array"
         },
@@ -51,7 +52,8 @@
         "outcome": {
           "description": "An outcome from outcomes.toml.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "outcome"
         }
       },
       "required": [
@@ -81,7 +83,8 @@
         "giver": {
           "description": "Whose quest it is: a faction or a character, by id; left out, the world's own.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "party"
         },
         "name": {
           "description": "The quest's name, as shown.",
@@ -146,7 +149,8 @@
           "description": "Two factions whose regard for each other both shift.",
           "items": {
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "maxItems": 2,
           "minItems": 2,
@@ -161,12 +165,14 @@
         "from": {
           "description": "The faction whose regard shifts.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "faction"
         },
         "to": {
           "description": "The faction it regards.",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "type": "string"
+          "type": "string",
+          "x-names": "faction"
         }
       },
       "required": [
@@ -182,7 +188,8 @@
           "description": "Progress through other quests: quest (finished), quest.stage (reached) or quest.stage.choice (made).",
           "items": {
             "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$",
-            "type": "string"
+            "type": "string",
+            "x-names": "quest"
           },
           "type": "array"
         },
@@ -191,7 +198,8 @@
           "items": {
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "type": "array"
         },
@@ -200,7 +208,8 @@
           "items": {
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "type": "array"
         },
@@ -214,7 +223,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "faction"
         },
         "standing": {
           "additionalProperties": {
@@ -227,14 +237,16 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "party"
         },
         "within_tolerance": {
           "description": "Factions whose member tolerance the character must be within, as the faction pictures them.",
           "items": {
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-names": "faction"
           },
           "type": "array"
         }
@@ -283,7 +295,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "character"
         },
         "factions": {
           "additionalProperties": {
@@ -296,7 +309,8 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
-          "type": "object"
+          "type": "object",
+          "x-names-keys": "faction"
         }
       },
       "type": "object"

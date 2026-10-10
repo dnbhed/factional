@@ -1,0 +1,12 @@
+# What names what (U6a): every place in a directory's content that names an id, found from
+# the schema as the editor finds them, without loading. The loader checks the same places.
+
+# Captain Hale: a contact, an outcome's standing, a quest's giver and a choice's standing.
+references content/sample captain_hale
+
+# The hardening inertia profile, as two characters name it.
+references content/sample hardening
+
+# Nothing names the player, and a misspelt id is offered the nearest.
+assert references content/sample player == player, in characters.toml, is named nowhere
+assert references content/sample captain_hail == error: unknown id 'captain_hail' (did you mean 'captain_hale'?)

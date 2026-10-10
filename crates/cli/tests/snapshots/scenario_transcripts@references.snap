@@ -1,0 +1,18 @@
+---
+source: crates/cli/tests/scenarios.rs
+assertion_line: 24
+expression: transcript
+input_file: scenarios/references.scenario
+---
+> references content/sample captain_hale
+captain_hale, in characters.toml, is named in 4 places:
+  characters.toml: merchant_ava.contacts[0]
+  outcomes.toml: fined_by_watch.standing.characters.captain_hale
+  quests.toml: lost_dog.giver
+  quests.toml: lost_dog.stages[0].choices[0].effects.standing.characters.captain_hale
+> references content/sample hardening
+hardening, an inertia profile in balance.toml, is named in 2 places:
+  characters.toml: captain_hale.inertia
+  characters.toml: sister_mira.inertia
+> assert references content/sample player == player, in characters.toml, is named nowhere
+> assert references content/sample captain_hail == error: unknown id 'captain_hail' (did you mean 'captain_hale'?)

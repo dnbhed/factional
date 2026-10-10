@@ -118,7 +118,8 @@
               "propertyNames": {
                 "pattern": "^[a-z][a-z0-9_]*$"
               },
-              "type": "object"
+              "type": "object",
+              "x-names-keys": "character"
             },
             "factions": {
               "additionalProperties": {
@@ -131,7 +132,8 @@
               "propertyNames": {
                 "pattern": "^[a-z][a-z0-9_]*$"
               },
-              "type": "object"
+              "type": "object",
+              "x-names-keys": "faction"
             },
             "target": {
               "description": "The change in the target's regard for the actor.",
