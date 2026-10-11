@@ -467,6 +467,7 @@ Worked example: Ash, an initiate 40.00 from the Ashen Circle, does a good deed a
 - **Conflict.** Two factions are in conflict when either regards the other at or below `relations.conflict_threshold` (−50).
 - **Runtime changes.** Relations change through `SetRelation` and `ShiftRelation`, for wars and treaties sent by a quest module or the CLI. Each emits a `RelationChanged` for every direction that moved. Shifts stop at ±100, and a set outside ±100 is refused.
 - **Content.** `relations.toml` lists `[[relation]]` entries, each `between = [a, b]` (both directions) or `from`/`to` (one), with a `value`. Every direction may be set once, and any left out is 0.
+- **Content, from U12** (D-37, P-91). Each faction in `factions.toml` writes how it regards the others, `relations = { temple = 60.0 }`, and `relations.toml` goes. Each direction is written once, in the faction that holds it; any left out is 0, and a pair written on one side only is a warning. The editor shows each pair as one row on both factions' pages, linked "same both ways" while both hold the same value (D-38).
 - **Enemy exclusion (D-4).** A member of a faction in conflict with another can't join it. The refusal names the faction and the more hostile of the two directions. M7 replaces this plain refusal with rule tables.
 - **A war between someone's own factions** is accepted, and opens a conflict for them (below). Before M9 it was refused (P-38).
 
@@ -717,7 +718,7 @@ This table lists every knob: where it lives, its default, and the increment that
 | `disposition.hysteresis` | balance.toml | 0 | D3 |
 | faction `tolerance`, `member_tolerance` | factions.toml | — / same as tolerance | M1 |
 | faction `leave_standing_change` | factions.toml | 0 | M3 |
-| relations | relations.toml | 0 | M2 |
+| relations | relations.toml; each faction's `relations` in factions.toml from U12 (D-37) | 0 | M2 |
 | `relations.bands`, `relations.conflict_threshold` | balance.toml | see §9.4; −50 | M2 |
 | action `standing` effects | actions.toml | none | M3 |
 | outcomes | outcomes.toml | — | M3 |
@@ -740,7 +741,7 @@ This table lists every knob: where it lives, its default, and the increment that
 content/<world>/
   balance.toml      global rules, curves, bands, defaults, rule tables
   factions.toml     factions, ranks, per-faction overrides
-  relations.toml    faction ↔ faction
+  relations.toml    faction ↔ faction (until U12; then in factions.toml, D-37)
   characters.toml   characters, starting alignment, memberships, standings
   actions.toml      the action catalogue
   outcomes.toml     named effect bundles (quest results and the like)
@@ -936,6 +937,7 @@ crates/
   reputation/    factional-reputation   the model, rules, World, commands, events, queries. No I/O.
   quests/        factional-quests       quests, questlines and their checks (§17). No I/O.
   content/       factional-content      reads TOML from disk, validates, diagnostics, JSON Schema.
+  session/       factional-session      the REPL's session, for the CLI and the editor (§18; from U14).
   cli/           factional-cli          the `factional` binary: repl, run, validate, schema, compare.
   editor/        factional-editor       the visual editor, in egui (§18; from U1).
   bevy/          factional-bevy         the Bevy plugin (§19; from E1).
@@ -943,7 +945,7 @@ content/sample/  Riverhold
 scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/snapshots/
 ```
 
-- **Dependencies point one way:** core ← reputation ← quests ← content ← cli. `factional-content` reads every module's files, so it sits above them all (P-67). The editor and the Bevy plugin sit beside `cli`, at the top: nothing depends on them (D-32, D-33).
+- **Dependencies point one way:** core ← reputation ← quests ← content ← cli; from U14, core ← reputation ← quests ← content ← session ← cli, with the editor depending on `session` too (D-39, P-95). `factional-content` reads every module's files, so it sits above them all (P-67). The editor and the Bevy plugin sit beside `cli`, at the top: nothing depends on them (D-32, D-33).
 - **Other modules** (quests, then combat and the rest) are sibling crates. They talk to reputation only through §11. `factional-quests` also reads reputation's content, to check itself at load (§17, P-64).
 - **The host engine is Bevy** (D-33, settling X-2): the module embeds as a Bevy plugin (§19). The core stays engine-agnostic, so nothing below the plugin knows Bevy exists.
 
@@ -1144,6 +1146,14 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 - **The loader's fixes are data** (U6c, P-85): every "did you mean" comes with a `Suggestion` (the misspelt word and the nearest known one), from the engine's own errors and the content readers alike, carried on its `Diagnostic`. `fix_for` finds the change in the text at the problem's key, without reading the message: a key spelt as the misspelt word in the table there is renamed; a value there that is the word, or names it as part of a quest path, is set. `apply_fix` makes it through the writer (`rename_key` keeps the value, its place and its comments), so it's undoable like any change. The Content tab lists every problem and warning in a panel along the bottom, each with its key as a link to its entry and its fix as "Use 'right'"; each also shows under its field, and what's at no field beside the form. `fixes <dir>` in the REPL lists the same fixes.
 - **An entry's form is the content crate's** (U6b, P-84): each entry's definition in the schema lists its groups in order (`x-groups`), such as a faction's *Identity*, *Where it stands*, *Membership*, *Drift*, *Ranks* and *Its own rules*, and each key names its own (`x-group`); a value nested in a key is in its group, and balance's entries have none. `entry_form` reads the text with the schema: what's written, in the order written, then each key left out of a table that's there and has a default, each with its description, the comment lines directly above it (or above its table's header, for a table's first value) and any after it on its line, and its choices: the ids that exist for what it names, the schema's enumeration, or `false` and `true`. The Content tab shows it under the entry's file, key and name, with a default's Set and a value's choices beside its field, which stays free to type, since a `done` or `locks` may name a stage; beside the form are what the loader says about the entry, what names it, each reference choosing its entry, and the entry as written. `form <dir> <file> <entry>` in the REPL prints the same.
 - **What names what is the content crate's** (U6a, P-83): the schema marks each id-valued key with what it names (`x-names`: faction, character, party, quest, outcome or profile; `x-names-keys` on a table keyed by ids), and `references` walks the text with it, so it works while the world doesn't load; `referenced_by` gives the places naming one entry, and `defined_in` the file that defines an id. A test holds them to the loader: renaming each defined id in every directory that loads makes the loader report unknown names at exactly the places listed. `key_info` gives a key's description and default from the schema, and an outline entry carries its `name`. `references <dir> <id>` in the REPL prints the same.
+- **The usability pass** (designed in U9, D-37 to D-40, P-91 to P-97; the research is in [research/usability-2026-10.md](research/usability-2026-10.md)). What follows is to be built in U10 to U17.
+  - **The form says where a value is in words** (U10, P-92): each key's `title` from the schema, list items named by their `x-title` key or numbered from 1, tables as sections under their headings, pairs as pairs and tables keyed by ids as small tables, and problems in the same words. AccessKit labels and the CLI's `form` keep key paths, and `form` prints the words beside them.
+  - **Requirements and effects read as sentences** (U11, P-93), in the content crate's words, the quest graph's own, each with its values as fields and "+ Requirement…" or "+ Effect…" to add one.
+  - **Each faction's page shows its relations** (U12, D-37, D-38, P-91): a Relations group listing every other faction, each row how this faction regards it and how it regards this one back, with the band's name, a mark where the pair is in conflict, and "same both ways", linked while the two are equal. A faction with nothing written shows 0 with Set. The text is each faction's `relations` in `factions.toml`, so both pages show the same two values. Previews gain the relations matrix, each cell tinted by its band like the disposition matrix.
+  - **Questlines make their own quests** (U13, P-94): the Quests tab's graph stays read-only (D-36), and the chosen node's page sits beside it, editable. A questline's page is its steps in order, each with "+ New quest" and "+ Existing quest…" (quests in no questline); quests move between steps and steps reorder. Pages nest with a breadcrumb, a quest's page its stages and a stage's its choices. A change to several files, as "+ New quest" makes, is one Undo.
+  - **The REPL is a library** (U14, D-39, P-95): `factional-session`, holding `Session` as the CLI has it, loading from texts in memory as well as a directory, and marking the ids in what it says.
+  - **Play is a drawer along the bottom of every tab** (U15, U16, D-40, P-96), beside Problems, which moves into it from the Content tab. It runs the REPL on the content as it stands: history, completion of commands and ids, ids as links, and the session reloaded with `reload`'s rules each time the content loads, saying which command first comes out differently. Pages hand it commands, such as a quest's "Start it in Play". Watches re-run pinned commands after every command, with the engine's explanations; "Save as scenario" writes the session to `scenarios/`.
+  - **Smaller things** (U17, P-97): renaming an id everywhere it's named, as one change; pickers that search, show names and offer "+ New …" for an id that doesn't exist; quick open, back and forward, reordering, duplicating, and the usual keys.
 - **The quest graphs' lines go around the boxes** (U8, D-36, P-90): each leaves the side of its box facing where it goes and turns in the gaps between columns; a line further than the next column runs along a corridor below every box. Each has its own lane and its own point on a box's side, and its turns are rounded as it's drawn. A questline's outside quests have a column of their own after its last step.
 - **The quest graph is the content crate's** (U4, P-80): `QuestGraph` holds the quests as far as they read, so it shows while the world doesn't load; its edges (a gate or stage that `needs` progress in another quest, a choice that `locks` a quest or stage); each questline as drawn, with the quests outside it at the far end of its edges; and every quest problem and warning at the questline, step, quest, stage or choice its key names. The words for quests, steps, requirements and choices live there too, for the CLI's `quests` and `graph` and the editor alike. The Quests tab draws a questline as steps in columns and a quest as its stages in order, each node marked by its problems and warnings, and lists the edges in words; it's read-only, with "Edit in Content" to change what's chosen. `graph <dir> <questline|quest>` in the REPL prints the same.
 - **The outline is the content crate's** (U1, P-76): `outline(dir)` lists each content file, whether it's there, its entries (a top-level table, or one table of a top-level list, such as `relation[2]`) in id order, and the loader's problems and warnings, each at the entry its key starts with or else at its file. The editor shows it, and `outline <dir>` in the REPL prints it, so the CLI's scenarios cover what the editor shows.
@@ -1163,6 +1173,16 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 | U6f (done) | Lists of tables as tables |
 | U6e (done) | The visual language, to board 6: the theme, a field's states, the summary's pill, the graph's problem fill |
 | U6g (done) | IBM Plex Sans and Mono, from files in the repository |
+| U8 (done) | Quest graphs whose lines go around their boxes |
+| U9 (done) | The usability pass's design: relations in each faction, labels in words, editing questlines, Play (D-37 to D-40, P-91 to P-97) |
+| U10 | Labels and nesting: the form says where a value is in words |
+| U11 | Requirements and effects as sentences |
+| U12 | Relations in each faction: `factions.toml`'s `relations`, each faction's Relations group, the relations matrix |
+| U13 | Questlines make their own quests: the Quests tab's pages, nested, with a breadcrumb |
+| U14 | `factional-session`: the REPL's session as a library, loading from texts |
+| U15 | Play, in a drawer along the bottom with Problems |
+| U16 | Watches, and saving Play as a scenario |
+| U17 | Renaming everywhere, pickers that search, making what a picker names |
 
 ## 19. The host engine: Bevy (designed in U0; D-33, P-75)
 
