@@ -5,8 +5,8 @@
 use std::path::Path;
 
 use factional_content::{
-    Addition, CONTENT_FILES, ContentTexts, Step, ValuePath, additions, entry_places, key_info,
-    outline_texts, read_texts,
+    Addition, CONTENT_FILES, ContentTexts, Step, ValuePath, additions, entry_places, id_choices,
+    key_info, outline_texts, read_texts,
 };
 
 use crate::session::{Outcome, hint};
@@ -53,11 +53,38 @@ pub(crate) fn keys(base: &Path, args: &str) -> Outcome {
                 shown.push(format!("  {key}: {}{default}", info.kind));
                 shown.extend(info.description.map(|said| format!("    {said}")));
             }
-            Addition::Item => shown.push("  an item at the end".to_owned()),
-            Addition::Id => shown.push("  an entry by a new id".to_owned()),
+            Addition::Item => {
+                let item = key_info(file, &path).and_then(|info| info.item);
+                let item = item.map_or_else(|| "an item".to_owned(), |item| a(&item));
+                shown.push(format!("  {item} at the end"));
+            }
+            Addition::Id => {
+                let choices = id_choices(&texts, file, &path);
+                if choices.is_empty() {
+                    shown.push("  an entry by a new id".to_owned());
+                    continue;
+                }
+                shown.push("  an entry by a new id, or one of those not there yet:".to_owned());
+                for choice in choices {
+                    shown.push(match choice.name {
+                        Some(name) => format!("    {}: {name}", choice.id),
+                        None => format!("    {}", choice.id),
+                    });
+                }
+            }
         }
     }
     Outcome::Output(shown.join("\n"))
+}
+
+/// "a rank" for `Rank`: what an item is called, as one of them.
+fn a(item: &str) -> String {
+    let lower = item.to_lowercase();
+    let article = match lower.starts_with(['a', 'e', 'i', 'o', 'u']) {
+        true => "an",
+        false => "a",
+    };
+    format!("{article} {lower}")
 }
 
 /// Whether `path` is a table or list in an entry of the `place`th file.
@@ -112,7 +139,24 @@ mod tests {
     fn keys_offers_items_and_ids_where_they_fit() {
         assert_eq!(
             run("keys content/sample factions.toml city_watch.ranks"),
-            output("factions.toml › city_watch.ranks can have:\n  an item at the end")
+            output("factions.toml › city_watch.ranks can have:\n  a rank at the end")
+        );
+        // A list of values has no name for its items.
+        assert_eq!(
+            run("keys content/sample characters.toml merchant_ava.contacts"),
+            output("characters.toml › merchant_ava.contacts can have:\n  an item at the end")
+        );
+        // A table keyed by ids offers those that exist and aren't there yet (U10b).
+        assert_eq!(
+            run("keys content/sample characters.toml vex.standing.factions"),
+            output(
+                "characters.toml › vex.standing.factions can have:\n\
+                 \x20 an entry by a new id, or one of those not there yet:\n\
+                 \x20   ashen_circle: The Ashen Circle\n\
+                 \x20   city_watch: The City Watch\n\
+                 \x20   free_company: The Free Company\n\
+                 \x20   temple: Temple of the Dawn"
+            )
         );
         assert_eq!(
             run("keys content/sample characters.toml"),
@@ -122,6 +166,13 @@ mod tests {
             run("keys content/sample factions.toml city_watch.alignment"),
             output("factions.toml › city_watch.alignment has every key it can")
         );
+    }
+
+    #[test]
+    fn an_item_is_called_a_or_an_as_its_name_is_said() {
+        assert_eq!(super::a("Rank"), "a rank");
+        assert_eq!(super::a("Effect"), "an effect");
+        assert_eq!(super::a("Outcome"), "an outcome");
     }
 
     #[test]

@@ -20,9 +20,16 @@ factions.toml › city_watch can have:
     Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4).
 > keys content/sample factions.toml city_watch.ranks
 factions.toml › city_watch.ranks can have:
-  an item at the end
+  a rank at the end
 > keys content/sample characters.toml
 characters.toml can have:
   an entry by a new id
+> keys content/sample characters.toml vex.standing.factions
+characters.toml › vex.standing.factions can have:
+  an entry by a new id, or one of those not there yet:
+    ashen_circle: The Ashen Circle
+    city_watch: The City Watch
+    free_company: The Free Company
+    temple: Temple of the Dawn
 > assert keys content/sample factions.toml city_watch.alignment == factions.toml › city_watch.alignment has every key it can
 > assert keys content/sample factions.toml nobody == error: nothing at nobody in factions.toml

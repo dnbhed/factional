@@ -103,9 +103,13 @@ fn what_refers_to_an_entry_is_listed_and_each_goes_to_its_entry() {
     harness.get_by_label("Referenced by");
     // Grouped by the file each is in.
     harness.get_by_label("relations.toml");
-    harness.get_by_label("relation[0].between[0]");
+    // Each in words (U10b).
+    harness.get_by_label("Relations › Relation 1 › Between › 1");
     assert!(harness.query_by_label("Nothing names city_watch").is_none());
-    click(&mut harness, "captain_hale.memberships[0].faction");
+    click(
+        &mut harness,
+        "Captain Hale › Membership \"The City Watch\" › Faction",
+    );
     harness.get_by_label("characters.toml › captain_hale");
     assert_eq!(value(&harness, "alignment.law").as_deref(), Some("75.0"));
     // Nothing names the player.

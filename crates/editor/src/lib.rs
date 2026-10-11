@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 
 use factional_content::{
     Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
-    Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, Word, additions, apply_fix,
-    entry_fields, entry_form, entry_places, file_places, fix_for, load_texts, outline,
-    outline_texts, place_words, read_texts, referenced_by, set_value,
+    IdChoice, Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, Word, additions,
+    apply_fix, entry_fields, entry_form, entry_places, file_places, fix_for, id_choices, key_info,
+    load_texts, outline, outline_texts, place_words, read_texts, referenced_by, set_value,
+    words_at,
 };
 use factional_core::Curve;
 use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
@@ -72,6 +73,8 @@ pub struct Editor {
     places: Vec<PlaceInput>,
     /// What names the selected entry; `None` if nothing can, as for a relation.
     referenced: Option<Vec<Reference>>,
+    /// Where each place that names the selected entry is, in words (U10b).
+    referenced_words: Vec<String>,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -166,6 +169,12 @@ pub struct PlaceInput {
     pub additions: Vec<Addition>,
     /// A new id, as typed, for a place that takes one.
     pub id: String,
+    /// For a table keyed by ids, those that exist and aren't there yet (U10b).
+    pub choices: Vec<IdChoice>,
+    /// For a list, what one of its items is called, such as `Rank` (U10b).
+    pub item: Option<String>,
+    /// Where it is, in words, from its file's start (U10b).
+    pub words: String,
 }
 
 impl Editor {
@@ -184,6 +193,7 @@ impl Editor {
             fields: Vec::new(),
             places: Vec::new(),
             referenced: None,
+            referenced_words: Vec::new(),
             file_places: Vec::new(),
             note: None,
             workspace: Workspace::Content,
@@ -282,6 +292,12 @@ impl Editor {
     /// What names the selected entry, as written; `None` if it's in a file nothing names.
     pub fn referenced_by(&self) -> Option<&[Reference]> {
         self.referenced.as_deref()
+    }
+
+    /// Where each place that names the selected entry is, in words, in the order of
+    /// [`Editor::referenced_by`].
+    pub fn referenced_words(&self) -> &[String] {
+        &self.referenced_words
     }
 
     /// The selected entry's places: the entry, and every table and list in it.
@@ -704,7 +720,7 @@ impl Editor {
                 .zip(texts)
                 .map(|(file, text)| {
                     let text = text.as_deref().unwrap_or_default();
-                    places_in(file.name, text, file_places(text))
+                    places_in(texts, file.name, file_places(text))
                 })
                 .collect(),
             None => Vec::new(),
@@ -719,6 +735,7 @@ impl Editor {
             self.fields.clear();
             self.places.clear();
             self.referenced = None;
+            self.referenced_words.clear();
             return;
         };
         let text = texts[file].as_deref().unwrap_or_default();
@@ -763,10 +780,16 @@ impl Editor {
                 })
             })
             .collect();
-        self.places = places_in(name, text, entry_places(text, key));
+        self.places = places_in(texts, name, entry_places(text, key));
         self.referenced = NAMED_FILES
             .contains(&name)
             .then(|| referenced_by(texts, name, key));
+        self.referenced_words = self
+            .referenced
+            .iter()
+            .flatten()
+            .map(|reference| words_at(texts, reference.file, &reference.key))
+            .collect();
     }
 
     /// Selects the `entry`th entry of the `file`th file; nothing if there's no such entry.
@@ -996,15 +1019,29 @@ impl Editor {
                     .monospace()
                     .weak(),
             );
-            ui.heading(entry.name.as_deref().unwrap_or(&entry.key));
+            let heading = entry.name.clone().unwrap_or_else(|| entry.key.clone());
             let key = entry.key.clone();
+            let entry_path = ValuePath::parse(&key).unwrap_or(ValuePath::ROOT);
+            // The entry's own × and "+" are beside its name (U10b).
+            ui.horizontal(|ui| {
+                ui.heading(heading);
+                if let Some(at) = self.places.iter_mut().find(|at| at.path == entry_path) {
+                    if removing_ui::remove_button(ui, &key) {
+                        removing = Some(at.path.clone());
+                    }
+                    let mut added = None;
+                    removing_ui::adding_menu(ui, file, at, &key, true, &mut added);
+                    if let Some((at, key)) = added {
+                        adding = Some((place, at, key));
+                    }
+                }
+            });
             if self.confirming.is_some() {
                 let count = self.referenced_by().map_or(0, <[_]>::len);
                 confirmed = removing_ui::confirm_ui(ui, &key, count);
             }
             ui.separator();
             let prefix = format!("{key}.");
-            let entry_path = ValuePath::parse(&key).unwrap_or(ValuePath::ROOT);
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let mut drawn = Vec::new();
                 acted = form_ui::form_ui(
@@ -1015,16 +1052,13 @@ impl Editor {
                     &mut self.places,
                     &mut drawn,
                 );
-                ui.separator();
+                // What fits nowhere in the form, if anything, is listed after it.
                 for at in &mut self.places {
-                    if drawn.contains(&at.path) {
+                    if at.path == entry_path || drawn.contains(&at.path) {
                         continue;
                     }
                     let path = at.path.to_string();
-                    let name = match path == key {
-                        true => key.clone(),
-                        false => path.strip_prefix(&prefix).unwrap_or(&path).to_owned(),
-                    };
+                    let name = path.strip_prefix(&prefix).unwrap_or(&path).to_owned();
                     let mut added = None;
                     ui.horizontal_wrapped(|ui| {
                         if removing_ui::remove_button(ui, &name) {
@@ -1098,12 +1132,21 @@ impl Editor {
     }
 }
 
-/// Each of `paths` in `file`'s `text`, with what can be added there.
-fn places_in(file: &str, text: &str, paths: Vec<ValuePath>) -> Vec<PlaceInput> {
+/// Each of `paths` in `file`, with what can be added there, the ids it may take, what its
+/// items are called and where it is in words.
+fn places_in(texts: &ContentTexts, file: &str, paths: Vec<ValuePath>) -> Vec<PlaceInput> {
+    let text = CONTENT_FILES
+        .iter()
+        .position(|name| *name == file)
+        .and_then(|place| texts[place].as_deref())
+        .unwrap_or_default();
     paths
         .into_iter()
         .map(|path| PlaceInput {
             additions: additions(file, text, &path),
+            choices: id_choices(texts, file, &path),
+            item: key_info(file, &path).and_then(|info| info.item),
+            words: words_at(texts, file, &path.to_string()),
             path,
             id: String::new(),
         })
@@ -1122,6 +1165,7 @@ fn adding_ui(
         path,
         additions,
         id,
+        ..
     } = place;
     for addition in additions.iter() {
         match addition {

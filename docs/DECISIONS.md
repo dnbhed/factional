@@ -67,6 +67,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-37 · Relations are written in each faction, in `factions.toml`** (agreed 2026-10-11 in U9, at the user's direction; was O-5). Each faction's own `relations` says how it regards each other faction, where it's read and edited, as the Creation Kit does; `relations.toml` goes. The engine's model of relations, `SetRelation`, `ShiftRelation` and quests' relation effects are unchanged (§9.4, §18; built in U12).
 - **D-38 · One relation per pair of factions, with a value each way, linked by default** (agreed 2026-10-11 in U9, at the user's choice; was O-6). In the editor a pair is one row on each faction's page, with how this faction regards the other and how the other regards it back, and "same both ways" linked unless the designer unlinks it for a grudge. One-way grudges stay, as §9.4 and Riverhold's Watch and Free Company have them (§18).
 - **D-39 · The REPL's session is a library both the CLI and the editor use** (agreed 2026-10-11 in U9, at the user's choice; was O-7). `Session` moves out of `factional-cli` into a new crate, `factional-session`, which also loads from texts in memory, so the editor plays the content as it stands, unsaved edits included, and links the ids in what it says (§15, §18; built in U14).
+- **D-41 · Adding and removing sit where each place is** (agreed 2026-10-11 in U10b, at the user's direction). A place's × and "+" are beside it in the form, so adding a rank is a "+" next to the ranks, rather than in a list of places after the form (§18).
 - **D-40 · Play is a drawer along the bottom of every tab** (agreed 2026-10-11 in U9, at the user's choice; was O-8). The REPL runs in the editor below whatever is being edited, not in a tab of its own, so D-34's three tabs stay (§18; built in U15).
 
 ## Proposed — 2026-10-04
@@ -734,6 +735,18 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Keys stay where tests and the typed language need them:** a field's AccessKit label, the "Add to", × and "Set" buttons, and the CLI's `form`, which prints each row's words, then ` · `, then its key and value.
   - **UI tests scroll before clicking,** as headings make a form taller than the 900-point window (P-84); kittest clicks where a widget is, so one off-screen isn't clicked.
   - *Why:* the user found the dot notation and list indexes hard to read; every inspector the research looked at names an item by what's in it.
+
+- **P-99 · Where each place's × and "+" go** (made in U10b, 2026-10-11; D-41).
+  - **On the first heading that says it** (`Line::Heading::path`, from each word's `through`): *Alignment* [×] [+…]. A heading drawn again after a table carries none.
+  - **A list of named items, said by its items, beside what holds it:** a stage's "+ Choice" on its *Stage "inspect"* heading; at the top of the entry, beside its group's name, as "+ Stage" is beside *Stages*. So is any top-level place whose heading is its group's name, such as `drift`.
+  - **A list drawn as a table at the table's end,** "+ Rank" under the last rung, with no × of its own: it's emptied an item at a time. An item's × and "+…" stay in its row; what's within an item is the row's, and a cell's × removes the field's outermost place within the item, so the × by a rank's *Requirements › Standing* removes its `requires`.
+  - **The entry's own beside its name,** at the top.
+  - **An empty table or list is a row of its own** (`entry_form`, with nothing written and no default), so it has a heading to put them on, marked *empty*; the CLI's `form` says `standing: empty`. A table with something in it, even an empty table, isn't empty.
+  - **A list's "+" adds an item at once,** "+ <item>" by its `x-item` (`KeyInfo::item`), or "+" for a list of values; anything else's "+…" is its menu. Nothing is drawn where nothing more fits, as the heading already names the place.
+  - **A table keyed by ids offers the ids that exist and aren't there yet, by name** (`id_choices`), each as "<name> · <id>", above the field for a new one, which stays for an id not yet made.
+  - **Anything left over is listed after the form,** as before; none in the sample is. Accessible labels stay "Remove <key>", "Add to <key>…" and "Add <id> to <key>", so tests and screen readers still find each by its key; hovering a "+" says where in words.
+  - **Referenced by is in words,** worked out once as an entry is chosen.
+  - *Why:* the user asked for the "+" beside what it adds to; a designer adds where they're looking.
 
 ## Open
 

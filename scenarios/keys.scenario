@@ -4,8 +4,11 @@
 # The Watch can still have its own rule tables, its expulsion and leaving costs, and secret members.
 keys content/sample factions.toml city_watch
 
-# A list takes items, and a file of entries takes new ids.
+# A list takes items, by what they're called, and a file of entries takes new ids.
 keys content/sample factions.toml city_watch.ranks
 keys content/sample characters.toml
+
+# A table keyed by ids takes a new one, or one that exists and isn't there yet (U10b).
+keys content/sample characters.toml vex.standing.factions
 assert keys content/sample factions.toml city_watch.alignment == factions.toml › city_watch.alignment has every key it can
 assert keys content/sample factions.toml nobody == error: nothing at nobody in factions.toml

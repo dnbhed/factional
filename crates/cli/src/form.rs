@@ -45,16 +45,15 @@ pub(crate) fn form(base: &Path, args: &str) -> Outcome {
     Outcome::Output(shown.join("\n"))
 }
 
-/// `Drift › Then · drift.then = expel (demote or expel)` or `Secret members · secret_members:
-/// not set, false (false or true)`: its words, then its key and value.
+/// `Drift › Then · drift.then = expel (demote or expel)`, `Secret members · secret_members:
+/// not set, false (false or true)` or `Standing · standing: empty`: its words, then its key
+/// and value.
 fn describe(row: &FormRow) -> String {
     let words: Vec<&str> = row.words.iter().map(|word| word.text.as_str()).collect();
-    let value = match &row.written {
-        Some(field) => format!("{} = {}", row.key, field.value),
-        None => {
-            let default = row.default.as_deref().unwrap_or_default();
-            format!("{}: not set, {default}", row.key)
-        }
+    let value = match (&row.written, &row.default) {
+        (Some(field), _) => format!("{} = {}", row.key, field.value),
+        (None, Some(default)) => format!("{}: not set, {default}", row.key),
+        (None, None) => format!("{}: empty", row.key),
     };
     let value = format!("{} · {value}", words.join(" › "));
     match either(&row.choices) {
@@ -145,6 +144,25 @@ mod tests {
                  \x20 Ripple › Ticks a hop · ripple.hop_ticks = 10"
             )
         );
+    }
+
+    #[test]
+    fn an_empty_table_or_list_is_said_to_be_empty() {
+        use factional_content::{FormRow, ValuePath, Word};
+        let row = FormRow {
+            path: ValuePath::parse("ava.standing").expect("a path"),
+            key: "standing".to_owned(),
+            words: vec![Word {
+                text: "Standing".to_owned(),
+                through: 1,
+            }],
+            written: None,
+            default: None,
+            description: None,
+            comment: Vec::new(),
+            choices: Vec::new(),
+        };
+        assert_eq!(super::describe(&row), "Standing · standing: empty");
     }
 
     #[test]

@@ -40,8 +40,9 @@ fn the_keys_to_add_say_what_each_is() {
     harness.get_by_label("a number from -100.00 to 100.00, -20.00 by default");
     harness.get_by_label("The change in standing with the faction when it expels someone.");
     harness.get_by_label("true or false, false by default");
-    // A place with nothing more to add is named beside its ×.
-    harness.get_by_label("weights");
+    // A place with nothing more to add has only its ×, on its heading (U10b).
+    harness.get_by_label("Remove weights");
+    assert!(harness.query_by_label("Add to weights…").is_none());
     click(&mut harness, "Add secret_members to city_watch");
     assert_eq!(
         harness.get_by_label("secret_members").value().as_deref(),

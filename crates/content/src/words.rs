@@ -140,6 +140,26 @@ impl Wording {
         words
     }
 
+    /// The keys written in the table at `path`; none if there's no table there.
+    pub(crate) fn keys_at(&self, path: &ValuePath) -> Vec<String> {
+        let mut value = self.document.as_ref();
+        for step in &path.0 {
+            value = match step {
+                Step::Key(key) => value.and_then(|value| value.get(key.as_str())),
+                Step::Index(index) => value.and_then(|value| value.get(*index)),
+            };
+        }
+        value
+            .and_then(Toml::as_table)
+            .map(|table| table.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// The name of `id`, as one of `names`; `None` if it has none.
+    pub(crate) fn name_of(&self, names: Names, id: &str) -> Option<&str> {
+        self.name_in(files_of(Some(names)), id)
+    }
+
     /// The title the schema gives `node`, its own or its definition's.
     fn title<'s>(&'s self, node: &'s Json) -> Option<&'s str> {
         let titled = |node: &'s Json| node.get("title").and_then(Json::as_str);
