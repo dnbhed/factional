@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10 → U11 → U12 → U13 → U14 → U15 → U16 → U17 → E1 → T5`
 
 ## Done
 
@@ -91,6 +91,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U6e — the visual language, to board 6 without its fonts: `theme::visuals()`, egui's dark visuals with the canvas's colours, set as the editor draws, with the editor's own (loads, locks, comment green, a problem's fill); comments in comment green; the summary as a pill; a value changed since the last save marked amber beside its key and around its field, with its file "edited", until Undo or Save; a refused value or one with a problem bordered red; a quest node with a problem filled red; a table row's "Add to" shown as "+…"; IBM Plex split off as U6g (P-88); done 2026-10-10 (#60)
 - U6g — IBM Plex in the editor, to board 6: Plex Sans Regular and SemiBold and Plex Mono Regular in `crates/editor/fonts/` with `OFL.txt` (from IBM's `@ibm/plex-sans@1.1.0` and `@ibm/plex-mono@2.5.0` releases), built into the editor; `theme::fonts()` puts Plex first in each family with egui's faces after; `theme::text_styles()` gives board 6's sizes; the form's keys and values in Plex Mono; fonts, sizes and visuals set once as the editor first draws (P-89); done 2026-10-10 (#61)
 - U8 — quest graphs that don't cross their boxes: every line routed through the gaps between columns, or along a corridor below the boxes when it goes further than the next column, each with its own lane and its own point on a box's side, its turns rounded as drawn; a questline's outside quests in a column after its last step; a quest's end as tall as its tallest stage; a test holds every graph in the repository to no line through a box; settles X-6 as the user chose, without egui-snarl (D-36, P-90); done 2026-10-10 (#62)
+- U9 — the usability pass's design, from research into comparable tools (`docs/research/usability-2026-10.md`): the user chose relations written in each faction in `factions.toml` (D-37), one relation per pair with a value each way, linked by default (D-38), the REPL's session as a library (D-39) and Play as a drawer along the bottom (D-40); DESIGN.md §18, with P-91 to P-97; U10 to U17 outlined, before E1; done 2026-10-11 (#PR)
 
 ---
 
@@ -110,11 +111,43 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 6 — Embedding
 
-### E1 · The Bevy plugin — P3 · Next
+### E1 · The Bevy plugin — P3 · Outline
 
 `factional-bevy` (D-33, P-75, DESIGN.md §19): the world and quest log as a resource loaded at startup, commands in and events out as Bevy messages, time by `AdvanceTime` at a rate the game sets, and an example app. Settles the Bevy version and whether the crate builds in the main workspace.
 
 ## Beyond this module
+
+### U10 · Labels and nesting — P3 · Next
+
+The form says where a value is in words, not key paths (P-92, DESIGN.md §18): each key's `title` and each list's `x-title` in the schema, with a test holding every key to a title; `entry_form`'s rows giving their place as steps in words; tables drawn as sections under their headings, list items named by their title or numbered from 1, a pair of ids as two pickers with ↔, and a table keyed by ids as a small table; problems in the same words; `form` printing the words beside each path.
+
+### U11 · Requirements and effects as sentences — P3 · Outline
+
+Each requirement and effect in the form as a sentence in the content crate's words, the quest graph's own, with its values as fields within it, and "+ Requirement…" and "+ Effect…" listing the kinds a place takes (P-93).
+
+### U12 · Relations in each faction — P3 · Outline
+
+`relations` in each faction in `factions.toml`, keyed by faction id, with its load checks, the warning for a pair written on one side only, and the problem for a `relations.toml` still there; `relations.toml` gone from the sample, the complete example, the fixtures and the schema; each faction's Relations group, every other faction a row with both values, its band, its conflict and "same both ways"; the relations matrix in Previews (D-37, D-38, P-91).
+
+### U13 · Questlines make their own quests — P3 · Outline
+
+The Quests tab's pages beside its read-only graph: a questline's steps with "+ New quest" and "+ Existing quest…", quests moved between steps and steps reordered, pages nested with a breadcrumb down to a stage's choices; the editor's undo holding a change to several files (P-94).
+
+### U14 · The session as a library — P3 · Outline
+
+`factional-session`: `Session` moved out of `factional-cli`, unchanged, its scenarios and snapshots the proof; loading from texts in memory; the ids in what it says marked; CLAUDE.md's and DESIGN.md §15's dependency direction (D-39, P-95).
+
+### U15 · Play in the editor — P3 · Outline
+
+The drawer along the bottom of every tab, with Problems moved into it and Play beside it: commands with history and completion, ids as links, the session reloaded as the content loads with the first changed command said, and pages handing commands to it (D-40, P-96).
+
+### U16 · Watches and scenarios from Play — P3 · Outline
+
+Pinned commands run again after every command, each showing what changed, with the engine's explanations; "Save as scenario" writing the session to `scenarios/` (P-96).
+
+### U17 · Renaming, pickers and quick open — P3 · Outline
+
+Renaming an id everywhere as one change; pickers that search, show names and offer "+ New …" for an id that doesn't exist; quick open, back and forward, reordering, duplicating and the usual keys, where an earlier increment hasn't brought them (P-97).
 
 ---
 

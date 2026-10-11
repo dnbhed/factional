@@ -64,6 +64,10 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-36 · The quest graphs route their own lines, without egui-snarl** (agreed 2026-10-10 in U8, at the user's direction; settles X-6). The graphs looked messy, as their lines ran straight between boxes and across those between. Snarl's links also run straight between boxes, so it wouldn't help; the layout routes every line around the boxes instead, and the graphs stay read-only (§18).
 - **D-35 · Previews keep the last world that loaded** (agreed 2026-10-10 in U5, at the user's direction). Previews come from a world built from the content as it stands; while it doesn't load, the Previews tab shows the last world that did, marked as such with how many problems there are now, rather than going blank mid-edit (§18).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
+- **D-37 · Relations are written in each faction, in `factions.toml`** (agreed 2026-10-11 in U9, at the user's direction; was O-5). Each faction's own `relations` says how it regards each other faction, where it's read and edited, as the Creation Kit does; `relations.toml` goes. The engine's model of relations, `SetRelation`, `ShiftRelation` and quests' relation effects are unchanged (§9.4, §18; built in U12).
+- **D-38 · One relation per pair of factions, with a value each way, linked by default** (agreed 2026-10-11 in U9, at the user's choice; was O-6). In the editor a pair is one row on each faction's page, with how this faction regards the other and how the other regards it back, and "same both ways" linked unless the designer unlinks it for a grudge. One-way grudges stay, as §9.4 and Riverhold's Watch and Free Company have them (§18).
+- **D-39 · The REPL's session is a library both the CLI and the editor use** (agreed 2026-10-11 in U9, at the user's choice; was O-7). `Session` moves out of `factional-cli` into a new crate, `factional-session`, which also loads from texts in memory, so the editor plays the content as it stands, unsaved edits included, and links the ids in what it says (§15, §18; built in U14).
+- **D-40 · Play is a drawer along the bottom of every tab** (agreed 2026-10-11 in U9, at the user's choice; was O-8). The REPL runs in the editor below whatever is being edited, not in a tab of its own, so D-34's three tabs stay (§18; built in U15).
 
 ## Proposed — 2026-10-04
 
@@ -670,9 +674,60 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Lines may still cross each other** where they share a gap; only boxes are kept clear.
   - *Why:* a graph should read at a glance, as the user asked, without the editor working anything out that the content doesn't say.
 
+- **P-91 · How relations are written in each faction** (made in U9, 2026-10-11; built in U12).
+  - **A faction's `relations` is a table keyed by faction id,** each value how this faction regards that one, −100…100: `relations = { temple = 60.0, lantern_guild = -80.0 }`. Each direction is written once, in the faction that holds it, so one relation per direction is the file's own shape, never a habit to check. A faction left out is regarded at 0.
+  - **Checked at load (P-32):** each key names a faction, with a "did you mean"; a faction naming itself is a problem; each value within ±100.
+  - **A pair written on one side only is a warning,** naming both: "the Temple regards the City Watch at 60, but the Watch's regard for the Temple isn't written, so it's 0". Writing `0.0` says the grudge is meant. The warning catches a pair half-entered by hand; the editor's linked rows never leave one.
+  - **A `relations.toml` still in a content directory is a problem,** saying relations now live in each faction in `factions.toml`, so an old directory isn't read as if it had none.
+  - **Linked means equal.** The editor shows a pair linked when both directions hold the same value, and while linked, a change to one writes both. Both are in `factions.toml`, so it's one change to one file and one Undo.
+  - **Only content moves.** `SetRelation`, `ShiftRelation`, `RelationChanged`, the `relations` and `relate` commands, and quests' relation effects (`between`, or `from` and `to`, with `by`) stay as they are: an effect is a shift, and a shift between two factions or one way is still the clearest way to write one. A save fingerprints `factions.toml` as before, so a save made before the move refuses the moved content, as it would any changed content (P-54).
+  - *Why:* a faction's page shows everything about it, as the Creation Kit's do, and the text has one place for each direction, so neither the designer nor the loader has to reconcile two.
+
+- **P-92 · How the form says where a value is** (made in U9, 2026-10-11; built in U10).
+  - **Words from the schema:** each key's `title` (JSON Schema's own keyword), such as *Member tolerance* for `member_tolerance`; and on a list whose items have a name, `x-title`, the key that names them (`id` for ranks, stages and choices), as Unreal's `TitleProperty` does. A test holds every key of every definition to a title.
+  - **Nested, not flattened:** `entry_form`'s rows say their place as a list of steps, each in words: a key's title, a list item's title (*Stage "inspect"*, *Rank "sergeant"*) or, with no title, its number counted from 1. The form draws a table as a section under its heading, so a path is said once, as structure.
+  - **Pairs and id tables have their own shapes:** a two-item list of ids (`between`) is two pickers with ↔ between them; a table keyed by ids (`standing.factions`, `weights`) is a small table, a row each id, with "+ <what it names>…".
+  - **Problems use the same words,** from the same steps, with the key still linked and on hover.
+  - **Key paths stay where they're typed.** AccessKit labels stay the full key, so tests and a screen reader find each field; the CLI's `form` keeps printing paths and gains each row's words beside it, so scenarios cover them.
+  - *Why:* `stages[0].choices[1].effects.standing.factions.lantern_guild` says where a value is in the file, not what it means; every inspector the research looked at names items by what's in them.
+
+- **P-93 · Requirements and effects read as sentences** (made in U9, 2026-10-11; built in U11).
+  - **The words are the content crate's,** those the quest graph already uses for requirements and choices (P-80): *Needs standing 40 with City Watch*, *Rank Sergeant or higher in City Watch*, *Standing with Lantern Guild −5*. Each sentence has its values as fields within it.
+  - **"+ Requirement…" and "+ Effect…"** list the kinds a place takes, from the schema, each with its words, as U6d's additions do.
+  - *Why:* a designer writes "needs standing 40 with the Watch", not `requires.standing.city_watch = 40.0`.
+
+- **P-94 · How questlines and quests are edited in the Quests tab** (made in U9, 2026-10-11; built in U13).
+  - **The graph stays read-only (D-36);** the chosen node's page sits beside it, editable, in place of today's "Edit in Content", which stays for the entry as written.
+  - **A questline's page is its steps in order,** each a card of its quests with `need`, `requires` and `leftovers`. Each step has "+ New quest", which adds the quest to `quests.toml` with the id typed in, its name, and the stage and choice a quest must have (U3's `add`), and adds its id to the step; and "+ Existing quest…", listing only quests in no questline, as a quest is in at most one, at one step. A quest moves between steps, and steps reorder, by menu, with drag as a shortcut.
+  - **Pages nest, with a breadcrumb:** *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*. A quest's page is its stages in order, a stage's its choices.
+  - **A change across files is one change.** The editor's undo learns to hold a change to several files, so "+ New quest" is one Undo; renaming everywhere (P-97) uses the same.
+  - *Why:* a questline is where its quests are thought of, as articy nests a quest's insides in the quest; making one shouldn't need a trip to another file and back.
+
+- **P-95 · What `factional-session` is** (made in U9, 2026-10-11; built in U14).
+  - **The REPL's session, moved, not rewritten:** `Session`, its commands, their output and `help`, from `factional-cli`, which keeps the binary, `run`, `validate`, `schema` and `compare` over it, unchanged, its scenarios and snapshots the proof.
+  - **Between content and the tools:** `core ← reputation ← quests ← content ← session ← cli`, with the editor beside `cli`, depending on `session`. It may read and write files (load, save, restore), as the CLI does today; the no-I/O rule stays for core, reputation and quests.
+  - **It loads from texts as well as a directory,** the texts the editor holds, unsaved edits included, as the editor's own world is built (P-81).
+  - **What it says marks the ids in it,** each with what it names, so the editor links them without searching the text; the CLI prints the same text unmarked.
+  - *Why:* one session, tested once through the scenarios, for the CLI and the editor alike (D-39).
+
+- **P-96 · How Play works in the editor** (made in U9, 2026-10-11; built in U15 and U16).
+  - **One drawer along the bottom of every tab (D-40), with Problems and Play side by side in it,** as an IDE's bottom panel has problems and a terminal; the Content tab's problems panel moves into it. It opens and closes, and keeps its height.
+  - **Play is the REPL,** each command and what it said, with history, completion of commands and of every id in the outline, and ids in what it says as links to their entries.
+  - **It plays the content as it stands:** each time the content in memory loads, the session reloads it with `reload`'s rules (P-52), replaying the journal, and says which command first comes out differently, if any, as Inky fast-forwards its play pane. While the content doesn't load, Play keeps the last world that did, saying so (D-35).
+  - **Pages hand commands to Play,** typed into it, so they're visible and repeatable: a quest's "Can the player start this?" and "Start it in Play", a character's "Act as…".
+  - **Watches (U16):** commands pinned in Play, such as `disposition player city_watch`, run again after every command, each showing what changed, as Arcweave's debugger does; their explanations are the engine's (`--explain`), never the editor's.
+  - **"Save as scenario" (U16)** writes the session's commands to `scenarios/<name>.scenario`, after its `load`, for the designer to add asserts to.
+  - *Why:* trying content is part of writing it; every tool the research looked at with a play pane keeps it beside the writing.
+
+- **P-97 · Smaller things the research found** (made in U9, 2026-10-11; built in U17, or by whichever increment first needs them).
+  - **Renaming an id renames it everywhere** it's named, as one change, from `references` (U6a), offered with the count of places.
+  - **Pickers search and show names,** *City Watch* beside `city_watch`, offering only what fits there; typing an id that doesn't exist offers "+ New <faction> '<id>'…".
+  - **Quick open** (⌘K) by name or id across files; **back and forward** through what's been chosen; **reordering** ordered lists (ranks, steps, stages, choices) by menu, with drag as a shortcut; **duplicating** an entry under a new id; ⌘S, ⌘Z and ⇧⌘Z.
+  - *Why:* each removes a trip the designer makes by hand today, and none needs a rule the engine hasn't got.
+
 ## Open
 
-None right now. A new question gets the next free number, starting at O-5.
+None right now. A new question gets the next free number, starting at O-9.
 
 ## Deferred
 
