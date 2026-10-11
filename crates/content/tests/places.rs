@@ -78,7 +78,10 @@ fn a_list_says_what_its_items_are_called() {
         Some("Choice")
     );
     // A list of values has none, nor does anything that isn't a list.
-    assert_eq!(item("characters.toml", "merchant_ava.contacts"), None);
+    assert_eq!(
+        item("questlines.toml", "watch_career.steps[0].quests"),
+        None
+    );
     assert_eq!(item("factions.toml", "city_watch.alignment"), None);
 }
 

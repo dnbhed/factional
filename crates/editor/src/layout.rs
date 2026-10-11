@@ -5,7 +5,6 @@
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::ops::Range;
 
 use factional_content::{LineView, Step, ValuePath, Word};
 use factional_quests::{Next, Quest};
@@ -456,19 +455,6 @@ pub struct ListTable {
     pub rows: Vec<Vec<Option<usize>>>,
 }
 
-/// Where each group of a form begins and ends, from each field's group in order: a run of
-/// fields in the same group.
-pub fn groups(names: &[Option<&str>]) -> Vec<Range<usize>> {
-    let mut groups: Vec<Range<usize>> = Vec::new();
-    for (place, name) in names.iter().enumerate() {
-        match groups.last_mut() {
-            Some(group) if names[group.start] == *name => group.end = place + 1,
-            _ => groups.push(place..place + 1),
-        }
-    }
-    groups
-}
-
 /// The blocks of a group, from each field's place in the form and its key within the entry,
 /// such as `ranks[1].requires.standing`: a list whose every key goes on to a key of an item,
 /// with no list within it, is a table where its first field is; every other field is a row.
@@ -580,27 +566,31 @@ pub enum Line {
     },
 }
 
-/// The form laid out, a group at a time, from each field's shape and the entry's places (each
-/// in the entry). Every word of a field but its last is a heading, said once for the fields
+/// The form laid out, a group at a time for each of `sections` (U10d), even one with nothing in
+/// it, from each field's shape and the entry's places (each in the entry). Every word of a field but its last is a heading, said once for the fields
 /// that share it; a first word that is the group's own name isn't said again; an empty table
 /// or list's last word is its own heading. Each place's × and "+" go on the first heading that
 /// says it; a list of named items', such as a stage's choices, on the heading of what holds
 /// it; a list drawn as a table's, at the table's end; a place at the top of the entry with no
 /// heading of its own, such as `drift` or `stages`, beside its group's name. The entry itself,
 /// and what's within a table's items, are drawn elsewhere; any place left over is in no group.
-pub fn form_layout(shapes: &[Shape<'_>], places: &[ValuePath]) -> Vec<GroupLayout> {
-    let names: Vec<Option<&str>> = shapes.iter().map(|shape| shape.group).collect();
+pub fn form_layout(
+    sections: &[Option<&str>],
+    shapes: &[Shape<'_>],
+    places: &[ValuePath],
+) -> Vec<GroupLayout> {
     let mut layouts = Vec::new();
     // Each field's group, by its place among the layouts.
     let mut group_of = vec![0; shapes.len()];
-    for range in groups(&names) {
-        let group = names[range.start];
-        let keys: Vec<(usize, ValuePath)> = range
-            .clone()
-            .map(|field| (field, shapes[field].path.clone()))
+    for &group in sections {
+        let keys: Vec<(usize, ValuePath)> = shapes
+            .iter()
+            .enumerate()
+            .filter(|(_, shape)| shape.group == group)
+            .map(|(field, shape)| (field, shape.path.clone()))
             .collect();
-        for field in range {
-            group_of[field] = layouts.len();
+        for (field, _) in &keys {
+            group_of[*field] = layouts.len();
         }
         layouts.push(GroupLayout {
             name: group.map(str::to_owned),
@@ -937,7 +927,14 @@ mod tests {
             .iter()
             .map(|key| ValuePath::parse(key).unwrap_or(ValuePath::ROOT))
             .collect();
-        form_layout(&shapes, &places)
+        // Each group the fields are in, in order.
+        let mut sections: Vec<Option<&str>> = Vec::new();
+        for field in fields {
+            if !sections.contains(&field.group) {
+                sections.push(field.group);
+            }
+        }
+        form_layout(&sections, &shapes, &places)
     }
 
     fn heading(depth: usize, text: &str, key: &str, places: &[usize]) -> Line {
@@ -1212,6 +1209,36 @@ mod tests {
     }
 
     #[test]
+    fn a_section_with_nothing_in_it_is_laid_out_still() {
+        let fields = [field(Some("Identity"), "name", &[("Name", 1)])];
+        let shapes: Vec<Shape<'_>> = fields
+            .iter()
+            .map(|field| Shape {
+                group: field.group,
+                path: &field.path,
+                words: &field.words,
+                empty: false,
+                pair: false,
+            })
+            .collect();
+        assert_eq!(
+            form_layout(&[Some("Identity"), Some("Contacts")], &shapes, &[]),
+            [
+                GroupLayout {
+                    name: Some("Identity".to_owned()),
+                    places: vec![],
+                    lines: vec![row(0, 0)],
+                },
+                GroupLayout {
+                    name: Some("Contacts".to_owned()),
+                    places: vec![],
+                    lines: vec![],
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn a_place_that_fits_nowhere_is_in_no_group() {
         let fields = [field(None, "name", &[("Name", 1)])];
         let groups = laid_out(&fields, &["", "lost.within"]);
@@ -1265,13 +1292,6 @@ mod tests {
             column_titles(&table, &words),
             ["Id", "Requirements › Standing", "Tolerance"]
         );
-    }
-
-    #[test]
-    fn a_group_is_a_run_of_fields_in_it() {
-        let names = [Some("A"), Some("A"), Some("B"), None, None, Some("A")];
-        assert_eq!(groups(&names), [0..2, 2..3, 3..5, 5..6]);
-        assert_eq!(groups(&[]), []);
     }
 
     #[test]

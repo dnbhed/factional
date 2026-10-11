@@ -37,6 +37,8 @@ fn a_factions_values_are_grouped_by_what_they_mean_in_the_schemas_order() {
             Some("Membership"),
             Some("Drift"),
             Some("Ranks"),
+            // Every section is there, even with nothing in it (U10d).
+            Some("Its own rules"),
         ]
     );
     assert_eq!(keys(&form[0]), ["name"]);
@@ -211,6 +213,8 @@ fn the_groups_of_a_character_and_of_a_list_entry_come_from_their_schemas() {
             Some("Where they stand"),
             Some("Memberships"),
             Some("Standing"),
+            // Every section is there, even with nothing in it (U10d).
+            Some("Contacts"),
         ]
     );
     assert_eq!(

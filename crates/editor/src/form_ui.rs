@@ -3,13 +3,13 @@
 //! there are any; then what the loader says, what refers to the entry, and the entry as
 //! written. The form is `factional-content`'s `entry_form`; this draws it.
 
-use factional_content::{Addition, Fix, Step, ValuePath, Word, key_info};
+use factional_content::{Addition, Fix, Offered, Step, ValuePath, Word, key_info};
 
 use crate::egui::{self, RichText, WidgetInfo, WidgetType};
 use crate::layout::{Line, ListTable, Shape, cell_removes, column_titles, form_layout};
 use crate::problems_ui::{Listed, fix_button, within};
 use crate::removing_ui::{adding_menu, remove_button};
-use crate::{Editor, FieldInput, PlaceInput, Said, theme};
+use crate::{Editor, FieldInput, OfferInput, PlaceInput, Said, SectionInput, theme};
 
 /// What was done in the form.
 pub(crate) enum Acted {
@@ -22,6 +22,8 @@ pub(crate) enum Acted {
     Fix(Fix),
     /// A key, or with none an item, added at a place.
     Add(ValuePath, Option<String>),
+    /// The `m`th offer of the `n`th section made, with an id for one that takes it (U10d).
+    Offer(usize, usize, Option<String>),
 }
 
 /// How wide a value's field is, so every value lines up and what's after it fits; a table's
@@ -34,18 +36,18 @@ const COLUMN_WIDTH: f32 = 130.0;
 /// How far in each heading a value is under goes (U10a).
 const INDENT: f32 = 14.0;
 
-/// The form in one grid, so its values line up, a group at a time under its name: each value
-/// on its row under headings for where it is, said in words (U10a), and each list of tables as
-/// a table (U6f) whose rows each have × and what can be added to the item. Each place's × and
-/// "+" are where it is (U10b): on its heading, beside its group's name or at its table's end.
-/// The places drawn go in `drawn`, so they aren't again.
+/// The form in one grid, so its values line up, a section at a time under its name, every
+/// section there even with nothing in it (U10d): each value on its row under headings for where
+/// it is, said in words (U10a), and each list of tables as a table (U6f) whose rows each have ×
+/// and what can be added to the item. Each place's × is where it is (U10b), and so is its "+"
+/// unless a section's offer says the same; each section ends with what it offers to add.
 pub(crate) fn form_ui(
     ui: &mut egui::Ui,
     file: &str,
     entry: &ValuePath,
     fields: &mut [FieldInput],
     places: &mut [PlaceInput],
-    drawn: &mut Vec<ValuePath>,
+    sections: &mut [SectionInput],
 ) -> Option<Acted> {
     let mut acted = None;
     let mut done = |action: Option<Acted>| {
@@ -74,16 +76,27 @@ pub(crate) fn form_ui(
             .iter()
             .map(|place| in_entry(entry, &place.path))
             .collect();
-        form_layout(&shapes, &at)
+        let names: Vec<Option<&str>> = sections
+            .iter()
+            .map(|section| section.name.as_deref())
+            .collect();
+        form_layout(&names, &shapes, &at)
     };
+    // A place whose "+" a section's offer says, as the place the offer adds at or what that's
+    // within, has none of its own.
+    let covered = sections
+        .iter()
+        .flat_map(|section| &section.offers)
+        .map(|offer| offer.offer.at.clone())
+        .collect();
     let mut drawing = Drawing {
         file,
         entry,
         places,
-        drawn,
+        covered,
     };
     egui::Grid::new("form").num_columns(2).show(ui, |ui| {
-        for group in layout {
+        for (place, group) in layout.into_iter().enumerate() {
             if let Some(name) = &group.name {
                 ui.horizontal(|ui| {
                     ui.strong(name);
@@ -154,9 +167,94 @@ pub(crate) fn form_ui(
                     }
                 }
             }
+            if let Some(section) = sections.get_mut(place)
+                && !section.offers.is_empty()
+            {
+                ui.horizontal_wrapped(|ui| {
+                    for (offer, input) in section.offers.iter_mut().enumerate() {
+                        if let Some(id) = offer_ui(ui, file, entry, input) {
+                            done(Some(Acted::Offer(place, offer, id)));
+                        }
+                    }
+                });
+                ui.end_row();
+            }
         }
     });
     acted
+}
+
+/// One offer's "+": a key's or an item's, added at once, "+ Weights" or "+ Membership"; an id's,
+/// a menu of those that exist with their names, and for a table keyed by ids a new one typed.
+/// Each is labelled as the place's own "+" would be, for anyone who can't see it: "Add weights
+/// to vex", "Add to memberships", "Add to standing.factions…". What's chosen, with its id.
+fn offer_ui(
+    ui: &mut egui::Ui,
+    file: &str,
+    entry: &ValuePath,
+    input: &mut OfferInput,
+) -> Option<Option<String>> {
+    let OfferInput { offer, id } = input;
+    let at = in_entry(entry, &offer.at);
+    let name = match at.0.is_empty() {
+        true => entry.to_string(),
+        false => at.to_string(),
+    };
+    let shown = format!("+ {}", offer.label);
+    let button = |ui: &mut egui::Ui, shown: &str, said: &str| {
+        let button = ui.button(shown);
+        button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, said));
+        button
+    };
+    let mut chosen = None;
+    match &offer.what {
+        Offered::Key(key) => {
+            let mut added = button(ui, &shown, &format!("Add {key} to {name}"));
+            if let Some(info) = key_info(file, &offer.at.then(Step::Key(key.clone()))) {
+                let default = info
+                    .default
+                    .map(|default| format!(", {default} by default"))
+                    .unwrap_or_default();
+                let about = info.description.unwrap_or_default();
+                added = added.on_hover_text(format!("{}{default}. {about}", info.kind));
+            }
+            if added.clicked() {
+                chosen = Some(None);
+            }
+        }
+        Offered::Item => {
+            if button(ui, &shown, &format!("Add to {name}")).clicked() {
+                chosen = Some(None);
+            }
+        }
+        Offered::Id(choices) | Offered::Pick(choices) => {
+            let said = format!("Add to {name}…");
+            let menu = ui.menu_button(format!("{shown}…"), |ui| {
+                for choice in choices {
+                    let named = match &choice.name {
+                        Some(named) => format!("{named} · {}", choice.id),
+                        None => choice.id.clone(),
+                    };
+                    let said = format!("Add {} to {name}", choice.id);
+                    if button(ui, &named, &said).clicked() {
+                        chosen = Some(Some(choice.id.clone()));
+                    }
+                }
+                // A table keyed by ids takes one not made yet, too.
+                if matches!(offer.what, Offered::Id(_)) {
+                    let label = ui.label(format!("New id in {name}"));
+                    ui.add(egui::TextEdit::singleline(id).desired_width(160.0))
+                        .labelled_by(label.id);
+                    if ui.button(format!("Add to {name}")).clicked() {
+                        chosen = Some(Some(id.clone()));
+                    }
+                }
+            });
+            menu.response
+                .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+        }
+    }
+    chosen
 }
 
 /// `path`, a place in the entry at `entry`, from the entry's start.
@@ -165,17 +263,17 @@ fn in_entry(entry: &ValuePath, path: &ValuePath) -> ValuePath {
 }
 
 /// What drawing a part of the form needs besides its own: the file, the entry, its places and
-/// those drawn so far.
+/// where the sections' offers add.
 struct Drawing<'d> {
     file: &'d str,
     entry: &'d ValuePath,
     places: &'d mut [PlaceInput],
-    drawn: &'d mut Vec<ValuePath>,
+    covered: Vec<ValuePath>,
 }
 
 impl Drawing<'_> {
     /// The × (if `removable`) and "+" of each of `here`, by their place among the places,
-    /// side by side; each goes in those drawn.
+    /// side by side; no "+" where a section's offer says it.
     fn controls(&mut self, ui: &mut egui::Ui, here: &[usize], removable: bool) -> Option<Acted> {
         let mut acted = None;
         for &place in here {
@@ -186,10 +284,13 @@ impl Drawing<'_> {
             if removable && remove_button(ui, &name) {
                 acted = Some(Acted::Remove(place.path.clone()));
             }
-            if let Some((at, key)) = adding(ui, self.file, place, &name) {
+            let covered = self
+                .covered
+                .iter()
+                .any(|at| at.0.starts_with(&place.path.0));
+            if !covered && let Some((at, key)) = adding(ui, self.file, place, &name) {
                 acted = Some(Acted::Add(at, key));
             }
-            self.drawn.push(place.path.clone());
         }
         acted
     }
@@ -294,12 +395,6 @@ fn table_ui(
                     adding_menu(ui, drawing.file, place, &name, true, &mut added);
                     if let Some((at, key)) = added {
                         acted = Some(Acted::Add(at, key));
-                    }
-                }
-                // The item, and what's within it, are the row's.
-                for place in drawing.places.iter() {
-                    if place.path.0.starts_with(&path.0) {
-                        drawing.drawn.push(place.path.clone());
                     }
                 }
             });

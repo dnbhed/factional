@@ -51,7 +51,8 @@ fn an_entry_shows_its_name_and_its_values_grouped_with_their_comments() {
     ] {
         harness.get_by_label(group);
     }
-    assert!(harness.query_by_label("Its own rules").is_none());
+    // Every section is there, even with nothing in it yet (U10d).
+    harness.get_by_label("Its own rules");
     harness.get_by_label("# Cares about order far more than kindness.");
     harness.get_by_label(
         "# Captains are held to a stricter standard than the faction's member tolerance.",

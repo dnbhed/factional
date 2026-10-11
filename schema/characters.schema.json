@@ -43,7 +43,8 @@
           },
           "title": "Contacts",
           "type": "array",
-          "x-group": "Contacts"
+          "x-group": "Contacts",
+          "x-item": "Contact"
         },
         "inertia": {
           "description": "Their inertia profile, from balance.toml; left out, the default.",

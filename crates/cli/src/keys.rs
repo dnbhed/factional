@@ -143,8 +143,10 @@ mod tests {
         );
         // A list of values has no name for its items.
         assert_eq!(
-            run("keys content/sample characters.toml merchant_ava.contacts"),
-            output("characters.toml › merchant_ava.contacts can have:\n  an item at the end")
+            run("keys content/sample questlines.toml watch_career.steps[0].quests"),
+            output(
+                "questlines.toml › watch_career.steps[0].quests can have:\n  an item at the end"
+            )
         );
         // A table keyed by ids offers those that exist and aren't there yet (U10b).
         assert_eq!(

@@ -5,7 +5,8 @@
 use std::path::Path;
 
 use factional_content::{
-    CONTENT_FILES, ContentTexts, FormRow, entry_form, outline_texts, read_texts,
+    CONTENT_FILES, ContentTexts, FormRow, IdChoice, Offer, Offered, entry_form, outline_texts,
+    read_texts,
 };
 
 use crate::session::{Outcome, hint};
@@ -41,6 +42,7 @@ pub(crate) fn form(base: &Path, args: &str) -> Outcome {
             shown.extend(row.comment.iter().map(|line| format!("  # {line}")));
             shown.push(format!("  {}", describe(row)));
         }
+        shown.extend(group.offers.iter().map(offered));
     }
     Outcome::Output(shown.join("\n"))
 }
@@ -59,6 +61,25 @@ fn describe(row: &FormRow) -> String {
     match either(&row.choices) {
         Some(choices) => format!("{value} ({choices})"),
         None => value,
+    }
+}
+
+/// `+ Rank`, `+ Faction: a, b or c, or a new id` or `+ Contact: a or b`: what a section offers
+/// to add (U10d).
+fn offered(offer: &Offer) -> String {
+    let ids = |choices: &[IdChoice]| {
+        let ids: Vec<String> = choices.iter().map(|choice| choice.id.clone()).collect();
+        either(&ids)
+    };
+    match &offer.what {
+        Offered::Key(_) | Offered::Item => format!("  + {}", offer.label),
+        Offered::Id(choices) => match ids(choices) {
+            Some(ids) => format!("  + {}: {ids}, or a new id", offer.label),
+            None => format!("  + {}: a new id", offer.label),
+        },
+        Offered::Pick(choices) => {
+            format!("  + {}: {}", offer.label, ids(choices).unwrap_or_default())
+        }
     }
 }
 
@@ -119,8 +140,31 @@ mod tests {
                  \x20 Rank \"captain\" › Id · ranks[2].id = captain\n\
                  \x20 Rank \"captain\" › Requirements › Standing · ranks[2].requires.standing = 70.0\n\
                  \x20 # Captains are held to a stricter standard than the faction's member tolerance.\n\
-                 \x20 Rank \"captain\" › Tolerance · ranks[2].tolerance = 25.0"
+                 \x20 Rank \"captain\" › Tolerance · ranks[2].tolerance = 25.0\n\
+                 \x20 + Rank\n\
+                 Its own rules\n\
+                 \x20 + Defectors\n\
+                 \x20 + Deserters\n\
+                 \x20 + Exposed"
             )
+        );
+    }
+
+    #[test]
+    fn form_offers_ids_from_those_there_or_a_new_one() {
+        let Ok(Outcome::Output(shown)) = run("form content/sample characters.toml merchant_ava")
+        else {
+            panic!("a form");
+        };
+        assert!(
+            shown.contains(
+                "\n  + Faction: ashen_circle, city_watch, free_company, lantern_guild or temple, or a new id\n"
+            ),
+            "{shown}"
+        );
+        assert!(
+            shown.ends_with("\n  + Contact: brother_ash, merchant_ava, player or vex"),
+            "{shown}"
         );
     }
 

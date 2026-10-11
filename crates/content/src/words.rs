@@ -140,19 +140,33 @@ impl Wording {
         words
     }
 
-    /// The keys written in the table at `path`; none if there's no table there.
-    pub(crate) fn keys_at(&self, path: &ValuePath) -> Vec<String> {
+    /// What's written at `path`, if anything.
+    pub(crate) fn value_at(&self, path: &ValuePath) -> Option<&Toml> {
         let mut value = self.document.as_ref();
         for step in &path.0 {
             value = match step {
-                Step::Key(key) => value.and_then(|value| value.get(key.as_str())),
-                Step::Index(index) => value.and_then(|value| value.get(*index)),
+                Step::Key(key) => value?.get(key.as_str()),
+                Step::Index(index) => value?.get(*index),
             };
         }
         value
+    }
+
+    /// The keys written in the table at `path`; none if there's no table there.
+    pub(crate) fn keys_at(&self, path: &ValuePath) -> Vec<String> {
+        self.value_at(path)
             .and_then(Toml::as_table)
             .map(|table| table.keys().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// The text written in the list at `path`; none if there's no list there.
+    pub(crate) fn texts_at(&self, path: &ValuePath) -> Vec<String> {
+        let list = self.value_at(path).and_then(Toml::as_array);
+        list.into_iter()
+            .flatten()
+            .filter_map(|value| Some(value.as_str()?.to_owned()))
+            .collect()
     }
 
     /// The name of `id`, as one of `names`; `None` if it has none.

@@ -68,22 +68,18 @@ fn a_tables_adding_and_removing_are_on_its_heading() {
 }
 
 #[test]
-fn the_entrys_adding_and_removing_are_beside_its_name() {
+fn the_entrys_removing_is_beside_its_name() {
     let harness = on("city_watch");
-    assert!(on_one_line(
-        &harness,
-        "Add to city_watch…",
-        "Remove city_watch"
-    ));
     let header = height(&harness, "factions.toml › city_watch");
-    let entry = height(&harness, "Add to city_watch…");
+    let entry = height(&harness, "Remove city_watch");
     assert!(header < entry && entry < height(&harness, "name"));
 }
 
 #[test]
-fn a_new_stage_is_added_beside_the_stages_and_a_new_choice_beside_its_stage() {
+fn a_new_stage_is_added_in_the_stages_and_a_new_choice_beside_its_stage() {
     let mut harness = on("dock_inspection");
-    assert!(on_one_line(&harness, "Add to stages", "Stages"));
+    // A new stage is the stages' section's to offer, at its end (U10d).
+    assert!(height(&harness, "Add to stages") > height(&harness, "Stage \"inspect\""));
     assert!(on_one_line(
         &harness,
         "Add to stages[0].choices",
@@ -104,11 +100,8 @@ fn a_new_stage_is_added_beside_the_stages_and_a_new_choice_beside_its_stage() {
 #[test]
 fn a_table_keyed_by_ids_offers_those_that_exist_by_name() {
     let mut harness = on("vex");
-    assert!(on_one_line(
-        &harness,
-        "Add to standing.factions…",
-        "Factions"
-    ));
+    // At the end of the standing's section (U10d).
+    assert!(height(&harness, "Add to standing.factions…") > height(&harness, "Factions"));
     click(&mut harness, "Add to standing.factions…");
     // The Guild's is there already.
     assert!(
@@ -124,20 +117,15 @@ fn a_table_keyed_by_ids_offers_those_that_exist_by_name() {
 }
 
 #[test]
-fn an_empty_table_is_shown_with_its_adding_beside_it() {
-    let mut harness = on("merchant_ava");
-    click(&mut harness, "Add to merchant_ava…");
-    click(&mut harness, "Add standing to merchant_ava");
-    // The empty standing is its group's, so its adding is beside the group's name.
-    assert!(on_one_line(&harness, "Add to standing…", "Standing"));
-    click(&mut harness, "Add to standing…");
-    click(&mut harness, "Add factions to standing");
+fn an_empty_table_is_shown_with_its_removing_beside_it() {
+    let mut harness = on("vex");
+    click(&mut harness, "Remove standing.factions.lantern_guild");
+    harness.get_by_label("empty");
     assert!(on_one_line(
         &harness,
-        "Add to standing.factions…",
+        "Remove standing.factions",
         "Factions"
     ));
-    harness.get_by_label("empty");
 }
 
 #[test]
