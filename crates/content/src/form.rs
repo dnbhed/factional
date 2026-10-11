@@ -12,6 +12,7 @@ use crate::edit::{
     prefix_of, schema_at, schema_of, split,
 };
 use crate::references::{Names, ids_named};
+use crate::words::{Word, Wording};
 use crate::{CONTENT_FILES, ContentTexts};
 
 /// One group of an entry's values, such as a faction's *Membership*.
@@ -28,6 +29,8 @@ pub struct FormRow {
     pub path: ValuePath,
     /// Where it is in the entry, such as `alignment.law`.
     pub key: String,
+    /// Where it is in the entry, in words, such as *Alignment*, *Law* (U10a).
+    pub words: Vec<Word>,
     /// `None` if it's left out, when `default` says what it is.
     pub written: Option<Field>,
     pub default: Option<String>,
@@ -61,8 +64,23 @@ pub fn entry_form(texts: &ContentTexts, file: &str, entry: &str) -> Vec<FormGrou
     };
     let mut comments = Comments::default();
     comments.table(&table, &at);
+    let wording = Wording::new(texts, file);
+    let words_of = |path: &ValuePath| wording.as_ref().map_or_else(Vec::new, |w| w.words(path));
+    // The entry's own words, which each row's start with, and the steps they say.
+    let entry_words = words_of(&at).len();
+    let within = |path: &ValuePath| -> Vec<Word> {
+        words_of(path)
+            .into_iter()
+            .skip(entry_words)
+            .map(|word| Word {
+                through: word.through - at.0.len(),
+                ..word
+            })
+            .collect()
+    };
     let mut row = |path: ValuePath, written: Option<Field>, default: Option<String>| FormRow {
         key: ValuePath(path.0[at.0.len()..].to_vec()).to_string(),
+        words: within(&path),
         description: key_info(file, &path).and_then(|info| info.description),
         comment: comments.of(&path),
         choices: choices(texts, &root, &path),

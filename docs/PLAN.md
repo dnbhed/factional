@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10 → U11 → U12 → U13 → U14 → U15 → U16 → U17 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U11 → U12 → U13 → U14 → U15 → U16 → U17 → E1 → T5`
 
 ## Done
 
@@ -92,6 +92,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U6g — IBM Plex in the editor, to board 6: Plex Sans Regular and SemiBold and Plex Mono Regular in `crates/editor/fonts/` with `OFL.txt` (from IBM's `@ibm/plex-sans@1.1.0` and `@ibm/plex-mono@2.5.0` releases), built into the editor; `theme::fonts()` puts Plex first in each family with egui's faces after; `theme::text_styles()` gives board 6's sizes; the form's keys and values in Plex Mono; fonts, sizes and visuals set once as the editor first draws (P-89); done 2026-10-10 (#61)
 - U8 — quest graphs that don't cross their boxes: every line routed through the gaps between columns, or along a corridor below the boxes when it goes further than the next column, each with its own lane and its own point on a box's side, its turns rounded as drawn; a questline's outside quests in a column after its last step; a quest's end as tall as its tallest stage; a test holds every graph in the repository to no line through a box; settles X-6 as the user chose, without egui-snarl (D-36, P-90); done 2026-10-10 (#62)
 - U9 — the usability pass's design, from research into comparable tools (`docs/research/usability-2026-10.md`): the user chose relations written in each faction in `factions.toml` (D-37), one relation per pair with a value each way, linked by default (D-38), the REPL's session as a library (D-39) and Play as a drawer along the bottom (D-40); DESIGN.md §18, with P-91 to P-97; U10 to U17 outlined, before E1; done 2026-10-11 (#63)
+- U10a — the form in words (P-92, P-98): a title for every key of every schema, and on lists `x-item` and `x-title`, so a named item stands in for its list (*Rank "sergeant"*) and any other is numbered from 1 (*Step 4*); ids said by the names of what they name; `place_words`, `words_at`, `Word`, `FormRow::words` and `KeyInfo::title`; the Content tab's values under headings in place of key paths, labelled by their last words, a table's columns in words, and problems in the panel and beside the form in words, keys on hover; `form` prints each row's words, and `words <dir> <file> <key>`; `key_info` reads into a curve's points; U10 split, with pairs, tables keyed by ids and the places' "Add to" now U10b; `scenarios/words.scenario`; done 2026-10-11 (#PR)
 
 ---
 
@@ -117,9 +118,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U10 · Labels and nesting — P3 · Next
+### U10b · Pairs, tables keyed by ids, and places in words — P3 · Next
 
-The form says where a value is in words, not key paths (P-92, DESIGN.md §18): each key's `title` and each list's `x-title` in the schema, with a test holding every key to a title; `entry_form`'s rows giving their place as steps in words; tables drawn as sections under their headings, list items named by their title or numbered from 1, a pair of ids as two pickers with ↔, and a table keyed by ids as a small table; problems in the same words; `form` printing the words beside each path.
+A two-item list of ids (`between`) as two pickers with ↔ between them; a table keyed by ids (`standing.factions`, a requirement's `standing`) as a small table, a row each id with "+ <what it names>…"; and the places below the form, their × and "Add to <place>…", and Referenced by, in words as U10a's are (P-92, P-98).
 
 ### U11 · Requirements and effects as sentences — P3 · Outline
 

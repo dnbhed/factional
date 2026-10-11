@@ -67,11 +67,11 @@ fn a_problem_shows_under_its_field_with_its_fix() {
 }
 
 #[test]
-fn a_problems_key_goes_to_its_entry() {
+fn a_problems_place_is_said_in_words_and_goes_to_its_entry() {
     let mut harness = open();
-    click(&mut harness, "captain_hale");
-    harness.get_by_label("characters.toml › captain_hale");
-    click(&mut harness, "temple.drift.policy");
+    click(&mut harness, "Vex › Membership \"lantern_gild\" › Faction");
+    harness.get_by_label("characters.toml › vex");
+    click(&mut harness, "Temple of the Dawn › Drift › Policy");
     harness.get_by_label("factions.toml › temple");
 }
 

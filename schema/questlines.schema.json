@@ -6,12 +6,14 @@
         "giver": {
           "description": "Whose questline it is: a faction or a character, by id; left out, the world's own.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Giver",
           "type": "string",
           "x-group": "Identity",
           "x-names": "party"
         },
         "name": {
           "description": "The questline's name, as shown.",
+          "title": "Name",
           "type": "string",
           "x-group": "Identity"
         },
@@ -21,8 +23,10 @@
             "$ref": "#/$defs/step"
           },
           "minItems": 1,
+          "title": "Steps",
           "type": "array",
-          "x-group": "Steps"
+          "x-group": "Steps",
+          "x-item": "Step"
         }
       },
       "required": [
@@ -46,6 +50,7 @@
             "type": "string",
             "x-names": "quest"
           },
+          "title": "Done",
           "type": "array"
         },
         "member": {
@@ -56,6 +61,7 @@
             "type": "string",
             "x-names": "faction"
           },
+          "title": "Member of",
           "type": "array"
         },
         "not_member": {
@@ -66,6 +72,7 @@
             "type": "string",
             "x-names": "faction"
           },
+          "title": "Not a member of",
           "type": "array"
         },
         "rank_at_least": {
@@ -78,6 +85,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Rank at least",
           "type": "object",
           "x-names-keys": "faction"
         },
@@ -92,6 +100,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Standing",
           "type": "object",
           "x-names-keys": "party"
         },
@@ -103,6 +112,7 @@
             "type": "string",
             "x-names": "faction"
           },
+          "title": "Within tolerance of",
           "type": "array"
         }
       },
@@ -118,11 +128,13 @@
             "open",
             "close"
           ],
+          "title": "Leftovers",
           "type": "string"
         },
         "need": {
           "description": "How many of the quests must be done to move on, at most all of them; left out, all. 0 makes them optional.",
           "minimum": 0,
+          "title": "Need",
           "type": "integer"
         },
         "quests": {
@@ -133,11 +145,13 @@
             "x-names": "quest"
           },
           "minItems": 1,
+          "title": "Quests",
           "type": "array"
         },
         "requires": {
           "$ref": "#/$defs/requires",
-          "description": "Added to the gate of every quest in the step."
+          "description": "Added to the gate of every quest in the step.",
+          "title": "Requirements"
         }
       },
       "required": [

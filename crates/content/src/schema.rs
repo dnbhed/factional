@@ -71,7 +71,14 @@ pub fn schema(file: &str) -> Option<Value> {
             object(
                 [(
                     "relation",
-                    list(json!({ "$ref": "#/$defs/relation" }), "The relations."),
+                    with_title(
+                        items_called(
+                            list(json!({ "$ref": "#/$defs/relation" }), "The relations."),
+                            "Relation",
+                            None,
+                        ),
+                        "Relations",
+                    ),
                 )],
                 &[],
                 None,
@@ -127,7 +134,152 @@ pub fn schema(file: &str) -> Option<Value> {
         .map(|(name, def)| (name.to_owned(), def))
         .collect();
     schema.insert("$defs".into(), Value::Object(defs));
-    Some(Value::Object(schema))
+    let mut schema = Value::Object(schema);
+    titled(&mut schema);
+    Some(schema)
+}
+
+/// Each key's title, in words (U10a, P-92), as the editor's form and problems say it. A key
+/// means the same wherever it's found, so one title serves each; a test holds every key of
+/// every schema to one.
+const TITLES: [(&str, &str); 96] = [
+    ("affinity", "Affinity"),
+    ("alignment", "Alignment"),
+    ("auto_after_ticks", "Settle after (ticks)"),
+    ("bands", "Bands"),
+    ("between", "Between"),
+    ("by", "By"),
+    ("by_target", "By target"),
+    ("characters", "Characters"),
+    ("choices", "Choices"),
+    ("closer_to_target", "Closer to target"),
+    ("conflict", "Conflict"),
+    ("conflict_threshold", "Conflict threshold"),
+    ("contacts", "Contacts"),
+    ("default_drift", "Default drift"),
+    ("default_profile", "Default profile"),
+    ("default_weights", "Default weights"),
+    ("defectors", "Defectors"),
+    ("deserters", "Deserters"),
+    ("disposition", "Disposition"),
+    ("done", "Done"),
+    ("drift", "Drift"),
+    ("effects", "Effects"),
+    ("expel_standing_change", "Standing change on expulsion"),
+    ("exposed", "Exposed"),
+    ("faction", "Faction"),
+    ("faction_opinion", "Faction opinion"),
+    ("factions", "Factions"),
+    ("from", "From"),
+    ("giver", "Giver"),
+    ("good", "Good"),
+    ("grace_ticks", "Grace (ticks)"),
+    ("hop_ticks", "Ticks a hop"),
+    ("hysteresis", "Hysteresis"),
+    ("id", "Id"),
+    ("inertia", "Inertia"),
+    ("kinship", "Kinship"),
+    ("knowledge", "Knowledge"),
+    ("label_threshold", "Label threshold"),
+    ("law", "Law"),
+    ("leave_standing_change", "Standing change on leaving"),
+    ("leftovers", "Leftovers"),
+    ("locks", "Locks"),
+    ("member", "Member of"),
+    ("member_tolerance", "Member tolerance"),
+    ("membership", "Membership"),
+    ("memberships", "Memberships"),
+    ("metric", "Metric"),
+    ("model", "Model"),
+    ("modifiers", "Modifiers"),
+    ("name", "Name"),
+    ("need", "Need"),
+    ("next", "Next"),
+    ("not_member", "Not a member of"),
+    ("outcome", "Outcome"),
+    ("outside_member_tolerance", "Outside member tolerance"),
+    ("policy", "Policy"),
+    ("profiles", "Profiles"),
+    ("quests", "Quests"),
+    ("rank", "Rank"),
+    ("rank_at_least", "Rank at least"),
+    ("rank_below", "Rank below"),
+    ("ranks", "Ranks"),
+    ("reason", "Reason"),
+    ("relation", "Relation"),
+    ("relations", "Relations"),
+    ("requires", "Requirements"),
+    ("resolve", "Resolve"),
+    ("ripple", "Ripple"),
+    ("rules", "Rules"),
+    ("same_faction", "Same faction"),
+    ("secret", "Secret"),
+    ("secret_members", "Secret members"),
+    ("spillover", "Spillover"),
+    ("stages", "Stages"),
+    ("standing", "Standing"),
+    ("standing_change", "Standing change"),
+    (
+        "standing_with_current_at_least",
+        "Standing with current at least",
+    ),
+    ("standing_with_current_below", "Standing with current below"),
+    (
+        "standing_with_target_at_least",
+        "Standing with target at least",
+    ),
+    ("standing_with_target_below", "Standing with target below"),
+    ("steps", "Steps"),
+    ("strength", "Strength"),
+    ("target", "Target"),
+    ("target_factions", "Target's factions"),
+    ("then", "Then"),
+    ("to", "To"),
+    ("tolerance", "Tolerance"),
+    ("toward_chaotic", "Toward chaotic"),
+    ("toward_evil", "Toward evil"),
+    ("toward_good", "Toward good"),
+    ("toward_lawful", "Toward lawful"),
+    ("up_to", "Up to"),
+    ("value", "Value"),
+    ("weights", "Weights"),
+    ("when", "When"),
+    ("within_tolerance", "Within tolerance of"),
+];
+
+/// `schema` with each key's title from [`TITLES`], where it hasn't one of its own. What's in
+/// an `if` says when a rule applies, so it's left as it is. No table of keys is in a list of
+/// forms (`oneOf`, `prefixItems`), so lists aren't walked; the test holding every key to a
+/// title would say if one came to be.
+fn titled(schema: &mut Value) {
+    if let Value::Object(map) = schema {
+        if let Some(Value::Object(properties)) = map.get_mut("properties") {
+            for (key, property) in properties.iter_mut() {
+                let title = TITLES.iter().find(|(known, _)| known == key);
+                if let (Some((_, title)), Value::Object(property)) = (title, property)
+                    && !property.contains_key("title")
+                {
+                    property.insert("title".into(), (*title).into());
+                }
+            }
+        }
+        for (key, inner) in map.iter_mut() {
+            if key != "if" {
+                titled(inner);
+            }
+        }
+    }
+}
+
+/// `schema`, a list, with what one of its items is called (`x-item`), and the key that names
+/// each, if any (`x-title`), as an item is said in words (U10a, P-92): *Stage "inspect"* by
+/// its key, or else *Step 2* by its place.
+fn items_called(mut schema: Value, called: &str, named_by: Option<&str>) -> Value {
+    schema["x-item"] = called.into();
+    if let Some(key) = named_by {
+        schema["x-title"] = key.into();
+    }
+    schema
 }
 
 /// The schema for `file` as pretty-printed JSON, ending with a newline.
@@ -165,6 +317,12 @@ fn within_axis(description: &str) -> Value {
 
 fn at_least_zero(description: &str) -> Value {
     ranged(Some(Fixed::ZERO), None, description)
+}
+
+/// `schema` with its own title, in place of the one its key has elsewhere.
+fn with_title(mut schema: Value, title: &str) -> Value {
+    schema["title"] = title.into();
+    schema
 }
 
 /// `schema` with a default, as an editor would offer it.
@@ -266,7 +424,7 @@ fn by_id(reference: &str) -> Value {
 
 /// A curve: a number, or `[x, y]` points (DESIGN.md §4.2), its values within `low..=high`.
 fn curve(low: Option<Fixed>, high: Option<Fixed>, description: &str) -> Value {
-    let value = ranged(low, high, "y");
+    let value = with_title(ranged(low, high, "y"), "y");
     json!({
         "description": format!("{description} A number, or a list of [x, y] points, straight between them and flat beyond the ends."),
         "oneOf": [
@@ -274,9 +432,10 @@ fn curve(low: Option<Fixed>, high: Option<Fixed>, description: &str) -> Value {
             {
                 "type": "array",
                 "minItems": 1,
+                "x-item": "Point",
                 "items": {
                     "type": "array",
-                    "prefixItems": [{ "type": "number", "description": "x" }, value],
+                    "prefixItems": [{ "type": "number", "title": "x", "description": "x" }, value],
                     "minItems": 2,
                     "maxItems": 2,
                 },
@@ -371,12 +530,16 @@ fn bands() -> Value {
         &["name"],
         None,
     );
-    json!({
-        "type": "array",
-        "minItems": 1,
-        "items": band,
-        "description": "Names for ranges of values, lowest first: a value lands in the first band whose up_to it doesn't exceed.",
-    })
+    items_called(
+        json!({
+            "type": "array",
+            "minItems": 1,
+            "items": band,
+            "description": "Names for ranges of values, lowest first: a value lands in the first band whose up_to it doesn't exceed.",
+        }),
+        "Band",
+        Some("name"),
+    )
 }
 
 /// A drift setting: `{ policy = "flag" }`, or probation with its grace and consequence.
@@ -539,7 +702,11 @@ fn rule_table(kind: TableKind) -> Value {
     object(
         [(
             "rules",
-            json!({ "type": "array", "minItems": 1, "items": rule, "description": "Tried top to bottom until one whose conditions all hold." }),
+            items_called(
+                json!({ "type": "array", "minItems": 1, "items": rule, "description": "Tried top to bottom until one whose conditions all hold." }),
+                "Rule",
+                None,
+            ),
         )],
         &["rules"],
         Some(description),
@@ -872,12 +1039,16 @@ fn faction() -> Value {
                 ),
                 (
                     "ranks",
-                    json!({
-                        "type": "array",
-                        "minItems": 1,
-                        "items": { "$ref": "#/$defs/rank" },
-                        "description": "The rank ladder, lowest first; new members start on the first rung.",
-                    }),
+                    items_called(
+                        json!({
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "$ref": "#/$defs/rank" },
+                            "description": "The rank ladder, lowest first; new members start on the first rung.",
+                        }),
+                        "Rank",
+                        Some("id"),
+                    ),
                 ),
                 ("drift", json!({ "$ref": "#/$defs/drift" })),
                 defectors,
@@ -938,7 +1109,11 @@ fn character() -> Value {
                 ),
                 (
                     "memberships",
-                    list(membership, "The factions they start in."),
+                    items_called(
+                        list(membership, "The factions they start in."),
+                        "Membership",
+                        Some("faction"),
+                    ),
                 ),
                 ("standing", json!({ "$ref": "#/$defs/standing" })),
                 (
@@ -1060,9 +1235,13 @@ fn outcome() -> Value {
 
 /// `relations = [...]`: shifts in how factions regard each other (D-30).
 fn relation_shifts() -> Value {
-    list(
-        json!({ "$ref": "#/$defs/relation_shift" }),
-        "Shifts in how factions regard each other, applied after the standing changes, each direction stopping at -100 and 100. A direction is shifted at most once.",
+    items_called(
+        list(
+            json!({ "$ref": "#/$defs/relation_shift" }),
+            "Shifts in how factions regard each other, applied after the standing changes, each direction stopping at -100 and 100. A direction is shifted at most once.",
+        ),
+        "Shift",
+        None,
     )
 }
 
@@ -1210,12 +1389,16 @@ fn quest() -> Value {
                 ),
                 (
                     "stages",
-                    json!({
-                        "type": "array",
-                        "minItems": 1,
-                        "items": { "$ref": "#/$defs/stage" },
-                        "description": "The stages, in order.",
-                    }),
+                    items_called(
+                        json!({
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "$ref": "#/$defs/stage" },
+                            "description": "The stages, in order.",
+                        }),
+                        "Stage",
+                        Some("id"),
+                    ),
                 ),
             ],
             &["name", "stages"],
@@ -1245,12 +1428,16 @@ fn stage() -> Value {
             ),
             (
                 "choices",
-                json!({
-                    "type": "array",
-                    "minItems": 1,
-                    "items": { "$ref": "#/$defs/choice" },
-                    "description": "What the character can choose here.",
-                }),
+                items_called(
+                    json!({
+                        "type": "array",
+                        "minItems": 1,
+                        "items": { "$ref": "#/$defs/choice" },
+                        "description": "What the character can choose here.",
+                    }),
+                    "Choice",
+                    Some("id"),
+                ),
             ),
         ],
         &["id", "choices"],
@@ -1308,12 +1495,16 @@ fn questline() -> Value {
                 ("giver", giver("questline")),
                 (
                     "steps",
-                    json!({
-                        "type": "array",
-                        "minItems": 1,
-                        "items": { "$ref": "#/$defs/step" },
-                        "description": "The steps, in order: each opens once the one before is complete and its own requirements hold.",
-                    }),
+                    items_called(
+                        json!({
+                            "type": "array",
+                            "minItems": 1,
+                            "items": { "$ref": "#/$defs/step" },
+                            "description": "The steps, in order: each opens once the one before is complete and its own requirements hold.",
+                        }),
+                        "Step",
+                        None,
+                    ),
                 ),
             ],
             &["name", "steps"],

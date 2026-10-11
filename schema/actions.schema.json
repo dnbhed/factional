@@ -5,6 +5,7 @@
       "properties": {
         "alignment": {
           "$ref": "#/$defs/delta",
+          "title": "Alignment",
           "x-group": "Alignment"
         },
         "by_target": {
@@ -17,6 +18,7 @@
                 {
                   "description": "y",
                   "minimum": 0.0,
+                  "title": "y",
                   "type": "number"
                 },
                 {
@@ -26,20 +28,24 @@
                     "prefixItems": [
                       {
                         "description": "x",
+                        "title": "x",
                         "type": "number"
                       },
                       {
                         "description": "y",
                         "minimum": 0.0,
+                        "title": "y",
                         "type": "number"
                       }
                     ],
                     "type": "array"
                   },
                   "minItems": 1,
-                  "type": "array"
+                  "type": "array",
+                  "x-item": "Point"
                 }
-              ]
+              ],
+              "title": "Good"
             },
             "law": {
               "description": "A multiplier read at the target's law, at least 0. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
@@ -47,6 +53,7 @@
                 {
                   "description": "y",
                   "minimum": 0.0,
+                  "title": "y",
                   "type": "number"
                 },
                 {
@@ -56,20 +63,24 @@
                     "prefixItems": [
                       {
                         "description": "x",
+                        "title": "x",
                         "type": "number"
                       },
                       {
                         "description": "y",
                         "minimum": 0.0,
+                        "title": "y",
                         "type": "number"
                       }
                     ],
                     "type": "array"
                   },
                   "minItems": 1,
-                  "type": "array"
+                  "type": "array",
+                  "x-item": "Point"
                 }
-              ]
+              ],
+              "title": "Law"
             },
             "relation": {
               "description": "A multiplier read at the most hostile relation from the actor's factions toward the target's, at least 0. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
@@ -77,6 +88,7 @@
                 {
                   "description": "y",
                   "minimum": 0.0,
+                  "title": "y",
                   "type": "number"
                 },
                 {
@@ -86,22 +98,27 @@
                     "prefixItems": [
                       {
                         "description": "x",
+                        "title": "x",
                         "type": "number"
                       },
                       {
                         "description": "y",
                         "minimum": 0.0,
+                        "title": "y",
                         "type": "number"
                       }
                     ],
                     "type": "array"
                   },
                   "minItems": 1,
-                  "type": "array"
+                  "type": "array",
+                  "x-item": "Point"
                 }
-              ]
+              ],
+              "title": "Relation"
             }
           },
+          "title": "By target",
           "type": "object",
           "x-group": "Alignment"
         },
@@ -120,6 +137,7 @@
               "propertyNames": {
                 "pattern": "^[a-z][a-z0-9_]*$"
               },
+              "title": "Characters",
               "type": "object",
               "x-names-keys": "character"
             },
@@ -134,6 +152,7 @@
               "propertyNames": {
                 "pattern": "^[a-z][a-z0-9_]*$"
               },
+              "title": "Factions",
               "type": "object",
               "x-names-keys": "faction"
             },
@@ -141,15 +160,18 @@
               "description": "The change in the target's regard for the actor.",
               "maximum": 100.0,
               "minimum": -100.0,
+              "title": "Target",
               "type": "number"
             },
             "target_factions": {
               "description": "The change in the regard of each of the target's factions.",
               "maximum": 100.0,
               "minimum": -100.0,
+              "title": "Target's factions",
               "type": "number"
             }
           },
+          "title": "Standing",
           "type": "object",
           "x-group": "Standing"
         }
@@ -166,10 +188,12 @@
       "properties": {
         "good": {
           "description": "How far it moves this axis; left out, it doesn't.",
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "How far it moves this axis; left out, it doesn't.",
+          "title": "Law",
           "type": "number"
         }
       },

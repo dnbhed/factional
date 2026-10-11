@@ -45,8 +45,10 @@ pub(crate) fn form(base: &Path, args: &str) -> Outcome {
     Outcome::Output(shown.join("\n"))
 }
 
-/// `drift.then = expel (demote or expel)` or `secret_members: not set, false (false or true)`.
+/// `Drift › Then · drift.then = expel (demote or expel)` or `Secret members · secret_members:
+/// not set, false (false or true)`: its words, then its key and value.
 fn describe(row: &FormRow) -> String {
+    let words: Vec<&str> = row.words.iter().map(|word| word.text.as_str()).collect();
     let value = match &row.written {
         Some(field) => format!("{} = {}", row.key, field.value),
         None => {
@@ -54,6 +56,7 @@ fn describe(row: &FormRow) -> String {
             format!("{}: not set, {default}", row.key)
         }
     };
+    let value = format!("{} · {value}", words.join(" › "));
     match either(&row.choices) {
         Some(choices) => format!("{value} ({choices})"),
         None => value,
@@ -92,32 +95,32 @@ mod tests {
             output(
                 "factions.toml › city_watch: The City Watch\n\
                  Identity\n\
-                 \x20 name = The City Watch\n\
+                 \x20 Name · name = The City Watch\n\
                  Where it stands\n\
-                 \x20 alignment.law = 70.0\n\
-                 \x20 alignment.good = 20.0\n\
+                 \x20 Alignment › Law · alignment.law = 70.0\n\
+                 \x20 Alignment › Good · alignment.good = 20.0\n\
                  \x20 # Cares about order far more than kindness.\n\
-                 \x20 weights.law = 1.0\n\
-                 \x20 weights.good = 0.25\n\
+                 \x20 Weights › Law · weights.law = 1.0\n\
+                 \x20 Weights › Good · weights.good = 0.25\n\
                  Membership\n\
-                 \x20 tolerance = 40.0\n\
-                 \x20 member_tolerance = 50.0\n\
-                 \x20 expel_standing_change: not set, -20.00\n\
-                 \x20 leave_standing_change: not set, 0.00\n\
-                 \x20 secret_members: not set, false (false or true)\n\
+                 \x20 Tolerance · tolerance = 40.0\n\
+                 \x20 Member tolerance · member_tolerance = 50.0\n\
+                 \x20 Standing change on expulsion · expel_standing_change: not set, -20.00\n\
+                 \x20 Standing change on leaving · leave_standing_change: not set, 0.00\n\
+                 \x20 Secret members · secret_members: not set, false (false or true)\n\
                  Drift\n\
                  \x20 # The Watch gives a straying officer a hundred ticks to mend their ways.\n\
-                 \x20 drift.policy = probation (ignore, flag, demote, expel or probation)\n\
-                 \x20 drift.grace_ticks = 100\n\
-                 \x20 drift.then = expel (demote or expel)\n\
+                 \x20 Drift › Policy · drift.policy = probation (ignore, flag, demote, expel or probation)\n\
+                 \x20 Drift › Grace (ticks) · drift.grace_ticks = 100\n\
+                 \x20 Drift › Then · drift.then = expel (demote or expel)\n\
                  Ranks\n\
-                 \x20 ranks[0].id = recruit\n\
-                 \x20 ranks[1].id = sergeant\n\
-                 \x20 ranks[1].requires.standing = 30.0\n\
-                 \x20 ranks[2].id = captain\n\
-                 \x20 ranks[2].requires.standing = 70.0\n\
+                 \x20 Rank \"recruit\" › Id · ranks[0].id = recruit\n\
+                 \x20 Rank \"sergeant\" › Id · ranks[1].id = sergeant\n\
+                 \x20 Rank \"sergeant\" › Requirements › Standing · ranks[1].requires.standing = 30.0\n\
+                 \x20 Rank \"captain\" › Id · ranks[2].id = captain\n\
+                 \x20 Rank \"captain\" › Requirements › Standing · ranks[2].requires.standing = 70.0\n\
                  \x20 # Captains are held to a stricter standard than the faction's member tolerance.\n\
-                 \x20 ranks[2].tolerance = 25.0"
+                 \x20 Rank \"captain\" › Tolerance · ranks[2].tolerance = 25.0"
             )
         );
     }
@@ -132,14 +135,14 @@ mod tests {
                  \x20 # \"witnessed\" (only the witnesses, the parties the act names, and the factions of those who\n\
                  \x20 # learned), or \"ripple\" (those, then onward through contacts and factions). A party that\n\
                  \x20 # hasn't learned of an act keeps its standing (DESIGN.md §10).\n\
-                 \x20 model = ripple (omniscient, witnessed or ripple)\n\
+                 \x20 Model · model = ripple (omniscient, witnessed or ripple)\n\
                  \x20 # How strongly news arrives at each hop beyond those who saw it; it goes no further than\n\
                  \x20 # the last. Standing changes scale with it.\n\
-                 \x20 ripple.strength[0] = 0.5\n\
-                 \x20 ripple.strength[1] = 0.25\n\
-                 \x20 ripple.strength[2] = 0.1\n\
+                 \x20 Ripple › Strength › 1 · ripple.strength[0] = 0.5\n\
+                 \x20 Ripple › Strength › 2 · ripple.strength[1] = 0.25\n\
+                 \x20 Ripple › Strength › 3 · ripple.strength[2] = 0.1\n\
                  \x20 # How many ticks each hop takes.\n\
-                 \x20 ripple.hop_ticks = 10"
+                 \x20 Ripple › Ticks a hop · ripple.hop_ticks = 10"
             )
         );
     }

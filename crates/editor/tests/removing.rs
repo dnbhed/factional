@@ -21,6 +21,9 @@ fn on_watch() -> Harness<'static, Editor> {
 }
 
 fn click(harness: &mut Harness<'static, Editor>, label: &str) {
+    // What's below the form may be further down than the window shows.
+    harness.get_by_label(label).scroll_to_me();
+    harness.run();
     harness.get_by_label(label).click();
     harness.run();
 }

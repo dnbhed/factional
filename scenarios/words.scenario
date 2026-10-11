@@ -1,0 +1,25 @@
+# Where a place is, in words (U10a): each key by its title, each named list item by what it's
+# called and its name in place of its list, each other item numbered from 1 under its list,
+# and each id by the name of what it names. The editor's form and problems say the same.
+
+# An entry by its name, a key by its title.
+assert words content/sample factions.toml city_watch.member_tolerance == The City Watch › Member tolerance
+
+# A stage and a choice by their ids; a faction a standing names by its name.
+assert words content/sample quests.toml dock_inspection.stages[0].choices[0].effects.standing.factions.city_watch == Inspecting the Docks › Stage "inspect" › Choice "seize" › Effects › Standing › Factions › The City Watch
+
+# A rank by its id; a membership by the name of the faction it's in.
+assert words content/sample factions.toml city_watch.ranks[1].requires.standing == The City Watch › Rank "sergeant" › Requirements › Standing
+assert words content/sample characters.toml captain_hale.memberships[0].rank == Captain Hale › Membership "The City Watch" › Rank
+
+# A step, a rule and a curve's point have no name, so they're numbered under their lists.
+assert words content/sample questlines.toml watch_career.steps[3].quests[0] == A Life in the Watch › Steps › Step 4 › Quests › 1
+assert words content/sample balance.toml membership.defectors.rules[1].when.closer_to_target == Membership › Defectors › Rules › Rule 2 › When › Closer to target
+assert words content/sample balance.toml disposition.affinity[1][0] == Disposition › Affinity › Point 2 › x
+
+# A misspelt key is said as written, so the designer sees what they wrote.
+assert words content/sample factions.toml city_watch.tolerence == The City Watch › tolerence
+assert words content/sample faction.toml city_watch.name == error: unknown file 'faction.toml' (did you mean 'factions.toml'?)
+
+# The form says each value's words beside its key.
+form content/sample quests.toml dock_inspection

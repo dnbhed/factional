@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-use factional_content::{LineView, Step, ValuePath};
+use factional_content::{LineView, Step, ValuePath, Word};
 use factional_quests::{Next, Quest};
 use factional_reputation::{MAP_CELLS, MapCell};
 
@@ -527,6 +527,90 @@ pub fn blocks(keys: &[(usize, ValuePath)]) -> Vec<Block> {
     blocks
 }
 
+/// One line of a group of the form (U10a): a heading saying where the rows after it are, a
+/// field under its headings, or a table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Line {
+    Heading {
+        depth: usize,
+        text: String,
+    },
+    /// The field at this place in the form, under `depth` headings.
+    Row {
+        place: usize,
+        depth: usize,
+    },
+    Table(ListTable),
+}
+
+/// The lines of the group `group`, from its blocks and each field's words by its place in
+/// the form: every word of a field but its last is a heading, said once for the fields that
+/// share it, and a first word that is the group's own name isn't said again.
+pub fn lines(group: Option<&str>, blocks: Vec<Block>, words: &[Vec<String>]) -> Vec<Line> {
+    let mut lines = Vec::new();
+    // The headings the last field was under.
+    let mut under: Vec<&str> = Vec::new();
+    for block in blocks {
+        let place = match block {
+            Block::Row(place) => place,
+            Block::Table(table) => {
+                under.clear();
+                lines.push(Line::Table(table));
+                continue;
+            }
+        };
+        let mut headings: Vec<&str> = words
+            .get(place)
+            .map(|words| words.iter().map(String::as_str).collect())
+            .unwrap_or_default();
+        headings.pop();
+        if group.is_some() && headings.first().copied() == group {
+            headings.remove(0);
+        }
+        let shared = under
+            .iter()
+            .zip(&headings)
+            .take_while(|(was, is)| was == is)
+            .count();
+        for (depth, text) in headings.iter().enumerate().skip(shared) {
+            let text = (*text).to_owned();
+            lines.push(Line::Heading { depth, text });
+        }
+        lines.push(Line::Row {
+            place,
+            depth: headings.len(),
+        });
+        under = headings;
+    }
+    lines
+}
+
+/// Each column of `table` in words: the words of its first field after its item's, from each
+/// field's words by its place in the form, such as *Requirements › Standing*.
+pub fn column_titles(table: &ListTable, words: &[Vec<Word>]) -> Vec<String> {
+    // An item's own words say the list and the item, its first two steps.
+    const ITEM: usize = 2;
+    let titled = |column: usize| {
+        let first = table
+            .rows
+            .iter()
+            .find_map(|row| row.get(column).copied()?)?;
+        let within: Vec<&str> = words
+            .get(first)?
+            .iter()
+            .filter(|word| word.through > ITEM)
+            .map(|word| word.text.as_str())
+            .collect();
+        (!within.is_empty()).then(|| within.join(" › "))
+    };
+    table
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(column, key)| titled(column).unwrap_or_else(|| key.clone()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -597,6 +681,149 @@ mod tests {
                 }),
                 Block::Row(12),
             ]
+        );
+    }
+
+    /// Each field's words by its place, from words joined by " › ".
+    fn said(fields: &[&str]) -> Vec<Vec<String>> {
+        fields
+            .iter()
+            .map(|words| words.split(" › ").map(str::to_owned).collect())
+            .collect()
+    }
+
+    fn heading(depth: usize, text: &str) -> Line {
+        Line::Heading {
+            depth,
+            text: text.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_fields_words_but_its_last_are_headings_said_once_for_the_fields_sharing_them() {
+        let words = said(&[
+            "Alignment › Law",
+            "Alignment › Good",
+            "Weights › Law",
+            "Weights › Good",
+        ]);
+        let blocks = (0..4).map(Block::Row).collect();
+        assert_eq!(
+            lines(Some("Where it stands"), blocks, &words),
+            [
+                heading(0, "Alignment"),
+                Line::Row { place: 0, depth: 1 },
+                Line::Row { place: 1, depth: 1 },
+                heading(0, "Weights"),
+                Line::Row { place: 2, depth: 1 },
+                Line::Row { place: 3, depth: 1 },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_first_word_that_is_the_groups_name_isnt_said_again() {
+        let words = said(&["Name", "Drift › Policy", "Drift › Grace (ticks)"]);
+        assert_eq!(
+            lines(Some("Drift"), vec![Block::Row(1), Block::Row(2)], &words),
+            [
+                Line::Row { place: 1, depth: 0 },
+                Line::Row { place: 2, depth: 0 },
+            ]
+        );
+        // Without a group, nothing is left out.
+        assert_eq!(
+            lines(None, vec![Block::Row(1)], &words),
+            [heading(0, "Drift"), Line::Row { place: 1, depth: 1 }]
+        );
+    }
+
+    #[test]
+    fn headings_nest_and_only_what_changes_is_said_again() {
+        let words = said(&[
+            "Stage \"inspect\" › Id",
+            "Stage \"inspect\" › Choice \"seize\" › Id",
+            "Stage \"inspect\" › Choice \"seize\" › Effects › Alignment › Law",
+            "Stage \"inspect\" › Choice \"seize\" › Next",
+            "Stage \"inspect\" › Choice \"wave_through\" › Id",
+        ]);
+        let blocks = (0..5).map(Block::Row).collect();
+        assert_eq!(
+            lines(Some("Stages"), blocks, &words),
+            [
+                heading(0, "Stage \"inspect\""),
+                Line::Row { place: 0, depth: 1 },
+                heading(1, "Choice \"seize\""),
+                Line::Row { place: 1, depth: 2 },
+                heading(2, "Effects"),
+                heading(3, "Alignment"),
+                Line::Row { place: 2, depth: 4 },
+                Line::Row { place: 3, depth: 2 },
+                heading(1, "Choice \"wave_through\""),
+                Line::Row { place: 4, depth: 2 },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_table_is_its_own_line_and_the_headings_after_it_are_said_again() {
+        let table = ListTable {
+            list: "memberships".to_owned(),
+            columns: vec!["faction".to_owned()],
+            rows: vec![vec![Some(1)]],
+        };
+        let words = said(&[
+            "Standing › Factions › The City Watch",
+            "Membership \"The City Watch\" › Faction",
+            "Standing › Factions › Temple of the Dawn",
+        ]);
+        let blocks = vec![Block::Row(0), Block::Table(table.clone()), Block::Row(2)];
+        assert_eq!(
+            lines(None, blocks, &words),
+            [
+                heading(0, "Standing"),
+                heading(1, "Factions"),
+                Line::Row { place: 0, depth: 2 },
+                Line::Table(table),
+                heading(0, "Standing"),
+                heading(1, "Factions"),
+                Line::Row { place: 2, depth: 2 },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tables_columns_are_said_by_the_words_after_their_items() {
+        let word = |text: &str, through: usize| Word {
+            text: text.to_owned(),
+            through,
+        };
+        let words = vec![
+            vec![word("Rank \"recruit\"", 2), word("Id", 3)],
+            vec![word("Rank \"sergeant\"", 2), word("Id", 3)],
+            vec![
+                word("Rank \"sergeant\"", 2),
+                word("Requirements", 3),
+                word("Standing", 4),
+            ],
+            vec![word("Rank \"captain\"", 2), word("Tolerance", 3)],
+        ];
+        let table = ListTable {
+            list: "ranks".to_owned(),
+            columns: vec![
+                "id".to_owned(),
+                "requires.standing".to_owned(),
+                "tolerance".to_owned(),
+            ],
+            rows: vec![
+                vec![Some(0), None, None],
+                vec![Some(1), Some(2), None],
+                vec![None, None, Some(3)],
+            ],
+        };
+        assert_eq!(
+            column_titles(&table, &words),
+            ["Id", "Requirements › Standing", "Tolerance"]
         );
     }
 

@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 use factional_content::{
     Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
-    Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, additions, apply_fix,
+    Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, Word, additions, apply_fix,
     entry_fields, entry_form, entry_places, file_places, fix_for, load_texts, outline,
-    outline_texts, read_texts, referenced_by, set_value,
+    outline_texts, place_words, read_texts, referenced_by, set_value,
 };
 use factional_core::Curve;
 use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
@@ -122,6 +122,8 @@ pub struct Said {
     pub diagnostic: Diagnostic,
     pub warning: bool,
     pub fix: Option<Fix>,
+    /// Where it is, in words, from its file's start (U10a); empty for the file as a whole.
+    pub words: Vec<Word>,
 }
 
 /// The tabs along the top (D-34).
@@ -674,6 +676,12 @@ impl Editor {
                     .texts
                     .as_ref()
                     .and_then(|texts| fix_for(texts, diagnostic)),
+                words: match (&self.texts, diagnostic.key.as_deref()) {
+                    (Some(texts), Some(key)) => ValuePath::parse(key)
+                        .map(|path| place_words(texts, &diagnostic.file, &path))
+                        .unwrap_or_default(),
+                    _ => Vec::new(),
+                },
                 diagnostic: diagnostic.clone(),
                 warning,
             })

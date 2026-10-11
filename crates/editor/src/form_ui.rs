@@ -3,11 +3,11 @@
 //! there are any; then what the loader says, what refers to the entry, and the entry as
 //! written. The form is `factional-content`'s `entry_form`; this draws it.
 
-use factional_content::{Fix, Step, ValuePath};
+use factional_content::{Fix, Step, ValuePath, Word, key_info};
 
 use crate::egui::{self, RichText, WidgetInfo, WidgetType};
-use crate::layout::{Block, ListTable, blocks, groups};
-use crate::problems_ui::{Listed, fix_button};
+use crate::layout::{Line, ListTable, blocks, column_titles, groups, lines};
+use crate::problems_ui::{Listed, fix_button, within};
 use crate::removing_ui::{adding_menu, remove_button};
 use crate::{Editor, FieldInput, PlaceInput, Said, theme};
 
@@ -31,10 +31,13 @@ const CELL_WIDTH: f32 = 90.0;
 /// A table's columns: an item's number, and a key with room for its choices beside it.
 const NUMBER_WIDTH: f32 = 24.0;
 const COLUMN_WIDTH: f32 = 130.0;
+/// How far in each heading a value is under goes (U10a).
+const INDENT: f32 = 14.0;
 
 /// The form in one grid, so its values line up, a group at a time under its name: each value
-/// on its row, and each list of tables as a table (U6f) whose rows each have × and what can be
-/// added to the item. The places drawn in a table go in `drawn`, so they aren't again.
+/// on its row under headings for where it is, said in words (U10a), and each list of tables as
+/// a table (U6f) whose rows each have × and what can be added to the item. The places drawn in
+/// a table go in `drawn`, so they aren't again.
 pub(crate) fn form_ui(
     ui: &mut egui::Ui,
     file: &str,
@@ -49,23 +52,49 @@ pub(crate) fn form_ui(
             acted = action;
         }
     };
-    let names: Vec<Option<&str>> = fields.iter().map(|field| field.group.as_deref()).collect();
-    let ranges = groups(&names);
+    let names: Vec<Option<String>> = fields.iter().map(|field| field.group.clone()).collect();
+    let names: Vec<Option<&str>> = names.iter().map(Option::as_deref).collect();
+    let words: Vec<Vec<Word>> = fields.iter().map(|field| field.row.words.clone()).collect();
+    let texts: Vec<Vec<String>> = words
+        .iter()
+        .map(|words| words.iter().map(|word| word.text.clone()).collect())
+        .collect();
     egui::Grid::new("form").num_columns(2).show(ui, |ui| {
-        for range in ranges {
-            if let Some(name) = &fields[range.start].group {
+        for range in groups(&names) {
+            let group = names[range.start];
+            if let Some(name) = group {
                 ui.strong(name);
                 ui.end_row();
             }
             let keys: Vec<(usize, ValuePath)> = range
                 .filter_map(|place| Some((place, ValuePath::parse(&fields[place].row.key)?)))
                 .collect();
-            for block in blocks(&keys) {
-                match block {
-                    Block::Row(place) => done(row_ui(ui, place, &mut fields[place])),
-                    Block::Table(table) => {
-                        ui.label(RichText::new(&table.list).monospace());
-                        done(table_ui(ui, file, entry, &table, fields, places, drawn));
+            for line in lines(group, blocks(&keys), &texts) {
+                match line {
+                    Line::Heading { depth, text } => {
+                        ui.horizontal(|ui| {
+                            ui.add_space(indent(depth));
+                            ui.label(text);
+                        });
+                        ui.end_row();
+                    }
+                    Line::Row { place, depth } => {
+                        done(row_ui(ui, place, &mut fields[place], depth));
+                    }
+                    Line::Table(table) => {
+                        // Its title, unless the group's name already says it.
+                        let list = entry.then(Step::Key(table.list.clone()));
+                        let title = key_info(file, &list).and_then(|info| info.title);
+                        let title = title.unwrap_or_else(|| table.list.clone());
+                        ui.label(if group == Some(title.as_str()) {
+                            ""
+                        } else {
+                            &title
+                        });
+                        let columns = column_titles(&table, &words);
+                        done(table_ui(
+                            ui, file, entry, &table, &columns, fields, places, drawn,
+                        ));
                         ui.end_row();
                     }
                 }
@@ -75,14 +104,24 @@ pub(crate) fn form_ui(
     acted
 }
 
-/// A list of tables: a header of its keys, then a row an item, numbered from 1, each cell its
-/// field, and × and "Add to" for the item. Cells have a fixed width, so the table settles at
-/// once inside the form's grid.
+/// How far in a value or heading under `depth` headings goes.
+fn indent(depth: usize) -> f32 {
+    INDENT * depth as f32
+}
+
+/// A list of tables: a header of its columns in words, then a row an item, numbered from 1,
+/// each cell its field, and × and "Add to" for the item. Cells have a fixed width, so the table
+/// settles at once inside the form's grid.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a table is drawn from all of the form's parts"
+)]
 fn table_ui(
     ui: &mut egui::Ui,
     file: &str,
     entry: &ValuePath,
     table: &ListTable,
+    titles: &[String],
     fields: &mut [FieldInput],
     places: &mut [PlaceInput],
     drawn: &mut Vec<ValuePath>,
@@ -104,11 +143,9 @@ fn table_ui(
             cell(ui, NUMBER_WIDTH, &mut |ui| {
                 ui.weak("#");
             });
-            for column in &table.columns {
+            for title in titles {
                 cell(ui, COLUMN_WIDTH, &mut |ui| {
-                    let said = format!("{} · {column}", table.list);
-                    ui.weak(column)
-                        .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
+                    ui.weak(title);
                 });
             }
         });
@@ -145,14 +182,14 @@ fn table_ui(
                 drawn.push(path);
             });
             // A cell's comment goes under its row, where it has room.
-            for (column, place) in table.columns.iter().zip(cells) {
+            for ((column, title), place) in table.columns.iter().zip(titles).zip(cells) {
                 let Some(place) = place else {
                     continue;
                 };
                 let said = format!("{}[{item}] · {column}", table.list);
                 for line in &fields[*place].row.comment {
                     ui.horizontal_wrapped(|ui| {
-                        ui.weak(column)
+                        ui.weak(title)
                             .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
                         ui.label(
                             RichText::new(format!("# {line}"))
@@ -172,7 +209,7 @@ fn table_ui(
 fn cell_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Acted> {
     let mut acted = None;
     ui.vertical(|ui| {
-        acted = value_ui(ui, place, field, None, CELL_WIDTH);
+        acted = value_ui(ui, place, field, CELL_WIDTH);
         for said in field.said.iter() {
             if let Some(fix) = said_ui(ui, said) {
                 acted = Some(Acted::Fix(fix));
@@ -182,9 +219,10 @@ fn cell_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Ac
     acted
 }
 
-/// One field: its comment lines, then its key, and its value with what can be done with it,
-/// side by side so a long comment never pushes them apart.
-fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Acted> {
+/// One field under `depth` headings: its comment lines, then its last word, and its value with
+/// what can be done with it, side by side so a long comment never pushes them apart. Its key
+/// and description are on hover.
+fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput, depth: usize) -> Option<Acted> {
     let mut acted = None;
     for line in &field.row.comment {
         ui.label("");
@@ -196,25 +234,26 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Act
         ui.end_row();
     }
     let row = &field.row;
-    let label = ui
-        .horizontal(|ui| {
-            // Keys, ids and values are always monospace (board 6).
-            let key = RichText::new(&row.key).monospace();
-            let label = match &row.written {
-                Some(_) => ui.label(key),
-                None => ui.label(key.weak()),
-            };
-            if field.edited {
-                edited_mark(ui, &row.key);
-            }
-            match &row.description {
-                Some(description) => label.on_hover_text(description),
-                None => label,
-            }
-        })
-        .inner;
     ui.horizontal(|ui| {
-        acted = value_ui(ui, place, field, Some(label.id), FIELD_WIDTH);
+        ui.add_space(indent(depth));
+        let word = row.words.last().map_or(row.key.as_str(), |word| &word.text);
+        let label = match &row.written {
+            Some(_) => ui.label(word),
+            None => ui.label(RichText::new(word).weak()),
+        };
+        if field.edited {
+            edited_mark(ui, &row.key);
+        }
+        // Keys are always monospace (board 6).
+        label.on_hover_ui(|ui| {
+            ui.label(RichText::new(&row.key).monospace());
+            if let Some(description) = &row.description {
+                ui.label(description);
+            }
+        });
+    });
+    ui.horizontal(|ui| {
+        acted = value_ui(ui, place, field, FIELD_WIDTH);
         let FieldInput { row, refused, .. } = field;
         if row.written.is_some() && remove_button(ui, &row.key) {
             acted = Some(Acted::Remove(row.path.clone()));
@@ -236,15 +275,9 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Act
     acted
 }
 
-/// A field's value: its text to edit, labelled by `label` or else by its key, with its
-/// choices; or, left out, its default greyed with Set.
-fn value_ui(
-    ui: &mut egui::Ui,
-    place: usize,
-    field: &mut FieldInput,
-    label: Option<egui::Id>,
-    width: f32,
-) -> Option<Acted> {
+/// A field's value: its text to edit, labelled by its key for anyone who can't see where it
+/// is, with its choices; or, left out, its default greyed with Set.
+fn value_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput, width: f32) -> Option<Acted> {
     let mut acted = None;
     let stroke = border_of(ui.visuals(), field);
     let FieldInput { row, input, .. } = field;
@@ -282,15 +315,9 @@ fn value_ui(
                 )
             })
             .inner;
-        let edited = match label {
-            Some(label) => edited.labelled_by(label),
-            None => {
-                let mut info = WidgetInfo::text_edit(true, &written.value, input.as_str(), "");
-                info.label = Some(key.clone());
-                edited.widget_info(|| info.clone());
-                edited
-            }
-        };
+        let mut info = WidgetInfo::text_edit(true, &written.value, input.as_str(), "");
+        info.label = Some(key.clone());
+        edited.widget_info(|| info.clone());
         if edited.lost_focus() && *input != written.value {
             acted = Some(Acted::Enter(place, input.clone()));
         }
@@ -369,9 +396,11 @@ impl Editor {
         for said in about_it.into_iter().filter(|said| !at_a_field(said)) {
             let kind = if said.warning { "warning" } else { "error" };
             let message = &said.diagnostic.message;
+            // Where in the entry, in words, after the entry's own.
+            let steps = ValuePath::parse(&entry.key).map_or(0, |path| path.0.len());
             ui.horizontal_wrapped(|ui| {
-                match entry.at(&said.diagnostic) {
-                    Some(key) => ui.label(format!("{kind}: {key}: {message}")),
+                match entry.at(&said.diagnostic).and(within(said, steps)) {
+                    Some(place) => ui.label(format!("{kind}: {place}: {message}")),
                     None => ui.label(format!("{kind}: {message}")),
                 };
                 if let Some(fix) = fix_button(ui, said) {
@@ -408,6 +437,13 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn each_heading_a_value_is_under_takes_it_further_in() {
+        assert_eq!(indent(0), 0.0);
+        assert_eq!(indent(1), INDENT);
+        assert_eq!(indent(3), 3.0 * INDENT);
+    }
 
     #[test]
     fn a_fields_border_is_red_for_a_problem_amber_for_an_edit_else_the_usual() {

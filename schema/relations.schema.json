@@ -45,12 +45,14 @@
           },
           "maxItems": 2,
           "minItems": 2,
+          "title": "Between",
           "type": "array",
           "x-group": "Factions"
         },
         "from": {
           "description": "The faction doing the regarding.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "From",
           "type": "string",
           "x-group": "Factions",
           "x-names": "faction"
@@ -58,6 +60,7 @@
         "to": {
           "description": "The faction regarded.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "To",
           "type": "string",
           "x-group": "Factions",
           "x-names": "faction"
@@ -66,6 +69,7 @@
           "description": "-100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Value",
           "type": "number",
           "x-group": "Regard"
         }
@@ -89,7 +93,9 @@
       "items": {
         "$ref": "#/$defs/relation"
       },
-      "type": "array"
+      "title": "Relations",
+      "type": "array",
+      "x-item": "Relation"
     }
   },
   "title": "relations.toml",

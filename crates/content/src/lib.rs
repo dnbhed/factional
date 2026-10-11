@@ -13,6 +13,7 @@ mod references;
 mod save;
 mod schema;
 mod unread;
+mod words;
 
 pub use describe::{
     describe_choice, describe_mark, describe_step, map_heading, named_effects, named_shifts, needs,
@@ -32,6 +33,7 @@ pub use outline::{
 pub use references::{Names, Reference, defined_in, referenced_by, references};
 pub use save::{Fingerprint, Restored, SAVE_VERSION, SaveError, fingerprint_of, restore, save};
 pub use schema::{SCHEMA_FILES, schema, schema_text};
+pub use words::{Word, place_words, words_at};
 
 use std::collections::BTreeMap;
 use std::path::Path;

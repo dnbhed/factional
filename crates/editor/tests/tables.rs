@@ -32,9 +32,11 @@ fn value(harness: &Harness<'static, Editor>, label: &str) -> Option<String> {
 #[test]
 fn a_rank_ladder_is_a_table_of_its_rungs() {
     let harness = on("city_watch");
-    for column in ["id", "requires.standing", "tolerance"] {
-        harness.get_by_label(&format!("ranks · {column}"));
-    }
+    // Its columns are said in words (U10a).
+    harness.get_by_label("Id");
+    harness.get_by_label("Requirements › Standing");
+    // The rungs' tolerance, and the faction's own.
+    assert_eq!(harness.query_all_by_label("Tolerance").count(), 2);
     assert_eq!(value(&harness, "ranks[0].id").as_deref(), Some("recruit"));
     assert_eq!(
         value(&harness, "ranks[1].requires.standing").as_deref(),

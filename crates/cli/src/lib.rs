@@ -16,6 +16,7 @@ mod references;
 mod repl;
 mod script;
 mod session;
+mod words;
 
 pub use check::validate;
 pub use compare::compare;
