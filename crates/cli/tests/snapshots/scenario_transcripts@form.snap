@@ -33,6 +33,11 @@ Ranks
   Rank "captain" › Requirements › Standing · ranks[2].requires.standing = 70.0
   # Captains are held to a stricter standard than the faction's member tolerance.
   Rank "captain" › Tolerance · ranks[2].tolerance = 25.0
+  + Rank
+Its own rules
+  + Defectors
+  + Deserters
+  + Exposed
 > form content/sample characters.toml captain_hale
 characters.toml › captain_hale: Captain Hale
 Identity
@@ -49,8 +54,13 @@ Memberships
   Membership "The City Watch" › Faction · memberships[0].faction = city_watch (ashen_circle, city_watch, free_company, lantern_guild or temple)
   Membership "The City Watch" › Rank · memberships[0].rank = captain
   Membership "The City Watch" › Secret · memberships[0].secret: not set, false (false or true)
+  + Membership
 Standing
   Standing › Factions › The City Watch · standing.factions.city_watch = 75.0
+  + Character: brother_ash, captain_hale, merchant_ava, player, sister_mira or vex, or a new id
+  + Faction: ashen_circle, free_company, lantern_guild or temple, or a new id
+Contacts
+  + Contact: brother_ash, captain_hale, merchant_ava, player, sister_mira or vex
 > form content/sample relations.toml relation[0]
 relations.toml › relation[0]
 Factions

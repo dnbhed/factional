@@ -24,7 +24,7 @@ pub use edit::{
     entry_places, file_places, key_info, remove, rename_key, set_value,
 };
 pub use fix::{Change, Fix, apply_fix, fix_for};
-pub use form::{FormGroup, FormRow, IdChoice, entry_form, id_choices};
+pub use form::{FormGroup, FormRow, IdChoice, Offer, Offered, entry_form, id_choices, make_offer};
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
     CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, load_texts,

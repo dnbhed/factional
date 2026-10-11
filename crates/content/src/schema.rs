@@ -1118,9 +1118,13 @@ fn character() -> Value {
                 ("standing", json!({ "$ref": "#/$defs/standing" })),
                 (
                     "contacts",
-                    list(
-                        names(id("A character's id."), "character"),
-                        "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
+                    items_called(
+                        list(
+                            names(id("A character's id."), "character"),
+                            "The characters they pass news to under the ripple model. A contact works both ways, so list it on one side only (DESIGN.md §10.2).",
+                        ),
+                        "Contact",
+                        None,
                     ),
                 ),
             ],

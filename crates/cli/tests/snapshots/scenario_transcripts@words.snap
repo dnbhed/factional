@@ -17,6 +17,9 @@ input_file: scenarios/words.scenario
 quests.toml › dock_inspection: Inspecting the Docks
 Identity
   Name · name = Inspecting the Docks
+  + Giver
+Requirements
+  + Requirements
 Stages
   Stage "inspect" › Id · stages[0].id = inspect
   Stage "inspect" › Choice "seize" › Id · stages[0].choices[0].id = seize
@@ -27,3 +30,4 @@ Stages
   Stage "inspect" › Choice "wave_through" › Id · stages[0].choices[1].id = wave_through
   Stage "inspect" › Choice "wave_through" › Effects › Standing › Factions › The Lantern Guild · stages[0].choices[1].effects.standing.factions.lantern_guild = 5.0
   Stage "inspect" › Choice "wave_through" › Next · stages[0].choices[1].next = end
+  + Stage

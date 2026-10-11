@@ -31,22 +31,26 @@ fn click(harness: &mut Harness<'static, Editor>, label: &str) {
 #[test]
 fn the_keys_to_add_say_what_each_is() {
     let mut harness = on_watch();
+    // The recruit's rung can still have a requirement and a tolerance of its own.
     assert!(
         harness
-            .query_by_label("Add expel_standing_change to city_watch")
+            .query_by_label("Add tolerance to ranks[0]")
             .is_none()
     );
-    click(&mut harness, "Add to city_watch…");
-    harness.get_by_label("a number from -100.00 to 100.00, -20.00 by default");
-    harness.get_by_label("The change in standing with the faction when it expels someone.");
-    harness.get_by_label("true or false, false by default");
+    click(&mut harness, "Add to ranks[0]…");
+    harness.get_by_label("a table");
+    harness.get_by_label("What a promotion to this rank needs.");
+    harness.get_by_label("a number at least 0.00");
     // A place with nothing more to add has only its ×, on its heading (U10b).
     harness.get_by_label("Remove weights");
     assert!(harness.query_by_label("Add to weights…").is_none());
-    click(&mut harness, "Add secret_members to city_watch");
+    click(&mut harness, "Add tolerance to ranks[0]");
     assert_eq!(
-        harness.get_by_label("secret_members").value().as_deref(),
-        Some("false")
+        harness
+            .get_by_label("ranks[0].tolerance")
+            .value()
+            .as_deref(),
+        Some("0.0")
     );
 }
 

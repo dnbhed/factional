@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 
 use factional_content::{
     Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
-    IdChoice, Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, Word, additions,
-    apply_fix, entry_fields, entry_form, entry_places, file_places, fix_for, id_choices, key_info,
-    load_texts, outline, outline_texts, place_words, read_texts, referenced_by, set_value,
-    words_at,
+    IdChoice, Offer, Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, Word,
+    additions, apply_fix, entry_fields, entry_form, entry_places, file_places, fix_for, id_choices,
+    key_info, load_texts, make_offer, outline, outline_texts, place_words, read_texts,
+    referenced_by, set_value, words_at,
 };
 use factional_core::Curve;
 use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
@@ -75,6 +75,8 @@ pub struct Editor {
     referenced: Option<Vec<Reference>>,
     /// Where each place that names the selected entry is, in words (U10b).
     referenced_words: Vec<String>,
+    /// The selected entry's sections, each with what it offers to add (U10d).
+    sections: Vec<SectionInput>,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -163,6 +165,20 @@ pub struct FieldInput {
     pub pair: bool,
 }
 
+/// One section of the selected entry's form: its name, and what it offers to add (U10d).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionInput {
+    pub name: Option<String>,
+    pub offers: Vec<OfferInput>,
+}
+
+/// Something a section offers to add, with a new id as typed for one that takes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferInput {
+    pub offer: Offer,
+    pub id: String,
+}
+
 /// A place in the selected entry, or where a file's entries go, with what the schema allows
 /// to be added there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +212,7 @@ impl Editor {
             places: Vec::new(),
             referenced: None,
             referenced_words: Vec::new(),
+            sections: Vec::new(),
             file_places: Vec::new(),
             note: None,
             workspace: Workspace::Content,
@@ -527,6 +544,39 @@ impl Editor {
         self.add(file, &place, Some(&key))
     }
 
+    /// Makes the `offer`th offer of the selected entry's `section`th section (U10d), with `id`
+    /// for one that takes it, as one change, and keeps the entry selected.
+    pub fn make_offer(
+        &mut self,
+        section: usize,
+        offer: usize,
+        id: Option<&str>,
+    ) -> Result<(), EditError> {
+        let Some((file, _)) = self.selected else {
+            return Ok(());
+        };
+        let Some(made) = self
+            .sections
+            .get(section)
+            .and_then(|section| section.offers.get(offer))
+            .map(|offer| offer.offer.clone())
+        else {
+            return Ok(());
+        };
+        let name = CONTENT_FILES[file];
+        let said = format!("Added a {} to {}", made.label, self.named(file, &made.at));
+        let mut added = None;
+        self.change(file, said, |text| {
+            let (text, path) = make_offer(name, text, &made, id)?;
+            added = Some(path);
+            Ok(text)
+        })?;
+        if let Some(entry) = added.and_then(|added| self.entry_containing(file, &added)) {
+            self.select(file, entry);
+        }
+        Ok(())
+    }
+
     /// Adds `key` at `at` in the `file`th file, or with no key an item at the end of the list
     /// there, through the writer, and selects the entry it's in. A file that isn't there is
     /// started. Nothing changes if the writer refuses.
@@ -738,6 +788,7 @@ impl Editor {
             self.places.clear();
             self.referenced = None;
             self.referenced_words.clear();
+            self.sections.clear();
             return;
         };
         let text = texts[file].as_deref().unwrap_or_default();
@@ -754,7 +805,22 @@ impl Editor {
             .map(|field| (field.path, field.value))
             .collect();
         let saved = &saved;
-        self.fields = entry_form(texts, name, key)
+        let form = entry_form(texts, name, key);
+        self.sections = form
+            .iter()
+            .map(|group| SectionInput {
+                name: group.name.clone(),
+                offers: group
+                    .offers
+                    .iter()
+                    .map(|offer| OfferInput {
+                        offer: offer.clone(),
+                        id: String::new(),
+                    })
+                    .collect(),
+            })
+            .collect();
+        self.fields = form
             .into_iter()
             .flat_map(|group| {
                 group.rows.into_iter().map(move |row| FieldInput {
@@ -1010,8 +1076,7 @@ impl Editor {
             {
                 noticed = removing_ui::consequence_ui(ui, consequence);
             }
-            let (Some((place, _)), Some((file, entry))) = (self.selected, self.selected_entry())
-            else {
+            let (Some(_), Some((file, entry))) = (self.selected, self.selected_entry()) else {
                 ui.label(
                     "Choose an entry on the left to see it and what the loader says about it.",
                 );
@@ -1025,18 +1090,12 @@ impl Editor {
             let heading = entry.name.clone().unwrap_or_else(|| entry.key.clone());
             let key = entry.key.clone();
             let entry_path = ValuePath::parse(&key).unwrap_or(ValuePath::ROOT);
-            // The entry's own × and "+" are beside its name (U10b).
+            // The entry's own × is beside its name (U10b); what it can have is offered in its
+            // sections (U10d).
             ui.horizontal(|ui| {
                 ui.heading(heading);
-                if let Some(at) = self.places.iter_mut().find(|at| at.path == entry_path) {
-                    if removing_ui::remove_button(ui, &key) {
-                        removing = Some(at.path.clone());
-                    }
-                    let mut added = None;
-                    removing_ui::adding_menu(ui, file, at, &key, true, &mut added);
-                    if let Some((at, key)) = added {
-                        adding = Some((place, at, key));
-                    }
+                if removing_ui::remove_button(ui, &key) {
+                    removing = Some(entry_path.clone());
                 }
             });
             if self.confirming.is_some() {
@@ -1044,35 +1103,15 @@ impl Editor {
                 confirmed = removing_ui::confirm_ui(ui, &key, count);
             }
             ui.separator();
-            let prefix = format!("{key}.");
             egui::ScrollArea::vertical().show(ui, |ui| {
-                let mut drawn = Vec::new();
                 acted = form_ui::form_ui(
                     ui,
                     file,
                     &entry_path,
                     &mut self.fields,
                     &mut self.places,
-                    &mut drawn,
+                    &mut self.sections,
                 );
-                // What fits nowhere in the form, if anything, is listed after it.
-                for at in &mut self.places {
-                    if at.path == entry_path || drawn.contains(&at.path) {
-                        continue;
-                    }
-                    let path = at.path.to_string();
-                    let name = path.strip_prefix(&prefix).unwrap_or(&path).to_owned();
-                    let mut added = None;
-                    ui.horizontal_wrapped(|ui| {
-                        if removing_ui::remove_button(ui, &name) {
-                            removing = Some(at.path.clone());
-                        }
-                        removing_ui::adding_menu(ui, file, at, &name, false, &mut added);
-                    });
-                    if let Some((at, key)) = added {
-                        adding = Some((place, at, key));
-                    }
-                }
             });
         });
         match noticed {
@@ -1106,6 +1145,11 @@ impl Editor {
             Some(Acted::Add(at, key)) => {
                 if let Some((file, _)) = self.selected {
                     adding = Some((file, at, key));
+                }
+            }
+            Some(Acted::Offer(section, offer, id)) => {
+                if let Err(refused) = self.make_offer(section, offer, id.as_deref()) {
+                    self.note = Some(format!("couldn't add: {refused}"));
                 }
             }
             None => {}
