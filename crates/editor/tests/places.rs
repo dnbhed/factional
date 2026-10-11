@@ -157,3 +157,27 @@ fn what_names_an_entry_is_said_in_words() {
     let harness = on("city_watch");
     harness.get_by_label("Captain Hale › Membership \"The City Watch\" › Faction");
 }
+
+#[test]
+fn a_pair_is_its_two_ids_on_one_line_either_side_of_an_arrow() {
+    let harness = on("sowed_discord");
+    let first = "relations[0].between[0]";
+    let second = "relations[0].between[1]";
+    assert_eq!(value(&harness, first).as_deref(), Some("city_watch"));
+    assert_eq!(value(&harness, second).as_deref(), Some("temple"));
+    assert!(on_one_line(&harness, first, second));
+    assert!(on_one_line(&harness, first, "↔"));
+    assert!(on_one_line(&harness, first, "Between"));
+    // Its × is the pair's, on its line; each id is still chosen from the factions.
+    assert!(on_one_line(&harness, first, "Remove relations[0].between"));
+    harness.get_by_label(&format!("Choose {second}"));
+    // Neither is numbered on a row of its own.
+    assert!(harness.query_by_label("1").is_none());
+}
+
+#[test]
+fn a_list_of_any_number_of_ids_isnt_a_pair() {
+    let harness = on("merchant_ava");
+    assert!(!on_one_line(&harness, "contacts[0]", "contacts[1]"));
+    assert!(harness.query_by_label("↔").is_none());
+}

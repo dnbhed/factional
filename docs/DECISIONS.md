@@ -748,6 +748,11 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Referenced by is in words,** worked out once as an entry is chosen.
   - *Why:* the user asked for the "+" beside what it adds to; a designer adds where they're looking.
 
+- **P-100 · How a pair is drawn** (made in U10c, 2026-10-11).
+  - **A pair is a list of exactly two ids** (`KeyInfo::pair`: `minItems` and `maxItems` both 2, its items naming something), so `between`, in a relation or a relation shift, is one; a curve's point, two numbers, isn't.
+  - **Its two fields are one line** (`Line::Pair`): the pair's own word, *Between*, then the first id, ↔, the second, and the pair's × and "+" beside them, as a heading's would be. Each field keeps its key as its label and its choices, and what the loader says at each is under the line. A pair with only one of its two written stays a heading and a row, so it can be seen to be short.
+  - *Why:* `between[0]` and `between[1]` are one thought, two factions regarding each other, and read as one.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

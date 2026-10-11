@@ -536,6 +536,8 @@ pub struct Shape<'f> {
     pub words: &'f [Word],
     /// An empty table or list, with nothing in it yet.
     pub empty: bool,
+    /// One of a pair's two, such as `between[0]` (U10c).
+    pub pair: bool,
 }
 
 /// One group of the form laid out: its name, the places whose × and "+" go beside it, and
@@ -563,6 +565,15 @@ pub enum Line {
     },
     /// The `field`th field, under `depth` headings.
     Row { field: usize, depth: usize },
+    /// A pair's two fields on one line (U10c), said by the pair's own word, with the places
+    /// whose × and "+" go beside it, as a heading's.
+    Pair {
+        depth: usize,
+        text: String,
+        path: ValuePath,
+        fields: [usize; 2],
+        places: Vec<usize>,
+    },
     Table {
         table: ListTable,
         places: Vec<usize>,
@@ -602,7 +613,9 @@ pub fn form_layout(shapes: &[Shape<'_>], places: &[ValuePath]) -> Vec<GroupLayou
             match spot {
                 Spot::Group(group) => layouts[group].places.push(index),
                 Spot::Line(group, line) => match &mut layouts[group].lines[line] {
-                    Line::Heading { places, .. } | Line::Table { places, .. } => {
+                    Line::Heading { places, .. }
+                    | Line::Pair { places, .. }
+                    | Line::Table { places, .. } => {
                         places.push(index);
                     }
                     Line::Row { .. } => {}
@@ -623,7 +636,8 @@ fn lines_of(group: Option<&str>, blocks: Vec<Block>, shapes: &[Shape<'_>]) -> Ve
     let mut lines = Vec::new();
     // The headings the last field was under, each with the place it says.
     let mut under: Vec<(&str, ValuePath)> = Vec::new();
-    for block in blocks {
+    let mut blocks = blocks.into_iter().peekable();
+    while let Some(block) = blocks.next() {
         let field = match block {
             Block::Row(field) => field,
             Block::Table(table) => {
@@ -645,6 +659,12 @@ fn lines_of(group: Option<&str>, blocks: Vec<Block>, shapes: &[Shape<'_>]) -> Ve
         if !shape.empty {
             headings.pop();
         }
+        // A pair's first with its second after it are one line, said by the pair's own word.
+        let second = match blocks.peek() {
+            Some(Block::Row(next)) if pair_of(shapes, field, *next) => Some(*next),
+            _ => None,
+        };
+        let pair = second.and_then(|second| Some((headings.pop()?, second)));
         if group.is_some() && headings.first().map(|(text, _)| *text) == group {
             headings.remove(0);
         }
@@ -662,15 +682,38 @@ fn lines_of(group: Option<&str>, blocks: Vec<Block>, shapes: &[Shape<'_>]) -> Ve
                 places: Vec::new(),
             });
         }
-        if !shape.empty {
-            lines.push(Line::Row {
+        match pair {
+            Some(((text, path), second)) => {
+                blocks.next();
+                lines.push(Line::Pair {
+                    depth: headings.len(),
+                    text: text.to_owned(),
+                    path,
+                    fields: [field, second],
+                    places: Vec::new(),
+                });
+            }
+            None if !shape.empty => lines.push(Line::Row {
                 field,
                 depth: headings.len(),
-            });
+            }),
+            None => {}
         }
         under = headings;
     }
     lines
+}
+
+/// Whether the `first`th and `second`th fields are a pair's two, in order.
+fn pair_of(shapes: &[Shape<'_>], first: usize, second: usize) -> bool {
+    let item = |field: usize| {
+        let shape = shapes.get(field).filter(|shape| shape.pair)?;
+        match shape.path.0.split_last()? {
+            (Step::Index(index), list) => Some((*index, list)),
+            _ => None,
+        }
+    };
+    matches!((item(first), item(second)), (Some((0, a)), Some((1, b))) if a == b)
 }
 
 /// Where a place's × and "+" go.
@@ -699,9 +742,12 @@ fn spot_of(
         lines()
             .find(|(_, _, drawn)| matches!(drawn, Line::Table { table, .. } if table.list == list))
     };
+    // A heading, or a pair, which says its place as a heading does.
     let heading = |path: &ValuePath| {
-        lines()
-            .find(|(_, _, drawn)| matches!(drawn, Line::Heading { path: said, .. } if said == path))
+        lines().find(|(_, _, drawn)| match drawn {
+            Line::Heading { path: said, .. } | Line::Pair { path: said, .. } => said == path,
+            _ => false,
+        })
     };
     let at = |(group, line, _): (usize, usize, &Line)| Spot::Line(group, line);
     match &place.0[..] {
@@ -846,6 +892,7 @@ mod tests {
         path: ValuePath,
         words: Vec<Word>,
         empty: bool,
+        pair: bool,
     }
 
     fn field(group: Option<&'static str>, key: &str, words: &[(&str, usize)]) -> Field {
@@ -857,12 +904,20 @@ mod tests {
                 .map(|(text, through)| word(text, *through))
                 .collect(),
             empty: false,
+            pair: false,
         }
     }
 
     fn empty(group: Option<&'static str>, key: &str, words: &[(&str, usize)]) -> Field {
         Field {
             empty: true,
+            ..field(group, key, words)
+        }
+    }
+
+    fn paired(group: Option<&'static str>, key: &str, words: &[(&str, usize)]) -> Field {
+        Field {
+            pair: true,
             ..field(group, key, words)
         }
     }
@@ -875,6 +930,7 @@ mod tests {
                 path: &field.path,
                 words: &field.words,
                 empty: field.empty,
+                pair: field.pair,
             })
             .collect();
         let places: Vec<ValuePath> = places
@@ -1105,6 +1161,53 @@ mod tests {
                 places: vec![1],
                 lines: vec![],
             }]
+        );
+    }
+
+    #[test]
+    fn a_pairs_two_are_one_line_with_the_pairs_own_place() {
+        let shift = [("Relations", 1), ("Shift 1", 2), ("Between", 3)];
+        let group = Some("Relations");
+        let fields = [
+            paired(
+                group,
+                "relations[0].between[0]",
+                &[shift[0], shift[1], shift[2], ("1", 4)],
+            ),
+            paired(
+                group,
+                "relations[0].between[1]",
+                &[shift[0], shift[1], shift[2], ("2", 4)],
+            ),
+            field(group, "relations[0].by", &[shift[0], shift[1], ("By", 3)]),
+        ];
+        let places = ["", "relations", "relations[0]", "relations[0].between"];
+        assert_eq!(
+            laid_out(&fields, &places),
+            [GroupLayout {
+                name: Some("Relations".to_owned()),
+                places: vec![1],
+                lines: vec![
+                    heading(0, "Shift 1", "relations[0]", &[2]),
+                    Line::Pair {
+                        depth: 1,
+                        text: "Between".to_owned(),
+                        path: ValuePath::parse("relations[0].between").expect("a key"),
+                        fields: [0, 1],
+                        places: vec![3],
+                    },
+                    row(2, 1),
+                ],
+            }]
+        );
+    }
+
+    #[test]
+    fn half_a_pair_stays_a_row_under_its_heading() {
+        let fields = [paired(None, "between[0]", &[("Between", 1), ("1", 2)])];
+        assert_eq!(
+            laid_out(&fields, &["", "between"])[0].lines,
+            [heading(0, "Between", "between", &[1]), row(0, 1)]
         );
     }
 

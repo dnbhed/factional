@@ -336,6 +336,8 @@ pub struct KeyInfo {
     pub title: Option<String>,
     /// For a list, what one of its items is called, such as `Rank` (U10b).
     pub item: Option<String>,
+    /// Whether it's a pair: a list of exactly two ids, such as `between` (U10c).
+    pub pair: bool,
     pub description: Option<String>,
     pub default: Option<String>,
     /// What it is, in words, such as `a number from -100.00 to 100.00` (U6d).
@@ -364,10 +366,21 @@ pub fn key_info(file: &str, path: &ValuePath) -> Option<KeyInfo> {
     Some(KeyInfo {
         title: said("title").and_then(Json::as_str).map(str::to_owned),
         item: said("x-item").and_then(Json::as_str).map(str::to_owned),
+        pair: is_pair(&root, node),
         description,
         default,
         kind: kind_in_words(&root, node),
     })
+}
+
+/// Whether the schema `node` is a pair: a list of exactly two ids of what they name (U10c).
+fn is_pair(root: &Json, node: &Json) -> bool {
+    let list = form(root, node, "array");
+    let count = |key: &str| list.get(key).and_then(Json::as_u64);
+    let names = list
+        .get("items")
+        .is_some_and(|items| form(root, items, "string").get("x-names").is_some());
+    count("minItems") == Some(2) && count("maxItems") == Some(2) && names
 }
 
 /// What the schema `node` allows, in words: text, true or false, a number or a whole number

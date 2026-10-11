@@ -127,3 +127,14 @@ fn a_table_keyed_by_ids_may_take_each_that_exists_and_isnt_there_yet() {
     // A table not keyed by what it names takes none.
     assert!(id_choices(&texts, "characters.toml", &path("vex.alignment")).is_empty());
 }
+
+#[test]
+fn a_list_of_exactly_two_ids_is_a_pair() {
+    let pair = |file: &str, key: &str| key_info(file, &path(key)).is_some_and(|info| info.pair);
+    assert!(pair("relations.toml", "relation[0].between"));
+    assert!(pair("outcomes.toml", "sowed_discord.relations[0].between"));
+    // A curve's point is two numbers, not two ids; a list of ids may be any length.
+    assert!(!pair("balance.toml", "disposition.affinity[0]"));
+    assert!(!pair("characters.toml", "merchant_ava.contacts"));
+    assert!(!pair("relations.toml", "relation[0].value"));
+}
