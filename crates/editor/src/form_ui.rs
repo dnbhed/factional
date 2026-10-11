@@ -70,6 +70,11 @@ pub(crate) fn form_ui(
                 words: &field.row.words,
                 empty: field.row.written.is_none() && field.row.default.is_none(),
                 pair: field.pair,
+                says: field
+                    .row
+                    .sentence
+                    .as_ref()
+                    .map_or(1, |sentence| sentence.says),
             })
             .collect();
         let at: Vec<ValuePath> = places
@@ -458,8 +463,9 @@ fn cell_ui(
 }
 
 /// One field under `depth` headings: its comment lines, then its last word, and its value with
-/// what can be done with it, side by side so a long comment never pushes them apart. Its key
-/// and description are on hover.
+/// what can be done with it, side by side so a long comment never pushes them apart; or, for a
+/// requirement or an effect, its sentence with its value in it (U11a). Its key and description
+/// are on hover.
 fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput, depth: usize) -> Option<Acted> {
     let mut acted = None;
     for line in &field.row.comment {
@@ -474,7 +480,11 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput, depth: usize)
     let row = &field.row;
     ui.horizontal(|ui| {
         ui.add_space(indent(depth));
-        let word = row.words.last().map_or(row.key.as_str(), |word| &word.text);
+        // A sentence's words before its value, else the value's last word (U11a).
+        let word = match &row.sentence {
+            Some(sentence) => sentence.before.as_str(),
+            None => row.words.last().map_or(row.key.as_str(), |word| &word.text),
+        };
         let label = match &row.written {
             Some(_) => ui.label(word),
             None => ui.label(RichText::new(word).weak()),
@@ -492,6 +502,14 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput, depth: usize)
     });
     ui.horizontal(|ui| {
         acted = value_ui(ui, place, field, FIELD_WIDTH);
+        if let Some(sentence) = field
+            .row
+            .sentence
+            .as_ref()
+            .filter(|said| !said.after.is_empty())
+        {
+            ui.label(&sentence.after);
+        }
         let FieldInput { row, refused, .. } = field;
         if row.written.is_some() && remove_button(ui, &row.key) {
             acted = Some(Acted::Remove(row.path.clone()));

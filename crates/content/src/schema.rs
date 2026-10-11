@@ -58,7 +58,7 @@ pub fn schema(file: &str) -> Option<Value> {
                 ("character", character()),
                 ("alignment", alignment()),
                 ("weights", weights()),
-                ("standing", named_standing()),
+                ("standing", named_standing(STARTING)),
             ],
         ),
         "actions" => (
@@ -91,7 +91,7 @@ pub fn schema(file: &str) -> Option<Value> {
             vec![
                 ("outcome", outcome()),
                 ("delta", delta()),
-                ("standing", named_standing()),
+                ("standing", named_standing(CHANGING)),
                 ("relation_shift", relation_shift()),
             ],
         ),
@@ -104,7 +104,7 @@ pub fn schema(file: &str) -> Option<Value> {
                 ("choice", choice()),
                 ("requires", requires()),
                 ("delta", delta()),
-                ("standing", named_standing()),
+                ("standing", named_standing(CHANGING)),
                 ("relation_shift", relation_shift()),
             ],
         ),
@@ -319,6 +319,14 @@ fn at_least_zero(description: &str) -> Value {
     ranged(Some(Fixed::ZERO), None, description)
 }
 
+/// `schema`, a requirement's or an effect's value, said as a sentence (U11a): `text` with
+/// `{value}` where the value goes and `{key}` for the name of what its key names, saying the
+/// last `says` of its words.
+fn said_as(mut schema: Value, says: usize, text: &str) -> Value {
+    schema["x-sentence"] = json!({ "says": says, "text": text });
+    schema
+}
+
 /// `schema` with its own title, in place of the one its key has elsewhere.
 fn with_title(mut schema: Value, title: &str) -> Value {
     schema["title"] = title.into();
@@ -465,10 +473,14 @@ fn delta() -> Value {
     let axes = [Axis::Law, Axis::Good].map(|axis| {
         (
             axis.key(),
-            ranged(
-                None,
-                None,
-                "How far it moves this axis; left out, it doesn't.",
+            said_as(
+                ranged(
+                    None,
+                    None,
+                    "How far it moves this axis; left out, it doesn't.",
+                ),
+                2,
+                &format!("Moves {} by {{value}}", axis.key()),
             ),
         )
     });
@@ -490,22 +502,22 @@ fn weights() -> Value {
 }
 
 /// `standing = { factions = { … }, characters = { … } }`, each value within ±100.
-fn named_standing() -> Value {
+/// How a standing's value is said (U11a): where it starts, for a character, or how it
+/// changes, for an effect.
+const STARTING: &str = "Standing {value} with {key}";
+const CHANGING: &str = "Standing with {key} changes by {value}";
+
+fn named_standing(said: &str) -> Value {
+    let value = || said_as(within_axis("-100 to 100."), 3, said);
     object(
         [
             (
                 "factions",
-                keys_name(
-                    id_table(within_axis("-100 to 100."), "By faction id."),
-                    "faction",
-                ),
+                keys_name(id_table(value(), "By faction id."), "faction"),
             ),
             (
                 "characters",
-                keys_name(
-                    id_table(within_axis("-100 to 100."), "By character id."),
-                    "character",
-                ),
+                keys_name(id_table(value(), "By character id."), "character"),
             ),
         ],
         &[],
@@ -1146,23 +1158,37 @@ fn action() -> Value {
         [
             (
                 "target",
-                within_axis("The change in the target's regard for the actor."),
+                said_as(
+                    within_axis("The change in the target's regard for the actor."),
+                    2,
+                    "The target's regard changes by {value}",
+                ),
             ),
             (
                 "target_factions",
-                within_axis("The change in the regard of each of the target's factions."),
+                said_as(
+                    within_axis("The change in the regard of each of the target's factions."),
+                    2,
+                    "The target's factions' regard changes by {value}",
+                ),
             ),
             (
                 "factions",
                 keys_name(
-                    id_table(within_axis("-100 to 100."), "By faction id."),
+                    id_table(
+                        said_as(within_axis("-100 to 100."), 3, CHANGING),
+                        "By faction id.",
+                    ),
                     "faction",
                 ),
             ),
             (
                 "characters",
                 keys_name(
-                    id_table(within_axis("-100 to 100."), "By character id."),
+                    id_table(
+                        said_as(within_axis("-100 to 100."), 3, CHANGING),
+                        "By character id.",
+                    ),
                     "character",
                 ),
             ),
@@ -1335,32 +1361,57 @@ fn giver(whose: &str) -> Value {
 
 /// A `requires` table: what must hold for the character doing the quest.
 fn requires() -> Value {
-    let factions = |description: &str| list(names(id("A faction's id."), "faction"), description);
+    // Each requirement is said as a sentence (U11a).
+    let factions = |said: &str, description: &str| {
+        list(
+            said_as(names(id("A faction's id."), "faction"), 2, said),
+            description,
+        )
+    };
     let keys: Map<String, Value> = Requirements::KEYS
         .into_iter()
         .map(|key| {
             let schema = match key {
                 "standing" => keys_name(
                     id_table(
-                        within_axis("At least this, -100 to 100."),
+                        said_as(
+                            within_axis("At least this, -100 to 100."),
+                            2,
+                            "Needs standing {value} with {key}",
+                        ),
                         "Standing with each faction or character, by id.",
                     ),
                     "party",
                 ),
-                "member" => factions("Factions the character must be in."),
-                "not_member" => factions("Factions the character must not be in."),
+                "member" => factions(
+                    "Needs to be in {value}",
+                    "Factions the character must be in.",
+                ),
+                "not_member" => factions(
+                    "Needs not to be in {value}",
+                    "Factions the character must not be in.",
+                ),
                 "rank_at_least" => keys_name(
                     id_table(
-                        id("A rank on the faction's ladder."),
+                        said_as(
+                            id("A rank on the faction's ladder."),
+                            2,
+                            "Needs rank {value} or higher in {key}",
+                        ),
                         "At least this rank in each faction, by faction id.",
                     ),
                     "faction",
                 ),
                 "within_tolerance" => factions(
+                    "Needs to be within {value}'s member tolerance",
                     "Factions whose member tolerance the character must be within, as the faction pictures them.",
                 ),
                 _ => list(
-                    json!({ "type": "string", "pattern": PROGRESS_PATTERN, "x-names": "quest" }),
+                    said_as(
+                        json!({ "type": "string", "pattern": PROGRESS_PATTERN, "x-names": "quest" }),
+                        2,
+                        "Needs {value} done",
+                    ),
                     "Progress through other quests: quest (finished), quest.stage (reached) or quest.stage.choice (made).",
                 ),
             };

@@ -524,6 +524,9 @@ pub struct Shape<'f> {
     pub empty: bool,
     /// One of a pair's two, such as `between[0]` (U10c).
     pub pair: bool,
+    /// How many of its words, the last of them, it says itself: 1, or more for a sentence
+    /// (U11a), as *Needs standing … with The City Watch* says *Standing* and the faction.
+    pub says: usize,
 }
 
 /// One group of the form laid out: its name, the places whose × and "+" go beside it, and
@@ -645,9 +648,10 @@ fn lines_of(group: Option<&str>, blocks: Vec<Block>, shapes: &[Shape<'_>]) -> Ve
             .iter()
             .map(|word| (word.text.as_str(), prefix(shape.path, word.through)))
             .collect();
-        // A value's last word is its own; an empty place's is its heading.
+        // A value's last word is its own, or a sentence's last words (U11a); an empty
+        // place's are its headings.
         if !shape.empty {
-            headings.pop();
+            headings.truncate(headings.len().saturating_sub(shape.says));
         }
         // A pair's first with its second after it are one line, said by the pair's own word.
         let second = match blocks.peek() {
@@ -883,6 +887,7 @@ mod tests {
         words: Vec<Word>,
         empty: bool,
         pair: bool,
+        says: usize,
     }
 
     fn field(group: Option<&'static str>, key: &str, words: &[(&str, usize)]) -> Field {
@@ -895,6 +900,7 @@ mod tests {
                 .collect(),
             empty: false,
             pair: false,
+            says: 1,
         }
     }
 
@@ -921,6 +927,7 @@ mod tests {
                 words: &field.words,
                 empty: field.empty,
                 pair: field.pair,
+                says: field.says,
             })
             .collect();
         let places: Vec<ValuePath> = places
@@ -1200,6 +1207,31 @@ mod tests {
     }
 
     #[test]
+    fn a_sentence_is_under_only_the_headings_it_doesnt_say() {
+        let says = |key: &str, words: &[(&str, usize)], says: usize| Field {
+            says,
+            ..field(Some("Requirements"), key, words)
+        };
+        let fields = [
+            says(
+                "requires.standing.city_watch",
+                &[("Requirements", 1), ("Standing", 2), ("The City Watch", 3)],
+                2,
+            ),
+            says(
+                "requires.member[0]",
+                &[("Requirements", 1), ("Member of", 2), ("1", 3)],
+                2,
+            ),
+        ];
+        // The requirements' heading is its group's, so the sentences are under none.
+        assert_eq!(
+            laid_out(&fields, &["", "requires"])[0].lines,
+            [row(0, 0), row(1, 0)]
+        );
+    }
+
+    #[test]
     fn half_a_pair_stays_a_row_under_its_heading() {
         let fields = [paired(None, "between[0]", &[("Between", 1), ("1", 2)])];
         assert_eq!(
@@ -1219,6 +1251,7 @@ mod tests {
                 words: &field.words,
                 empty: false,
                 pair: false,
+                says: 1,
             })
             .collect();
         assert_eq!(

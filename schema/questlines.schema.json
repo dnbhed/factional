@@ -48,7 +48,11 @@
           "items": {
             "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){0,2}$",
             "type": "string",
-            "x-names": "quest"
+            "x-names": "quest",
+            "x-sentence": {
+              "says": 2,
+              "text": "Needs {value} done"
+            }
           },
           "title": "Done",
           "type": "array"
@@ -59,7 +63,11 @@
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string",
-            "x-names": "faction"
+            "x-names": "faction",
+            "x-sentence": {
+              "says": 2,
+              "text": "Needs to be in {value}"
+            }
           },
           "title": "Member of",
           "type": "array"
@@ -70,7 +78,11 @@
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string",
-            "x-names": "faction"
+            "x-names": "faction",
+            "x-sentence": {
+              "says": 2,
+              "text": "Needs not to be in {value}"
+            }
           },
           "title": "Not a member of",
           "type": "array"
@@ -79,7 +91,11 @@
           "additionalProperties": {
             "description": "A rank on the faction's ladder.",
             "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
+            "type": "string",
+            "x-sentence": {
+              "says": 2,
+              "text": "Needs rank {value} or higher in {key}"
+            }
           },
           "description": "At least this rank in each faction, by faction id.",
           "propertyNames": {
@@ -94,7 +110,11 @@
             "description": "At least this, -100 to 100.",
             "maximum": 100.0,
             "minimum": -100.0,
-            "type": "number"
+            "type": "number",
+            "x-sentence": {
+              "says": 2,
+              "text": "Needs standing {value} with {key}"
+            }
           },
           "description": "Standing with each faction or character, by id.",
           "propertyNames": {
@@ -110,7 +130,11 @@
             "description": "A faction's id.",
             "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string",
-            "x-names": "faction"
+            "x-names": "faction",
+            "x-sentence": {
+              "says": 2,
+              "text": "Needs to be within {value}'s member tolerance"
+            }
           },
           "title": "Within tolerance of",
           "type": "array"

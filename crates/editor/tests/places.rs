@@ -100,8 +100,11 @@ fn a_new_stage_is_added_in_the_stages_and_a_new_choice_beside_its_stage() {
 #[test]
 fn a_table_keyed_by_ids_offers_those_that_exist_by_name() {
     let mut harness = on("vex");
-    // At the end of the standing's section (U10d).
-    assert!(height(&harness, "Add to standing.factions…") > height(&harness, "Factions"));
+    // At the end of the standing's section (U10d), after its lines.
+    assert!(
+        height(&harness, "Add to standing.factions…")
+            > height(&harness, "standing.factions.lantern_guild")
+    );
     click(&mut harness, "Add to standing.factions…");
     // The Guild's is there already.
     assert!(

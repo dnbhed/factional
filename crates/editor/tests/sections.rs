@@ -101,3 +101,14 @@ fn a_rank_is_offered_once_at_the_end_of_its_section() {
     assert_eq!(harness.query_all_by_label("Add to ranks").count(), 1);
     assert!(height(&harness, "Add to ranks") > height(&harness, "ranks[2].id"));
 }
+
+#[test]
+fn a_requirement_reads_as_a_sentence_with_its_value_in_it() {
+    let harness = on("watch_oath");
+    let field = "stages[1].requires.standing.city_watch";
+    assert_eq!(value(&harness, field).as_deref(), Some("10.0"));
+    let line = height(&harness, field);
+    for words in ["Needs standing", "with The City Watch"] {
+        assert!((height(&harness, words) - line).abs() < 6.0, "{words}");
+    }
+}

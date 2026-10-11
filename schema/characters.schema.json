@@ -129,7 +129,11 @@
             "description": "-100 to 100.",
             "maximum": 100.0,
             "minimum": -100.0,
-            "type": "number"
+            "type": "number",
+            "x-sentence": {
+              "says": 3,
+              "text": "Standing {value} with {key}"
+            }
           },
           "description": "By character id.",
           "propertyNames": {
@@ -144,7 +148,11 @@
             "description": "-100 to 100.",
             "maximum": 100.0,
             "minimum": -100.0,
-            "type": "number"
+            "type": "number",
+            "x-sentence": {
+              "says": 3,
+              "text": "Standing {value} with {key}"
+            }
           },
           "description": "By faction id.",
           "propertyNames": {
