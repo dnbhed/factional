@@ -17,12 +17,17 @@ fn on(entry: &str) -> Harness<'static, Editor> {
         Editor::open(Path::new(SAMPLE)),
     );
     harness.run();
+    // An entry or a field may be further down than the window shows.
+    harness.get_by_label(entry).scroll_to_me();
+    harness.run();
     harness.get_by_label(entry).click();
     harness.run();
     harness
 }
 
 fn click(harness: &mut Harness<'static, Editor>, label: &str) {
+    harness.get_by_label(label).scroll_to_me();
+    harness.run();
     harness.get_by_label(label).click();
     harness.run();
 }
@@ -60,7 +65,11 @@ fn an_entry_shows_its_name_and_its_values_grouped_with_their_comments() {
 #[test]
 fn set_writes_a_default_in_and_undo_takes_it_out() {
     let mut harness = on("city_watch");
-    assert!(harness.query_by_label("expel_standing_change").is_some());
+    assert!(
+        harness
+            .query_by_label("Standing change on expulsion")
+            .is_some()
+    );
     click(&mut harness, "Set expel_standing_change");
     assert_eq!(
         value(&harness, "expel_standing_change").as_deref(),
@@ -109,4 +118,33 @@ fn what_the_loader_says_and_the_entry_as_written_are_beside_it() {
     let harness = on("city_watch");
     harness.get_by_label("Nothing at city_watch");
     harness.get_by_label_contains("name = \"The City Watch\"");
+}
+
+#[test]
+fn a_value_is_said_in_words_under_headings_for_where_it_is() {
+    let harness = on("city_watch");
+    // Each axis under the table it's in, said once.
+    assert_eq!(harness.query_all_by_label("Alignment").count(), 1);
+    assert_eq!(harness.query_all_by_label("Weights").count(), 1);
+    assert_eq!(harness.query_all_by_label("Law").count(), 2);
+    harness.get_by_label("Member tolerance");
+    // The drift's own heading is its group's, so its values are just their words.
+    harness.get_by_label("Grace (ticks)");
+    assert!(harness.query_by_label("drift.grace_ticks").is_some());
+    // A rank ladder's columns are in words too.
+    harness.get_by_label("Requirements › Standing");
+}
+
+#[test]
+fn a_quests_stages_and_choices_are_headings_by_their_ids() {
+    let harness = on("dock_inspection");
+    harness.get_by_label("Stage \"inspect\"");
+    harness.get_by_label("Choice \"seize\"");
+    harness.get_by_label("Choice \"wave_through\"");
+    assert_eq!(harness.query_all_by_label("Effects").count(), 2);
+    // Each field is still found by its key.
+    assert_eq!(
+        value(&harness, "stages[0].choices[0].effects.alignment.law").as_deref(),
+        Some("2.0")
+    );
 }

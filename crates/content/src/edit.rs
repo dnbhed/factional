@@ -332,6 +332,8 @@ pub fn rename_key(text: &str, path: &ValuePath, to: &str) -> Result<String, Edit
 /// loader would read it (U6a).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyInfo {
+    /// What it's called, in words, such as `Member tolerance` (U10a).
+    pub title: Option<String>,
     pub description: Option<String>,
     pub default: Option<String>,
     /// What it is, in words, such as `a number from -100.00 to 100.00` (U6d).
@@ -358,6 +360,7 @@ pub fn key_info(file: &str, path: &ValuePath) -> Option<KeyInfo> {
         other => other.to_string(),
     });
     Some(KeyInfo {
+        title: said("title").and_then(Json::as_str).map(str::to_owned),
         description,
         default,
         kind: kind_in_words(&root, node),
@@ -432,7 +435,13 @@ fn kind_in_words(root: &Json, node: &Json) -> String {
 pub(crate) fn schema_at<'s>(root: &'s Json, path: &ValuePath) -> Option<&'s Json> {
     let mut node = root;
     for step in &path.0 {
-        node = child(form(root, node, ""), step)?;
+        // A value that may be several things, such as a curve, is walked into by the form the
+        // step fits: a list for an index, a table for a key.
+        let shape = match step {
+            Step::Key(_) => "object",
+            Step::Index(_) => "array",
+        };
+        node = child(form(root, node, shape), step)?;
     }
     Some(node)
 }

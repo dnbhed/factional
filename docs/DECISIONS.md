@@ -725,6 +725,16 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Quick open** (⌘K) by name or id across files; **back and forward** through what's been chosen; **reordering** ordered lists (ranks, steps, stages, choices) by menu, with drag as a shortcut; **duplicating** an entry under a new id; ⌘S, ⌘Z and ⇧⌘Z.
   - *Why:* each removes a trip the designer makes by hand today, and none needs a rule the engine hasn't got.
 
+- **P-98 · How places are said in words** (made in U10a, 2026-10-11).
+  - **One title a key,** in a table in `schema.rs` (`TITLES`) set on every key of every schema where it hasn't its own, as a key means the same wherever it's found; the relations file's list is *Relations*, its own. A test holds every key to a title. Titles are words for the designer, not balance numbers, so they're not in DESIGN.md §12.
+  - **A list says what an item is called (`x-item`) and, if items are named, by which key (`x-title`):** ranks, stages and choices by `id`, bands by `name`, memberships by `faction`; steps, rules, relation shifts, relations and a curve's points are numbered. A named item stands in for its list (*Rank "sergeant"*, not *Ranks › Rank "sergeant"*), since the list says nothing the name doesn't; a numbered one sits under it (*Steps › Step 4*). An item of a list of values is its number (*Contacts › 1*); a curve point's two values are *x* and *y*.
+  - **An id is said by the name of what it names,** read from the text of the file that defines it, so it works while the world doesn't load: an entry by its own `name`, a key of a table keyed by ids (`x-names-keys`) and a named item's key (`x-names`) by the name of the faction, character or quest. What has no name, such as a profile or a misspelt id, is said as written; so is a key the schema doesn't know.
+  - **Each word says how far along its path it reaches** (`Word::through`), so the editor finds a table's columns, or a problem's place within its entry, without reading the key.
+  - **In the Content tab, a field's words but its last are headings,** each said once for the fields that share it, indented by depth; a first heading that is the group's own name, such as *Drift* under *Drift*, isn't said again, nor is a table's title that is. Which headings go where is worked out apart from drawing (`layout::lines`).
+  - **Keys stay where tests and the typed language need them:** a field's AccessKit label, the "Add to", × and "Set" buttons, and the CLI's `form`, which prints each row's words, then ` · `, then its key and value.
+  - **UI tests scroll before clicking,** as headings make a form taller than the 900-point window (P-84); kittest clicks where a widget is, so one off-screen isn't clicked.
+  - *Why:* the user found the dot notation and list indexes hard to read; every inspector the research looked at names an item by what's in it.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

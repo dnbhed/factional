@@ -8,12 +8,14 @@
           "description": "Evil (-100) to good (100).",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "Chaotic (-100) to lawful (100).",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Law",
           "type": "number"
         }
       },
@@ -28,6 +30,7 @@
       "properties": {
         "alignment": {
           "$ref": "#/$defs/alignment",
+          "title": "Alignment",
           "x-group": "Where they stand"
         },
         "contacts": {
@@ -38,12 +41,14 @@
             "type": "string",
             "x-names": "character"
           },
+          "title": "Contacts",
           "type": "array",
           "x-group": "Contacts"
         },
         "inertia": {
           "description": "Their inertia profile, from balance.toml; left out, the default.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Inertia",
           "type": "string",
           "x-group": "Where they stand",
           "x-names": "profile"
@@ -56,17 +61,20 @@
               "faction": {
                 "description": "The faction's id.",
                 "pattern": "^[a-z][a-z0-9_]*$",
+                "title": "Faction",
                 "type": "string",
                 "x-names": "faction"
               },
               "rank": {
                 "description": "A rank on its ladder; left out, the lowest.",
                 "pattern": "^[a-z][a-z0-9_]*$",
+                "title": "Rank",
                 "type": "string"
               },
               "secret": {
                 "default": false,
                 "description": "Whether they start in it secretly, known only to the faction, its members and themself. The faction must allow secret members (DESIGN.md §10.4).",
+                "title": "Secret",
                 "type": "boolean"
               }
             },
@@ -75,20 +83,26 @@
             ],
             "type": "object"
           },
+          "title": "Memberships",
           "type": "array",
-          "x-group": "Memberships"
+          "x-group": "Memberships",
+          "x-item": "Membership",
+          "x-title": "faction"
         },
         "name": {
           "description": "The character's name, as shown.",
+          "title": "Name",
           "type": "string",
           "x-group": "Identity"
         },
         "standing": {
           "$ref": "#/$defs/standing",
+          "title": "Standing",
           "x-group": "Standing"
         },
         "weights": {
           "$ref": "#/$defs/weights",
+          "title": "Weights",
           "x-group": "Where they stand"
         }
       },
@@ -120,6 +134,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Characters",
           "type": "object",
           "x-names-keys": "character"
         },
@@ -134,6 +149,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Factions",
           "type": "object",
           "x-names-keys": "faction"
         }
@@ -148,12 +164,14 @@
           "description": "0 to 1.",
           "maximum": 1.0,
           "minimum": 0.0,
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "0 to 1.",
           "maximum": 1.0,
           "minimum": 0.0,
+          "title": "Law",
           "type": "number"
         }
       },

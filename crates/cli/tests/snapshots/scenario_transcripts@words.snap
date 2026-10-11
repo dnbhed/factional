@@ -1,0 +1,29 @@
+---
+source: crates/cli/tests/scenarios.rs
+assertion_line: 24
+expression: transcript
+input_file: scenarios/words.scenario
+---
+> assert words content/sample factions.toml city_watch.member_tolerance == The City Watch › Member tolerance
+> assert words content/sample quests.toml dock_inspection.stages[0].choices[0].effects.standing.factions.city_watch == Inspecting the Docks › Stage "inspect" › Choice "seize" › Effects › Standing › Factions › The City Watch
+> assert words content/sample factions.toml city_watch.ranks[1].requires.standing == The City Watch › Rank "sergeant" › Requirements › Standing
+> assert words content/sample characters.toml captain_hale.memberships[0].rank == Captain Hale › Membership "The City Watch" › Rank
+> assert words content/sample questlines.toml watch_career.steps[3].quests[0] == A Life in the Watch › Steps › Step 4 › Quests › 1
+> assert words content/sample balance.toml membership.defectors.rules[1].when.closer_to_target == Membership › Defectors › Rules › Rule 2 › When › Closer to target
+> assert words content/sample balance.toml disposition.affinity[1][0] == Disposition › Affinity › Point 2 › x
+> assert words content/sample factions.toml city_watch.tolerence == The City Watch › tolerence
+> assert words content/sample faction.toml city_watch.name == error: unknown file 'faction.toml' (did you mean 'factions.toml'?)
+> form content/sample quests.toml dock_inspection
+quests.toml › dock_inspection: Inspecting the Docks
+Identity
+  Name · name = Inspecting the Docks
+Stages
+  Stage "inspect" › Id · stages[0].id = inspect
+  Stage "inspect" › Choice "seize" › Id · stages[0].choices[0].id = seize
+  Stage "inspect" › Choice "seize" › Effects › Alignment › Law · stages[0].choices[0].effects.alignment.law = 2.0
+  Stage "inspect" › Choice "seize" › Effects › Standing › Factions › The City Watch · stages[0].choices[0].effects.standing.factions.city_watch = 5.0
+  Stage "inspect" › Choice "seize" › Effects › Standing › Factions › The Lantern Guild · stages[0].choices[0].effects.standing.factions.lantern_guild = -5.0
+  Stage "inspect" › Choice "seize" › Next · stages[0].choices[0].next = end
+  Stage "inspect" › Choice "wave_through" › Id · stages[0].choices[1].id = wave_through
+  Stage "inspect" › Choice "wave_through" › Effects › Standing › Factions › The Lantern Guild · stages[0].choices[1].effects.standing.factions.lantern_guild = 5.0
+  Stage "inspect" › Choice "wave_through" › Next · stages[0].choices[1].next = end

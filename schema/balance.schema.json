@@ -8,10 +8,12 @@
           "name": {
             "description": "The band's name, an id such as neutral.",
             "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Name",
             "type": "string"
           },
           "up_to": {
             "description": "The highest value in the band; the last band has none.",
+            "title": "Up to",
             "type": "number"
           }
         },
@@ -21,7 +23,9 @@
         "type": "object"
       },
       "minItems": 1,
-      "type": "array"
+      "type": "array",
+      "x-item": "Band",
+      "x-title": "name"
     },
     "conditions": {
       "additionalProperties": false,
@@ -29,10 +33,12 @@
       "properties": {
         "closer_to_target": {
           "description": "Whether you're nearer the faction you're joining than the one you're leaving.",
+          "title": "Closer to target",
           "type": "boolean"
         },
         "outside_member_tolerance": {
           "description": "Whether you've drifted past your tolerance in the faction you're leaving.",
+          "title": "Outside member tolerance",
           "type": "boolean"
         },
         "rank_at_least": {
@@ -46,7 +52,8 @@
               "pattern": "^[a-z][a-z0-9_]*$",
               "type": "string"
             }
-          ]
+          ],
+          "title": "Rank at least"
         },
         "rank_below": {
           "description": "Your rung in the faction you're leaving is below this: 1 the lowest, or in a faction's own tables, one of its rank ids.",
@@ -59,30 +66,35 @@
               "pattern": "^[a-z][a-z0-9_]*$",
               "type": "string"
             }
-          ]
+          ],
+          "title": "Rank below"
         },
         "standing_with_current_at_least": {
           "description": "Your standing with the faction you're leaving is at least this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with current at least",
           "type": "number"
         },
         "standing_with_current_below": {
           "description": "Your standing with the faction you're leaving is below this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with current below",
           "type": "number"
         },
         "standing_with_target_at_least": {
           "description": "Your standing with the faction you're joining is at least this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with target at least",
           "type": "number"
         },
         "standing_with_target_below": {
           "description": "Your standing with the faction you're joining is below this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with target below",
           "type": "number"
         }
       },
@@ -118,6 +130,7 @@
         "grace_ticks": {
           "description": "For probation: how long they have to come back.",
           "minimum": 1,
+          "title": "Grace (ticks)",
           "type": "integer"
         },
         "policy": {
@@ -129,6 +142,7 @@
             "expel",
             "probation"
           ],
+          "title": "Policy",
           "type": "string"
         },
         "then": {
@@ -137,6 +151,7 @@
             "demote",
             "expel"
           ],
+          "title": "Then",
           "type": "string"
         }
       },
@@ -178,12 +193,14 @@
                 "properties": {
                   "reason": {
                     "description": "When refusing: why.",
+                    "title": "Reason",
                     "type": "string"
                   },
                   "standing_change": {
                     "description": "When letting someone through: the standing it costs, -100 to 100.",
                     "maximum": 100.0,
                     "minimum": -100.0,
+                    "title": "Standing change",
                     "type": "number"
                   },
                   "then": {
@@ -192,10 +209,12 @@
                       "accept",
                       "refuse"
                     ],
+                    "title": "Then",
                     "type": "string"
                   },
                   "when": {
-                    "$ref": "#/$defs/conditions"
+                    "$ref": "#/$defs/conditions",
+                    "title": "When"
                   }
                 },
                 "required": [
@@ -214,12 +233,15 @@
                 "type": "object"
               },
               "minItems": 1,
-              "type": "array"
+              "title": "Rules",
+              "type": "array",
+              "x-item": "Rule"
             }
           },
           "required": [
             "rules"
           ],
+          "title": "Defectors",
           "type": "object"
         },
         "deserters": {
@@ -247,12 +269,14 @@
                 "properties": {
                   "reason": {
                     "description": "When refusing: why.",
+                    "title": "Reason",
                     "type": "string"
                   },
                   "standing_change": {
                     "description": "When letting someone through: the standing it costs, -100 to 100.",
                     "maximum": 100.0,
                     "minimum": -100.0,
+                    "title": "Standing change",
                     "type": "number"
                   },
                   "then": {
@@ -261,10 +285,12 @@
                       "release",
                       "refuse"
                     ],
+                    "title": "Then",
                     "type": "string"
                   },
                   "when": {
-                    "$ref": "#/$defs/conditions"
+                    "$ref": "#/$defs/conditions",
+                    "title": "When"
                   }
                 },
                 "required": [
@@ -283,12 +309,15 @@
                 "type": "object"
               },
               "minItems": 1,
-              "type": "array"
+              "title": "Rules",
+              "type": "array",
+              "x-item": "Rule"
             }
           },
           "required": [
             "rules"
           ],
+          "title": "Deserters",
           "type": "object"
         },
         "exposed": {
@@ -304,6 +333,7 @@
                     "description": "The change in standing with the faction that found out, -100 to 100.",
                     "maximum": 100.0,
                     "minimum": -100.0,
+                    "title": "Standing change",
                     "type": "number"
                   },
                   "then": {
@@ -313,10 +343,12 @@
                       "demote",
                       "expel"
                     ],
+                    "title": "Then",
                     "type": "string"
                   },
                   "when": {
-                    "$ref": "#/$defs/conditions"
+                    "$ref": "#/$defs/conditions",
+                    "title": "When"
                   }
                 },
                 "required": [
@@ -325,12 +357,15 @@
                 "type": "object"
               },
               "minItems": 1,
-              "type": "array"
+              "title": "Rules",
+              "type": "array",
+              "x-item": "Rule"
             }
           },
           "required": [
             "rules"
           ],
+          "title": "Exposed",
           "type": "object"
         }
       },
@@ -344,12 +379,14 @@
           "description": "0 to 1.",
           "maximum": 1.0,
           "minimum": 0.0,
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "0 to 1.",
           "maximum": 1.0,
           "minimum": 0.0,
+          "title": "Law",
           "type": "number"
         }
       },
@@ -369,13 +406,15 @@
       "description": "Labels and distance.",
       "properties": {
         "default_weights": {
-          "$ref": "#/$defs/weights"
+          "$ref": "#/$defs/weights",
+          "title": "Default weights"
         },
         "label_threshold": {
           "default": 33.0,
           "description": "An axis at or beyond ± this reads as lawful or chaotic, good or evil. For display only.",
           "maximum": 100.0,
           "minimum": 0.01,
+          "title": "Label threshold",
           "type": "number"
         },
         "metric": {
@@ -386,9 +425,11 @@
             "manhattan",
             "chebyshev"
           ],
+          "title": "Metric",
           "type": "string"
         }
       },
+      "title": "Alignment",
       "type": "object"
     },
     "disposition": {
@@ -402,6 +443,7 @@
               "description": "y",
               "maximum": 100.0,
               "minimum": -100.0,
+              "title": "y",
               "type": "number"
             },
             {
@@ -411,29 +453,35 @@
                 "prefixItems": [
                   {
                     "description": "x",
+                    "title": "x",
                     "type": "number"
                   },
                   {
                     "description": "y",
                     "maximum": 100.0,
                     "minimum": -100.0,
+                    "title": "y",
                     "type": "number"
                   }
                 ],
                 "type": "array"
               },
               "minItems": 1,
-              "type": "array"
+              "type": "array",
+              "x-item": "Point"
             }
-          ]
+          ],
+          "title": "Affinity"
         },
         "bands": {
-          "$ref": "#/$defs/bands"
+          "$ref": "#/$defs/bands",
+          "title": "Bands"
         },
         "hysteresis": {
           "default": 0.0,
           "description": "How far past a band's edge a watched score must go to leave the band.",
           "minimum": 0.0,
+          "title": "Hysteresis",
           "type": "number"
         },
         "same_faction": {
@@ -441,6 +489,7 @@
           "description": "What sharing a faction counts for, in kinship.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Same faction",
           "type": "number"
         },
         "weights": {
@@ -451,36 +500,43 @@
               "default": 1.0,
               "description": "How much this part of a disposition counts.",
               "minimum": 0.0,
+              "title": "Affinity",
               "type": "number"
             },
             "faction_opinion": {
               "default": 0.5,
               "description": "How much this part of a disposition counts.",
               "minimum": 0.0,
+              "title": "Faction opinion",
               "type": "number"
             },
             "kinship": {
               "default": 0.5,
               "description": "How much this part of a disposition counts.",
               "minimum": 0.0,
+              "title": "Kinship",
               "type": "number"
             },
             "modifiers": {
               "default": 1.0,
               "description": "How much this part of a disposition counts.",
               "minimum": 0.0,
+              "title": "Modifiers",
               "type": "number"
             },
             "standing": {
               "default": 1.0,
               "description": "How much this part of a disposition counts.",
               "minimum": 0.0,
+              "title": "Standing",
               "type": "number"
             }
           },
+          "title": "Weights",
           "type": "object"
         }
       },
+      "title": "Disposition",
       "type": "object"
     },
     "inertia": {
@@ -491,6 +547,7 @@
           "default": "steady",
           "description": "The profile of a character without their own.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Default profile",
           "type": "string",
           "x-names": "profile"
         },
@@ -507,6 +564,7 @@
                       {
                         "description": "y",
                         "minimum": 0.0,
+                        "title": "y",
                         "type": "number"
                       },
                       {
@@ -516,20 +574,24 @@
                           "prefixItems": [
                             {
                               "description": "x",
+                              "title": "x",
                               "type": "number"
                             },
                             {
                               "description": "y",
                               "minimum": 0.0,
+                              "title": "y",
                               "type": "number"
                             }
                           ],
                           "type": "array"
                         },
                         "minItems": 1,
-                        "type": "array"
+                        "type": "array",
+                        "x-item": "Point"
                       }
-                    ]
+                    ],
+                    "title": "Toward evil"
                   },
                   "toward_good": {
                     "description": "A multiplier read at the character's position before the act, at least 0; left out, 1. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
@@ -537,6 +599,7 @@
                       {
                         "description": "y",
                         "minimum": 0.0,
+                        "title": "y",
                         "type": "number"
                       },
                       {
@@ -546,22 +609,27 @@
                           "prefixItems": [
                             {
                               "description": "x",
+                              "title": "x",
                               "type": "number"
                             },
                             {
                               "description": "y",
                               "minimum": 0.0,
+                              "title": "y",
                               "type": "number"
                             }
                           ],
                           "type": "array"
                         },
                         "minItems": 1,
-                        "type": "array"
+                        "type": "array",
+                        "x-item": "Point"
                       }
-                    ]
+                    ],
+                    "title": "Toward good"
                   }
                 },
+                "title": "Good",
                 "type": "object"
               },
               "law": {
@@ -573,6 +641,7 @@
                       {
                         "description": "y",
                         "minimum": 0.0,
+                        "title": "y",
                         "type": "number"
                       },
                       {
@@ -582,20 +651,24 @@
                           "prefixItems": [
                             {
                               "description": "x",
+                              "title": "x",
                               "type": "number"
                             },
                             {
                               "description": "y",
                               "minimum": 0.0,
+                              "title": "y",
                               "type": "number"
                             }
                           ],
                           "type": "array"
                         },
                         "minItems": 1,
-                        "type": "array"
+                        "type": "array",
+                        "x-item": "Point"
                       }
-                    ]
+                    ],
+                    "title": "Toward chaotic"
                   },
                   "toward_lawful": {
                     "description": "A multiplier read at the character's position before the act, at least 0; left out, 1. A number, or a list of [x, y] points, straight between them and flat beyond the ends.",
@@ -603,6 +676,7 @@
                       {
                         "description": "y",
                         "minimum": 0.0,
+                        "title": "y",
                         "type": "number"
                       },
                       {
@@ -612,22 +686,27 @@
                           "prefixItems": [
                             {
                               "description": "x",
+                              "title": "x",
                               "type": "number"
                             },
                             {
                               "description": "y",
                               "minimum": 0.0,
+                              "title": "y",
                               "type": "number"
                             }
                           ],
                           "type": "array"
                         },
                         "minItems": 1,
-                        "type": "array"
+                        "type": "array",
+                        "x-item": "Point"
                       }
-                    ]
+                    ],
+                    "title": "Toward lawful"
                   }
                 },
+                "title": "Law",
                 "type": "object"
               }
             },
@@ -637,9 +716,11 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Profiles",
           "type": "object"
         }
       },
+      "title": "Inertia",
       "type": "object"
     },
     "knowledge": {
@@ -654,6 +735,7 @@
             "witnessed",
             "ripple"
           ],
+          "title": "Model",
           "type": "string"
         },
         "ripple": {
@@ -664,6 +746,7 @@
               "default": 1,
               "description": "How many ticks each hop takes.",
               "minimum": 1,
+              "title": "Ticks a hop",
               "type": "integer"
             },
             "strength": {
@@ -680,12 +763,15 @@
                 "type": "number"
               },
               "minItems": 1,
+              "title": "Strength",
               "type": "array"
             }
           },
+          "title": "Ripple",
           "type": "object"
         }
       },
+      "title": "Knowledge",
       "type": "object"
     },
     "membership": {
@@ -706,6 +792,7 @@
             "auto_after_ticks": {
               "description": "With ask: settle automatically if nobody has within this many ticks.",
               "minimum": 0,
+              "title": "Settle after (ticks)",
               "type": "integer"
             },
             "resolve": {
@@ -714,6 +801,7 @@
                 "ask",
                 "auto"
               ],
+              "title": "Resolve",
               "type": "string"
             }
           },
@@ -727,21 +815,27 @@
               ]
             }
           },
+          "title": "Conflict",
           "type": "object"
         },
         "default_drift": {
-          "$ref": "#/$defs/drift"
+          "$ref": "#/$defs/drift",
+          "title": "Default drift"
         },
         "defectors": {
-          "$ref": "#/$defs/rule_tables/properties/defectors"
+          "$ref": "#/$defs/rule_tables/properties/defectors",
+          "title": "Defectors"
         },
         "deserters": {
-          "$ref": "#/$defs/rule_tables/properties/deserters"
+          "$ref": "#/$defs/rule_tables/properties/deserters",
+          "title": "Deserters"
         },
         "exposed": {
-          "$ref": "#/$defs/rule_tables/properties/exposed"
+          "$ref": "#/$defs/rule_tables/properties/exposed",
+          "title": "Exposed"
         }
       },
+      "title": "Membership",
       "type": "object"
     },
     "relations": {
@@ -749,16 +843,19 @@
       "description": "How factions regard each other (DESIGN.md §9.4).",
       "properties": {
         "bands": {
-          "$ref": "#/$defs/bands"
+          "$ref": "#/$defs/bands",
+          "title": "Bands"
         },
         "conflict_threshold": {
           "default": -50.0,
           "description": "Two factions are in conflict when either regards the other at or below this.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Conflict threshold",
           "type": "number"
         }
       },
+      "title": "Relations",
       "type": "object"
     },
     "standing": {
@@ -772,6 +869,7 @@
               "description": "y",
               "maximum": 1.0,
               "minimum": -1.0,
+              "title": "y",
               "type": "number"
             },
             {
@@ -781,23 +879,28 @@
                 "prefixItems": [
                   {
                     "description": "x",
+                    "title": "x",
                     "type": "number"
                   },
                   {
                     "description": "y",
                     "maximum": 1.0,
                     "minimum": -1.0,
+                    "title": "y",
                     "type": "number"
                   }
                 ],
                 "type": "array"
               },
               "minItems": 1,
-              "type": "array"
+              "type": "array",
+              "x-item": "Point"
             }
-          ]
+          ],
+          "title": "Spillover"
         }
       },
+      "title": "Standing",
       "type": "object"
     }
   },

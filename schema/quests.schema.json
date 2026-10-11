@@ -15,24 +15,30 @@
           "description": "Effects written here, of the kinds an outcome has.",
           "properties": {
             "alignment": {
-              "$ref": "#/$defs/delta"
+              "$ref": "#/$defs/delta",
+              "title": "Alignment"
             },
             "relations": {
               "description": "Shifts in how factions regard each other, applied after the standing changes, each direction stopping at -100 and 100. A direction is shifted at most once.",
               "items": {
                 "$ref": "#/$defs/relation_shift"
               },
-              "type": "array"
+              "title": "Relations",
+              "type": "array",
+              "x-item": "Shift"
             },
             "standing": {
-              "$ref": "#/$defs/standing"
+              "$ref": "#/$defs/standing",
+              "title": "Standing"
             }
           },
+          "title": "Effects",
           "type": "object"
         },
         "id": {
           "description": "The choice's id, unique within its stage.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
           "type": "string"
         },
         "locks": {
@@ -42,16 +48,19 @@
             "type": "string",
             "x-names": "quest"
           },
+          "title": "Locks",
           "type": "array"
         },
         "next": {
           "description": "A later stage's id, or end for the end of the quest.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Next",
           "type": "string"
         },
         "outcome": {
           "description": "An outcome from outcomes.toml.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Outcome",
           "type": "string",
           "x-names": "outcome"
         }
@@ -68,10 +77,12 @@
       "properties": {
         "good": {
           "description": "How far it moves this axis; left out, it doesn't.",
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "How far it moves this axis; left out, it doesn't.",
+          "title": "Law",
           "type": "number"
         }
       },
@@ -83,18 +94,21 @@
         "giver": {
           "description": "Whose quest it is: a faction or a character, by id; left out, the world's own.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Giver",
           "type": "string",
           "x-group": "Identity",
           "x-names": "party"
         },
         "name": {
           "description": "The quest's name, as shown.",
+          "title": "Name",
           "type": "string",
           "x-group": "Identity"
         },
         "requires": {
           "$ref": "#/$defs/requires",
           "description": "What must hold to start it.",
+          "title": "Requirements",
           "x-group": "Requirements"
         },
         "stages": {
@@ -103,8 +117,11 @@
             "$ref": "#/$defs/stage"
           },
           "minItems": 1,
+          "title": "Stages",
           "type": "array",
-          "x-group": "Stages"
+          "x-group": "Stages",
+          "x-item": "Stage",
+          "x-title": "id"
         }
       },
       "required": [
@@ -163,23 +180,27 @@
           },
           "maxItems": 2,
           "minItems": 2,
+          "title": "Between",
           "type": "array"
         },
         "by": {
           "description": "How far each direction moves, -200 to 200.",
           "maximum": 200.0,
           "minimum": -200.0,
+          "title": "By",
           "type": "number"
         },
         "from": {
           "description": "The faction whose regard shifts.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "From",
           "type": "string",
           "x-names": "faction"
         },
         "to": {
           "description": "The faction it regards.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "To",
           "type": "string",
           "x-names": "faction"
         }
@@ -200,6 +221,7 @@
             "type": "string",
             "x-names": "quest"
           },
+          "title": "Done",
           "type": "array"
         },
         "member": {
@@ -210,6 +232,7 @@
             "type": "string",
             "x-names": "faction"
           },
+          "title": "Member of",
           "type": "array"
         },
         "not_member": {
@@ -220,6 +243,7 @@
             "type": "string",
             "x-names": "faction"
           },
+          "title": "Not a member of",
           "type": "array"
         },
         "rank_at_least": {
@@ -232,6 +256,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Rank at least",
           "type": "object",
           "x-names-keys": "faction"
         },
@@ -246,6 +271,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Standing",
           "type": "object",
           "x-names-keys": "party"
         },
@@ -257,6 +283,7 @@
             "type": "string",
             "x-names": "faction"
           },
+          "title": "Within tolerance of",
           "type": "array"
         }
       },
@@ -271,16 +298,21 @@
             "$ref": "#/$defs/choice"
           },
           "minItems": 1,
-          "type": "array"
+          "title": "Choices",
+          "type": "array",
+          "x-item": "Choice",
+          "x-title": "id"
         },
         "id": {
           "description": "The stage's id, unique within its quest; not end.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
           "type": "string"
         },
         "requires": {
           "$ref": "#/$defs/requires",
-          "description": "What must hold to reach it."
+          "description": "What must hold to reach it.",
+          "title": "Requirements"
         }
       },
       "required": [
@@ -304,6 +336,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Characters",
           "type": "object",
           "x-names-keys": "character"
         },
@@ -318,6 +351,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Factions",
           "type": "object",
           "x-names-keys": "faction"
         }

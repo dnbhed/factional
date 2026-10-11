@@ -6,10 +6,12 @@
       "properties": {
         "good": {
           "description": "How far it moves this axis; left out, it doesn't.",
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "How far it moves this axis; left out, it doesn't.",
+          "title": "Law",
           "type": "number"
         }
       },
@@ -20,6 +22,7 @@
       "properties": {
         "alignment": {
           "$ref": "#/$defs/delta",
+          "title": "Alignment",
           "x-group": "Alignment"
         },
         "relations": {
@@ -27,11 +30,14 @@
           "items": {
             "$ref": "#/$defs/relation_shift"
           },
+          "title": "Relations",
           "type": "array",
-          "x-group": "Relations"
+          "x-group": "Relations",
+          "x-item": "Shift"
         },
         "standing": {
           "$ref": "#/$defs/standing",
+          "title": "Standing",
           "x-group": "Standing"
         }
       },
@@ -87,23 +93,27 @@
           },
           "maxItems": 2,
           "minItems": 2,
+          "title": "Between",
           "type": "array"
         },
         "by": {
           "description": "How far each direction moves, -200 to 200.",
           "maximum": 200.0,
           "minimum": -200.0,
+          "title": "By",
           "type": "number"
         },
         "from": {
           "description": "The faction whose regard shifts.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "From",
           "type": "string",
           "x-names": "faction"
         },
         "to": {
           "description": "The faction it regards.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "To",
           "type": "string",
           "x-names": "faction"
         }
@@ -128,6 +138,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Characters",
           "type": "object",
           "x-names-keys": "character"
         },
@@ -142,6 +153,7 @@
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "title": "Factions",
           "type": "object",
           "x-names-keys": "faction"
         }

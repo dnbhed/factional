@@ -8,12 +8,14 @@
           "description": "Evil (-100) to good (100).",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "Chaotic (-100) to lawful (100).",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Law",
           "type": "number"
         }
       },
@@ -29,10 +31,12 @@
       "properties": {
         "closer_to_target": {
           "description": "Whether you're nearer the faction you're joining than the one you're leaving.",
+          "title": "Closer to target",
           "type": "boolean"
         },
         "outside_member_tolerance": {
           "description": "Whether you've drifted past your tolerance in the faction you're leaving.",
+          "title": "Outside member tolerance",
           "type": "boolean"
         },
         "rank_at_least": {
@@ -46,7 +50,8 @@
               "pattern": "^[a-z][a-z0-9_]*$",
               "type": "string"
             }
-          ]
+          ],
+          "title": "Rank at least"
         },
         "rank_below": {
           "description": "Your rung in the faction you're leaving is below this: 1 the lowest, or in a faction's own tables, one of its rank ids.",
@@ -59,30 +64,35 @@
               "pattern": "^[a-z][a-z0-9_]*$",
               "type": "string"
             }
-          ]
+          ],
+          "title": "Rank below"
         },
         "standing_with_current_at_least": {
           "description": "Your standing with the faction you're leaving is at least this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with current at least",
           "type": "number"
         },
         "standing_with_current_below": {
           "description": "Your standing with the faction you're leaving is below this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with current below",
           "type": "number"
         },
         "standing_with_target_at_least": {
           "description": "Your standing with the faction you're joining is at least this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with target at least",
           "type": "number"
         },
         "standing_with_target_below": {
           "description": "Your standing with the faction you're joining is below this, -100 to 100.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing with target below",
           "type": "number"
         }
       },
@@ -118,6 +128,7 @@
         "grace_ticks": {
           "description": "For probation: how long they have to come back.",
           "minimum": 1,
+          "title": "Grace (ticks)",
           "type": "integer"
         },
         "policy": {
@@ -129,6 +140,7 @@
             "expel",
             "probation"
           ],
+          "title": "Policy",
           "type": "string"
         },
         "then": {
@@ -137,6 +149,7 @@
             "demote",
             "expel"
           ],
+          "title": "Then",
           "type": "string"
         }
       },
@@ -156,18 +169,22 @@
       "properties": {
         "alignment": {
           "$ref": "#/$defs/alignment",
+          "title": "Alignment",
           "x-group": "Where it stands"
         },
         "defectors": {
           "$ref": "#/$defs/rule_tables/properties/defectors",
+          "title": "Defectors",
           "x-group": "Its own rules"
         },
         "deserters": {
           "$ref": "#/$defs/rule_tables/properties/deserters",
+          "title": "Deserters",
           "x-group": "Its own rules"
         },
         "drift": {
           "$ref": "#/$defs/drift",
+          "title": "Drift",
           "x-group": "Drift"
         },
         "expel_standing_change": {
@@ -175,11 +192,13 @@
           "description": "The change in standing with the faction when it expels someone.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing change on expulsion",
           "type": "number",
           "x-group": "Membership"
         },
         "exposed": {
           "$ref": "#/$defs/rule_tables/properties/exposed",
+          "title": "Exposed",
           "x-group": "Its own rules"
         },
         "leave_standing_change": {
@@ -187,17 +206,20 @@
           "description": "The change in standing with the faction when someone leaves of their own accord.",
           "maximum": 100.0,
           "minimum": -100.0,
+          "title": "Standing change on leaving",
           "type": "number",
           "x-group": "Membership"
         },
         "member_tolerance": {
           "description": "How far a member may drift before it matters; at least the tolerance, which it defaults to.",
           "minimum": 0.0,
+          "title": "Member tolerance",
           "type": "number",
           "x-group": "Membership"
         },
         "name": {
           "description": "The faction's name, as shown.",
+          "title": "Name",
           "type": "string",
           "x-group": "Identity"
         },
@@ -207,23 +229,29 @@
             "$ref": "#/$defs/rank"
           },
           "minItems": 1,
+          "title": "Ranks",
           "type": "array",
-          "x-group": "Ranks"
+          "x-group": "Ranks",
+          "x-item": "Rank",
+          "x-title": "id"
         },
         "secret_members": {
           "default": false,
           "description": "Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4).",
+          "title": "Secret members",
           "type": "boolean",
           "x-group": "Membership"
         },
         "tolerance": {
           "description": "How close to the faction's alignment someone must be to join it.",
           "minimum": 0.0,
+          "title": "Tolerance",
           "type": "number",
           "x-group": "Membership"
         },
         "weights": {
           "$ref": "#/$defs/weights",
+          "title": "Weights",
           "x-group": "Where it stands"
         }
       },
@@ -249,6 +277,7 @@
         "id": {
           "description": "The rank's id, such as sergeant.",
           "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
           "type": "string"
         },
         "requires": {
@@ -259,14 +288,17 @@
               "description": "The standing with the faction a promotion to this rank needs.",
               "maximum": 100.0,
               "minimum": -100.0,
+              "title": "Standing",
               "type": "number"
             }
           },
+          "title": "Requirements",
           "type": "object"
         },
         "tolerance": {
           "description": "A stricter tolerance for this rank than the faction's member tolerance.",
           "minimum": 0.0,
+          "title": "Tolerance",
           "type": "number"
         }
       },
@@ -302,12 +334,14 @@
                 "properties": {
                   "reason": {
                     "description": "When refusing: why.",
+                    "title": "Reason",
                     "type": "string"
                   },
                   "standing_change": {
                     "description": "When letting someone through: the standing it costs, -100 to 100.",
                     "maximum": 100.0,
                     "minimum": -100.0,
+                    "title": "Standing change",
                     "type": "number"
                   },
                   "then": {
@@ -316,10 +350,12 @@
                       "accept",
                       "refuse"
                     ],
+                    "title": "Then",
                     "type": "string"
                   },
                   "when": {
-                    "$ref": "#/$defs/conditions"
+                    "$ref": "#/$defs/conditions",
+                    "title": "When"
                   }
                 },
                 "required": [
@@ -338,12 +374,15 @@
                 "type": "object"
               },
               "minItems": 1,
-              "type": "array"
+              "title": "Rules",
+              "type": "array",
+              "x-item": "Rule"
             }
           },
           "required": [
             "rules"
           ],
+          "title": "Defectors",
           "type": "object"
         },
         "deserters": {
@@ -371,12 +410,14 @@
                 "properties": {
                   "reason": {
                     "description": "When refusing: why.",
+                    "title": "Reason",
                     "type": "string"
                   },
                   "standing_change": {
                     "description": "When letting someone through: the standing it costs, -100 to 100.",
                     "maximum": 100.0,
                     "minimum": -100.0,
+                    "title": "Standing change",
                     "type": "number"
                   },
                   "then": {
@@ -385,10 +426,12 @@
                       "release",
                       "refuse"
                     ],
+                    "title": "Then",
                     "type": "string"
                   },
                   "when": {
-                    "$ref": "#/$defs/conditions"
+                    "$ref": "#/$defs/conditions",
+                    "title": "When"
                   }
                 },
                 "required": [
@@ -407,12 +450,15 @@
                 "type": "object"
               },
               "minItems": 1,
-              "type": "array"
+              "title": "Rules",
+              "type": "array",
+              "x-item": "Rule"
             }
           },
           "required": [
             "rules"
           ],
+          "title": "Deserters",
           "type": "object"
         },
         "exposed": {
@@ -428,6 +474,7 @@
                     "description": "The change in standing with the faction that found out, -100 to 100.",
                     "maximum": 100.0,
                     "minimum": -100.0,
+                    "title": "Standing change",
                     "type": "number"
                   },
                   "then": {
@@ -437,10 +484,12 @@
                       "demote",
                       "expel"
                     ],
+                    "title": "Then",
                     "type": "string"
                   },
                   "when": {
-                    "$ref": "#/$defs/conditions"
+                    "$ref": "#/$defs/conditions",
+                    "title": "When"
                   }
                 },
                 "required": [
@@ -449,12 +498,15 @@
                 "type": "object"
               },
               "minItems": 1,
-              "type": "array"
+              "title": "Rules",
+              "type": "array",
+              "x-item": "Rule"
             }
           },
           "required": [
             "rules"
           ],
+          "title": "Exposed",
           "type": "object"
         }
       },
@@ -468,12 +520,14 @@
           "description": "0 to 1.",
           "maximum": 1.0,
           "minimum": 0.0,
+          "title": "Good",
           "type": "number"
         },
         "law": {
           "description": "0 to 1.",
           "maximum": 1.0,
           "minimum": 0.0,
+          "title": "Law",
           "type": "number"
         }
       },
