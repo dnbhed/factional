@@ -67,6 +67,7 @@ pub(crate) fn form_ui(
                 path,
                 words: &field.row.words,
                 empty: field.row.written.is_none() && field.row.default.is_none(),
+                pair: field.pair,
             })
             .collect();
         let at: Vec<ValuePath> = places
@@ -111,6 +112,28 @@ pub(crate) fn form_ui(
                     }
                     Line::Row { field, depth } => {
                         done(row_ui(ui, field, &mut fields[field], depth));
+                    }
+                    Line::Pair {
+                        depth,
+                        text,
+                        fields: [first, second],
+                        places: here,
+                        ..
+                    } => {
+                        ui.horizontal(|ui| {
+                            ui.add_space(indent(depth));
+                            ui.label(text);
+                        });
+                        ui.horizontal(|ui| {
+                            done(value_ui(ui, first, &mut fields[first], CELL_WIDTH));
+                            ui.label("↔");
+                            done(value_ui(ui, second, &mut fields[second], CELL_WIDTH));
+                            done(drawing.controls(ui, &here, true));
+                        });
+                        ui.end_row();
+                        for field in [first, second] {
+                            done(said_rows(ui, &fields[field]));
+                        }
                     }
                     Line::Table {
                         table,
@@ -383,6 +406,15 @@ fn row_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput, depth: usize)
         }
     });
     ui.end_row();
+    if let Some(fixed) = said_rows(ui, field) {
+        acted = Some(fixed);
+    }
+    acted
+}
+
+/// What the loader says at a field, a row each, under its value, with its fix.
+fn said_rows(ui: &mut egui::Ui, field: &FieldInput) -> Option<Acted> {
+    let mut acted = None;
     for said in field.said.iter() {
         ui.label("");
         ui.horizontal_wrapped(|ui| {

@@ -67,6 +67,21 @@ fn a_problem_shows_under_its_field_with_its_fix() {
 }
 
 #[test]
+fn the_fix_under_a_field_makes_it() {
+    let mut harness = open();
+    click(&mut harness, "temple — 1 problem");
+    // In the panel and under the field; the one under the field is above the panel.
+    assert_eq!(harness.query_all_by_label("Use 'demote'").count(), 2);
+    let under = harness
+        .query_all_by_label("Use 'demote'")
+        .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+        .expect("a fix under the field");
+    under.click();
+    harness.run();
+    harness.get_by_label("Problems 2");
+}
+
+#[test]
 fn a_problems_place_is_said_in_words_and_goes_to_its_entry() {
     let mut harness = open();
     click(&mut harness, "Vex › Membership \"lantern_gild\" › Faction");

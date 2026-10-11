@@ -94,6 +94,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U9 — the usability pass's design, from research into comparable tools (`docs/research/usability-2026-10.md`): the user chose relations written in each faction in `factions.toml` (D-37), one relation per pair with a value each way, linked by default (D-38), the REPL's session as a library (D-39) and Play as a drawer along the bottom (D-40); DESIGN.md §18, with P-91 to P-97; U10 to U17 outlined, before E1; done 2026-10-11 (#63)
 - U10a — the form in words (P-92, P-98): a title for every key of every schema, and on lists `x-item` and `x-title`, so a named item stands in for its list (*Rank "sergeant"*) and any other is numbered from 1 (*Step 4*); ids said by the names of what they name; `place_words`, `words_at`, `Word`, `FormRow::words` and `KeyInfo::title`; the Content tab's values under headings in place of key paths, labelled by their last words, a table's columns in words, and problems in the panel and beside the form in words, keys on hover; `form` prints each row's words, and `words <dir> <file> <key>`; `key_info` reads into a curve's points; U10 split, with pairs, tables keyed by ids and the places' "Add to" now U10b; `scenarios/words.scenario`; done 2026-10-11 (#64)
 - U10b — each place's adding and removing where it is, at the user's direction (D-41, P-99): `form_layout` puts each place's × and "+" on the first heading that says it, a list of named items' beside what holds it (or its group's name), a table's "+" at its end, and the entry's beside its name; a cell's × removes what it's in within its item; an empty table or list is a row of its own (`form` says `empty`); "+ <item>" adds a list's item at once (`KeyInfo::item`); a table keyed by ids offers those that exist and aren't there yet, by name (`id_choices`, `IdChoice`); Referenced by in words; `keys` says the same of a list's items and an id table's choices; U10b split, with pairs now U10c; done 2026-10-11 (#65)
+- U10c — pairs as pairs (P-100): `KeyInfo::pair` for a list of exactly two ids, such as `between`; `Line::Pair` draws its two fields on one line either side of ↔, under the pair's word, with the pair's × beside them; half a pair stays a heading and a row; done 2026-10-11 (#PR)
 
 ---
 
@@ -119,11 +120,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U10c · Pairs as pairs — P3 · Next
-
-A two-item list of ids (`between`) as two pickers with ↔ between them, on one row (P-92).
-
-### U11 · Requirements and effects as sentences — P3 · Outline
+### U11 · Requirements and effects as sentences — P3 · Next
 
 Each requirement and effect in the form as a sentence in the content crate's words, the quest graph's own, with its values as fields within it, and "+ Requirement…" and "+ Effect…" listing the kinds a place takes (P-93).
 

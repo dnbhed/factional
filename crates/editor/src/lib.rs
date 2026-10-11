@@ -159,6 +159,8 @@ pub struct FieldInput {
     pub said: Vec<Said>,
     /// Why the last value entered here was refused.
     pub refused: Option<String>,
+    /// Whether it's one of a pair's two, such as `between[0]` (U10c).
+    pub pair: bool,
 }
 
 /// A place in the selected entry, or where a file's entries go, with what the schema allows
@@ -775,6 +777,7 @@ impl Editor {
                         .as_ref()
                         .map(|field| field.value.clone())
                         .unwrap_or_default(),
+                    pair: is_paired(name, &row.path),
                     row,
                     refused: None,
                 })
@@ -1130,6 +1133,14 @@ impl Editor {
             }
         }
     }
+}
+
+/// Whether what's at `path` in `file` is one of a pair's two, such as `between[0]` (U10c).
+fn is_paired(file: &str, path: &ValuePath) -> bool {
+    let Some((Step::Index(_), list)) = path.0.split_last() else {
+        return false;
+    };
+    key_info(file, &ValuePath(list.to_vec())).is_some_and(|info| info.pair)
 }
 
 /// Each of `paths` in `file`, with what can be added there, the ids it may take, what its
