@@ -3,10 +3,10 @@
 //! there are any; then what the loader says, what refers to the entry, and the entry as
 //! written. The form is `factional-content`'s `entry_form`; this draws it.
 
-use factional_content::{Fix, Step, ValuePath, Word, key_info};
+use factional_content::{Addition, Fix, Step, ValuePath, Word, key_info};
 
 use crate::egui::{self, RichText, WidgetInfo, WidgetType};
-use crate::layout::{Line, ListTable, blocks, column_titles, groups, lines};
+use crate::layout::{Line, ListTable, Shape, cell_removes, column_titles, form_layout};
 use crate::problems_ui::{Listed, fix_button, within};
 use crate::removing_ui::{adding_menu, remove_button};
 use crate::{Editor, FieldInput, PlaceInput, Said, theme};
@@ -36,8 +36,9 @@ const INDENT: f32 = 14.0;
 
 /// The form in one grid, so its values line up, a group at a time under its name: each value
 /// on its row under headings for where it is, said in words (U10a), and each list of tables as
-/// a table (U6f) whose rows each have × and what can be added to the item. The places drawn in
-/// a table go in `drawn`, so they aren't again.
+/// a table (U6f) whose rows each have × and what can be added to the item. Each place's × and
+/// "+" are where it is (U10b): on its heading, beside its group's name or at its table's end.
+/// The places drawn go in `drawn`, so they aren't again.
 pub(crate) fn form_ui(
     ui: &mut egui::Ui,
     file: &str,
@@ -52,49 +53,80 @@ pub(crate) fn form_ui(
             acted = action;
         }
     };
-    let names: Vec<Option<String>> = fields.iter().map(|field| field.group.clone()).collect();
-    let names: Vec<Option<&str>> = names.iter().map(Option::as_deref).collect();
     let words: Vec<Vec<Word>> = fields.iter().map(|field| field.row.words.clone()).collect();
-    let texts: Vec<Vec<String>> = words
-        .iter()
-        .map(|words| words.iter().map(|word| word.text.clone()).collect())
-        .collect();
+    let layout = {
+        let paths: Vec<ValuePath> = fields
+            .iter()
+            .map(|field| in_entry(entry, &field.row.path))
+            .collect();
+        let shapes: Vec<Shape<'_>> = fields
+            .iter()
+            .zip(&paths)
+            .map(|(field, path)| Shape {
+                group: field.group.as_deref(),
+                path,
+                words: &field.row.words,
+                empty: field.row.written.is_none() && field.row.default.is_none(),
+            })
+            .collect();
+        let at: Vec<ValuePath> = places
+            .iter()
+            .map(|place| in_entry(entry, &place.path))
+            .collect();
+        form_layout(&shapes, &at)
+    };
+    let mut drawing = Drawing {
+        file,
+        entry,
+        places,
+        drawn,
+    };
     egui::Grid::new("form").num_columns(2).show(ui, |ui| {
-        for range in groups(&names) {
-            let group = names[range.start];
-            if let Some(name) = group {
-                ui.strong(name);
+        for group in layout {
+            if let Some(name) = &group.name {
+                ui.horizontal(|ui| {
+                    ui.strong(name);
+                    done(drawing.controls(ui, &group.places, true));
+                });
                 ui.end_row();
             }
-            let keys: Vec<(usize, ValuePath)> = range
-                .filter_map(|place| Some((place, ValuePath::parse(&fields[place].row.key)?)))
-                .collect();
-            for line in lines(group, blocks(&keys), &texts) {
+            for line in group.lines {
                 match line {
-                    Line::Heading { depth, text } => {
+                    Line::Heading {
+                        depth,
+                        text,
+                        empty,
+                        places: here,
+                        ..
+                    } => {
                         ui.horizontal(|ui| {
                             ui.add_space(indent(depth));
                             ui.label(text);
+                            if empty {
+                                ui.weak("empty");
+                            }
+                            done(drawing.controls(ui, &here, true));
                         });
                         ui.end_row();
                     }
-                    Line::Row { place, depth } => {
-                        done(row_ui(ui, place, &mut fields[place], depth));
+                    Line::Row { field, depth } => {
+                        done(row_ui(ui, field, &mut fields[field], depth));
                     }
-                    Line::Table(table) => {
+                    Line::Table {
+                        table,
+                        places: here,
+                    } => {
                         // Its title, unless the group's name already says it.
                         let list = entry.then(Step::Key(table.list.clone()));
                         let title = key_info(file, &list).and_then(|info| info.title);
                         let title = title.unwrap_or_else(|| table.list.clone());
-                        ui.label(if group == Some(title.as_str()) {
+                        ui.label(if group.name.as_deref() == Some(title.as_str()) {
                             ""
                         } else {
                             &title
                         });
                         let columns = column_titles(&table, &words);
-                        done(table_ui(
-                            ui, file, entry, &table, &columns, fields, places, drawn,
-                        ));
+                        done(table_ui(ui, &mut drawing, &table, &columns, &here, fields));
                         ui.end_row();
                     }
                 }
@@ -104,30 +136,90 @@ pub(crate) fn form_ui(
     acted
 }
 
+/// `path`, a place in the entry at `entry`, from the entry's start.
+fn in_entry(entry: &ValuePath, path: &ValuePath) -> ValuePath {
+    ValuePath(path.0.iter().skip(entry.0.len()).cloned().collect())
+}
+
+/// What drawing a part of the form needs besides its own: the file, the entry, its places and
+/// those drawn so far.
+struct Drawing<'d> {
+    file: &'d str,
+    entry: &'d ValuePath,
+    places: &'d mut [PlaceInput],
+    drawn: &'d mut Vec<ValuePath>,
+}
+
+impl Drawing<'_> {
+    /// The × (if `removable`) and "+" of each of `here`, by their place among the places,
+    /// side by side; each goes in those drawn.
+    fn controls(&mut self, ui: &mut egui::Ui, here: &[usize], removable: bool) -> Option<Acted> {
+        let mut acted = None;
+        for &place in here {
+            let Some(place) = self.places.get_mut(place) else {
+                continue;
+            };
+            let name = in_entry(self.entry, &place.path).to_string();
+            if removable && remove_button(ui, &name) {
+                acted = Some(Acted::Remove(place.path.clone()));
+            }
+            if let Some((at, key)) = adding(ui, self.file, place, &name) {
+                acted = Some(Acted::Add(at, key));
+            }
+            self.drawn.push(place.path.clone());
+        }
+        acted
+    }
+}
+
+/// A place's "+": nothing where nothing more fits; for a list, one button adding an item,
+/// "+ <item>"; else its menu of what can be added, "+…". Its words are on hover; its name,
+/// for anyone who can't see it.
+fn adding(
+    ui: &mut egui::Ui,
+    file: &str,
+    place: &mut PlaceInput,
+    name: &str,
+) -> Option<(ValuePath, Option<String>)> {
+    if place.additions.is_empty() {
+        return None;
+    }
+    if place.additions == [Addition::Item] {
+        let shown = match &place.item {
+            Some(item) => format!("+ {item}"),
+            None => "+".to_owned(),
+        };
+        let said = format!("Add to {name}");
+        let button = ui
+            .button(shown)
+            .on_hover_text(format!("Add to {}", place.words));
+        button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+        return button.clicked().then(|| (place.path.clone(), None));
+    }
+    let mut added = None;
+    adding_menu(ui, file, place, name, true, &mut added);
+    added
+}
+
 /// How far in a value or heading under `depth` headings goes.
 fn indent(depth: usize) -> f32 {
     INDENT * depth as f32
 }
 
 /// A list of tables: a header of its columns in words, then a row an item, numbered from 1,
-/// each cell its field, and × and "Add to" for the item. Cells have a fixed width, so the table
+/// each cell its field, and × and "Add to" for the item; then the list's own "+" (`here`), at
+/// its end (U10b), as the list goes with its last item. Cells have a fixed width, so the table
 /// settles at once inside the form's grid.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a table is drawn from all of the form's parts"
-)]
 fn table_ui(
     ui: &mut egui::Ui,
-    file: &str,
-    entry: &ValuePath,
+    drawing: &mut Drawing<'_>,
     table: &ListTable,
     titles: &[String],
+    here: &[usize],
     fields: &mut [FieldInput],
-    places: &mut [PlaceInput],
-    drawn: &mut Vec<ValuePath>,
 ) -> Option<Acted> {
     let mut acted = None;
-    let list = entry.then(Step::Key(table.list.clone()));
+    let list = drawing.entry.then(Step::Key(table.list.clone()));
     let cell = |ui: &mut egui::Ui, width: f32, draw: &mut dyn FnMut(&mut egui::Ui)| {
         ui.allocate_ui_with_layout(
             egui::vec2(width, 0.0),
@@ -155,11 +247,12 @@ fn table_ui(
                 cell(ui, NUMBER_WIDTH, &mut |ui| {
                     ui.weak((item + 1).to_string());
                 });
-                for place in cells {
-                    cell(ui, COLUMN_WIDTH, &mut |ui| match place {
-                        Some(place) => {
-                            if let Some(done) = cell_ui(ui, *place, &mut fields[*place]) {
-                                acted = Some(done);
+                for field in cells {
+                    cell(ui, COLUMN_WIDTH, &mut |ui| match field {
+                        Some(field) => {
+                            let done = cell_ui(ui, drawing.entry, *field, &mut fields[*field]);
+                            if done.is_some() {
+                                acted = done;
                             }
                         }
                         None => {
@@ -172,22 +265,28 @@ fn table_ui(
                 if remove_button(ui, &name) {
                     acted = Some(Acted::Remove(path.clone()));
                 }
-                if let Some(place) = places.iter_mut().find(|place| place.path == path) {
+                let place = drawing.places.iter_mut().find(|place| place.path == path);
+                if let Some(place) = place {
                     let mut added = None;
-                    adding_menu(ui, file, place, &name, true, &mut added);
+                    adding_menu(ui, drawing.file, place, &name, true, &mut added);
                     if let Some((at, key)) = added {
                         acted = Some(Acted::Add(at, key));
                     }
                 }
-                drawn.push(path);
+                // The item, and what's within it, are the row's.
+                for place in drawing.places.iter() {
+                    if place.path.0.starts_with(&path.0) {
+                        drawing.drawn.push(place.path.clone());
+                    }
+                }
             });
             // A cell's comment goes under its row, where it has room.
-            for ((column, title), place) in table.columns.iter().zip(titles).zip(cells) {
-                let Some(place) = place else {
+            for ((column, title), field) in table.columns.iter().zip(titles).zip(cells) {
+                let Some(field) = field else {
                     continue;
                 };
                 let said = format!("{}[{item}] · {column}", table.list);
-                for line in &fields[*place].row.comment {
+                for line in &fields[*field].row.comment {
                     ui.horizontal_wrapped(|ui| {
                         ui.weak(title)
                             .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
@@ -200,16 +299,37 @@ fn table_ui(
                 }
             }
         }
+        ui.horizontal(|ui| {
+            let done = drawing.controls(ui, here, false);
+            if done.is_some() {
+                acted = done;
+            }
+        });
     });
     acted
 }
 
 /// A table's cell: its value's field, labelled with its key for anyone who can't see the
-/// table, and its choices and problems; or its default with Set.
-fn cell_ui(ui: &mut egui::Ui, place: usize, field: &mut FieldInput) -> Option<Acted> {
+/// table, with × to remove it (U10b), and its choices and problems; or its default with Set.
+fn cell_ui(
+    ui: &mut egui::Ui,
+    entry: &ValuePath,
+    place: usize,
+    field: &mut FieldInput,
+) -> Option<Acted> {
     let mut acted = None;
     ui.vertical(|ui| {
-        acted = value_ui(ui, place, field, CELL_WIDTH);
+        ui.horizontal(|ui| {
+            acted = value_ui(ui, place, field, CELL_WIDTH);
+            if field.row.written.is_some() {
+                let removes = cell_removes(&in_entry(entry, &field.row.path));
+                if remove_button(ui, &removes.to_string()) {
+                    let mut path = entry.clone();
+                    path.0.extend(removes.0);
+                    acted = Some(Acted::Remove(path));
+                }
+            }
+        });
         for said in field.said.iter() {
             if let Some(fix) = said_ui(ui, said) {
                 acted = Some(Acted::Fix(fix));
@@ -415,12 +535,15 @@ impl Editor {
                 ui.label(format!("Nothing names {}", entry.key));
             }
             let mut file = None;
-            for reference in references {
+            for (reference, words) in references.iter().zip(self.referenced_words()) {
                 if file != Some(reference.file) {
                     ui.label(RichText::new(reference.file).monospace().weak());
                     file = Some(reference.file);
                 }
-                if ui.link(&reference.key).clicked() {
+                let link = ui
+                    .link(words)
+                    .on_hover_text(RichText::new(&reference.key).monospace());
+                if link.clicked() {
                     going = Some(Listed::Go(reference.file.to_owned(), reference.key.clone()));
                 }
             }

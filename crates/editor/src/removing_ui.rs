@@ -77,8 +77,8 @@ pub(crate) fn remove_button(ui: &mut egui::Ui, name: &str) -> bool {
 }
 
 /// "Add to <name>…": a menu of what the schema allows at the place, each key with what it
-/// is, its default and its description, an item for a list, or a new id where it takes one;
-/// just its name where nothing more fits. `short` shows it as "+…", as in a table's row,
+/// is, its default and its description, an item for a list, or, where it takes an id, those
+/// that exist and aren't there yet and a new one; just its name where nothing more fits. `short` shows it as "+…", as in a table's row,
 /// keeping its name for anyone who can't see it. What's chosen goes in `adding`.
 pub(crate) fn adding_menu(
     ui: &mut egui::Ui,
@@ -99,6 +99,8 @@ pub(crate) fn adding_menu(
             path,
             additions,
             id,
+            choices,
+            ..
         } = place;
         for addition in additions.iter() {
             match addition {
@@ -124,6 +126,19 @@ pub(crate) fn adding_menu(
                     }
                 }
                 Addition::Id => {
+                    // What exists and isn't there yet, by name (U10b).
+                    for choice in choices.iter() {
+                        let shown = match &choice.name {
+                            Some(named) => format!("{named} · {}", choice.id),
+                            None => choice.id.clone(),
+                        };
+                        let said = format!("Add {} to {name}", choice.id);
+                        let button = ui.button(shown);
+                        button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+                        if button.clicked() {
+                            *adding = Some((path.clone(), Some(choice.id.clone())));
+                        }
+                    }
                     let label = ui.label(format!("New id in {name}"));
                     ui.add(egui::TextEdit::singleline(id).desired_width(160.0))
                         .labelled_by(label.id);

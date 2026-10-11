@@ -23,7 +23,8 @@ pub struct FormGroup {
     pub rows: Vec<FormRow>,
 }
 
-/// One value of an entry: as written, or a key left out with its default.
+/// One value of an entry: as written, a key left out with its default, or, with neither, an
+/// empty table or list (U10b).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormRow {
     pub path: ValuePath,
@@ -103,7 +104,49 @@ pub fn entry_form(texts: &ContentTexts, file: &str, entry: &str) -> Vec<FormGrou
             }
         }
     }
+    // A table or list with nothing in it, not even a default, is a row of its own (U10b), so
+    // it has somewhere to be.
+    let places = entry_places(text, entry);
+    for place in places.iter().filter(|place| **place != at) {
+        let within = |path: &ValuePath| path != place && path.0.starts_with(&place.0);
+        if !rows.iter().any(|row| within(&row.path)) && !places.iter().any(within) {
+            rows.push(row(place.clone(), None, None));
+        }
+    }
     grouped(&root, &at, rows)
+}
+
+/// An id that may be added to a table keyed by ids, with the name of what it names, if it has
+/// one (U10b).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdChoice {
+    pub id: String,
+    pub name: Option<String>,
+}
+
+/// The ids that may be added to the table at `path` in `file`, keyed by what it names: each
+/// that exists and isn't there yet, in id order. Nothing for a table its schema doesn't key by
+/// what it names.
+pub fn id_choices(texts: &ContentTexts, file: &str, path: &ValuePath) -> Vec<IdChoice> {
+    let (Some(root), Some(wording)) = (schema_of(file), Wording::new(texts, file)) else {
+        return Vec::new();
+    };
+    let names = schema_at(&root, path)
+        .map(|node| form(&root, node, "object"))
+        .and_then(|table| table.get("x-names-keys")?.as_str())
+        .and_then(Names::from_key);
+    let Some(names) = names else {
+        return Vec::new();
+    };
+    let there = wording.keys_at(path);
+    ids_named(texts, names)
+        .into_iter()
+        .filter(|id| !there.contains(id))
+        .map(|id| IdChoice {
+            name: wording.name_of(names, &id).map(str::to_owned),
+            id,
+        })
+        .collect()
 }
 
 /// The entry at `at` in `document`, as a table.

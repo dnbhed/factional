@@ -334,6 +334,8 @@ pub fn rename_key(text: &str, path: &ValuePath, to: &str) -> Result<String, Edit
 pub struct KeyInfo {
     /// What it's called, in words, such as `Member tolerance` (U10a).
     pub title: Option<String>,
+    /// For a list, what one of its items is called, such as `Rank` (U10b).
+    pub item: Option<String>,
     pub description: Option<String>,
     pub default: Option<String>,
     /// What it is, in words, such as `a number from -100.00 to 100.00` (U6d).
@@ -361,6 +363,7 @@ pub fn key_info(file: &str, path: &ValuePath) -> Option<KeyInfo> {
     });
     Some(KeyInfo {
         title: said("title").and_then(Json::as_str).map(str::to_owned),
+        item: said("x-item").and_then(Json::as_str).map(str::to_owned),
         description,
         default,
         kind: kind_in_words(&root, node),

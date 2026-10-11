@@ -527,44 +527,125 @@ pub fn blocks(keys: &[(usize, ValuePath)]) -> Vec<Block> {
     blocks
 }
 
-/// One line of a group of the form (U10a): a heading saying where the rows after it are, a
-/// field under its headings, or a table.
+/// One of the form's fields, as its layout needs it (U10a, U10b).
+#[derive(Debug, Clone, Copy)]
+pub struct Shape<'f> {
+    pub group: Option<&'f str>,
+    /// Where it is in the entry, such as `ranks[1].requires.standing`.
+    pub path: &'f ValuePath,
+    pub words: &'f [Word],
+    /// An empty table or list, with nothing in it yet.
+    pub empty: bool,
+}
+
+/// One group of the form laid out: its name, the places whose × and "+" go beside it, and
+/// its lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupLayout {
+    pub name: Option<String>,
+    pub places: Vec<usize>,
+    pub lines: Vec<Line>,
+}
+
+/// One line of a group of the form: a heading saying where the rows after it are, with the
+/// places whose × and "+" go beside it (U10b); a field under its headings; or a table, with
+/// its list's "+" at its end.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Line {
     Heading {
         depth: usize,
         text: String,
+        /// The place it says, in the entry.
+        path: ValuePath,
+        /// An empty table or list's own heading.
+        empty: bool,
+        places: Vec<usize>,
     },
-    /// The field at this place in the form, under `depth` headings.
-    Row {
-        place: usize,
-        depth: usize,
+    /// The `field`th field, under `depth` headings.
+    Row { field: usize, depth: usize },
+    Table {
+        table: ListTable,
+        places: Vec<usize>,
     },
-    Table(ListTable),
 }
 
-/// The lines of the group `group`, from its blocks and each field's words by its place in
-/// the form: every word of a field but its last is a heading, said once for the fields that
-/// share it, and a first word that is the group's own name isn't said again.
-pub fn lines(group: Option<&str>, blocks: Vec<Block>, words: &[Vec<String>]) -> Vec<Line> {
+/// The form laid out, a group at a time, from each field's shape and the entry's places (each
+/// in the entry). Every word of a field but its last is a heading, said once for the fields
+/// that share it; a first word that is the group's own name isn't said again; an empty table
+/// or list's last word is its own heading. Each place's × and "+" go on the first heading that
+/// says it; a list of named items', such as a stage's choices, on the heading of what holds
+/// it; a list drawn as a table's, at the table's end; a place at the top of the entry with no
+/// heading of its own, such as `drift` or `stages`, beside its group's name. The entry itself,
+/// and what's within a table's items, are drawn elsewhere; any place left over is in no group.
+pub fn form_layout(shapes: &[Shape<'_>], places: &[ValuePath]) -> Vec<GroupLayout> {
+    let names: Vec<Option<&str>> = shapes.iter().map(|shape| shape.group).collect();
+    let mut layouts = Vec::new();
+    // Each field's group, by its place among the layouts.
+    let mut group_of = vec![0; shapes.len()];
+    for range in groups(&names) {
+        let group = names[range.start];
+        let keys: Vec<(usize, ValuePath)> = range
+            .clone()
+            .map(|field| (field, shapes[field].path.clone()))
+            .collect();
+        for field in range {
+            group_of[field] = layouts.len();
+        }
+        layouts.push(GroupLayout {
+            name: group.map(str::to_owned),
+            places: Vec::new(),
+            lines: lines_of(group, blocks(&keys), shapes),
+        });
+    }
+    for (index, place) in places.iter().enumerate() {
+        if let Some(spot) = spot_of(&layouts, shapes, &group_of, place) {
+            match spot {
+                Spot::Group(group) => layouts[group].places.push(index),
+                Spot::Line(group, line) => match &mut layouts[group].lines[line] {
+                    Line::Heading { places, .. } | Line::Table { places, .. } => {
+                        places.push(index);
+                    }
+                    Line::Row { .. } => {}
+                },
+            }
+        }
+    }
+    layouts
+}
+
+/// The first `steps` steps of `path`.
+fn prefix(path: &ValuePath, steps: usize) -> ValuePath {
+    ValuePath(path.0.iter().take(steps).cloned().collect())
+}
+
+/// The lines of the group `group`, from its blocks and each field's shape.
+fn lines_of(group: Option<&str>, blocks: Vec<Block>, shapes: &[Shape<'_>]) -> Vec<Line> {
     let mut lines = Vec::new();
-    // The headings the last field was under.
-    let mut under: Vec<&str> = Vec::new();
+    // The headings the last field was under, each with the place it says.
+    let mut under: Vec<(&str, ValuePath)> = Vec::new();
     for block in blocks {
-        let place = match block {
-            Block::Row(place) => place,
+        let field = match block {
+            Block::Row(field) => field,
             Block::Table(table) => {
                 under.clear();
-                lines.push(Line::Table(table));
+                lines.push(Line::Table {
+                    table,
+                    places: Vec::new(),
+                });
                 continue;
             }
         };
-        let mut headings: Vec<&str> = words
-            .get(place)
-            .map(|words| words.iter().map(String::as_str).collect())
-            .unwrap_or_default();
-        headings.pop();
-        if group.is_some() && headings.first().copied() == group {
+        let shape = &shapes[field];
+        let mut headings: Vec<(&str, ValuePath)> = shape
+            .words
+            .iter()
+            .map(|word| (word.text.as_str(), prefix(shape.path, word.through)))
+            .collect();
+        // A value's last word is its own; an empty place's is its heading.
+        if !shape.empty {
+            headings.pop();
+        }
+        if group.is_some() && headings.first().map(|(text, _)| *text) == group {
             headings.remove(0);
         }
         let shared = under
@@ -572,17 +653,85 @@ pub fn lines(group: Option<&str>, blocks: Vec<Block>, words: &[Vec<String>]) -> 
             .zip(&headings)
             .take_while(|(was, is)| was == is)
             .count();
-        for (depth, text) in headings.iter().enumerate().skip(shared) {
-            let text = (*text).to_owned();
-            lines.push(Line::Heading { depth, text });
+        for (depth, (text, path)) in headings.iter().enumerate().skip(shared) {
+            lines.push(Line::Heading {
+                depth,
+                text: (*text).to_owned(),
+                empty: shape.empty && path == shape.path,
+                path: path.clone(),
+                places: Vec::new(),
+            });
         }
-        lines.push(Line::Row {
-            place,
-            depth: headings.len(),
-        });
+        if !shape.empty {
+            lines.push(Line::Row {
+                field,
+                depth: headings.len(),
+            });
+        }
         under = headings;
     }
     lines
+}
+
+/// Where a place's × and "+" go.
+enum Spot {
+    /// Beside the `n`th group's name.
+    Group(usize),
+    /// On a line: the `n`th group's `m`th.
+    Line(usize, usize),
+}
+
+/// Where `place`'s × and "+" go among `layouts`, as [`form_layout`] says; `None` for the
+/// entry itself, what's within a table's items, and a place that fits nowhere.
+fn spot_of(
+    layouts: &[GroupLayout],
+    shapes: &[Shape<'_>],
+    group_of: &[usize],
+    place: &ValuePath,
+) -> Option<Spot> {
+    let lines = || {
+        layouts.iter().enumerate().flat_map(|(group, layout)| {
+            let lines = layout.lines.iter().enumerate();
+            lines.map(move |(line, drawn)| (group, line, drawn))
+        })
+    };
+    let table = |list: &str| {
+        lines()
+            .find(|(_, _, drawn)| matches!(drawn, Line::Table { table, .. } if table.list == list))
+    };
+    let heading = |path: &ValuePath| {
+        lines()
+            .find(|(_, _, drawn)| matches!(drawn, Line::Heading { path: said, .. } if said == path))
+    };
+    let at = |(group, line, _): (usize, usize, &Line)| Spot::Line(group, line);
+    match &place.0[..] {
+        [] => return None,
+        [Step::Key(list)] if let Some(found) = table(list) => return Some(at(found)),
+        _ => {}
+    }
+    if let Some(found) = heading(place) {
+        return Some(at(found));
+    }
+    // What's within a table's items has no heading, nor has the list, so it's the table's own
+    // to draw, and falls through to nothing here.
+    // A list of named items is said by its items, so it goes beside what holds it.
+    let parent = prefix(place, place.0.len() - 1);
+    if !parent.0.is_empty() {
+        return heading(&parent).map(at);
+    }
+    // At the top of the entry, beside the name of the group it's in.
+    let first = shapes
+        .iter()
+        .position(|shape| shape.path.0.starts_with(&place.0))?;
+    Some(Spot::Group(group_of[first]))
+}
+
+/// What a table's cell × removes: the field's outermost place within its item, such as
+/// `ranks[1].requires` for `ranks[1].requires.standing`.
+pub fn cell_removes(path: &ValuePath) -> ValuePath {
+    // The list, the item and the key within it.
+    const WITHIN_ITEM: usize = 3;
+    prefix(path, WITHIN_ITEM)
 }
 
 /// Each column of `table` in words: the words of its first field after its item's, from each
@@ -684,112 +833,300 @@ mod tests {
         );
     }
 
-    /// Each field's words by its place, from words joined by " › ".
-    fn said(fields: &[&str]) -> Vec<Vec<String>> {
-        fields
-            .iter()
-            .map(|words| words.split(" › ").map(str::to_owned).collect())
-            .collect()
-    }
-
-    fn heading(depth: usize, text: &str) -> Line {
-        Line::Heading {
-            depth,
+    fn word(text: &str, through: usize) -> Word {
+        Word {
             text: text.to_owned(),
+            through,
         }
     }
 
+    /// A field: its group, its key in the entry, and its words, each with how far it reaches.
+    struct Field {
+        group: Option<&'static str>,
+        path: ValuePath,
+        words: Vec<Word>,
+        empty: bool,
+    }
+
+    fn field(group: Option<&'static str>, key: &str, words: &[(&str, usize)]) -> Field {
+        Field {
+            group,
+            path: ValuePath::parse(key).expect("a key"),
+            words: words
+                .iter()
+                .map(|(text, through)| word(text, *through))
+                .collect(),
+            empty: false,
+        }
+    }
+
+    fn empty(group: Option<&'static str>, key: &str, words: &[(&str, usize)]) -> Field {
+        Field {
+            empty: true,
+            ..field(group, key, words)
+        }
+    }
+
+    fn laid_out(fields: &[Field], places: &[&str]) -> Vec<GroupLayout> {
+        let shapes: Vec<Shape<'_>> = fields
+            .iter()
+            .map(|field| Shape {
+                group: field.group,
+                path: &field.path,
+                words: &field.words,
+                empty: field.empty,
+            })
+            .collect();
+        let places: Vec<ValuePath> = places
+            .iter()
+            .map(|key| ValuePath::parse(key).unwrap_or(ValuePath::ROOT))
+            .collect();
+        form_layout(&shapes, &places)
+    }
+
+    fn heading(depth: usize, text: &str, key: &str, places: &[usize]) -> Line {
+        Line::Heading {
+            depth,
+            text: text.to_owned(),
+            path: ValuePath::parse(key).expect("a key"),
+            empty: false,
+            places: places.to_vec(),
+        }
+    }
+
+    fn row(field: usize, depth: usize) -> Line {
+        Line::Row { field, depth }
+    }
+
     #[test]
-    fn a_fields_words_but_its_last_are_headings_said_once_for_the_fields_sharing_them() {
-        let words = said(&[
-            "Alignment › Law",
-            "Alignment › Good",
-            "Weights › Law",
-            "Weights › Good",
-        ]);
-        let blocks = (0..4).map(Block::Row).collect();
+    fn a_fields_words_but_its_last_are_headings_each_with_the_place_it_says() {
+        let group = Some("Where it stands");
+        let fields = [
+            field(group, "alignment.law", &[("Alignment", 1), ("Law", 2)]),
+            field(group, "alignment.good", &[("Alignment", 1), ("Good", 2)]),
+            field(group, "weights.law", &[("Weights", 1), ("Law", 2)]),
+            field(group, "weights.good", &[("Weights", 1), ("Good", 2)]),
+        ];
         assert_eq!(
-            lines(Some("Where it stands"), blocks, &words),
-            [
-                heading(0, "Alignment"),
-                Line::Row { place: 0, depth: 1 },
-                Line::Row { place: 1, depth: 1 },
-                heading(0, "Weights"),
-                Line::Row { place: 2, depth: 1 },
-                Line::Row { place: 3, depth: 1 },
-            ]
+            laid_out(&fields, &["", "alignment", "weights"]),
+            [GroupLayout {
+                name: Some("Where it stands".to_owned()),
+                places: vec![],
+                lines: vec![
+                    heading(0, "Alignment", "alignment", &[1]),
+                    row(0, 1),
+                    row(1, 1),
+                    heading(0, "Weights", "weights", &[2]),
+                    row(2, 1),
+                    row(3, 1),
+                ],
+            }]
         );
     }
 
     #[test]
-    fn a_first_word_that_is_the_groups_name_isnt_said_again() {
-        let words = said(&["Name", "Drift › Policy", "Drift › Grace (ticks)"]);
+    fn a_heading_that_is_the_groups_name_isnt_said_again_and_its_place_goes_beside_the_name() {
+        let fields = [
+            field(Some("Identity"), "name", &[("Name", 1)]),
+            field(
+                Some("Drift"),
+                "drift.policy",
+                &[("Drift", 1), ("Policy", 2)],
+            ),
+            field(
+                Some("Drift"),
+                "drift.grace_ticks",
+                &[("Drift", 1), ("Grace (ticks)", 2)],
+            ),
+        ];
+        let groups = laid_out(&fields, &["", "drift"]);
         assert_eq!(
-            lines(Some("Drift"), vec![Block::Row(1), Block::Row(2)], &words),
-            [
-                Line::Row { place: 1, depth: 0 },
-                Line::Row { place: 2, depth: 0 },
-            ]
+            groups[1],
+            GroupLayout {
+                name: Some("Drift".to_owned()),
+                places: vec![1],
+                lines: vec![row(1, 0), row(2, 0)],
+            }
         );
         // Without a group, nothing is left out.
+        let fields = [field(None, "drift.policy", &[("Drift", 1), ("Policy", 2)])];
         assert_eq!(
-            lines(None, vec![Block::Row(1)], &words),
-            [heading(0, "Drift"), Line::Row { place: 1, depth: 1 }]
+            laid_out(&fields, &["", "drift"])[0].lines,
+            [heading(0, "Drift", "drift", &[1]), row(0, 1)]
         );
     }
 
     #[test]
-    fn headings_nest_and_only_what_changes_is_said_again() {
-        let words = said(&[
-            "Stage \"inspect\" › Id",
-            "Stage \"inspect\" › Choice \"seize\" › Id",
-            "Stage \"inspect\" › Choice \"seize\" › Effects › Alignment › Law",
-            "Stage \"inspect\" › Choice \"seize\" › Next",
-            "Stage \"inspect\" › Choice \"wave_through\" › Id",
-        ]);
-        let blocks = (0..5).map(Block::Row).collect();
+    fn a_list_of_named_items_adds_beside_what_holds_it() {
+        let group = Some("Stages");
+        let stage = ("Stage \"inspect\"", 2);
+        let seize = ("Choice \"seize\"", 4);
+        let fields = [
+            field(group, "stages[0].id", &[stage, ("Id", 3)]),
+            field(group, "stages[0].choices[0].id", &[stage, seize, ("Id", 5)]),
+            field(
+                group,
+                "stages[0].choices[0].effects.alignment.law",
+                &[stage, seize, ("Effects", 5), ("Alignment", 6), ("Law", 7)],
+            ),
+            field(
+                group,
+                "stages[0].choices[0].next",
+                &[stage, seize, ("Next", 5)],
+            ),
+            field(
+                group,
+                "stages[0].choices[1].id",
+                &[stage, ("Choice \"wave_through\"", 4), ("Id", 5)],
+            ),
+        ];
+        let places = [
+            "",
+            "stages",
+            "stages[0]",
+            "stages[0].choices",
+            "stages[0].choices[0]",
+            "stages[0].choices[0].effects",
+            "stages[0].choices[0].effects.alignment",
+            "stages[0].choices[1]",
+        ];
         assert_eq!(
-            lines(Some("Stages"), blocks, &words),
-            [
-                heading(0, "Stage \"inspect\""),
-                Line::Row { place: 0, depth: 1 },
-                heading(1, "Choice \"seize\""),
-                Line::Row { place: 1, depth: 2 },
-                heading(2, "Effects"),
-                heading(3, "Alignment"),
-                Line::Row { place: 2, depth: 4 },
-                Line::Row { place: 3, depth: 2 },
-                heading(1, "Choice \"wave_through\""),
-                Line::Row { place: 4, depth: 2 },
-            ]
+            laid_out(&fields, &places),
+            [GroupLayout {
+                name: Some("Stages".to_owned()),
+                // A new stage goes beside the group's name; a new choice beside its stage.
+                places: vec![1],
+                lines: vec![
+                    heading(0, "Stage \"inspect\"", "stages[0]", &[2, 3]),
+                    row(0, 1),
+                    heading(1, "Choice \"seize\"", "stages[0].choices[0]", &[4]),
+                    row(1, 2),
+                    heading(2, "Effects", "stages[0].choices[0].effects", &[5]),
+                    heading(
+                        3,
+                        "Alignment",
+                        "stages[0].choices[0].effects.alignment",
+                        &[6]
+                    ),
+                    row(2, 4),
+                    row(3, 2),
+                    heading(1, "Choice \"wave_through\"", "stages[0].choices[1]", &[7]),
+                    row(4, 2),
+                ],
+            }]
         );
     }
 
     #[test]
-    fn a_table_is_its_own_line_and_the_headings_after_it_are_said_again() {
+    fn a_tables_list_adds_at_its_end_and_a_place_goes_on_only_the_first_heading_saying_it() {
+        let (standing, factions) = (("Standing", 1), ("Factions", 2));
+        let fields = [
+            field(
+                None,
+                "standing.factions.city_watch",
+                &[standing, factions, ("The City Watch", 3)],
+            ),
+            field(
+                None,
+                "memberships[0].faction",
+                &[("Membership \"The City Watch\"", 2), ("Faction", 3)],
+            ),
+            field(
+                None,
+                "standing.factions.temple",
+                &[standing, factions, ("Temple of the Dawn", 3)],
+            ),
+        ];
         let table = ListTable {
             list: "memberships".to_owned(),
             columns: vec!["faction".to_owned()],
             rows: vec![vec![Some(1)]],
         };
-        let words = said(&[
-            "Standing › Factions › The City Watch",
-            "Membership \"The City Watch\" › Faction",
-            "Standing › Factions › Temple of the Dawn",
-        ]);
-        let blocks = vec![Block::Row(0), Block::Table(table.clone()), Block::Row(2)];
+        let places = [
+            "",
+            "memberships",
+            "memberships[0]",
+            "standing",
+            "standing.factions",
+        ];
         assert_eq!(
-            lines(None, blocks, &words),
+            laid_out(&fields, &places)[0].lines,
             [
-                heading(0, "Standing"),
-                heading(1, "Factions"),
-                Line::Row { place: 0, depth: 2 },
-                Line::Table(table),
-                heading(0, "Standing"),
-                heading(1, "Factions"),
-                Line::Row { place: 2, depth: 2 },
+                heading(0, "Standing", "standing", &[3]),
+                heading(1, "Factions", "standing.factions", &[4]),
+                row(0, 2),
+                Line::Table {
+                    table,
+                    places: vec![1],
+                },
+                heading(0, "Standing", "standing", &[]),
+                heading(1, "Factions", "standing.factions", &[]),
+                row(2, 2),
             ]
         );
+    }
+
+    #[test]
+    fn an_empty_table_is_its_own_heading_with_its_place() {
+        let fields = [empty(
+            Some("Standing"),
+            "standing.factions",
+            &[("Standing", 1), ("Factions", 2)],
+        )];
+        assert_eq!(
+            laid_out(&fields, &["", "standing", "standing.factions"]),
+            [GroupLayout {
+                name: Some("Standing".to_owned()),
+                places: vec![1],
+                lines: vec![Line::Heading {
+                    depth: 0,
+                    text: "Factions".to_owned(),
+                    path: ValuePath::parse("standing.factions").expect("a key"),
+                    empty: true,
+                    places: vec![2],
+                }],
+            }]
+        );
+        // Outside a group, only the empty place's own heading is marked so.
+        let fields = [empty(
+            None,
+            "standing.factions",
+            &[("Standing", 1), ("Factions", 2)],
+        )];
+        let lines = &laid_out(&fields, &["", "standing", "standing.factions"])[0].lines;
+        assert_eq!(lines[0], heading(0, "Standing", "standing", &[1]));
+        assert!(matches!(lines[1], Line::Heading { empty: true, .. }));
+        // One that is its group's name is the group's.
+        let fields = [empty(Some("Standing"), "standing", &[("Standing", 1)])];
+        assert_eq!(
+            laid_out(&fields, &["", "standing"]),
+            [GroupLayout {
+                name: Some("Standing".to_owned()),
+                places: vec![1],
+                lines: vec![],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_place_that_fits_nowhere_is_in_no_group() {
+        let fields = [field(None, "name", &[("Name", 1)])];
+        let groups = laid_out(&fields, &["", "lost.within"]);
+        assert_eq!(
+            groups,
+            [GroupLayout {
+                name: None,
+                places: vec![],
+                lines: vec![row(0, 0)],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_cells_remove_takes_its_fields_outermost_place_within_the_item() {
+        let removes = |key: &str| cell_removes(&ValuePath::parse(key).expect("a key")).to_string();
+        assert_eq!(removes("ranks[1].requires.standing"), "ranks[1].requires");
+        assert_eq!(removes("ranks[2].tolerance"), "ranks[2].tolerance");
     }
 
     #[test]
