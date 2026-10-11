@@ -61,6 +61,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-32 · The editor is built in egui** (agreed 2026-10-08 in U0, at the user's direction; settles X-5). All Rust, through eframe, using the engine's own types; it's chiefly the designer's own tool. It reads and writes the content TOML, so hand edits, the CLI and the editor stay interchangeable (DESIGN.md §18).
 - **D-33 · The host engine is Bevy** (agreed 2026-10-08 in U0, at the user's direction; settles X-2, left open in E0). The module embeds as a Bevy plugin; the core stays engine-agnostic (§19).
 - **D-34 · The editor's workspaces are tabs** (agreed 2026-10-10, at the user's direction, from the editor design canvas). One window with three workspaces along the top, Content, Quests and Previews, rather than a dock of panels that can sit anywhere (§18).
+- **D-36 · The quest graphs route their own lines, without egui-snarl** (agreed 2026-10-10 in U8, at the user's direction; settles X-6). The graphs looked messy, as their lines ran straight between boxes and across those between. Snarl's links also run straight between boxes, so it wouldn't help; the layout routes every line around the boxes instead, and the graphs stay read-only (§18).
 - **D-35 · Previews keep the last world that loaded** (agreed 2026-10-10 in U5, at the user's direction). Previews come from a world built from the content as it stands; while it doesn't load, the Previews tab shows the last world that did, marked as such with how many problems there are now, rather than going blank mid-edit (§18).
 - **D-24 · Exposure is decided by a rule table** (agreed 2026-10-07 in K0). Exposure is news, sent by `Expose` with witnesses, so it ripples. When a faction learns that a member is secretly in a faction it's in conflict with, its `exposed` table (the world's, or its own) decides: keep, demote or expel, with a standing change. Built in, it expels (§10.4).
 
@@ -583,7 +584,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A questline brings one hop of outsiders:** the quests at the far end of its edges that aren't in it, such as the Ashen Rite locking the Watch's captaincy; not quests that only reach those.
   - **A note sits at the deepest node its key names:** a choice (`q.stages[i].choices[j]…`), else a stage (`q.stages[i]…`), else the quest; a step (`l.steps[i]…`), else the questline. A questline's count includes its quests'.
   - **The words for quests moved from the CLI to `factional-content`** (`quest_heading`, `describe_step`, `needs`, `describe_choice`, `named_effects`, `named_shifts`), so the CLI and the editor say the same thing; the CLI's output didn't change.
-  - **Drawn with egui's own painter, not `egui-snarl`:** the graphs are read-only, laid out by the content (steps as columns, stages in order), and snarl's free node editing fits neither. Snarl stays the choice if editing in the graph comes later.
+  - **Drawn with egui's own painter, not `egui-snarl`:** the graphs are read-only, laid out by the content (steps as columns, stages in order), and snarl's free node editing fits neither. Snarl stays the choice if editing in the graph comes later. (U8 routes the lines around the boxes, P-90; snarl isn't used, D-36.)
   - **Read-only:** "Edit in Content" selects the chosen quest's entry; the graph is made again from the text on every change.
   - **Where things go is worked out apart from drawing** (`layout` in the editor): node, heading and arrow positions as plain values, tested exactly, so the egui layer only paints and places what it's given (§18's model under a thin UI).
   - *Why:* the designer sees what needs and locks what, and where the loader found a dead end, in the same words the CLI uses, without the editor working anything out.
@@ -661,6 +662,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Set once, as the editor first draws:** fonts, sizes and visuals together, as setting fonts rebuilds egui's atlas.
   - *Why:* the editor reads as the canvas does, prose apart from what's typed into the content.
 
+- **P-90 · How the quest graphs' lines are routed** (made in U8, 2026-10-10).
+  - **Through the gaps, never across a box:** a line leaves the side of its box facing where it goes and turns into the gap beside it. To the next column, it crosses that gap into the facing side of its box; within a column, it loops through the gap on the right; any further, it drops to a corridor below every box, runs along it, and rises through the gap beside the box it goes to. A test holds every questline and quest in the repository to it.
+  - **Each line its own lane and its own point:** lanes in a gap and tracks in the corridor in the order of the lines; points on a box's side spread evenly, in the order of the height of each line's other end, so lines into a box don't cross on the way in. A choice's line still leaves from its own row.
+  - **Right angles, rounded as drawn:** the layout gives each route as its turns, tested exactly; the drawing rounds each turn with a short curve, so a line reads as one stroke.
+  - **Quests outside a questline get a column of their own,** after its last step, so their lines are as short as any other; the end of a quest is as tall as its tallest stage, so the lines into it have room.
+  - **Lines may still cross each other** where they share a gap; only boxes are kept clear.
+  - *Why:* a graph should read at a glance, as the user asked, without the editor working anything out that the content doesn't say.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-5.
@@ -672,4 +681,4 @@ None right now. A new question gets the next free number, starting at O-5.
 - **X-3 · Save format and versioning.** Settled in T4 by the user's choices; see P-54.
 - **X-4 · What "reconcile" means for questlines, and how to check it efficiently** (D-20). Settled in Q0 by the user's choices: D-25 to D-29, with P-64 to P-66 for how (DESIGN.md §17).
 - **X-5 · A visual editor for characters, factions and quests** (raised 2026-10-05). The candidates were a web frontend (Tauri and wasm, with schema-driven forms and React Flow) and egui (all Rust, `egui-snarl` for graphs). Settled in U0 by the user's choice: egui (D-32, P-74).
-- **X-6 · `egui-snarl` for the quest graphs** (raised 2026-10-10 after U4). P-80 drew the quest graphs with egui's own painter, as read-only views laid out by the content. The user chose to revisit snarl once U5 to U7 are done (PLAN.md U8): whether editing in the graph is wanted, and if so whether snarl fits it.
+- **X-6 · `egui-snarl` for the quest graphs** (raised 2026-10-10 after U4). P-80 drew the quest graphs with egui's own painter, as read-only views laid out by the content. The user chose to revisit snarl once U5 to U7 are done (PLAN.md U8): whether editing in the graph is wanted, and if so whether snarl fits it. Settled in U8 by the user's choice: lines routed by our own layout, no snarl (D-36, P-90).
