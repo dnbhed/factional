@@ -91,6 +91,8 @@ pub struct Editor {
     pub(crate) step_needs: BTreeMap<usize, String>,
     /// The chosen quest's stage whose page is open, its choices (U13d).
     stage: Option<usize>,
+    /// Whether the drawer along the bottom is open (U15a).
+    drawer_open: bool,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -266,6 +268,7 @@ impl Editor {
             new_quests: BTreeMap::new(),
             step_needs: BTreeMap::new(),
             stage: None,
+            drawer_open: true,
         };
         editor.reload();
         editor
@@ -1251,10 +1254,60 @@ impl Editor {
                 }
             });
         });
+        self.drawer_ui(ui);
         match self.workspace {
             Workspace::Content => self.content_ui(ui),
             Workspace::Quests => self.quests_ui(ui),
             Workspace::Previews => self.previews_ui(ui),
+        }
+    }
+
+    /// The drawer along the bottom of every tab (U15a, D-40, P-96): the problems, each going to
+    /// its entry in the Content tab, with "Close the drawer"; closed, a strip to open it, the
+    /// problems counted. It keeps its height while it's closed.
+    fn drawer_ui(&mut self, ui: &mut egui::Ui) {
+        let labelled = |ui: &mut egui::Ui, shown: &str, said: &str| {
+            let button = ui.small_button(shown);
+            button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, said));
+            button.clicked()
+        };
+        if !self.drawer_open {
+            let problems = self.said.iter().filter(|said| !said.warning).count();
+            egui::Panel::bottom("drawer closed").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let said = format!("Open the drawer, with {problems} problems");
+                    if labelled(ui, &format!("▴ Problems {problems}"), &said) {
+                        self.drawer_open = true;
+                    }
+                });
+            });
+            return;
+        }
+        let mut listed = None;
+        let mut close = false;
+        egui::Panel::bottom("drawer")
+            .resizable(true)
+            .default_size(160.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    close = labelled(ui, "▾", "Close the drawer");
+                    ui.strong("Problems");
+                });
+                listed = self.problems_ui(ui);
+            });
+        self.drawer_open = !close;
+        match listed {
+            Some(Listed::Go(file, key)) => {
+                self.workspace = Workspace::Content;
+                self.select_at(&file, &key);
+            }
+            Some(Listed::Fix(fix)) => {
+                if let Err(refused) = self.apply(&fix) {
+                    self.note = Some(format!("couldn't fix: {refused}"));
+                }
+            }
+            Some(Listed::Warnings(warnings)) => self.listing_warnings = warnings,
+            None => {}
         }
     }
 
@@ -1264,11 +1317,6 @@ impl Editor {
     fn content_ui(&mut self, ui: &mut egui::Ui) {
         let mut clicked = None;
         let mut adding = None;
-        let mut listed = None;
-        egui::Panel::bottom("problems")
-            .resizable(true)
-            .default_size(160.0)
-            .show(ui, |ui| listed = self.problems_ui(ui));
         let edited: Vec<bool> = (0..self.outline.files.len())
             .map(|file| self.is_edited(file))
             .collect();
@@ -1338,12 +1386,6 @@ impl Editor {
             self.select(file, entry);
         }
         let mut fixing = None;
-        match listed {
-            Some(Listed::Go(file, key)) => self.select_at(&file, &key),
-            Some(Listed::Fix(fix)) => fixing = Some(fix),
-            Some(Listed::Warnings(warnings)) => self.listing_warnings = warnings,
-            None => {}
-        }
         let mut going = None;
         if self.selected.is_some() {
             egui::Panel::right("entry")
