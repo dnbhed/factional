@@ -118,6 +118,37 @@ pub(crate) fn matrix(world: &World, args: &str) -> Outcome {
     if csv {
         return Outcome::Output(lines(rows.into_iter().map(|row| row.join(","))));
     }
+    Outcome::Output(aligned(rows))
+}
+
+/// `relations --matrix [--csv]` (U12c): how each faction, down, regards each other, across,
+/// as the world's `relations_matrix` has it, with `*` where the pair is in conflict.
+pub(crate) fn relations_matrix(world: &World, csv: bool) -> Outcome {
+    let matrix = world.relations_matrix();
+    let mut rows = vec![
+        std::iter::once("faction".to_owned())
+            .chain(matrix.factions.iter().map(ToString::to_string))
+            .collect::<Vec<_>>(),
+    ];
+    for row in &matrix.rows {
+        let mut shown = vec![row.from.to_string()];
+        shown.extend(row.cells.iter().map(|cell| match (cell, csv) {
+            (None, true) => String::new(),
+            (None, false) => "—".to_owned(),
+            (Some(cell), true) => cell.regard.value.to_string(),
+            (Some(cell), false) if cell.conflict => format!("{}*", cell.regard.value),
+            (Some(cell), false) => cell.regard.value.to_string(),
+        }));
+        rows.push(shown);
+    }
+    if csv {
+        return Outcome::Output(lines(rows.into_iter().map(|row| row.join(","))));
+    }
+    Outcome::Output(format!("{}\n* in conflict", aligned(rows)))
+}
+
+/// `rows` as a table: the first column to the left, the rest to the right.
+fn aligned(rows: Vec<Vec<String>>) -> String {
     let widths: Vec<usize> = (0..rows[0].len())
         .map(|column| {
             rows.iter()
@@ -126,7 +157,7 @@ pub(crate) fn matrix(world: &World, args: &str) -> Outcome {
                 .unwrap_or(0)
         })
         .collect();
-    Outcome::Output(lines(rows.into_iter().map(|row| {
+    lines(rows.into_iter().map(|row| {
         let cells: Vec<String> = row
             .iter()
             .enumerate()
@@ -140,7 +171,7 @@ pub(crate) fn matrix(world: &World, args: &str) -> Outcome {
             })
             .collect();
         cells.join("  ").trim_end().to_owned()
-    })))
+    }))
 }
 
 /// `curve <curve> [at <x>]`: a curve's value at `x`, or without `at`, the whole curve as a
@@ -445,6 +476,46 @@ mod tests {
             run(&mut Session::default(), "matrix"),
             "error: no world is loaded yet: use load <dir> first"
         );
+    }
+
+    #[test]
+    fn relations_as_a_matrix_has_each_faction_toward_each_other() {
+        let mut session = session("content/sample");
+        let shown = run(&mut session, "relations --matrix");
+        let rows: Vec<Vec<&str>> = shown
+            .lines()
+            .map(|line| line.split_whitespace().collect())
+            .collect();
+        assert_eq!(
+            rows[0],
+            [
+                "faction",
+                "ashen_circle",
+                "city_watch",
+                "free_company",
+                "lantern_guild",
+                "temple"
+            ]
+        );
+        // DESIGN.md §13, with * where the pair is in conflict, and nothing toward itself.
+        assert_eq!(
+            rows[2],
+            ["city_watch", "-40.00", "—", "-30.00", "-80.00*", "60.00"]
+        );
+        assert_eq!(
+            rows[3],
+            ["free_company", "0.00", "-10.00", "—", "20.00", "0.00"]
+        );
+        assert_eq!(rows[5], ["temple", "-90.00*", "60.00", "0.00", "0.00", "—"]);
+        assert_eq!(shown.lines().last(), Some("* in conflict"));
+        let csv = run(&mut session, "relations --matrix --csv");
+        let rows: Vec<&str> = csv.lines().collect();
+        assert_eq!(
+            rows[0],
+            "faction,ashen_circle,city_watch,free_company,lantern_guild,temple"
+        );
+        assert_eq!(rows[2], "city_watch,-40.00,,-30.00,-80.00,60.00");
+        assert_eq!(rows.len(), 6);
     }
 
     #[test]

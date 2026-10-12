@@ -138,6 +138,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "how factions regard each other, or just <faction>, with bands and conflicts",
     ),
     (
+        "relations --matrix [--csv]",
+        "how each faction regards each other, as a table, with * where they're in conflict",
+    ),
+    (
         "relate <from> <to> <value> [--one-way]",
         "set how <from> and <to> regard each other; --one-way sets only <from> → <to>",
     ),
@@ -900,17 +904,21 @@ impl Session {
 
     /// `relations [<faction>]`: every relation set, or those involving one faction.
     fn relations(&self, args: &str) -> Outcome {
-        let only = match args.split_whitespace().collect::<Vec<_>>()[..] {
+        let words = args.split_whitespace().collect::<Vec<_>>();
+        let Some(world) = &self.world else {
+            return no_world();
+        };
+        let only = match words[..] {
             [] => None,
+            ["--matrix"] => return charts::relations_matrix(world, false),
+            ["--matrix", "--csv"] => return charts::relations_matrix(world, true),
             [faction] => Some(faction),
             _ => {
                 return Outcome::Error(
-                    "relations needs the form: relations [<faction>]".to_owned(),
+                    "relations needs the form: relations [<faction>] or relations --matrix [--csv]"
+                        .to_owned(),
                 );
             }
-        };
-        let Some(world) = &self.world else {
-            return no_world();
         };
         if let Some(faction) = only.filter(|id| !world.factions().any(|f| f.id.as_str() == *id)) {
             let ids: Vec<&str> = world.factions().map(|f| f.id.as_str()).collect();
@@ -4699,7 +4707,9 @@ mod tests {
         );
         assert_eq!(
             session.execute("relations a b"),
-            command_error("relations needs the form: relations [<faction>]")
+            command_error(
+                "relations needs the form: relations [<faction>] or relations --matrix [--csv]"
+            )
         );
     }
 
@@ -5178,6 +5188,7 @@ mod tests {
             "outcomes",
             "outcome <outcome> <character> [--seen-by <id>,... | --unseen]",
             "relations [<faction>]",
+            "relations --matrix [--csv]",
             "relate <from> <to> <value> [--one-way]",
             "relate <from> <to> --by <n> [--one-way]",
             "actions",

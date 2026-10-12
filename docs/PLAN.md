@@ -100,6 +100,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U11b — requirements and effects added by kind (P-93, P-103): the schema marks tables of kinds (`x-kinds`), a quest's, stage's or step's `requires` and a choice's `effects`; `Offered::Kinds` and `place_kinds` give each kind they take, in words, with each id's choices; the Requirements section offers "+ Requirement…" and a stage's requirements or a choice's effects have it as their "+", each kind by id a submenu; made in one change with what it's within; done 2026-10-12 (#69)
 - U12a — relations in each faction (D-37, P-91, P-104): `factions.toml`'s `relations`, keyed by faction id, read one way each, with its checks at `<faction>.relations.<other>`, the engine's warning for one side written alone, and the problem for a `relations.toml` left in a directory; `relations.toml` gone from the sample, the complete example, the fixtures, the schema and the file lists; each faction's Relations section in the form; no entry offered its own id; U12 split, with the faction's pair rows now U12b and the matrix U12c; done 2026-10-12 (#70)
 - U12b — each faction's relations both ways (D-38, P-105): the schema marks a table read both ways (`x-both-ways`); `relation_rows` gives every other faction with each way, its band, the conflict and whether the two are linked, read from the text; `set_relation` writes one way or both in one change; the Relations section draws them, with "same both ways", 0 with Set, and the conflict mark, and keeps the comment above them; `form` prints the same; done 2026-10-12 (#71)
+- U12c — the relations matrix (P-106): the engine's `relations_matrix`, each faction toward each other with its band and conflict; the Previews tab draws it, tinted by band and marked where a pair is in conflict; `relations --matrix [--csv]`; done 2026-10-12
 
 ---
 
@@ -125,11 +126,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U12c · The relations matrix — P3 · Next
-
-The relations matrix in Previews, each cell tinted by its band like the disposition matrix (P-91).
-
-### U13 · Questlines make their own quests — P3 · Outline
+### U13 · Questlines make their own quests — P3 · Next
 
 The Quests tab's pages beside its read-only graph: a questline's steps with "+ New quest" and "+ Existing quest…", quests moved between steps and steps reordered, pages nested with a breadcrumb down to a stage's choices; the editor's undo holding a change to several files (P-94).
 

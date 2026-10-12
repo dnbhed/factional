@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/scenarios.rs
-assertion_line: 24
 expression: transcript
 input_file: scenarios/help.scenario
 ---
@@ -39,6 +38,7 @@ standing <subject> [<party>]                                                    
 outcomes                                                                                        list the outcomes, such as quest results
 outcome <outcome> <character> [--seen-by <id>,... | --unseen]                                   apply an outcome's effects to <character>; --seen-by says who saw it (default everyone)
 relations [<faction>]                                                                           how factions regard each other, or just <faction>, with bands and conflicts
+relations --matrix [--csv]                                                                      how each faction regards each other, as a table, with * where they're in conflict
 relate <from> <to> <value> [--one-way]                                                          set how <from> and <to> regard each other; --one-way sets only <from> → <to>
 relate <from> <to> --by <n> [--one-way]                                                         shift a relation by <n>, stopping at -100 and 100
 disposition <observer> <subject> [--explain]                                                    how <observer>, a faction or character, regards <subject>: a score and its band

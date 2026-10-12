@@ -792,6 +792,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The CLI's `form` prints each row** as the editor shows it: `The City Watch · relations.city_watch = 60.0 (allied) ↔ city_watch.relations.temple = 60.0 (allied), same both ways`.
   - *Why:* a designer thinks of the pair, the Temple and the Watch, not of two keys in two tables.
 
+- **P-106 · How the relations matrix is shown** (made in U12c, 2026-10-12; P-91).
+  - **It's the engine's query,** `World::relations_matrix`: each faction, down, toward each other, across, both in id order, each cell the relation now with its band and whether the pair is in conflict, nothing toward itself. Like the disposition matrix, it's of the world built from the last content that loaded, at the start of play.
+  - **The Previews tab draws it after the disposition matrix,** each cell tinted by its relation band as that one is by its disposition band, ⚔ after a value in conflict, and labelled in full for anyone who can't see the grid: `city_watch → lantern_guild: -80.00, enemy, in conflict`.
+  - **The CLI's `relations --matrix [--csv]` prints the same,** `*` marking a conflict, explained under the table; the CSV has the values alone.
+  - *Why:* the pair rows of one faction (P-105) don't show the whole web at once; a designer tuning a war wants every pair.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

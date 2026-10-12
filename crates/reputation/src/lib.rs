@@ -27,7 +27,10 @@ mod world;
 pub use action::{Action, TargetCurve, Witnesses};
 pub use alignment::{AXIS_LIMIT, Alignment, AlignmentDelta, Axis, AxisOutOfRange};
 pub use character::Character;
-pub use charts::{AlignmentMap, DispositionMatrix, MAP_CELLS, MapCell, MapMark, MatrixRow};
+pub use charts::{
+    AlignmentMap, DispositionMatrix, MAP_CELLS, MapCell, MapMark, MatrixRow, RelationCell,
+    RelationsMatrix, RelationsRow,
+};
 pub use command::{
     Change, Command, CommandError, Event, JournalEntry, RestoreError, Role, SavedCommand,
 };

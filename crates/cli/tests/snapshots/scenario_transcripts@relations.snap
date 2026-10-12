@@ -5,6 +5,14 @@ input_file: scenarios/relations.scenario
 ---
 > load content/sample
 loaded 6 characters from content/sample
+> relations --matrix
+faction        ashen_circle  city_watch  free_company  lantern_guild   temple
+ashen_circle              —      -40.00          0.00           0.00  -90.00*
+city_watch           -40.00           —        -30.00        -80.00*    60.00
+free_company           0.00      -10.00             —          20.00     0.00
+lantern_guild          0.00     -80.00*         20.00              —     0.00
+temple              -90.00*       60.00          0.00           0.00        —
+* in conflict
 > relations city_watch
 ashen_circle → city_watch: -40.00 (rival)
 city_watch → ashen_circle: -40.00 (rival)

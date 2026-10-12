@@ -1,15 +1,15 @@
 //! Pictures of a world for tuning (DESIGN.md §12.3, U5): the alignment plane as a faction
-//! sees it, and how every observer regards each character. They're queries, so the CLI's
-//! `map` and `matrix` and the editor's Previews tab show the same thing; neither works
-//! anything out itself.
+//! sees it, how every observer regards each character, and how each faction regards each
+//! other (U12c). They're queries, so the CLI's `map`, `matrix` and `relations --matrix` and
+//! the editor's Previews tab show the same thing; neither works anything out itself.
 
 use std::collections::BTreeMap;
 
 use factional_core::{Curve, Fixed};
 
 use crate::{
-    Alignment, Axis, CharacterId, Disposition, Distance, FactionId, Observer, TargetCurve, Toward,
-    World,
+    Alignment, Axis, CharacterId, Disposition, Distance, FactionId, Observer, Regard, TargetCurve,
+    Toward, World,
 };
 
 /// The map's cells along each axis: 10 apart, from −100 to 100.
@@ -88,6 +88,27 @@ pub struct MapMark {
 pub struct DispositionMatrix {
     pub subjects: Vec<CharacterId>,
     pub rows: Vec<MatrixRow>,
+}
+
+/// How each faction, down, regards each other, across, both in id order (U12c).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelationsMatrix {
+    pub factions: Vec<FactionId>,
+    pub rows: Vec<RelationsRow>,
+}
+
+/// One faction's regard for each faction, in order; nothing toward itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelationsRow {
+    pub from: FactionId,
+    pub cells: Vec<Option<RelationCell>>,
+}
+
+/// One faction's regard for another, with its band, and whether the pair is in conflict.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelationCell {
+    pub regard: Regard,
+    pub conflict: bool,
 }
 
 /// One observer's dispositions toward each subject, in order; nothing toward themself.
@@ -239,6 +260,26 @@ impl World {
             rows,
         })
     }
+
+    /// How each faction regards each other now, both in id order (U12c).
+    pub fn relations_matrix(&self) -> RelationsMatrix {
+        let factions: Vec<FactionId> = self.factions().map(|faction| faction.id.clone()).collect();
+        let rows = factions
+            .iter()
+            .map(|from| RelationsRow {
+                from: from.clone(),
+                cells: factions
+                    .iter()
+                    .map(|to| {
+                        let regard = (from != to).then(|| self.relation(from, to)).flatten()?;
+                        let conflict = self.in_conflict(from, to).unwrap_or_default();
+                        Some(RelationCell { regard, conflict })
+                    })
+                    .collect(),
+            })
+            .collect();
+        RelationsMatrix { factions, rows }
+    }
 }
 
 #[cfg(test)]
@@ -357,6 +398,38 @@ mod tests {
             world
                 .alignment_map(&FactionId::new("nowhere").expect("valid"))
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn the_relations_matrix_has_each_faction_toward_each_other_with_its_band_and_conflict() {
+        let world = riverhold();
+        let matrix = world.relations_matrix();
+        let faction = |id: &str| FactionId::new(id).expect("valid id");
+        let ids = ["city_watch", "free_company", "lantern_guild", "temple"].map(faction);
+        assert_eq!(matrix.factions, ids);
+        let froms: Vec<&FactionId> = matrix.rows.iter().map(|row| &row.from).collect();
+        assert_eq!(froms, ids.iter().collect::<Vec<_>>());
+        let cell = |from: usize, to: usize| matrix.rows[from].cells[to].clone();
+        // Nothing toward itself.
+        for at in 0..ids.len() {
+            assert_eq!(cell(at, at), None);
+        }
+        // DESIGN.md §13: the Watch and the Guild are enemies, in conflict both ways.
+        let said = |from: usize, to: usize| {
+            cell(from, to).map(|cell| (cell.regard.value, cell.regard.band, cell.conflict))
+        };
+        assert_eq!(said(0, 2), Some((h(-80_00), "enemy".to_owned(), true)));
+        assert_eq!(said(2, 0), Some((h(-80_00), "enemy".to_owned(), true)));
+        // The Watch distrusts mercenaries more than they distrust it; neither is a conflict.
+        assert_eq!(said(0, 1), Some((h(-30_00), "rival".to_owned(), false)));
+        assert_eq!(said(1, 0), Some((h(-10_00), "neutral".to_owned(), false)));
+        // Nothing written is 0.
+        assert_eq!(said(3, 1), Some((Fixed::ZERO, "neutral".to_owned(), false)));
+        let watch_temple = cell(0, 3).expect("a cell");
+        assert_eq!(
+            (watch_temple.regard.from, watch_temple.regard.to),
+            (ids[0].clone(), ids[3].clone())
         );
     }
 
