@@ -240,11 +240,7 @@
             "description": "-100 to 100.",
             "maximum": 100.0,
             "minimum": -100.0,
-            "type": "number",
-            "x-sentence": {
-              "says": 2,
-              "text": "Regards {key} at {value}"
-            }
+            "type": "number"
           },
           "description": "How the faction regards each other faction, by id, -100 to 100; any left out is 0, and a faction whose regard back isn't written is warned of (DESIGN.md §9.4).",
           "propertyNames": {
@@ -252,6 +248,7 @@
           },
           "title": "Relations",
           "type": "object",
+          "x-both-ways": true,
           "x-group": "Relations",
           "x-names-keys": "faction"
         },

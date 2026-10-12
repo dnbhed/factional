@@ -52,14 +52,25 @@ fn a_factions_values_are_grouped_by_what_they_mean_in_the_schemas_order() {
             "weights.good"
         ]
     );
-    // How the Watch regards each other faction, as written (U12a).
+    // How the Watch regards each other faction is the section's own, both ways (U12b), not
+    // its rows.
+    assert!(form[2].rows.is_empty() && form[2].offers.is_empty());
+    let others: Vec<&str> = form[2]
+        .relations
+        .iter()
+        .map(|row| row.other.as_str())
+        .collect();
     assert_eq!(
-        keys(&form[2]),
+        others,
+        ["ashen_circle", "free_company", "lantern_guild", "temple"]
+    );
+    assert!(form.iter().skip(3).all(|group| group.relations.is_empty()));
+    // The comment above them is the section's.
+    assert_eq!(
+        form[2].comment,
         [
-            "relations.lantern_guild",
-            "relations.temple",
-            "relations.ashen_circle",
-            "relations.free_company",
+            "Enemies of the Guild, so in conflict; allied with the Temple; rivals of the Circle, but not",
+            "in conflict; and distrusting mercenaries more than they distrust it.",
         ]
     );
     assert_eq!(

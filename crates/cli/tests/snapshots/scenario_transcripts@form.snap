@@ -16,11 +16,10 @@ Where it stands
 Relations
   # Enemies of the Guild, so in conflict; allied with the Temple; rivals of the Circle, but not
   # in conflict; and distrusting mercenaries more than they distrust it.
-  Regards The Lantern Guild at -80.0 · relations.lantern_guild
-  Regards Temple of the Dawn at 60.0 · relations.temple
-  Regards The Ashen Circle at -40.0 · relations.ashen_circle
-  Regards The Free Company at -30.0 · relations.free_company
-  + Faction: a new id
+  The Ashen Circle · relations.ashen_circle = -40.0 (rival) ↔ ashen_circle.relations.city_watch = -40.0 (rival), same both ways
+  The Free Company · relations.free_company = -30.0 (rival) ↔ free_company.relations.city_watch = -10.0 (neutral)
+  The Lantern Guild · relations.lantern_guild = -80.0 (enemy) ↔ lantern_guild.relations.city_watch = -80.0 (enemy), same both ways, in conflict
+  Temple of the Dawn · relations.temple = 60.0 (allied) ↔ temple.relations.city_watch = 60.0 (allied), same both ways
 Membership
   Tolerance · tolerance = 40.0
   Member tolerance · member_tolerance = 50.0
@@ -78,9 +77,10 @@ Where it stands
   Weights › Law · weights.law = 0.5
   Weights › Good · weights.good = 1.0
 Relations
-  Regards The City Watch at 60.0 · relations.city_watch
-  Regards The Ashen Circle at -90.0 · relations.ashen_circle
-  + Faction: free_company or lantern_guild, or a new id
+  The Ashen Circle · relations.ashen_circle = -90.0 (enemy) ↔ ashen_circle.relations.temple = -90.0 (enemy), same both ways, in conflict
+  The City Watch · relations.city_watch = 60.0 (allied) ↔ city_watch.relations.temple = 60.0 (allied), same both ways
+  The Free Company · relations.free_company: not set, 0 (neutral) ↔ free_company.relations.temple: not set, 0 (neutral), same both ways
+  The Lantern Guild · relations.lantern_guild: not set, 0 (neutral) ↔ lantern_guild.relations.temple: not set, 0 (neutral), same both ways
 Membership
   Tolerance · tolerance = 35.0
   Member tolerance · member_tolerance = 45.0

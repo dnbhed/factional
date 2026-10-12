@@ -5,8 +5,8 @@
 use std::path::Path;
 
 use factional_content::{
-    CONTENT_FILES, ContentTexts, FormRow, IdChoice, Offer, Offered, entry_form, outline_texts,
-    read_texts,
+    CONTENT_FILES, ContentTexts, FormRow, IdChoice, Offer, Offered, Regard, RelationRow,
+    entry_form, outline_texts, read_texts,
 };
 
 use crate::session::{Outcome, hint};
@@ -38,6 +38,8 @@ pub(crate) fn form(base: &Path, args: &str) -> Outcome {
     }];
     for group in entry_form(&texts, file, key) {
         shown.extend(group.name);
+        shown.extend(group.comment.iter().map(|line| format!("  # {line}")));
+        shown.extend(group.relations.iter().map(|row| related(key, row)));
         for row in &group.rows {
             shown.extend(row.comment.iter().map(|line| format!("  # {line}")));
             shown.push(format!("  {}", describe(row)));
@@ -82,6 +84,44 @@ fn describe(row: &FormRow) -> String {
         Some(choices) => format!("{value} ({choices})"),
         None => value,
     }
+}
+
+/// `The City Watch · relations.city_watch = 60.0 (allied) ↔ city_watch.relations.temple = 60.0
+/// (allied), same both ways`: one other faction on `this` faction's Relations, both ways
+/// (U12b), with `in conflict` where the pair is.
+fn related(this: &str, row: &RelationRow) -> String {
+    let way = |at: String, regard: &Regard| {
+        let value = match &regard.written {
+            Some(written) => format!("{at} = {written}"),
+            None => format!("{at}: not set, 0"),
+        };
+        match &regard.band {
+            Some(band) => format!("{value} ({band})"),
+            None => value,
+        }
+    };
+    let other = &row.other;
+    let mut said = format!(
+        "  {} · {}",
+        row.name.as_deref().unwrap_or(other),
+        way(format!("relations.{other}"), &row.regard)
+    );
+    match &row.back {
+        Some(back) => {
+            said.push_str(&format!(
+                " ↔ {}",
+                way(format!("{other}.relations.{this}"), back)
+            ));
+            if row.linked() {
+                said.push_str(", same both ways");
+            }
+        }
+        None => said.push_str(", no faction has this id"),
+    }
+    if row.conflict {
+        said.push_str(", in conflict");
+    }
+    said
 }
 
 /// `+ Rank`, `+ Faction: a, b or c, or a new id` or `+ Contact: a or b`: what a section offers
@@ -153,11 +193,10 @@ mod tests {
                  Relations\n\
                  \x20 # Enemies of the Guild, so in conflict; allied with the Temple; rivals of the Circle, but not\n\
                  \x20 # in conflict; and distrusting mercenaries more than they distrust it.\n\
-                 \x20 Regards The Lantern Guild at -80.0 · relations.lantern_guild\n\
-                 \x20 Regards Temple of the Dawn at 60.0 · relations.temple\n\
-                 \x20 Regards The Ashen Circle at -40.0 · relations.ashen_circle\n\
-                 \x20 Regards The Free Company at -30.0 · relations.free_company\n\
-                 \x20 + Faction: a new id\n\
+                 \x20 The Ashen Circle · relations.ashen_circle = -40.0 (rival) ↔ ashen_circle.relations.city_watch = -40.0 (rival), same both ways\n\
+                 \x20 The Free Company · relations.free_company = -30.0 (rival) ↔ free_company.relations.city_watch = -10.0 (neutral)\n\
+                 \x20 The Lantern Guild · relations.lantern_guild = -80.0 (enemy) ↔ lantern_guild.relations.city_watch = -80.0 (enemy), same both ways, in conflict\n\
+                 \x20 Temple of the Dawn · relations.temple = 60.0 (allied) ↔ temple.relations.city_watch = 60.0 (allied), same both ways\n\
                  Membership\n\
                  \x20 Tolerance · tolerance = 40.0\n\
                  \x20 Member tolerance · member_tolerance = 50.0\n\

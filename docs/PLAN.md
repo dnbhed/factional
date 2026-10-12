@@ -99,6 +99,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U11a — requirements and effects as sentences (P-93, P-102): the schema says each one's sentence and how many of its words it says (`x-sentence`), such as "Needs standing {value} with {key}" or "Standing with {key} changes by {value}", and a character's standing where it starts; `FormRow::sentence` (`Sentence`) gives the words before and after the value; the Content tab draws it on one line under the headings it doesn't say; `form` prints it with its value; U11 split, with adding by kind now U11b; done 2026-10-11 (#68)
 - U11b — requirements and effects added by kind (P-93, P-103): the schema marks tables of kinds (`x-kinds`), a quest's, stage's or step's `requires` and a choice's `effects`; `Offered::Kinds` and `place_kinds` give each kind they take, in words, with each id's choices; the Requirements section offers "+ Requirement…" and a stage's requirements or a choice's effects have it as their "+", each kind by id a submenu; made in one change with what it's within; done 2026-10-12 (#69)
 - U12a — relations in each faction (D-37, P-91, P-104): `factions.toml`'s `relations`, keyed by faction id, read one way each, with its checks at `<faction>.relations.<other>`, the engine's warning for one side written alone, and the problem for a `relations.toml` left in a directory; `relations.toml` gone from the sample, the complete example, the fixtures, the schema and the file lists; each faction's Relations section in the form; no entry offered its own id; U12 split, with the faction's pair rows now U12b and the matrix U12c; done 2026-10-12 (#70)
+- U12b — each faction's relations both ways (D-38, P-105): the schema marks a table read both ways (`x-both-ways`); `relation_rows` gives every other faction with each way, its band, the conflict and whether the two are linked, read from the text; `set_relation` writes one way or both in one change; the Relations section draws them, with "same both ways", 0 with Set, and the conflict mark, and keeps the comment above them; `form` prints the same; done 2026-10-12
 
 ---
 
@@ -124,11 +125,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U12b · Each faction's relations, both ways — P3 · Next
-
-Each faction's Relations group as D-38 has it: every other faction a row with how this faction regards it and how it regards this one back, the band's name, a mark where the pair is in conflict, and "same both ways", linked while the two are equal, a change to one then writing both in one change; a faction with nothing written shows 0 with Set (P-91).
-
-### U12c · The relations matrix — P3 · Outline
+### U12c · The relations matrix — P3 · Next
 
 The relations matrix in Previews, each cell tinted by its band like the disposition matrix (P-91).
 

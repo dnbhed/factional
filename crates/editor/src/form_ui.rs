@@ -3,13 +3,13 @@
 //! there are any; then what the loader says, what refers to the entry, and the entry as
 //! written. The form is `factional-content`'s `entry_form`; this draws it.
 
-use factional_content::{Addition, Fix, Offer, Offered, Step, ValuePath, Word, key_info};
+use factional_content::{Addition, Fix, Offer, Offered, Regard, Step, ValuePath, Word, key_info};
 
 use crate::egui::{self, RichText, WidgetInfo, WidgetType};
 use crate::layout::{Line, ListTable, Shape, cell_removes, column_titles, form_layout};
 use crate::problems_ui::{Listed, fix_button, within};
 use crate::removing_ui::{adding_menu, remove_button};
-use crate::{Editor, FieldInput, OfferInput, PlaceInput, Said, SectionInput, theme};
+use crate::{Editor, FieldInput, OfferInput, PlaceInput, RelationInput, Said, SectionInput, theme};
 
 /// What was done in the form.
 pub(crate) enum Acted {
@@ -24,6 +24,16 @@ pub(crate) enum Acted {
     Add(ValuePath, Option<String>),
     /// An offer made, with an id for one that takes it (U10d, U11b).
     Make(Offer, Option<String>),
+    /// How the faction regards `other`, or with `back` how `other` regards it, entered; with
+    /// `both`, for the other way too (U12b).
+    Regard {
+        other: String,
+        back: bool,
+        input: String,
+        both: bool,
+    },
+    /// The pair with another faction linked, or unlinked for a grudge (U12b).
+    Link(String, bool),
 }
 
 /// How wide a value's field is, so every value lines up and what's after it fits; a table's
@@ -126,6 +136,22 @@ pub(crate) fn form_ui(
                 });
                 ui.end_row();
             }
+            // A faction's Relations, every other faction both ways (U12b).
+            if let Some(section) = sections.get_mut(place) {
+                for line in &section.comment {
+                    ui.label("");
+                    ui.label(
+                        RichText::new(format!("# {line}"))
+                            .monospace()
+                            .color(theme::COMMENT),
+                    );
+                    ui.end_row();
+                }
+                let this = entry.to_string();
+                for relation in &mut section.relations {
+                    done(relation_ui(ui, &this, relation));
+                }
+            }
             for line in group.lines {
                 match line {
                     Line::Heading {
@@ -205,6 +231,102 @@ pub(crate) fn form_ui(
         }
     });
     acted
+}
+
+/// One other faction on a faction's Relations (U12b, D-38): its name; how this faction regards
+/// it and how it regards this one back, each its field, or 0 with Set where nothing's written,
+/// with its band; "same both ways" between them, linked while the two are the same; and a
+/// mark where the pair is in conflict. Each field is labelled by where it's written, for
+/// anyone who can't see it: `relations.temple`, `temple.relations.city_watch`.
+fn relation_ui(ui: &mut egui::Ui, this: &str, relation: &mut RelationInput) -> Option<Acted> {
+    let mut acted = None;
+    let RelationInput {
+        row,
+        regard,
+        back,
+        linked,
+    } = relation;
+    let other = row.other.clone();
+    let name = row.name.clone().unwrap_or_else(|| other.clone());
+    match &row.name {
+        Some(name) => ui.label(name),
+        None => ui.label(RichText::new(&other).italics()),
+    };
+    let both = *linked;
+    let entered = |input: String, back: bool| Acted::Regard {
+        other: other.clone(),
+        back,
+        input,
+        both,
+    };
+    ui.horizontal(|ui| {
+        let label = format!("relations.{other}");
+        if let Some(input) = regard_ui(ui, &label, &row.regard, regard) {
+            acted = Some(entered(input, false));
+        }
+        match &row.back {
+            Some(regarded) => {
+                let mut on = *linked;
+                let check = ui.checkbox(&mut on, "same both ways");
+                let said = format!("Same both ways with {other}");
+                check.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, on, &said));
+                if check.changed() {
+                    acted = Some(Acted::Link(other.clone(), on));
+                }
+                let label = format!("{other}.relations.{this}");
+                if let Some(input) = regard_ui(ui, &label, regarded, back) {
+                    acted = Some(entered(input, true));
+                }
+            }
+            None => {
+                ui.weak("no faction has this id");
+            }
+        }
+        if row.conflict {
+            let mark = ui.colored_label(ui.visuals().error_fg_color, "⚔ in conflict");
+            let said = format!("In conflict with {name}");
+            mark.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
+        }
+    });
+    ui.end_row();
+    acted
+}
+
+/// One way of a relation: its field, entered when it loses focus changed, or with nothing
+/// written, 0 with Set; then its band. What's entered, if anything.
+fn regard_ui(
+    ui: &mut egui::Ui,
+    label: &str,
+    regard: &Regard,
+    input: &mut String,
+) -> Option<String> {
+    let mut entered = None;
+    match &regard.written {
+        Some(written) => {
+            let edited = ui.add(
+                egui::TextEdit::singleline(input)
+                    .id_salt(label)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(CELL_WIDTH),
+            );
+            let mut info = WidgetInfo::text_edit(true, written, input.as_str(), "");
+            info.label = Some(label.to_owned());
+            edited.widget_info(|| info.clone());
+            if edited.lost_focus() && input != written {
+                entered = Some(input.clone());
+            }
+        }
+        None => {
+            ui.weak("0");
+            if labelled(ui, "Set", &format!("Set {label}")).clicked() {
+                entered = Some("0.0".to_owned());
+            }
+        }
+    }
+    if let Some(band) = &regard.band {
+        ui.weak(band);
+    }
+    entered
 }
 
 /// One offer's "+": a key's or an item's, added at once, "+ Weights" or "+ Membership"; an id's,

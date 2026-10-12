@@ -12,6 +12,7 @@ use crate::edit::{
     key_info, prefix_of, schema_at, schema_of, set_value, split,
 };
 use crate::references::{Names, ids_named};
+use crate::relations::{RelationRow, relation_rows};
 use crate::words::{Word, Wording};
 use crate::{CONTENT_FILES, ContentTexts};
 
@@ -23,6 +24,11 @@ pub struct FormGroup {
     pub rows: Vec<FormRow>,
     /// What can be added in it, in words (U10d).
     pub offers: Vec<Offer>,
+    /// For a faction's Relations, every other faction both ways (U12b), in place of rows.
+    pub relations: Vec<RelationRow>,
+    /// The comments of what it shows other than as rows, such as above a faction's
+    /// `relations` (U12b).
+    pub comment: Vec<String>,
 }
 
 /// Something a section offers to add (U10d): a key not yet there, an item of a list, or an id
@@ -209,7 +215,7 @@ pub fn make_offer(
 }
 
 /// What's written at `path` in `text`, if anything.
-fn written_at(text: &str, path: &ValuePath) -> Option<toml::Value> {
+pub(crate) fn written_at(text: &str, path: &ValuePath) -> Option<toml::Value> {
     let mut value = toml::Value::Table(text.parse::<toml::Table>().ok()?);
     for step in &path.0 {
         value = match step {
@@ -325,11 +331,27 @@ pub fn entry_form(texts: &ContentTexts, file: &str, entry: &str) -> Vec<FormGrou
             rows.push(row(place.clone(), None, None));
         }
     }
+    // A table read both ways is its section's, a pair a row (U12b), with its comments.
+    let comment: Vec<String> = rows
+        .iter()
+        .filter(|row| both_ways(&root, &at, &row.path))
+        .flat_map(|row| row.comment.clone())
+        .collect();
+    rows.retain(|row| !both_ways(&root, &at, &row.path));
     let mut groups = grouped(&root, &at, rows);
     if let Some(wording) = &wording {
         for group in &mut groups {
             group.offers = offers_in(texts, file, &root, wording, &at, group.name.as_deref());
         }
+    }
+    // The section a table read both ways is in has its pairs (U12b).
+    let held = both_ways_group(&root, &at);
+    for group in groups
+        .iter_mut()
+        .filter(|group| group.name.is_some() && group.name == held)
+    {
+        group.relations = relation_rows(texts, entry);
+        group.comment.clone_from(&comment);
     }
     groups
 }
@@ -399,6 +421,8 @@ fn grouped(root: &Json, at: &ValuePath, rows: Vec<FormRow>) -> Vec<FormGroup> {
             name: Some(name.clone()),
             rows: Vec::new(),
             offers: Vec::new(),
+            relations: Vec::new(),
+            comment: Vec::new(),
         })
         .collect();
     let mut ungrouped = Vec::new();
@@ -414,6 +438,8 @@ fn grouped(root: &Json, at: &ValuePath, rows: Vec<FormRow>) -> Vec<FormGroup> {
             name: None,
             rows: ungrouped,
             offers: Vec::new(),
+            relations: Vec::new(),
+            comment: Vec::new(),
         });
     }
     groups
@@ -441,7 +467,11 @@ fn offers_in(
     let written = wording.keys_at(at);
     let mut offers = Vec::new();
     for (key, node) in properties {
-        if node.get("x-group").and_then(Json::as_str) != group || !allowed(entry, &written, key) {
+        let both_ways = form(root, node, "object").get("x-both-ways").is_some();
+        if node.get("x-group").and_then(Json::as_str) != group
+            || !allowed(entry, &written, key)
+            || both_ways
+        {
             continue;
         }
         let path = at.then(Step::Key(key.clone()));
@@ -488,6 +518,43 @@ fn offers_in(
         }
     }
     offers
+}
+
+/// The group of the entry at `at` that its table read both ways is in, if it has one.
+fn both_ways_group(root: &Json, at: &ValuePath) -> Option<String> {
+    let entry = schema_at(root, at).map(|node| form(root, node, "object"))?;
+    entry
+        .get("properties")?
+        .as_object()?
+        .values()
+        .find(|node| form(root, node, "object").get("x-both-ways").is_some())?
+        .get("x-group")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// Whether `path` in `file` is in a table read both ways (U12b), such as a faction's
+/// `relations`, whose pairs its section shows rather than its places.
+pub fn is_both_ways(file: &str, path: &ValuePath) -> bool {
+    let Some(root) = schema_of(file) else {
+        return false;
+    };
+    (1..=path.0.len()).any(|steps| {
+        schema_at(&root, &ValuePath(path.0[..steps].to_vec()))
+            .map(|node| form(&root, node, "object"))
+            .is_some_and(|node| node.get("x-both-ways").is_some())
+    })
+}
+
+/// Whether `path`, in the entry at `at`, is in a key of the entry read both ways (U12b), such
+/// as a faction's `relations`.
+fn both_ways(root: &Json, at: &ValuePath, path: &ValuePath) -> bool {
+    let Some(key) = path.0.get(at.0.len()) else {
+        return false;
+    };
+    schema_at(root, &at.then(key.clone()))
+        .map(|node| form(root, node, "object"))
+        .is_some_and(|node| node.get("x-both-ways").is_some())
 }
 
 /// Whether the entry `entry`, with `written` there, may have `key` too: for one the schema
