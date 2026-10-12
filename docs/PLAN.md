@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → U16 → U17 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → U15d → U16 → U17 → T5`
 
 ## Done
 
@@ -110,6 +110,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U14c — marked ids (P-95, P-113): `Session::marks` gives each id of the loaded world in what the session said, with where it is and what it names, for the editor to link; done 2026-10-12 (#79)
 - U15a — the drawer (D-40, P-96, P-114): along the bottom of every tab, with the problems moved into it from the Content tab, each going to its entry from any tab; it closes to a strip and opens again, keeping its height; U15 split into U15a to U15c; done 2026-10-12 (#80)
 - U15b — Play (D-40, P-96, P-115): beside Problems in the drawer, the REPL on a `factional-session` session of the content as it stands, loaded from the texts in memory and reloaded with `reload`'s rules each time they load, saying what that says; the last world that loaded while they don't; history by arrow; done 2026-10-12 (#81)
+- U15c — Play's links and completion (P-96, P-116): each id Play says a link to its entry; Tab completing the last word typed, from the commands or the world's ids (`Session::complete`), listing them where there's more than one; U15c split, with pages handing commands now U15d; E1 moved next, ahead of U15d to U17, at the user's direction; done 2026-10-12 (#82)
 
 ---
 
@@ -129,15 +130,15 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Phase 6 — Embedding
 
-### E1 · The Bevy plugin — P3 · Outline
+### E1 · The Bevy plugin — P3 · Next
 
 `factional-bevy` (D-33, P-75, DESIGN.md §19): the world and quest log as a resource loaded at startup, commands in and events out as Bevy messages, time by `AdvanceTime` at a rate the game sets, and an example app. Settles the Bevy version and whether the crate builds in the main workspace.
 
 ## Beyond this module
 
-### U15c · Play's links and completion — P3 · Next
+### U15d · Pages hand commands to Play — P3 · Outline
 
-Completion of commands and of every id in the outline; ids in what Play says as links to their entries (P-113); pages handing commands to Play, typed into it: a quest's "Can the player start this?" and "Start it in Play", a character's "Act as…" (P-96).
+A quest's "Can the player start this?" and "Start it in Play", and a character's "Act as…", each typing its command into Play, opening it, so it's seen and can be run again (P-96).
 
 ### U16 · Watches and scenarios from Play — P3 · Outline
 

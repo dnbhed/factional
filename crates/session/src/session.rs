@@ -371,11 +371,57 @@ impl Session {
     /// one, and nothing within a longer word is; the session knows the world's ids, so the
     /// editor needn't (P-113).
     pub fn marks(&self, said: &str) -> Vec<Mark> {
+        let named = self.ids();
+        let is_id = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_';
+        let mut marks = Vec::new();
+        let mut start = None;
+        for (at, c) in said.char_indices().chain([(said.len(), ' ')]) {
+            match (is_id(c), start) {
+                (true, None) => start = Some(at),
+                (false, Some(from)) => {
+                    if let Some(what) = named.get(&said[from..at]) {
+                        marks.push(Mark {
+                            start: from,
+                            end: at,
+                            named: *what,
+                        });
+                    }
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+        marks
+    }
+
+    /// What the last word of `line` could be completed to (U15c), in order: for the first
+    /// word, the commands; after it, the loaded world's ids; each starting with what's typed.
+    pub fn complete(&self, line: &str) -> Vec<String> {
+        let (before, word) = match line.rfind(' ') {
+            Some(at) => (&line[..at], &line[at + 1..]),
+            None => ("", line),
+        };
+        let found: std::collections::BTreeSet<String> = match before.trim().is_empty() {
+            true => COMMANDS
+                .iter()
+                .filter_map(|(usage, _)| usage.split_whitespace().next())
+                .map(str::to_owned)
+                .collect(),
+            false => self.ids().into_keys().map(str::to_owned).collect(),
+        };
+        found
+            .into_iter()
+            .filter(|candidate| candidate.starts_with(word))
+            .collect()
+    }
+
+    /// Every id of the loaded world, with what it names; none without one.
+    fn ids(&self) -> std::collections::BTreeMap<&str, Named> {
+        let mut named = std::collections::BTreeMap::new();
         let Some(world) = &self.world else {
-            return Vec::new();
+            return named;
         };
         let quests = self.quests.quests();
-        let mut named: std::collections::BTreeMap<&str, Named> = std::collections::BTreeMap::new();
         let ids = [
             (
                 world.factions().map(|f| f.id.as_str()).collect::<Vec<_>>(),
@@ -407,26 +453,7 @@ impl Session {
                 named.insert(id, what);
             }
         }
-        let is_id = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_';
-        let mut marks = Vec::new();
-        let mut start = None;
-        for (at, c) in said.char_indices().chain([(said.len(), ' ')]) {
-            match (is_id(c), start) {
-                (true, None) => start = Some(at),
-                (false, Some(from)) => {
-                    if let Some(what) = named.get(&said[from..at]) {
-                        marks.push(Mark {
-                            start: from,
-                            end: at,
-                            named: *what,
-                        });
-                    }
-                    start = None;
-                }
-                _ => {}
-            }
-        }
-        marks
+        named
     }
 
     /// The loaded world, if there is one.
