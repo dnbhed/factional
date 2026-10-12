@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15 → U16 → U17 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → U16 → U17 → E1 → T5`
 
 ## Done
 
@@ -108,6 +108,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U14a — the session as a library (D-39, P-95, P-111): `factional-session`, the REPL's session and every command module moved out of the CLI unchanged, the scenarios and snapshots the proof; the CLI keeps its binary, line editing and scenario runner; CLAUDE.md's and DESIGN.md §15's dependency direction; U14 split into U14a to U14c; done 2026-10-12 (#77)
 - U14b — the session from texts (P-81, P-95, P-112): `Session::load_texts` and `Session::reload_texts` load and reload the world written in texts in memory, unsaved edits included, with `load`'s and `reload`'s checks and output; a typed `reload` reloads what it was loaded from; `load_texts_fingerprinted` in the content crate; done 2026-10-12 (#78)
 - U14c — marked ids (P-95, P-113): `Session::marks` gives each id of the loaded world in what the session said, with where it is and what it names, for the editor to link; done 2026-10-12 (#79)
+- U15a — the drawer (D-40, P-96, P-114): along the bottom of every tab, with the problems moved into it from the Content tab, each going to its entry from any tab; it closes to a strip and opens again, keeping its height; U15 split into U15a to U15c; done 2026-10-12
 
 ---
 
@@ -133,9 +134,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U15 · Play in the editor — P3 · Next
+### U15b · Play — P3 · Next
 
-The drawer along the bottom of every tab, with Problems moved into it and Play beside it: commands with history and completion, ids as links, the session reloaded as the content loads with the first changed command said, and pages handing commands to it (D-40, P-96).
+Play beside Problems in the drawer: the REPL, each command and what it said, with history; the session loaded from the content in memory, and reloaded with `reload`'s rules each time the content loads, saying which command first comes out differently; while the content doesn't load, the last world that did, saying so (D-40, P-96, P-112).
+
+### U15c · Play's links and completion — P3 · Outline
+
+Completion of commands and of every id in the outline; ids in what Play says as links to their entries (P-113); pages handing commands to Play, typed into it: a quest's "Can the player start this?" and "Start it in Play", a character's "Act as…" (P-96).
 
 ### U16 · Watches and scenarios from Play — P3 · Outline
 

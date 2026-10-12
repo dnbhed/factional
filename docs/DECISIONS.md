@@ -844,6 +844,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Without a world, nothing is marked;** the CLI prints the text as it always has.
   - *Why:* Play links each id said to its page (U15).
 
+- **P-114 · The drawer** (made in U15a, 2026-10-12; D-40, P-96).
+  - **It's the editor's, not a tab's:** drawn along the bottom before each tab's own panels, so it's there, the same height, whichever tab is open; the Content tab no longer has a problems panel of its own.
+  - **A problem's place goes to its entry from any tab,** opening the Content tab there; a fix is made from any tab, as one change.
+  - **"Close the drawer" (▾) leaves a strip,** "▴ Problems 3", to open it again ("Open the drawer"); its height is kept while it's closed, as egui keeps a panel's.
+  - *Why:* Play (U15b) goes beside Problems, and trying content happens on every tab.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.
