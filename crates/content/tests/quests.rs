@@ -27,7 +27,6 @@ fn with(quests: &str, questlines: &str, read: impl Fn(Sources<'_>) -> Vec<String
         "factions.toml",
         "characters.toml",
         "actions.toml",
-        "relations.toml",
         "outcomes.toml",
     ]
     .map(text);
@@ -36,8 +35,7 @@ fn with(quests: &str, questlines: &str, read: impl Fn(Sources<'_>) -> Vec<String
         factions: Some(&files[1]),
         characters: Some(&files[2]),
         actions: Some(&files[3]),
-        relations: Some(&files[4]),
-        outcomes: Some(&files[5]),
+        outcomes: Some(&files[4]),
         quests: Some(quests),
         questlines: Some(questlines),
     })
@@ -75,7 +73,6 @@ fn riverhold() -> Quests {
         "factions.toml",
         "characters.toml",
         "actions.toml",
-        "relations.toml",
         "outcomes.toml",
         "quests.toml",
         "questlines.toml",
@@ -86,10 +83,9 @@ fn riverhold() -> Quests {
         factions: Some(&files[1]),
         characters: Some(&files[2]),
         actions: Some(&files[3]),
-        relations: Some(&files[4]),
-        outcomes: Some(&files[5]),
-        quests: Some(&files[6]),
-        questlines: Some(&files[7]),
+        outcomes: Some(&files[4]),
+        quests: Some(&files[5]),
+        questlines: Some(&files[6]),
     }) {
         Ok((_, quests)) => quests,
         Err(error) => panic!("the example's quests read cleanly:\n{error}"),
@@ -736,7 +732,6 @@ fn problems_after_all(edits: &[(&str, &str, &str)]) -> Vec<String> {
         "factions.toml",
         "characters.toml",
         "actions.toml",
-        "relations.toml",
         "outcomes.toml",
         "quests.toml",
         "questlines.toml",
@@ -760,10 +755,9 @@ fn problems_after_all(edits: &[(&str, &str, &str)]) -> Vec<String> {
         factions: Some(&files[1]),
         characters: Some(&files[2]),
         actions: Some(&files[3]),
-        relations: Some(&files[4]),
-        outcomes: Some(&files[5]),
-        quests: Some(&files[6]),
-        questlines: Some(&files[7]),
+        outcomes: Some(&files[4]),
+        quests: Some(&files[5]),
+        questlines: Some(&files[6]),
     }))
 }
 

@@ -3,10 +3,18 @@ source: crates/cli/tests/scenarios.rs
 expression: transcript
 input_file: scenarios/validate.scenario
 ---
-> assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline
+> assert validate content/sample == content/sample loads: 6 characters, 5 factions, 6 actions, 12 relations, 6 outcomes, 10 quests and 1 questline
 > validate crates/cli/tests/fixtures/worlds/lonely
 warning: factions.toml: ashen_circle.tolerance: no one starts within The Ashen Circle's tolerance of 30.00: the nearest is vex, 50.00 away
 crates/cli/tests/fixtures/worlds/lonely loads, with 1 warning: 3 characters, 2 factions, 0 actions, 0 relations and 0 outcomes
+> validate crates/cli/tests/fixtures/worlds/half_pair
+warning: factions.toml: guild.tolerance: no one starts within The Guild's tolerance of 40.00: there are no characters
+warning: factions.toml: watch.tolerance: no one starts within The Watch's tolerance of 40.00: there are no characters
+warning: factions.toml: watch.relations.guild: The Watch regards The Guild at -80.00, but The Guild's regard for The Watch isn't written, so it's 0
+crates/cli/tests/fixtures/worlds/half_pair loads, with 3 warnings: 0 characters, 2 factions, 0 actions, 1 relation and 0 outcomes
+> validate crates/cli/tests/fixtures/worlds/old_relations
+error: relations.toml: relations now live in each faction, in factions.toml, as relations = { temple = 60.0 }: move them there and remove this file
+crates/cli/tests/fixtures/worlds/old_relations doesn't load: 1 problem
 > validate crates/cli/tests/fixtures/worlds/broken
 error: characters.toml: hale: missing 'alignment'
 error: characters.toml: hale: unknown key 'alignmnet' (did you mean 'alignment'?)

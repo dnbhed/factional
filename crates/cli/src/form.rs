@@ -150,6 +150,14 @@ mod tests {
                  \x20 # Cares about order far more than kindness.\n\
                  \x20 Weights › Law · weights.law = 1.0\n\
                  \x20 Weights › Good · weights.good = 0.25\n\
+                 Relations\n\
+                 \x20 # Enemies of the Guild, so in conflict; allied with the Temple; rivals of the Circle, but not\n\
+                 \x20 # in conflict; and distrusting mercenaries more than they distrust it.\n\
+                 \x20 Regards The Lantern Guild at -80.0 · relations.lantern_guild\n\
+                 \x20 Regards Temple of the Dawn at 60.0 · relations.temple\n\
+                 \x20 Regards The Ashen Circle at -40.0 · relations.ashen_circle\n\
+                 \x20 Regards The Free Company at -30.0 · relations.free_company\n\
+                 \x20 + Faction: a new id\n\
                  Membership\n\
                  \x20 Tolerance · tolerance = 40.0\n\
                  \x20 Member tolerance · member_tolerance = 50.0\n\
@@ -205,7 +213,7 @@ mod tests {
             "{shown}"
         );
         assert!(
-            shown.ends_with("\n  + Contact: brother_ash, merchant_ava, player or vex"),
+            shown.ends_with("\n  + Contact: brother_ash, player or vex"),
             "{shown}"
         );
     }

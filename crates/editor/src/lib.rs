@@ -1454,7 +1454,7 @@ mod tests {
         let (file, entry) = editor.selected_entry().expect("selected");
         assert_eq!((file, entry.key.as_str()), ("characters.toml", "hale"));
         assert!(editor.dir().ends_with("broken"));
-        assert_eq!(editor.outline().files.len(), 8);
+        assert_eq!(editor.outline().files.len(), 7);
     }
 
     #[test]
@@ -1651,23 +1651,18 @@ mod tests {
     fn adding_to_a_file_not_there_starts_it() {
         let dir = with_characters("add_file", VEX);
         let mut editor = Editor::open(&dir);
-        let relations = editor.file_places(4);
-        assert_eq!(relations.len(), 1);
-        assert_eq!(relations[0].additions, keys(&["relation"]));
+        let outcomes = editor.file_places(4);
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(outcomes[0].additions, [Addition::Id]);
         editor
-            .add(4, &ValuePath::ROOT, Some("relation"))
+            .add(4, &ValuePath::ROOT, Some("fine"))
             .expect("added");
         let (file, entry) = editor.selected_entry().expect("selected");
-        assert_eq!(
-            (file, entry.key.as_str()),
-            ("relations.toml", "relation[0]")
-        );
-        let lists: Vec<&ValuePath> = editor.file_places(4).iter().map(|p| &p.path).collect();
-        assert_eq!(lists, [&ValuePath::ROOT, &path("relation")]);
+        assert_eq!((file, entry.key.as_str()), ("outcomes.toml", "fine"));
         editor.save().expect("saved");
         assert_eq!(
-            fs::read_to_string(dir.join("relations.toml")).expect("written"),
-            "[[relation]]\nvalue = 0.0\nbetween = [\"\", \"\"]\n"
+            fs::read_to_string(dir.join("outcomes.toml")).expect("written"),
+            "[fine]\n"
         );
     }
 
@@ -1811,10 +1806,10 @@ mod tests {
                 .map(|(file, entry)| (file, entry.key.as_str())),
             Some(("characters.toml", "captain_hale"))
         );
-        editor.select_at("relations.toml", "relation[2].between[0]");
+        editor.select_at("outcomes.toml", "sowed_discord.relations[0].between[0]");
         assert_eq!(
             editor.selected_entry().map(|(_, entry)| entry.key.as_str()),
-            Some("relation[2]")
+            Some("sowed_discord")
         );
         // Nothing changes for a file, an entry or a key that isn't there.
         for (file, key) in [
@@ -1825,7 +1820,7 @@ mod tests {
             editor.select_at(file, key);
             assert_eq!(
                 editor.selected_entry().map(|(_, entry)| entry.key.as_str()),
-                Some("relation[2]")
+                Some("sowed_discord")
             );
         }
     }
@@ -1843,7 +1838,7 @@ mod tests {
             sample_on(2, "player").referenced_by().map(<[_]>::len),
             Some(0)
         );
-        assert_eq!(sample_on(4, "relation[0]").referenced_by(), None);
+        assert_eq!(sample_on(3, "steal").referenced_by(), None);
         assert_eq!(sample().referenced_by(), None);
     }
 

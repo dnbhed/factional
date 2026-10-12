@@ -11,7 +11,7 @@ quests docs/examples/riverhold watch_oath
 assert quests docs/examples/riverhold watch_oth == error: unknown quest 'watch_oth' (did you mean 'watch_oath'?)
 
 # Quests are checked with everything else, and a world whose quests reconcile loads with them.
-assert validate docs/examples/riverhold == docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline
+assert validate docs/examples/riverhold == docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 12 relations, 6 outcomes, 10 quests and 1 questline
 assert quests == error: no world is loaded yet: use load <dir> first
 load content/sample
 quests

@@ -10,8 +10,7 @@ These files show every content file and setting the design describes (DESIGN.md 
 | --- | --- | --- |
 | [balance.toml](balance.toml) | World-wide rules and defaults: labels, inertia, disposition, relations, spillover, membership rules, knowledge | A1, then each increment adds its section |
 | [characters.toml](characters.toml) | Everyone in the world, the player included: alignment, weights, inertia, memberships, starting standing | A1 |
-| [factions.toml](factions.toml) | Factions with their alignment, tolerances, drift policy, rank ladders and rule overrides | D1, M1 |
-| [relations.toml](relations.toml) | How factions regard each other | M2 |
+| [factions.toml](factions.toml) | Factions with their alignment, tolerances, drift policy, how each regards the others, rank ladders and rule overrides | D1, M1; relations M2, in each faction from U12a |
 | [actions.toml](actions.toml) | What characters can do, and its effect on alignment and standing | A3 |
 | [outcomes.toml](outcomes.toml) | Named bundles of effects, such as a quest's result, including relation shifts | M3, Q2 |
 | [quests.toml](quests.toml) | Quests: the Watch's oath and odd jobs, the captain's dog, Ava's lost ring, the world's long winter and the Ashen Circle's rite, each with its stages and choices, and what each choice locks out | Q1, Q4 |

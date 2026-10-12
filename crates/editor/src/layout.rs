@@ -1538,12 +1538,12 @@ mod tests {
                  [[{id}.stages]]\nid = \"go\"\nchoices = [{{ id = \"on\", next = \"end\" }}]\n\n"
             )
         };
-        texts[6] = Some(
+        texts[5] = Some(
             quest("early", "late")
                 + &quest("late", "early")
                 + "[mid]\nname = \"Mid\"\n\n[[mid.stages]]\nid = \"go\"\nchoices = [{ id = \"on\", next = \"end\" }]\n",
         );
-        texts[7] = Some(
+        texts[6] = Some(
             "[line]\nname = \"Line\"\n\n[[line.steps]]\nquests = [\"early\"]\n\n\
              [[line.steps]]\nquests = [\"mid\"]\n\n[[line.steps]]\nquests = [\"late\"]\n"
                 .to_owned(),

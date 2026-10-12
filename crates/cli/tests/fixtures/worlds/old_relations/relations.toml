@@ -1,0 +1,3 @@
+[[relation]]
+between = ["watch", "guild"]
+value = -80.0

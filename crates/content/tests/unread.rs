@@ -7,14 +7,13 @@ use std::path::Path;
 use factional_content::{Sources, parse_content};
 
 /// Each of the sample's files, with `change` applied to the one named `file`.
-fn sample_with(file: &str, change: impl Fn(&str) -> String) -> [String; 8] {
+fn sample_with(file: &str, change: impl Fn(&str) -> String) -> [String; 7] {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/sample");
     [
         "balance.toml",
         "factions.toml",
         "characters.toml",
         "actions.toml",
-        "relations.toml",
         "outcomes.toml",
         "quests.toml",
         "questlines.toml",
@@ -26,13 +25,12 @@ fn sample_with(file: &str, change: impl Fn(&str) -> String) -> [String; 8] {
 }
 
 /// Every problem `texts` has, as `validate` prints them.
-fn problems(texts: &[String; 8]) -> Vec<String> {
+fn problems(texts: &[String; 7]) -> Vec<String> {
     let [
         balance,
         factions,
         characters,
         actions,
-        relations,
         outcomes,
         quests,
         questlines,
@@ -42,7 +40,6 @@ fn problems(texts: &[String; 8]) -> Vec<String> {
         factions: Some(factions),
         characters: Some(characters),
         actions: Some(actions),
-        relations: Some(relations),
         outcomes: Some(outcomes),
         quests: Some(quests),
         questlines: Some(questlines),
@@ -94,7 +91,7 @@ fn a_file_that_doesnt_parse_hides_no_reference_to_what_it_holds() {
     let texts = sample_with("factions.toml", |text| replace(text, "[temple]", "[temple"));
     assert_eq!(
         problems(&texts),
-        ["factions.toml: line 65: unclosed table, expected `]`"]
+        ["factions.toml: line 75: unclosed table, expected `]`"]
     );
 }
 

@@ -31,8 +31,7 @@ fn every_example_content_file_is_valid_toml() {
             "factions.toml",
             "outcomes.toml",
             "questlines.toml",
-            "quests.toml",
-            "relations.toml"
+            "quests.toml"
         ]
     );
 }

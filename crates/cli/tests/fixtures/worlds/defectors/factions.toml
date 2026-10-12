@@ -5,6 +5,7 @@ alignment = { law = 70.0, good = 20.0 }
 weights = { law = 1.0, good = 0.25 }
 tolerance = 40.0
 member_tolerance = 50.0
+relations = { lantern_guild = -80.0 }
 
 [[city_watch.ranks]]
 id = "recruit"
@@ -15,6 +16,7 @@ alignment = { law = -60.0, good = -10.0 }
 weights = { law = 1.0, good = 0.5 }
 tolerance = 45.0
 member_tolerance = 60.0
+relations = { city_watch = -80.0 }
 
 [[lantern_guild.ranks]]
 id = "cutpurse"
@@ -30,6 +32,7 @@ name = "Temple of the Dawn"
 alignment = { law = 30.0, good = 80.0 }
 weights = { law = 0.5, good = 1.0 }
 tolerance = 35.0
+relations = { ashen_circle = -90.0 }
 
 # The Temple takes only the Circle's juniors: a rank id in a faction's own table stands for
 # that rank's rung on its ladder, here 2.
@@ -51,6 +54,7 @@ alignment = { law = 20.0, good = -80.0 }
 weights = { law = 0.25, good = 1.0 }
 tolerance = 30.0
 member_tolerance = 40.0
+relations = { temple = -90.0 }
 
 [ashen_circle.deserters]
 rules = [

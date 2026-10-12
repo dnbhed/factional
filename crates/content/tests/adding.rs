@@ -30,10 +30,15 @@ fn keys(names: &[&str]) -> Vec<Addition> {
 }
 
 const CHARACTERS: &str = "characters.toml";
-const RELATIONS: &str = "relations.toml";
+const OUTCOMES: &str = "outcomes.toml";
 
 const AVA: &str = "[ava]\nname = \"Ava\"\nalignment = { law = 0.0, good = 0.0 }\nmemberships = [{ faction = \"watch\" }]\nstanding = { factions = { watch = 5.0 } }\n";
 
+/// An outcome's two relation shifts, one each way of writing one (D-30).
+const FEUD: &str = "[feud]\nrelations = [{ between = [\"a\", \"b\"], by = 1.0 }, { from = \"a\", to = \"b\", by = 2.0 }]\n";
+
+/// A file written as a top-level list of tables, as relations once were; the writer still
+/// reads one by its text.
 const TWO_RELATIONS: &str = "# Relations.\n\n[[relation]]\nbetween = [\"a\", \"b\"]\nvalue = 1.0\n\n[[relation]]\nfrom = \"a\"\nto = \"b\"\nvalue = 2.0 # friendly\n";
 
 #[test]
@@ -108,30 +113,21 @@ fn inline_tables_lists_and_tables_by_id_each_offer_what_fits() {
 #[test]
 fn a_list_offers_an_item_until_it_holds_as_many_as_it_may() {
     assert_eq!(
-        additions(RELATIONS, TWO_RELATIONS, &path("relation")),
+        additions(OUTCOMES, FEUD, &path("feud.relations")),
         [Addition::Item]
     );
     assert_eq!(
-        additions(RELATIONS, TWO_RELATIONS, &path("relation[0].between")),
+        additions(OUTCOMES, FEUD, &path("feud.relations[0].between")),
         [],
         "between holds two factions at most"
     );
     assert_eq!(
         additions(
-            RELATIONS,
-            "[[relation]]\nbetween = [\"a\"]\n",
-            &path("relation[0].between")
+            OUTCOMES,
+            "[feud]\nrelations = [{ between = [\"a\"], by = 1.0 }]\n",
+            &path("feud.relations[0].between")
         ),
         [Addition::Item]
-    );
-    assert_eq!(
-        additions(RELATIONS, TWO_RELATIONS, &ValuePath::ROOT),
-        [],
-        "the only key is there"
-    );
-    assert_eq!(
-        additions(RELATIONS, "", &ValuePath::ROOT),
-        keys(&["relation"])
     );
 }
 
@@ -222,21 +218,17 @@ fn a_new_entry_holds_what_the_schema_requires_at_its_starting_values() {
 }
 
 #[test]
-fn a_new_relation_is_a_relation_table_with_the_first_form() {
+fn a_new_relation_shift_takes_the_first_form() {
     assert_eq!(
-        add(RELATIONS, TWO_RELATIONS, &path("relation"), None),
+        add(OUTCOMES, FEUD, &path("feud.relations"), None),
         Ok((
-            format!("{TWO_RELATIONS}\n[[relation]]\nvalue = 0.0\nbetween = [\"\", \"\"]\n"),
-            path("relation[2]")
+            FEUD.replacen(
+                "by = 2.0 }]",
+                "by = 2.0 }, { by = 0.0, between = [\"\", \"\"] }]",
+                1
+            ),
+            path("feud.relations[2]")
         ))
-    );
-    assert_eq!(
-        add(RELATIONS, "", &ValuePath::ROOT, Some("relation")),
-        Ok((
-            "[[relation]]\nvalue = 0.0\nbetween = [\"\", \"\"]\n".to_owned(),
-            path("relation[0]")
-        )),
-        "a list of tables at the top starts with its first table"
     );
 }
 
@@ -445,12 +437,12 @@ fn adding_refuses_what_isnt_there_already_there_or_not_the_schemas() {
         Err("there's no value at nobody".to_owned())
     );
     assert_eq!(
-        add(RELATIONS, TWO_RELATIONS, &path("relation[0].between"), None),
-        Err(EditError::CantAdd(path("relation[0].between")))
+        add(OUTCOMES, FEUD, &path("feud.relations[0].between"), None),
+        Err(EditError::CantAdd(path("feud.relations[0].between")))
     );
     assert_eq!(
-        add(RELATIONS, TWO_RELATIONS, &path("relation"), Some("x")),
-        Err(EditError::CantAdd(path("relation")))
+        add(OUTCOMES, FEUD, &path("feud.relations"), Some("x")),
+        Err(EditError::CantAdd(path("feud.relations")))
     );
     assert!(matches!(
         add(CHARACTERS, "[vex", &ValuePath::ROOT, Some("ava")),

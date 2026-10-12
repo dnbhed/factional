@@ -5,9 +5,8 @@
 # alignment (optional): moves the character, like an action at scale 1.00.
 # standing (optional): how named factions and characters come to regard the character,
 #   -100 to 100: standing = { factions = { … }, characters = { … } }
-# relations (optional): shifts in how factions regard each other, each written as in
-#   relations.toml, with between = [a, b] for both directions or from and to for one, and
-#   by, -200 to 200. Each direction moves by it, stopping at -100 and 100, after the
+# relations (optional): shifts in how factions regard each other, each with between =
+#   [a, b] for both directions or from and to for one, and by, -200 to 200. Each direction moves by it, stopping at -100 and 100, after the
 #   standing changes; a direction is shifted at most once. A war it starts between two of
 #   someone's factions opens as relate's would.
 

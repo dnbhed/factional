@@ -157,7 +157,7 @@ fn validate_summarises_a_world_that_loads_and_exits_zero() {
     assert!(output.status.success(), "stdout: {}", text(&output.stdout));
     assert_eq!(
         text(&output.stdout),
-        "content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline\n"
+        "content/sample loads: 6 characters, 5 factions, 6 actions, 12 relations, 6 outcomes, 10 quests and 1 questline\n"
     );
     assert_eq!(text(&output.stderr), "");
 }
@@ -192,7 +192,7 @@ fn validate_loads_a_world_whose_quests_reconcile() {
     assert!(output.status.success(), "stdout: {}", text(&output.stdout));
     assert_eq!(
         text(&output.stdout),
-        "docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline\n"
+        "docs/examples/riverhold loads: 6 characters, 5 factions, 6 actions, 12 relations, 6 outcomes, 10 quests and 1 questline\n"
     );
 }
 
@@ -281,7 +281,7 @@ fn schema_without_a_file_lists_the_files() {
     assert!(output.status.success());
     assert_eq!(
         text(&output.stdout),
-        "balance\nfactions\ncharacters\nactions\nrelations\noutcomes\nquests\nquestlines\n"
+        "balance\nfactions\ncharacters\nactions\noutcomes\nquests\nquestlines\n"
     );
 }
 

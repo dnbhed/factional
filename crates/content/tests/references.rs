@@ -193,7 +193,6 @@ fn an_entry_is_named_by_its_name() {
         named("quests.toml", "watch_oath").as_deref(),
         Some("The Watch's Oath")
     );
-    assert_eq!(named("relations.toml", "relation[0]"), None);
     assert_eq!(named("actions.toml", "steal"), None);
 }
 

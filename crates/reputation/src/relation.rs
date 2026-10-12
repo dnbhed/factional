@@ -2,7 +2,8 @@ use factional_core::{Fixed, Suggestion};
 
 use crate::{AXIS_LIMIT, FactionId};
 
-/// How one faction regards another, as `relations.toml` writes it (DESIGN.md §9.4).
+/// How one faction regards another (DESIGN.md §9.4): content writes each direction in the
+/// faction that holds it, one way each (U12a, P-91); a test may set both at once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relation {
     pub ends: RelationEnds,

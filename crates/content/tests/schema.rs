@@ -214,7 +214,6 @@ fn there_is_a_schema_for_each_content_file() {
             "factions",
             "characters",
             "actions",
-            "relations",
             "outcomes",
             "quests",
             "questlines"
@@ -340,10 +339,9 @@ fn the_complete_example_reads_cleanly_but_for_settings_not_read_yet() {
         factions: Some(&texts[1]),
         characters: Some(&texts[2]),
         actions: Some(&texts[3]),
-        relations: Some(&texts[4]),
-        outcomes: Some(&texts[5]),
-        quests: Some(&texts[6]),
-        questlines: Some(&texts[7]),
+        outcomes: Some(&texts[4]),
+        quests: Some(&texts[5]),
+        questlines: Some(&texts[6]),
     });
     if let Err(error) = content {
         panic!("the complete example doesn't read cleanly:\n{error}");

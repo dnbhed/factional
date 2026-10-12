@@ -1,0 +1,20 @@
+#:schema ../../../../../../schema/factions.schema.json
+# The Watch's regard for the Guild is written, but not the Guild's back (U12a): probably a
+# pair half-entered, so it's a warning, and the Guild regards the Watch at 0.
+
+[watch]
+name = "The Watch"
+alignment = { law = 60.0, good = 0.0 }
+tolerance = 40.0
+relations = { guild = -80.0 }
+
+[[watch.ranks]]
+id = "recruit"
+
+[guild]
+name = "The Guild"
+alignment = { law = -60.0, good = 0.0 }
+tolerance = 40.0
+
+[[guild.ranks]]
+id = "cutpurse"

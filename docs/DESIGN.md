@@ -466,8 +466,7 @@ Worked example: Ash, an initiate 40.00 from the Ashen Circle, does a good deed a
 - **Bands** default to enemy ≤ −50 < rival ≤ −15 < neutral ≤ 15 < friendly ≤ 50 < allied.
 - **Conflict.** Two factions are in conflict when either regards the other at or below `relations.conflict_threshold` (−50).
 - **Runtime changes.** Relations change through `SetRelation` and `ShiftRelation`, for wars and treaties sent by a quest module or the CLI. Each emits a `RelationChanged` for every direction that moved. Shifts stop at ±100, and a set outside ±100 is refused.
-- **Content.** `relations.toml` lists `[[relation]]` entries, each `between = [a, b]` (both directions) or `from`/`to` (one), with a `value`. Every direction may be set once, and any left out is 0.
-- **Content, from U12** (D-37, P-91). Each faction in `factions.toml` writes how it regards the others, `relations = { temple = 60.0 }`, and `relations.toml` goes. Each direction is written once, in the faction that holds it; any left out is 0, and a pair written on one side only is a warning. The editor shows each pair as one row on both factions' pages, linked "same both ways" while both hold the same value (D-38).
+- **Content** (U12a, D-37, P-91, P-104; built). Each faction in `factions.toml` writes how it regards the others, `relations = { temple = 60.0 }`. Each direction is written once, in the faction that holds it; any left out is 0, and a direction written whose way back isn't is a warning, as a pair probably half-entered (write `0.0` for a grudge that isn't returned). A `relations.toml`, where relations were written until U12a, is a problem that stops the directory being read. The editor will show each pair as one row on both factions' pages, linked "same both ways" while both hold the same value (U12b, D-38).
 - **Enemy exclusion (D-4).** A member of a faction in conflict with another can't join it. The refusal names the faction and the more hostile of the two directions. M7 replaces this plain refusal with rule tables.
 - **A war between someone's own factions** is accepted, and opens a conflict for them (below). Before M9 it was refused (P-38).
 
@@ -718,7 +717,7 @@ This table lists every knob: where it lives, its default, and the increment that
 | `disposition.hysteresis` | balance.toml | 0 | D3 |
 | faction `tolerance`, `member_tolerance` | factions.toml | — / same as tolerance | M1 |
 | faction `leave_standing_change` | factions.toml | 0 | M3 |
-| relations | relations.toml; each faction's `relations` in factions.toml from U12 (D-37) | 0 | M2 |
+| faction `relations` | factions.toml (relations.toml until U12a, D-37) | 0 | M2, U12a |
 | `relations.bands`, `relations.conflict_threshold` | balance.toml | see §9.4; −50 | M2 |
 | action `standing` effects | actions.toml | none | M3 |
 | outcomes | outcomes.toml | — | M3 |
@@ -740,8 +739,7 @@ This table lists every knob: where it lives, its default, and the increment that
 ```
 content/<world>/
   balance.toml      global rules, curves, bands, defaults, rule tables
-  factions.toml     factions, ranks, per-faction overrides
-  relations.toml    faction ↔ faction (until U12; then in factions.toml, D-37)
+  factions.toml     factions, how each regards the others, ranks, per-faction overrides
   characters.toml   characters, starting alignment, memberships, standings
   actions.toml      the action catalogue
   outcomes.toml     named effect bundles (quest results and the like)
@@ -783,7 +781,9 @@ Content is data, so its equivalent of a compile step is loading. **A world is on
 | A membership names a faction that exists, at most once per character | error | M1 (done) |
 | 0 ≤ `tolerance` ≤ `member_tolerance` | error | M1 (done) |
 | A starting member outside their member tolerance | warning | M1 (done) |
-| A relation names two different factions that exist; each direction is set at most once; values within ±100; `conflict_threshold` within ±100 | error | M2 (done) |
+| A faction's `relations` name factions that exist, with a "did you mean", and not itself; values within ±100; `conflict_threshold` within ±100 | error | M2 (done), U12a (done) |
+| A faction's regard for another written, but not the other's back | warning | U12a (done) |
+| A `relations.toml` in a content directory, from before relations moved into each faction | error | U12a (done) |
 | No character starts in two factions that are in conflict (invariant 6), unless one membership is secret | error | M2 (done), K4 (done) |
 | Standing names factions and characters that exist; values within ±100; `leave_standing_change` within ±100 | error | M3 (done) |
 | A membership's rank is on that faction's ladder; rank ids unique; every ladder has a rung; rank standing requirements within ±100, tolerances ≥ 0 | error | M5 (done) |
@@ -1152,7 +1152,8 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
   - **Each place's adding and removing sit where it is** (U10b, D-41, P-99; built): on the first heading that says it; a list of named items' "+ Stage" or "+ Choice" beside what holds it, at the top beside its group's name; a table's "+ Rank" at its end, an item's in its row, a cell's × removing what it's in within the item; the entry's beside its name. An empty table or list is a row of its own, marked *empty*, so it has a heading. A list's "+ <item>" adds an item at once; a table keyed by ids offers the ids that exist and aren't there yet, by name (`id_choices`). Referenced by is in words. Only what fits nowhere is listed after the form.
   - **Requirements and effects read as sentences** (U11a, P-93, P-102; built): each is a sentence the schema says (`x-sentence`), such as *Needs standing* [10.0] *with The City Watch* or *Standing with The City Watch changes by* [5.0], drawn on one line under the headings it doesn't say.
   - **Requirements and effects are added by kind** (U11b, P-93, P-103; built): the schema marks a table of requirements or a choice's effects (`x-kinds`), and its "+" is "+ Requirement…" or "+ Effect…", a menu of each kind it takes, labelled in words (*Member of*, *Standing*, *Alignment › Good*, *Standing › Factions*), each kind by id a menu of its ids by name. A quest's own requirements are its Requirements section's offer; a stage's, a step's and a choice's effects are beside their heading. A kind is made in one change, with what it's within; nothing within the table has a "+" of its own on the way to where a kind adds.
-  - **Each faction's page shows its relations** (U12, D-37, D-38, P-91): a Relations group listing every other faction, each row how this faction regards it and how it regards this one back, with the band's name, a mark where the pair is in conflict, and "same both ways", linked while the two are equal. A faction with nothing written shows 0 with Set. The text is each faction's `relations` in `factions.toml`, so both pages show the same two values. Previews gain the relations matrix, each cell tinted by its band like the disposition matrix.
+  - **Relations are written in each faction** (U12a, D-37, P-91, P-104; built): `factions.toml`'s `relations`, a table keyed by faction id, with its checks, the warning for one side written alone, and the problem for a `relations.toml` left in a directory; the form has each faction's Relations section, each regard a sentence, *Regards The Lantern Guild at* [−80.0]. No entry is offered its own id, so a faction isn't offered a relation with itself, nor a character as their own contact.
+  - **Each faction's page shows its relations** (U12b, D-37, D-38, P-91): a Relations group listing every other faction, each row how this faction regards it and how it regards this one back, with the band's name, a mark where the pair is in conflict, and "same both ways", linked while the two are equal. A faction with nothing written shows 0 with Set. The text is each faction's `relations` in `factions.toml`, so both pages show the same two values. Previews gain the relations matrix (U12c), each cell tinted by its band like the disposition matrix.
   - **Questlines make their own quests** (U13, P-94): the Quests tab's graph stays read-only (D-36), and the chosen node's page sits beside it, editable. A questline's page is its steps in order, each with "+ New quest" and "+ Existing quest…" (quests in no questline); quests move between steps and steps reorder. Pages nest with a breadcrumb, a quest's page its stages and a stage's its choices. A change to several files, as "+ New quest" makes, is one Undo.
   - **The REPL is a library** (U14, D-39, P-95): `factional-session`, holding `Session` as the CLI has it, loading from texts in memory as well as a directory, and marking the ids in what it says.
   - **Play is a drawer along the bottom of every tab** (U15, U16, D-40, P-96), beside Problems, which moves into it from the Content tab. It runs the REPL on the content as it stands: history, completion of commands and ids, ids as links, and the session reloaded with `reload`'s rules each time the content loads, saying which command first comes out differently. Pages hand it commands, such as a quest's "Start it in Play". Watches re-run pinned commands after every command, with the engine's explanations; "Save as scenario" writes the session to `scenarios/`.
@@ -1184,7 +1185,9 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 | U10d (done) | Every section shown, ending with what can be added there; no list after the form |
 | U11a (done) | Requirements and effects as sentences |
 | U11b (done) | "+ Requirement…" and "+ Effect…" by kind |
-| U12 | Relations in each faction: `factions.toml`'s `relations`, each faction's Relations group, the relations matrix |
+| U12a (done) | Relations in each faction: `factions.toml`'s `relations`, with its checks; `relations.toml` gone |
+| U12b | Each faction's Relations group: every other faction, both ways, its band, its conflict, "same both ways" |
+| U12c | The relations matrix in Previews |
 | U13 | Questlines make their own quests: the Quests tab's pages, nested, with a breadcrumb |
 | U14 | `factional-session`: the REPL's session as a library, loading from texts |
 | U15 | Play, in a drawer along the bottom with Problems |

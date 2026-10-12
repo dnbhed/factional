@@ -48,6 +48,7 @@ tolerance = 40.0
 member_tolerance = 50.0
 # The Watch gives a straying officer a hundred ticks to mend their ways.
 drift = { policy = "probation", grace_ticks = 100, then = "expel" }
+relations = { lantern_guild = -80.0, temple = 60.0, ashen_circle = -40.0, free_company = -30.0 }
 
 [[city_watch.ranks]]
 id = "recruit"
@@ -70,6 +71,7 @@ tolerance = 35.0
 member_tolerance = 45.0
 # The Temple steps a lapsing priest down rather than casting them out.
 drift = { policy = "demot" }
+relations = { ashen_circle = -90.0, city_watch = 60.0 }
 
 [[temple.ranks]]
 id = "acolyte"
@@ -92,6 +94,7 @@ member_tolerance = 60.0
 drift = { policy = "flag" }
 # Members may belong secretly, known only to the Guild and its members (DESIGN.md §10.4).
 secret_members = true
+relations = { city_watch = -80.0, free_company = 20.0 }
 
 [[lantern_guild.ranks]]
 id = "cutpurse"
@@ -114,6 +117,7 @@ member_tolerance = 80.0
 # Mercenaries don't take kindly to deserters, but don't care what you believe.
 leave_standing_change = -10.0
 drift = { policy = "ignore" }
+relations = { lantern_guild = 20.0, city_watch = -10.0 }
 
 [[free_company.ranks]]
 id = "sellsword"
@@ -131,6 +135,7 @@ member_tolerance = 40.0
 # Stray from the Circle's path and you're out.
 drift = { policy = "expel" }
 secret_members = true
+relations = { temple = -90.0, city_watch = -40.0 }
 
 # The Circle replaces balance.toml's deserters table with its own: no one leaves.
 [ashen_circle.deserters]

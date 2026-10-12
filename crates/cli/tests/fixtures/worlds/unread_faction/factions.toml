@@ -6,6 +6,7 @@ name = "The City Watch"
 alignment = { law = 70.0, good = 20.0 }
 tolerance = 140.0
 member_tolerance = 50.0
+relations = { lantern_guild = -80.0 }
 
 [[city_watch.ranks]]
 id = "recruit"
@@ -14,6 +15,7 @@ id = "recruit"
 name = "The Lantern Guild"
 alignment = { law = -60.0, good = -10.0 }
 tolerance = 40.0
+relations = { city_watch = -80.0 }
 
 [[lantern_guild.ranks]]
 id = "cutpurse"

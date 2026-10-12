@@ -376,6 +376,15 @@ pub enum ContentWarning {
     /// A character lists contacts in a world whose knowledge model isn't ripple, so they
     /// carry nothing.
     ContactsUnused { character: CharacterId },
+    /// How one faction regards another is written, but not how the other regards it back,
+    /// so that's 0 (U12a, P-91): probably a pair half-entered.
+    OneSidedRelation {
+        from: FactionId,
+        from_name: String,
+        to: FactionId,
+        to_name: String,
+        value: Fixed,
+    },
 }
 
 impl Content {
@@ -1042,6 +1051,30 @@ impl Content {
                     }),
             );
         }
+        // Each direction written whose way back isn't, in the order written.
+        let written: BTreeSet<(FactionId, FactionId)> = self
+            .relations
+            .iter()
+            .flat_map(Relation::directions)
+            .collect();
+        for relation in &self.relations {
+            for (from, to) in relation.directions() {
+                let (Some(regarding), Some(regarded)) =
+                    (self.factions.get(&from), self.factions.get(&to))
+                else {
+                    continue;
+                };
+                if !written.contains(&(to.clone(), from.clone())) {
+                    warnings.push(ContentWarning::OneSidedRelation {
+                        from_name: regarding.name.clone(),
+                        to_name: regarded.name.clone(),
+                        from,
+                        to,
+                        value: relation.value,
+                    });
+                }
+            }
+        }
         warnings
     }
 }
@@ -1344,6 +1377,15 @@ impl fmt::Display for ContentWarning {
             ContentWarning::ContactsUnused { .. } => {
                 f.write_str("contacts only carry news when knowledge.model is ripple")
             }
+            ContentWarning::OneSidedRelation {
+                from_name,
+                to_name,
+                value,
+                ..
+            } => write!(
+                f,
+                "{from_name} regards {to_name} at {value}, but {to_name}'s regard for {from_name} isn't written, so it's 0"
+            ),
         }
     }
 }
@@ -9025,6 +9067,31 @@ pub(crate) mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_relation_written_one_way_only_is_a_warning() {
+        let one_sided = |content: &Content| -> Vec<(FactionId, FactionId)> {
+            content
+                .warnings()
+                .into_iter()
+                .filter_map(|warning| match warning {
+                    ContentWarning::OneSidedRelation { from, to, .. } => Some((from, to)),
+                    _ => None,
+                })
+                .collect()
+        };
+        // Riverhold's relations are written both ways, the Watch's grudge included.
+        let mut content = world_of([character("Vex", -55_00, -20_00)]).content;
+        assert_eq!(one_sided(&content), []);
+        content.relations = vec![one_way("city_watch", "temple", 60_00)];
+        assert_eq!(
+            one_sided(&content),
+            [(faction_id("city_watch"), faction_id("temple"))]
+        );
+        // Writing the way back, even at 0, says the grudge is meant.
+        content.relations.push(one_way("temple", "city_watch", 0));
+        assert_eq!(one_sided(&content), []);
     }
 
     #[test]

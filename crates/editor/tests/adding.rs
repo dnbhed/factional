@@ -40,6 +40,9 @@ fn on_vex(dir: &Path) -> Harness<'static, Editor> {
 }
 
 fn click(harness: &mut Harness<'static, Editor>, label: &str) {
+    // What's off the screen can't be clicked, so it's scrolled to first.
+    harness.get_by_label(label).scroll_to_me();
+    harness.run();
     harness.get_by_label(label).click();
     harness.run();
 }
@@ -122,11 +125,11 @@ fn an_addition_that_cant_be_made_says_why() {
 fn a_file_not_there_is_started_by_adding_to_it() {
     let dir = broken_copy("adding_new_file");
     let mut harness = open(&dir);
-    click(&mut harness, "Add relation to relations.toml");
-    harness.get_by_label("relations.toml › relation[0]");
+    add_id(&mut harness, "outcomes.toml", "fine");
+    harness.get_by_label("outcomes.toml › fine");
     click(&mut harness, "Save");
     assert_eq!(
-        fs::read_to_string(dir.join("relations.toml")).expect("written"),
-        "[[relation]]\nvalue = 0.0\nbetween = [\"\", \"\"]\n"
+        fs::read_to_string(dir.join("outcomes.toml")).expect("written"),
+        "[fine]\n"
     );
 }

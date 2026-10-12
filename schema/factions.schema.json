@@ -235,6 +235,26 @@
           "x-item": "Rank",
           "x-title": "id"
         },
+        "relations": {
+          "additionalProperties": {
+            "description": "-100 to 100.",
+            "maximum": 100.0,
+            "minimum": -100.0,
+            "type": "number",
+            "x-sentence": {
+              "says": 2,
+              "text": "Regards {key} at {value}"
+            }
+          },
+          "description": "How the faction regards each other faction, by id, -100 to 100; any left out is 0, and a faction whose regard back isn't written is warned of (DESIGN.md §9.4).",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "title": "Relations",
+          "type": "object",
+          "x-group": "Relations",
+          "x-names-keys": "faction"
+        },
         "secret_members": {
           "default": false,
           "description": "Whether characters may belong to it secretly, unknown to anyone outside it. Needs knowledge.model witnessed or ripple (DESIGN.md §10.4).",
@@ -265,6 +285,7 @@
       "x-groups": [
         "Identity",
         "Where it stands",
+        "Relations",
         "Membership",
         "Drift",
         "Ranks",

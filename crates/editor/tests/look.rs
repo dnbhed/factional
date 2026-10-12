@@ -32,6 +32,9 @@ fn open(dir: &Path) -> Harness<'static, Editor> {
 }
 
 fn click(harness: &mut Harness<'static, Editor>, label: &str) {
+    // What's off the screen can't be clicked, so it's scrolled to first.
+    harness.get_by_label(label).scroll_to_me();
+    harness.run();
     harness.get_by_label(label).click();
     harness.run();
 }

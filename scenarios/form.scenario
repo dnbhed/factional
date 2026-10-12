@@ -9,8 +9,8 @@ form content/sample factions.toml city_watch
 # his membership is open, by default.
 form content/sample characters.toml captain_hale
 
-# A relation has no name; the comment after its value on its line is shown.
-form content/sample relations.toml relation[0]
+# The Temple's relations are in its form (U12a), each how it regards another faction.
+form content/sample factions.toml temple
 
 # The Watch's Oath needs not to be in the Guild; its Requirements offer each kind of
 # requirement to add (U11b).

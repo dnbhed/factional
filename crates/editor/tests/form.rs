@@ -103,9 +103,9 @@ fn what_refers_to_an_entry_is_listed_and_each_goes_to_its_entry() {
     let mut harness = on("city_watch");
     harness.get_by_label("Referenced by");
     // Grouped by the file each is in.
-    harness.get_by_label("relations.toml");
-    // Each in words (U10b).
-    harness.get_by_label("Relations › Relation 1 › Between › 1");
+    harness.get_by_label("factions.toml");
+    // Each in words (U10b): the Temple's regard for the Watch is in the Temple (U12a).
+    harness.get_by_label("Temple of the Dawn › Relations › The City Watch");
     assert!(harness.query_by_label("Nothing names city_watch").is_none());
     click(
         &mut harness,

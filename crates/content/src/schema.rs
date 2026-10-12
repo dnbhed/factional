@@ -13,12 +13,11 @@ use factional_reputation::{
 use serde_json::{Map, Value, json};
 
 /// The content files with a schema, by name without `.toml`, in the order `load` reads them.
-pub const SCHEMA_FILES: [&str; 8] = [
+pub const SCHEMA_FILES: [&str; 7] = [
     "balance",
     "factions",
     "characters",
     "actions",
-    "relations",
     "outcomes",
     "quests",
     "questlines",
@@ -65,25 +64,6 @@ pub fn schema(file: &str) -> Option<Value> {
             "What characters can do, each a table keyed by its id: the act's effect on alignment and standing (DESIGN.md §5, §7).",
             by_id("#/$defs/action"),
             vec![("action", action()), ("delta", delta())],
-        ),
-        "relations" => (
-            "How factions regard each other, as [[relation]] tables; any direction left out is 0 (DESIGN.md §9.4).",
-            object(
-                [(
-                    "relation",
-                    with_title(
-                        items_called(
-                            list(json!({ "$ref": "#/$defs/relation" }), "The relations."),
-                            "Relation",
-                            None,
-                        ),
-                        "Relations",
-                    ),
-                )],
-                &[],
-                None,
-            ),
-            vec![("relation", relation())],
         ),
         "outcomes" => (
             "Named bundles of effects, such as a quest's result, each a table keyed by its id (P-26).",
@@ -1070,6 +1050,16 @@ fn faction() -> Value {
                     ),
                 ),
                 ("drift", json!({ "$ref": "#/$defs/drift" })),
+                (
+                    "relations",
+                    keys_name(
+                        id_table(
+                            said_as(within_axis("-100 to 100."), 2, "Regards {key} at {value}"),
+                            "How the faction regards each other faction, by id, -100 to 100; any left out is 0, and a faction whose regard back isn't written is warned of (DESIGN.md §9.4).",
+                        ),
+                        "faction",
+                    ),
+                ),
                 defectors,
                 deserters,
                 exposed,
@@ -1080,6 +1070,7 @@ fn faction() -> Value {
         &[
             ("Identity", &["name"]),
             ("Where it stands", &["alignment", "weights"]),
+            ("Relations", &["relations"]),
             (
                 "Membership",
                 &[
@@ -1318,42 +1309,6 @@ fn relation_shift() -> Value {
         { "required": ["from", "to"], "not": { "required": ["between"] } },
     ]);
     shift
-}
-
-fn relation() -> Value {
-    let mut relation = object(
-        [
-            (
-                "between",
-                json!({
-                    "type": "array",
-                    "items": { "type": "string", "pattern": ID_PATTERN, "x-names": "faction" },
-                    "minItems": 2,
-                    "maxItems": 2,
-                    "description": "Two factions that regard each other the same way.",
-                }),
-            ),
-            (
-                "from",
-                names(id("The faction doing the regarding."), "faction"),
-            ),
-            ("to", names(id("The faction regarded."), "faction")),
-            ("value", within_axis("-100 to 100.")),
-        ],
-        &["value"],
-        Some("Either between = [a, b], or from and to."),
-    );
-    relation["oneOf"] = json!([
-        { "required": ["between"], "not": { "anyOf": [{ "required": ["from"] }, { "required": ["to"] }] } },
-        { "required": ["from", "to"], "not": { "required": ["between"] } },
-    ]);
-    grouped(
-        relation,
-        &[
-            ("Factions", &["between", "from", "to"]),
-            ("Regard", &["value"]),
-        ],
-    )
 }
 
 /// A quest's or a questline's `giver`.

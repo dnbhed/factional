@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/scenarios.rs
-assertion_line: 24
 expression: transcript
 input_file: scenarios/form.scenario
 ---
@@ -14,6 +13,14 @@ Where it stands
   # Cares about order far more than kindness.
   Weights › Law · weights.law = 1.0
   Weights › Good · weights.good = 0.25
+Relations
+  # Enemies of the Guild, so in conflict; allied with the Temple; rivals of the Circle, but not
+  # in conflict; and distrusting mercenaries more than they distrust it.
+  Regards The Lantern Guild at -80.0 · relations.lantern_guild
+  Regards Temple of the Dawn at 60.0 · relations.temple
+  Regards The Ashen Circle at -40.0 · relations.ashen_circle
+  Regards The Free Company at -30.0 · relations.free_company
+  + Faction: a new id
 Membership
   Tolerance · tolerance = 40.0
   Member tolerance · member_tolerance = 50.0
@@ -57,18 +64,44 @@ Memberships
   + Membership
 Standing
   Standing 75.0 with The City Watch · standing.factions.city_watch
-  + Character: brother_ash, captain_hale, merchant_ava, player, sister_mira or vex, or a new id
+  + Character: brother_ash, merchant_ava, player, sister_mira or vex, or a new id
   + Faction: ashen_circle, free_company, lantern_guild or temple, or a new id
 Contacts
-  + Contact: brother_ash, captain_hale, merchant_ava, player, sister_mira or vex
-> form content/sample relations.toml relation[0]
-relations.toml › relation[0]
-Factions
-  Between › 1 · between[0] = city_watch (ashen_circle, city_watch, free_company, lantern_guild or temple)
-  Between › 2 · between[1] = lantern_guild (ashen_circle, city_watch, free_company, lantern_guild or temple)
-Regard
-  # enemies, so in conflict
-  Value · value = -80.0
+  + Contact: brother_ash, merchant_ava, player, sister_mira or vex
+> form content/sample factions.toml temple
+factions.toml › temple: Temple of the Dawn
+Identity
+  Name · name = Temple of the Dawn
+Where it stands
+  Alignment › Law · alignment.law = 30.0
+  Alignment › Good · alignment.good = 80.0
+  Weights › Law · weights.law = 0.5
+  Weights › Good · weights.good = 1.0
+Relations
+  Regards The City Watch at 60.0 · relations.city_watch
+  Regards The Ashen Circle at -90.0 · relations.ashen_circle
+  + Faction: free_company or lantern_guild, or a new id
+Membership
+  Tolerance · tolerance = 35.0
+  Member tolerance · member_tolerance = 45.0
+  Standing change on expulsion · expel_standing_change: not set, -20.00
+  Standing change on leaving · leave_standing_change: not set, 0.00
+  Secret members · secret_members: not set, false (false or true)
+Drift
+  # The Temple steps a lapsing priest down rather than casting them out.
+  Drift › Policy · drift.policy = demote (ignore, flag, demote, expel or probation)
+Ranks
+  Rank "acolyte" › Id · ranks[0].id = acolyte
+  Rank "ordained" › Id · ranks[1].id = ordained
+  Rank "ordained" › Requirements › Standing · ranks[1].requires.standing = 30.0
+  Rank "high_priest" › Id · ranks[2].id = high_priest
+  Rank "high_priest" › Requirements › Standing · ranks[2].requires.standing = 80.0
+  Rank "high_priest" › Tolerance · ranks[2].tolerance = 20.0
+  + Rank
+Its own rules
+  + Defectors
+  + Deserters
+  + Exposed
 > form content/sample quests.toml watch_oath
 quests.toml › watch_oath: The Watch's Oath
 Identity

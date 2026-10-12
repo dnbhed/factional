@@ -1,0 +1,18 @@
+# A world from before relations moved into each faction (U12a): its relations.toml is still
+# here, so it doesn't load as if its factions regarded each other at 0.
+
+[watch]
+name = "The Watch"
+alignment = { law = 60.0, good = 0.0 }
+tolerance = 40.0
+
+[[watch.ranks]]
+id = "recruit"
+
+[guild]
+name = "The Guild"
+alignment = { law = -60.0, good = 0.0 }
+tolerance = 40.0
+
+[[guild.ranks]]
+id = "cutpurse"

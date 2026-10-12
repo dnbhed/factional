@@ -70,6 +70,11 @@ fn a_named_list_item_is_said_by_what_its_called_and_its_name_in_place_of_its_lis
         ),
         "Captain Hale › Membership \"The City Watch\" › Rank"
     );
+    // So is a key that's an id, as a faction's relations are keyed (U12a).
+    assert_eq!(
+        words_at(&texts, "factions.toml", "city_watch.relations.temple"),
+        "The City Watch › Relations › Temple of the Dawn"
+    );
     assert_eq!(
         words_at(&texts, "balance.toml", "disposition.bands[1].up_to"),
         "Disposition › Band \"neutral\" › Up to"
@@ -95,10 +100,6 @@ fn an_item_without_a_name_is_numbered_from_one_under_its_list() {
     assert_eq!(
         words_at(&texts, "balance.toml", "disposition.affinity[1][0]"),
         "Disposition › Affinity › Point 2 › x"
-    );
-    assert_eq!(
-        words_at(&texts, "relations.toml", "relation[5].from"),
-        "Relations › Relation 6 › From"
     );
 }
 
@@ -167,14 +168,14 @@ fn a_forms_rows_are_said_in_words_from_the_entry() {
     );
     // A default is said like what's written.
     assert_eq!(
-        words(&form[2])[2..],
+        words(&form[3])[2..],
         [
             vec!["Standing change on expulsion"],
             vec!["Standing change on leaving"],
             vec!["Secret members"],
         ]
     );
-    let ranks = &form[4].rows[2];
+    let ranks = &form[5].rows[2];
     assert_eq!(ranks.key, "ranks[1].requires.standing");
     let through: Vec<usize> = ranks.words.iter().map(|word| word.through).collect();
     assert_eq!(

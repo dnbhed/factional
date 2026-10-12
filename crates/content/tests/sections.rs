@@ -51,7 +51,8 @@ fn offer<'f>(groups: &'f [FormGroup], label: &str) -> &'f Offer {
 
 #[test]
 fn every_section_is_there_with_what_can_be_added_in_it() {
-    let everyone = "brother_ash, captain_hale, merchant_ava, player, sister_mira, vex";
+    // Everyone but Vex, who's never offered to herself (U12a).
+    let everyone = "brother_ash, captain_hale, merchant_ava, player, sister_mira";
     assert_eq!(
         offered(&form("characters.toml", "vex")),
         [
@@ -98,6 +99,11 @@ fn a_key_with_a_default_is_set_rather_than_offered() {
         [
             ("Identity", vec![]),
             ("Where it stands", vec![]),
+            // The Watch regards every other faction already, so only a new id is left.
+            (
+                "Relations",
+                vec!["Faction at city_watch.relations: one of ".to_owned()]
+            ),
             ("Membership", vec![]),
             ("Drift", vec![]),
             (
@@ -121,7 +127,7 @@ fn a_list_of_ids_offers_those_not_in_it_yet() {
     let groups = form("characters.toml", "merchant_ava");
     assert_eq!(
         said(offer(&groups, "Contact")),
-        "Contact at merchant_ava.contacts: one of brother_ash, merchant_ava, player, vex"
+        "Contact at merchant_ava.contacts: one of brother_ash, player, vex"
     );
 }
 
@@ -223,20 +229,6 @@ fn an_id_must_be_given() {
     assert_eq!(made, Err(EditError::Blank));
 }
 
-#[test]
-fn a_key_the_entrys_form_rules_out_isnt_offered() {
-    // A relation is between two factions, or from one to another, never both.
-    assert_eq!(
-        offered(&form("relations.toml", "relation[0]")),
-        [("Factions", vec![]), ("Regard", vec![])]
-    );
-    // One from and to has neither a between to add, as it's ruled out, nor more of either.
-    assert_eq!(
-        offered(&form("relations.toml", "relation[5]")),
-        [("Factions", vec![]), ("Regard", vec![])]
-    );
-}
-
 /// The sample, with `text` written at the end of `file`.
 fn with(file: &str, added: &str) -> ContentTexts {
     let mut texts = sample();
@@ -275,21 +267,6 @@ fn an_offer_for_an_entry_that_isnt_there_is_refused() {
 }
 
 #[test]
-fn a_list_with_room_offers_what_fits_it() {
-    // Half a pair has room for its second.
-    let texts = with(
-        "relations.toml",
-        "\n[[relation]]\nbetween = [\"temple\"]\nvalue = 10.0\n",
-    );
-    let groups = entry_form(&texts, "relations.toml", "relation[7]");
-    assert_eq!(
-        said(offer(&groups, "Faction")),
-        "Faction at relation[7].between: one of ashen_circle, city_watch, free_company, \
-         lantern_guild"
-    );
-}
-
-#[test]
 fn a_misspelt_key_is_in_a_group_of_its_own() {
     let texts = with("factions.toml", "");
     let mut texts = texts;
@@ -299,4 +276,21 @@ fn a_misspelt_key_is_in_a_group_of_its_own() {
     let last = groups.last().expect("groups");
     assert_eq!(last.name, None);
     assert_eq!(last.rows[0].key, "tolerence");
+}
+
+#[test]
+fn an_entry_is_never_offered_itself() {
+    // A faction regarding itself is a problem (P-91), so the Temple's relations offer only the
+    // factions it doesn't regard yet, besides itself.
+    let groups = form("factions.toml", "temple");
+    assert_eq!(
+        said(offer(&groups, "Faction")),
+        "Faction at temple.relations: one of free_company, lantern_guild"
+    );
+    // Nor is a character offered as their own contact.
+    let groups = form("characters.toml", "vex");
+    let Offered::Pick(contacts) = &offer(&groups, "Contact").what else {
+        panic!("contacts are picked");
+    };
+    assert!(contacts.iter().all(|choice| choice.id != "vex"));
 }

@@ -32,7 +32,6 @@ fn outline_puts_each_problem_at_its_entry() {
          \x20 vex — 1 problem\n\
          \x20   error: alignment.law: 120.00 is outside -100.00..100.00\n\
          actions.toml — not there\n\
-         relations.toml — not there\n\
          outcomes.toml — not there\n\
          quests.toml — not there\n\
          questlines.toml — not there\n\
@@ -50,7 +49,6 @@ fn outline_puts_each_warning_at_its_entry() {
          \x20   warning: tolerance: no one starts within The Watch's tolerance of 40.00: there are no characters\n\
          characters.toml — not there\n\
          actions.toml — not there\n\
-         relations.toml — not there\n\
          outcomes.toml — not there\n\
          quests.toml — 2 entries\n\
          \x20 inspect\n\
@@ -63,30 +61,29 @@ fn outline_puts_each_warning_at_its_entry() {
 }
 
 #[test]
-fn outline_lists_every_entry_of_a_list_by_its_place() {
+fn outline_lists_each_faction_with_its_relations_in_it() {
     let shown = outline("content/sample");
-    let relations: Vec<&str> = shown
+    let factions: Vec<&str> = shown
         .lines()
-        .skip_while(|line| !line.starts_with("relations.toml"))
-        .take(8)
+        .skip_while(|line| !line.starts_with("factions.toml"))
+        .take(6)
         .collect();
     assert_eq!(
-        relations,
+        factions,
         [
-            "relations.toml — 7 entries",
-            "  relation[0]",
-            "  relation[1]",
-            "  relation[2]",
-            "  relation[3]",
-            "  relation[4]",
-            "  relation[5]",
-            "  relation[6]",
+            "factions.toml — 5 entries",
+            "  ashen_circle",
+            "  city_watch",
+            "  free_company",
+            "  lantern_guild",
+            "  temple",
         ]
     );
+    assert!(!shown.contains("relations.toml"), "{shown}");
     assert_eq!(
         shown.lines().last(),
         Some(
-            "content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations, 6 outcomes, 10 quests and 1 questline"
+            "content/sample loads: 6 characters, 5 factions, 6 actions, 12 relations, 6 outcomes, 10 quests and 1 questline"
         )
     );
 }
