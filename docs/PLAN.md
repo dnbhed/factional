@@ -105,7 +105,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U13b — "+ New quest" (P-94, P-108): each step's card takes a new quest's id; the quest is made in `quests.toml`, started so it reads, and added to the step, as one change to both files, one Undo (`change_files`); a blank or taken id is refused; the new quest opens; done 2026-10-12 (#74)
 - U13c — moving quests and steps (P-94, P-109): each step's card moves it up or down and each of its quests to another step, and sets its `need` and `leftovers`, each as one change; `swap_items` in the writer swaps two items of a list, a `[[table]]` with its comments; done 2026-10-12 (#75)
 - U13d — nested pages (P-94, P-110): a breadcrumb, *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*, each part going back there; a quest's page its stages, each counting its choices' problems, and a stage's its choices with theirs; done 2026-10-12 (#76)
-- U14a — the session as a library (D-39, P-95, P-111): `factional-session`, the REPL's session and every command module moved out of the CLI unchanged, the scenarios and snapshots the proof; the CLI keeps its binary, line editing and scenario runner; CLAUDE.md's and DESIGN.md §15's dependency direction; U14 split into U14a to U14c; done 2026-10-12
+- U14a — the session as a library (D-39, P-95, P-111): `factional-session`, the REPL's session and every command module moved out of the CLI unchanged, the scenarios and snapshots the proof; the CLI keeps its binary, line editing and scenario runner; CLAUDE.md's and DESIGN.md §15's dependency direction; U14 split into U14a to U14c; done 2026-10-12 (#77)
 
 ---
 
