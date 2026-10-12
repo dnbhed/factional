@@ -819,6 +819,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **A move may leave a step with no quests,** which the loader reports, as removing its last quest would; nothing is refused for it.
   - *Why:* reordering a questline is what a designer does most with one, and should be one click.
 
+- **P-110 · How a questline's pages nest** (made in U13d, 2026-10-12; P-94).
+  - **The breadcrumb is the panel's first line:** the questline and the quest's step, for a quest shown in one, then the quest, then the stage if its page is open; each part but the last is a link back ("Back to Step 2"), the step going back to the questline's page, where its card is.
+  - **A quest's page is its stages,** each opening its own, with what the loader says at the stage under it and how many problems and warnings its choices have on its line (`1. yard — 1 warning`), so nothing is out of sight; a stage's page is its choices, each with what the loader says at it.
+  - **Choosing a quest, from the graph or a page, opens its page,** not a stage's; showing a questline or quest closes any stage.
+  - *Why:* a quest's insides nest in it, as articy's do (P-94), and each page has room for its own editing to come.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

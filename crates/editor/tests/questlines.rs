@@ -2,7 +2,8 @@
 //! of its quests, which open their own, and "+ Existing quest…", offering the quests in no
 //! questline, added in one change; and "+ New quest", made in `quests.toml` and added to its
 //! step as one change to both files (U13b); quests moved between steps, steps reordered, and
-//! a step's need and leftovers set on its card (U13c). Only a copy of the sample is ever saved.
+//! a step's need and leftovers set on its card (U13c); and pages nested under a breadcrumb, a
+//! quest's its stages and a stage's its choices (U13d). Only a copy of the sample is ever saved.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -240,4 +241,50 @@ fn a_steps_need_and_leftovers_are_set_on_its_card() {
     }
     click(&mut harness, "Leftovers of step 2: open");
     harness.get_by_label("2 of night_patrol, dock_inspection, smugglers_cove, in any order");
+}
+
+#[test]
+fn pages_nest_under_a_breadcrumb_each_part_going_back_there() {
+    let mut harness = on_watch_career();
+    click(&mut harness, "Night Patrol · night_patrol");
+    // A Life in the Watch › Step 2 › Night Patrol: the quest's page, its stages.
+    harness.get_by_label("Back to A Life in the Watch");
+    harness.get_by_label("Back to Step 2");
+    assert!(harness.query_by_label_contains("by_the_book").is_none());
+    click(&mut harness, "1. walk");
+    // … › Night Patrol › Stage "walk": the stage's page, its choices.
+    harness.get_by_label("Stage \"walk\"");
+    assert_eq!(
+        harness.query_all_by_label("›").count(),
+        3,
+        "between the four parts"
+    );
+    harness.get_by_label_contains("by_the_book");
+    click(&mut harness, "Back to Night Patrol");
+    harness.get_by_label("1. walk");
+    assert!(harness.query_by_label_contains("by_the_book").is_none());
+    click(&mut harness, "Back to Step 2");
+    harness.get_by_label("Step 1");
+}
+
+#[test]
+fn a_stage_says_how_many_problems_its_choices_have() {
+    let stale = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/cli/tests/fixtures/worlds/stale_lock");
+    let mut harness = Harness::builder()
+        .with_size(WINDOW)
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), Editor::open(stale));
+    harness.run();
+    click(&mut harness, "Quests");
+    click(&mut harness, "chores — Chores — 1 warning");
+    // A quest in no questline is the first part of its breadcrumb.
+    assert!(harness.query_by_label_contains("Back to").is_none());
+    // The warning is at the stage's choice, on the stage's page; the stage counts it.
+    assert!(
+        harness
+            .query_by_label_contains("warning: locks[0]")
+            .is_none()
+    );
+    click(&mut harness, "1. yard — 1 warning");
+    harness.get_by_label_contains("warning: locks[0]: it can't lock out muster.drill");
 }

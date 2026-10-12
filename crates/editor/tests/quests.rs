@@ -95,8 +95,13 @@ fn choosing_a_quest_shows_its_stages_and_edit_in_content_selects_it() {
     assert_eq!(toggled(&harness, oath), Some(Toggled::True));
     let captain = "watch_captain — Captain of the Watch — 1 stage";
     assert_eq!(toggled(&harness, captain), Some(Toggled::False));
-    harness.get_by_label("report — outcome turned_in_vex — then oath");
+    // Its stages, each opening its choices (U13d).
     harness.get_by_label("2. oath — needs standing 10.00 with city_watch");
+    harness.get_by_label("1. patrol").click();
+    harness.run();
+    harness.get_by_label("report — outcome turned_in_vex — then oath");
+    harness.get_by_label("Back to The Watch's Oath").click();
+    harness.run();
     harness.get_by_label("Edit in Content").click();
     harness.run();
     harness.get_by_label("quests.toml › watch_oath");
@@ -142,6 +147,9 @@ fn a_warning_shows_at_its_choice() {
     harness.get_by_label("chores — Chores — 1 warning").click();
     harness.run();
     harness.get_by_label("yard — 1 warning");
+    // On its stage's page (U13d).
+    harness.get_by_label("1. yard — 1 warning").click();
+    harness.run();
     harness.get_by_label_contains("warning: locks[0]: it can't lock out muster.drill");
 }
 
