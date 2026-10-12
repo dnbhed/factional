@@ -44,6 +44,7 @@ mod layout;
 use form_ui::Acted;
 use problems_ui::Listed;
 use removing_ui::Noticed;
+mod play_ui;
 mod previews_ui;
 mod problems_ui;
 mod quests_ui;
@@ -91,8 +92,12 @@ pub struct Editor {
     pub(crate) step_needs: BTreeMap<usize, String>,
     /// The chosen quest's stage whose page is open, its choices (U13d).
     stage: Option<usize>,
-    /// Whether the drawer along the bottom is open (U15a).
+    /// Whether the drawer along the bottom is open (U15a), and whether it shows Play rather
+    /// than the problems (U15b).
     drawer_open: bool,
+    playing: bool,
+    /// Play's session, on the content as it stands (U15b).
+    play: play_ui::Play,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -231,8 +236,10 @@ pub struct PlaceInput {
 impl Editor {
     /// Opens `dir`, reading its files.
     pub fn open(dir: impl Into<PathBuf>) -> Editor {
+        let dir: PathBuf = dir.into();
         let mut editor = Editor {
-            dir: dir.into(),
+            play: play_ui::Play::new(&dir),
+            dir,
             texts: None,
             saved: None,
             undo: Vec::new(),
@@ -269,6 +276,7 @@ impl Editor {
             step_needs: BTreeMap::new(),
             stage: None,
             drawer_open: true,
+            playing: false,
         };
         editor.reload();
         editor
@@ -1032,6 +1040,8 @@ impl Editor {
         if let Some(quest) = self.chosen.take() {
             self.choose(&quest);
         }
+        // Play follows the content as it stands (U15b).
+        self.play.follow(self.texts.as_ref(), self.outline.loads());
         self.file_places = match &self.texts {
             Some(texts) => self
                 .outline
@@ -1291,9 +1301,16 @@ impl Editor {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     close = labelled(ui, "▾", "Close the drawer");
-                    ui.strong("Problems");
+                    for (playing, name) in [(false, "Problems"), (true, "Play")] {
+                        if ui.selectable_label(self.playing == playing, name).clicked() {
+                            self.playing = playing;
+                        }
+                    }
                 });
-                listed = self.problems_ui(ui);
+                match self.playing {
+                    true => self.play.ui(ui),
+                    false => listed = self.problems_ui(ui),
+                }
             });
         self.drawer_open = !close;
         match listed {
