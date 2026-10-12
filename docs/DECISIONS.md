@@ -760,6 +760,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **In the editor, each section ends with its offers**, "+ <label>" each, labelled as the place's own "+" would be for tests and screen readers ("Add weights to vex", "Add to memberships", "Add to standing.factions…"). A key's offer says on hover what it is, its default and its description. A place's own "+" isn't drawn where an offer adds at it or within it, so nothing is offered twice; its × stays. The entry has only its × beside its name, and the list of places after the form is gone (D-42). The CLI's `form` prints each section's offers after its rows, with an id's choices.
   - *Why:* the user wants to add where they're looking, to a section that's always there.
 
+- **P-102 · How requirements and effects are said** (made in U11a, 2026-10-11; P-93).
+  - **The schema says each one's sentence** (`x-sentence`): its text, with `{value}` where the value goes and `{key}` for the name of what its key names, and how many of the value's own words it says. A requirement's: *Needs standing {value} with {key}*, *Needs rank {value} or higher in {key}*, *Needs to be in {value}*, *Needs not to be in {value}*, *Needs to be within {value}'s member tolerance*, *Needs {value} done*. An effect's: *Moves law by {value}*, *Moves good by {value}*, *Standing with {key} changes by {value}*, *The target's regard changes by {value}*, *The target's factions' regard changes by {value}*. A character's standing is where it starts: *Standing {value} with {key}*.
+  - **A sentence says the words it covers,** such as *Standing* and *The City Watch*, so they're not headings above it: a quest's *Requirements* is the only heading over *Needs standing* [10.0] *with The City Watch*.
+  - **The form draws it on one line,** the words before the value where a label goes, the value's field, then the words after; the key and description stay on hover, and the field's AccessKit label stays its key. A rank's own requirement, in the ladder's table, keeps its column.
+  - **The CLI's `form` prints the sentence with its value in it,** under the headings it doesn't say, then its key: `Stage "oath" › Requirements › Needs standing 10.0 with The City Watch · stages[1].requires.standing.city_watch`.
+  - *Why:* a designer writes "needs standing 40 with the Watch", not `requires.standing.city_watch = 40.0`.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

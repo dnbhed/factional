@@ -7,12 +7,20 @@
         "good": {
           "description": "How far it moves this axis; left out, it doesn't.",
           "title": "Good",
-          "type": "number"
+          "type": "number",
+          "x-sentence": {
+            "says": 2,
+            "text": "Moves good by {value}"
+          }
         },
         "law": {
           "description": "How far it moves this axis; left out, it doesn't.",
           "title": "Law",
-          "type": "number"
+          "type": "number",
+          "x-sentence": {
+            "says": 2,
+            "text": "Moves law by {value}"
+          }
         }
       },
       "type": "object"
@@ -132,7 +140,11 @@
             "description": "-100 to 100.",
             "maximum": 100.0,
             "minimum": -100.0,
-            "type": "number"
+            "type": "number",
+            "x-sentence": {
+              "says": 3,
+              "text": "Standing with {key} changes by {value}"
+            }
           },
           "description": "By character id.",
           "propertyNames": {
@@ -147,7 +159,11 @@
             "description": "-100 to 100.",
             "maximum": 100.0,
             "minimum": -100.0,
-            "type": "number"
+            "type": "number",
+            "x-sentence": {
+              "says": 3,
+              "text": "Standing with {key} changes by {value}"
+            }
           },
           "description": "By faction id.",
           "propertyNames": {

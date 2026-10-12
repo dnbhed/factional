@@ -23,11 +23,11 @@ Requirements
 Stages
   Stage "inspect" › Id · stages[0].id = inspect
   Stage "inspect" › Choice "seize" › Id · stages[0].choices[0].id = seize
-  Stage "inspect" › Choice "seize" › Effects › Alignment › Law · stages[0].choices[0].effects.alignment.law = 2.0
-  Stage "inspect" › Choice "seize" › Effects › Standing › Factions › The City Watch · stages[0].choices[0].effects.standing.factions.city_watch = 5.0
-  Stage "inspect" › Choice "seize" › Effects › Standing › Factions › The Lantern Guild · stages[0].choices[0].effects.standing.factions.lantern_guild = -5.0
+  Stage "inspect" › Choice "seize" › Effects › Moves law by 2.0 · stages[0].choices[0].effects.alignment.law
+  Stage "inspect" › Choice "seize" › Effects › Standing with The City Watch changes by 5.0 · stages[0].choices[0].effects.standing.factions.city_watch
+  Stage "inspect" › Choice "seize" › Effects › Standing with The Lantern Guild changes by -5.0 · stages[0].choices[0].effects.standing.factions.lantern_guild
   Stage "inspect" › Choice "seize" › Next · stages[0].choices[0].next = end
   Stage "inspect" › Choice "wave_through" › Id · stages[0].choices[1].id = wave_through
-  Stage "inspect" › Choice "wave_through" › Effects › Standing › Factions › The Lantern Guild · stages[0].choices[1].effects.standing.factions.lantern_guild = 5.0
+  Stage "inspect" › Choice "wave_through" › Effects › Standing with The Lantern Guild changes by 5.0 · stages[0].choices[1].effects.standing.factions.lantern_guild
   Stage "inspect" › Choice "wave_through" › Next · stages[0].choices[1].next = end
   + Stage

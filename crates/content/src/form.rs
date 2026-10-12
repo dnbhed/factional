@@ -128,6 +128,17 @@ pub struct FormRow {
     /// What it may be: the ids that exist for what it names, the schema's enumeration, or
     /// `false` and `true`; empty if it may be anything of its kind.
     pub choices: Vec<String>,
+    /// A requirement or an effect, as a sentence with its value in it (U11a).
+    pub sentence: Option<Sentence>,
+}
+
+/// A value as a sentence (U11a), such as *Needs standing* 40.0 *with The City Watch*: the
+/// words before and after it, and how many of its own words, the last of them, it says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sentence {
+    pub before: String,
+    pub after: String,
+    pub says: usize,
 }
 
 /// The form of the entry `entry` of `file` in `texts` (a top-level key, or one table of a
@@ -166,15 +177,19 @@ pub fn entry_form(texts: &ContentTexts, file: &str, entry: &str) -> Vec<FormGrou
             })
             .collect()
     };
-    let mut row = |path: ValuePath, written: Option<Field>, default: Option<String>| FormRow {
-        key: ValuePath(path.0[at.0.len()..].to_vec()).to_string(),
-        words: within(&path),
-        description: key_info(file, &path).and_then(|info| info.description),
-        comment: comments.of(&path),
-        choices: choices(texts, &root, &path),
-        written,
-        default,
-        path,
+    let mut row = |path: ValuePath, written: Option<Field>, default: Option<String>| {
+        let words = within(&path);
+        FormRow {
+            key: ValuePath(path.0[at.0.len()..].to_vec()).to_string(),
+            words: words.clone(),
+            description: key_info(file, &path).and_then(|info| info.description),
+            comment: comments.of(&path),
+            choices: choices(texts, &root, &path),
+            sentence: sentence_of(&root, &path, &words),
+            written,
+            default,
+            path,
+        }
     };
     let mut rows: Vec<FormRow> = entry_fields(text, entry)
         .into_iter()
@@ -477,6 +492,21 @@ fn noun(names: Names) -> &'static str {
         Names::Outcome => "Outcome",
         Names::Profile => "Profile",
     }
+}
+
+/// The value at `path` as a sentence (U11a), if the schema says one, with `{key}` the last of
+/// its `words`, the name of what its key names.
+fn sentence_of(root: &Json, path: &ValuePath, words: &[Word]) -> Option<Sentence> {
+    let said = schema_at(root, path)?.get("x-sentence")?;
+    let says = usize::try_from(said.get("says")?.as_u64()?).ok()?;
+    let key = words.last().map_or("", |word| word.text.as_str());
+    let text = said.get("text")?.as_str()?.replace("{key}", key);
+    let (before, after) = text.split_once("{value}")?;
+    Some(Sentence {
+        before: before.trim().to_owned(),
+        after: after.trim().to_owned(),
+        says,
+    })
 }
 
 /// What the value at `path` may be: the ids that exist for what it names, the schema's

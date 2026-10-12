@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11 → U12 → U13 → U14 → U15 → U16 → U17 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12 → U13 → U14 → U15 → U16 → U17 → E1 → T5`
 
 ## Done
 
@@ -96,6 +96,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U10b — each place's adding and removing where it is, at the user's direction (D-41, P-99): `form_layout` puts each place's × and "+" on the first heading that says it, a list of named items' beside what holds it (or its group's name), a table's "+" at its end, and the entry's beside its name; a cell's × removes what it's in within its item; an empty table or list is a row of its own (`form` says `empty`); "+ <item>" adds a list's item at once (`KeyInfo::item`); a table keyed by ids offers those that exist and aren't there yet, by name (`id_choices`, `IdChoice`); Referenced by in words; `keys` says the same of a list's items and an id table's choices; U10b split, with pairs now U10c; done 2026-10-11 (#65)
 - U10c — pairs as pairs (P-100): `KeyInfo::pair` for a list of exactly two ids, such as `between`; `Line::Pair` draws its two fields on one line either side of ↔, under the pair's word, with the pair's × beside them; half a pair stays a heading and a row; done 2026-10-11 (#66)
 - U10d — every section, with its adding in it, at the user's direction (D-42, P-101): every group of an entry's schema in its form, even empty, with what it offers (`FormGroup::offers`, `Offer`, `Offered`): a list's item, a pick from a list of ids, an id in a table keyed by ids or each within one, or a key not there with no default, none the entry's form rules out; `make_offer` makes one in one change, writing what it's within first; each section ends with its "+" buttons, a place's own "+" not drawn where an offer covers it, the entry's "+…" and the list after the form gone; `form` prints the offers; contacts are "Contact"s; done 2026-10-11 (#67)
+- U11a — requirements and effects as sentences (P-93, P-102): the schema says each one's sentence and how many of its words it says (`x-sentence`), such as "Needs standing {value} with {key}" or "Standing with {key} changes by {value}", and a character's standing where it starts; `FormRow::sentence` (`Sentence`) gives the words before and after the value; the Content tab draws it on one line under the headings it doesn't say; `form` prints it with its value; U11 split, with adding by kind now U11b; done 2026-10-11 (#68)
 
 ---
 
@@ -121,9 +122,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U11 · Requirements and effects as sentences — P3 · Next
+### U11b · Adding requirements and effects by kind — P3 · Next
 
-Each requirement and effect in the form as a sentence in the content crate's words, the quest graph's own, with its values as fields within it, and "+ Requirement…" and "+ Effect…" listing the kinds a place takes (P-93).
+"+ Requirement…" and "+ Effect…", each a menu of the kinds its place takes, with each id's choices, made in one change (P-93, P-101).
 
 ### U12 · Relations in each faction — P3 · Outline
 

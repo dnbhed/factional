@@ -56,7 +56,7 @@ Memberships
   Membership "The City Watch" › Secret · memberships[0].secret: not set, false (false or true)
   + Membership
 Standing
-  Standing › Factions › The City Watch · standing.factions.city_watch = 75.0
+  Standing 75.0 with The City Watch · standing.factions.city_watch
   + Character: brother_ash, captain_hale, merchant_ava, player, sister_mira or vex, or a new id
   + Faction: ashen_circle, free_company, lantern_guild or temple, or a new id
 Contacts

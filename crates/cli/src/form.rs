@@ -52,6 +52,26 @@ pub(crate) fn form(base: &Path, args: &str) -> Outcome {
 /// and value.
 fn describe(row: &FormRow) -> String {
     let words: Vec<&str> = row.words.iter().map(|word| word.text.as_str()).collect();
+    // A requirement or an effect, written: its sentence under the headings it doesn't say,
+    // `Requirements › Needs standing 10.0 with The City Watch · requires.standing.city_watch`.
+    if let (Some(sentence), Some(field)) = (&row.sentence, &row.written) {
+        let headings = &words[..words.len().saturating_sub(sentence.says)];
+        let said = [sentence.before.as_str(), &field.value, &sentence.after]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let said = headings
+            .iter()
+            .copied()
+            .chain([said.as_str()])
+            .collect::<Vec<_>>();
+        let value = format!("{} · {}", said.join(" › "), row.key);
+        return match either(&row.choices) {
+            Some(choices) => format!("{value} ({choices})"),
+            None => value,
+        };
+    }
     let value = match (&row.written, &row.default) {
         (Some(field), _) => format!("{} = {}", row.key, field.value),
         (None, Some(default)) => format!("{}: not set, {default}", row.key),
@@ -151,6 +171,20 @@ mod tests {
     }
 
     #[test]
+    fn form_says_a_requirement_as_a_sentence_under_the_headings_it_doesnt_say() {
+        let Ok(Outcome::Output(shown)) = run("form content/sample quests.toml watch_oath") else {
+            panic!("a form");
+        };
+        assert!(
+            shown.contains(
+                "\n  Stage \"oath\" › Requirements › Needs standing 10.0 with The City Watch \
+                 · stages[1].requires.standing.city_watch\n"
+            ),
+            "{shown}"
+        );
+    }
+
+    #[test]
     fn form_offers_ids_from_those_there_or_a_new_one() {
         let Ok(Outcome::Output(shown)) = run("form content/sample characters.toml merchant_ava")
         else {
@@ -205,6 +239,7 @@ mod tests {
             description: None,
             comment: Vec::new(),
             choices: Vec::new(),
+            sentence: None,
         };
         assert_eq!(super::describe(&row), "Standing · standing: empty");
     }
