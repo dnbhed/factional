@@ -5,6 +5,8 @@
 use factional_content::{
     Edge, Note, QuestGraph, describe_choice, describe_step, needs, quest_heading,
 };
+use std::collections::BTreeMap;
+
 use factional_quests::{Next, Quest, Questline};
 
 use crate::egui::{self, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2, WidgetInfo, WidgetType};
@@ -56,7 +58,9 @@ impl Editor {
             egui::Panel::right("questline page")
                 .resizable(true)
                 .default_size(340.0)
-                .show(ui, |ui| paged = page_ui(ui, &self.graph, line));
+                .show(ui, |ui| {
+                    paged = page_ui(ui, &self.graph, line, &mut self.new_quests)
+                });
         }
         if edit {
             self.edit_in_content();
@@ -68,6 +72,11 @@ impl Editor {
             Some(Paged::Open(quest)) => self.choose(&quest),
             Some(Paged::Add(line, step, quest)) => {
                 if let Err(refused) = self.add_to_step(&line, step, &quest) {
+                    self.note = Some(format!("couldn't add: {refused}"));
+                }
+            }
+            Some(Paged::New(line, step, quest)) => {
+                if let Err(refused) = self.new_quest_in_step(&line, step, &quest) {
                     self.note = Some(format!("couldn't add: {refused}"));
                 }
             }
@@ -132,12 +141,20 @@ enum Paged {
     Open(String),
     /// A quest added to the questline's `n`th step.
     Add(String, usize, String),
+    /// A new quest made in the questline's `n`th step, by its id (U13b).
+    New(String, usize, String),
 }
 
 /// A questline's page (U13a, P-94): its name, then its steps in order, each a card saying what
 /// it needs, with its quests by name, each opening its own, and "+ Existing quest…", offering
-/// the quests in no questline, as a quest is in one at most.
-fn page_ui(ui: &mut egui::Ui, graph: &QuestGraph, line: &Questline) -> Option<Paged> {
+/// the quests in no questline, as a quest is in one at most; and "+ New quest", its id typed
+/// in `new_quests` by step (U13b).
+fn page_ui(
+    ui: &mut egui::Ui,
+    graph: &QuestGraph,
+    line: &Questline,
+    new_quests: &mut BTreeMap<usize, String>,
+) -> Option<Paged> {
     let mut paged = None;
     let named = |id: &str| {
         graph
@@ -145,6 +162,7 @@ fn page_ui(ui: &mut egui::Ui, graph: &QuestGraph, line: &Questline) -> Option<Pa
             .quests
             .values()
             .find(|quest| quest.id.as_str() == id)
+            .filter(|quest| !quest.name.is_empty())
             .map_or_else(|| id.to_owned(), |quest| format!("{} · {id}", quest.name))
     };
     let loose = graph.loose();
@@ -180,6 +198,23 @@ fn page_ui(ui: &mut egui::Ui, graph: &QuestGraph, line: &Questline) -> Option<Pa
                     menu.response
                         .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
                 }
+                ui.horizontal(|ui| {
+                    let label = ui.label("+ New quest");
+                    let typed = new_quests.entry(index).or_default();
+                    ui.add(egui::TextEdit::singleline(typed).desired_width(140.0))
+                        .labelled_by(label.id)
+                        .widget_info(|| {
+                            let mut info = WidgetInfo::text_edit(true, "", typed.as_str(), "");
+                            info.label = Some(format!("New quest id in step {number}"));
+                            info
+                        });
+                    let said = format!("Add a new quest to step {number}");
+                    let button = ui.button("Add");
+                    button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+                    if button.clicked() {
+                        paged = Some(Paged::New(id.to_owned(), index, typed.clone()));
+                    }
+                });
             });
         }
     });
