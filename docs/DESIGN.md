@@ -940,12 +940,13 @@ crates/
   session/       factional-session      the REPL's session, for the CLI and the editor (§18; U14a).
   cli/           factional-cli          the `factional` binary: repl, run, validate, schema, compare.
   editor/        factional-editor       the visual editor, in egui (§18; from U1).
+  worldgen/      factional-worldgen     world maps from generated worlds (§21; from W1). No I/O.
   bevy/          factional-bevy         the Bevy plugin (§19; from E1).
 content/sample/  Riverhold
 scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/snapshots/
 ```
 
-- **Dependencies point one way:** core ← reputation ← quests ← content ← session ← cli (U14a), the editor to depend on `session` too for Play (D-39, P-95). `factional-content` reads every module's files, so it sits above them all (P-67). The editor and the Bevy plugin sit beside `cli`, at the top: nothing depends on them (D-32, D-33).
+- **Dependencies point one way:** core ← reputation ← quests ← content ← session ← cli (U14a), the editor to depend on `session` too for Play (D-39, P-95). `factional-content` reads every module's files, so it sits above them all (P-67). `factional-worldgen` depends only on core, and `factional-content` reads and writes its map files (core ← worldgen ← content, P-119). The editor and the Bevy plugin sit beside `cli`, at the top: nothing depends on them (D-32, D-33).
 - **Other modules** (quests, then combat and the rest) are sibling crates. They talk to reputation only through §11. `factional-quests` also reads reputation's content, to check itself at load (§17, P-64).
 - **The host engine is Bevy** (D-33, settling X-2): the module embeds as a Bevy plugin (§19). The core stays engine-agnostic, so nothing below the plugin knows Bevy exists.
 
@@ -1232,7 +1233,7 @@ A Bevy application of its own, beside the content editor, where the content is p
 
 - **First, an inspector any game can turn on** (D-44): `factional-bevy-inspector`, a plugin over `factional-bevy`, drawn with `bevy_egui` (D-45): the world's characters and factions, their alignments, memberships, standings and relations; the event log; quest progress; and a console running the session's commands on the game's world, with the engine's explanations. A key shows and hides it.
 - **Then the builder, a 2D sandbox** (D-46): `factional-builder`, opened on a content directory. Characters are labelled tokens on a plane, places are areas, and the player is moved among them. The player acts on whoever is nearest, from a menu of the content's actions; who's near witnesses it; news spreads along contacts (K2), drawn as it goes; each token shows its disposition toward the player by band. Time is paused, stepped or run. Quests are offered by their givers, started and chosen from a panel. The inspector sits beside it.
-- **Then a world-editing mode** of the sandbox: tokens and places dragged and named, and saved to the builder file (D-47).
+- **Then a world-editing mode** of the sandbox: tokens and places dragged and named, and saved to the builder file (D-47). World maps generated from Azgaar's, and the brushes that refine them, extend it (§21); places themselves move to the content (D-51).
 - **The builder file** is `builder.toml` beside the content: where each character stands, and the places, by id. Only the builder reads it, checking its ids against the content as it loads; the module's content and checks are unchanged (D-20).
 - **The editor and the builder open each other** (D-43): "Play in the builder" from the editor, "Edit in the editor" from the builder, each on the same directory and at the entry or character in view.
 - **Where the code lives** (P-118): in the Bevy workspace, `crates/bevy`, beside the plugin, checked by its CI job. Drawing the inspector shares with the content editor what both draw alike.
@@ -1250,3 +1251,41 @@ A Bevy application of its own, beside the content editor, where the content is p
 | G8 | The editor and the builder open each other |
 | G9 | The world editor: tokens and places placed and named, saved to the builder file |
 
+## 21. World maps (designed in W0; D-48 to D-53, P-119)
+
+A designer starts a game's world from a map generated in Azgaar's Fantasy Map Generator, and the builder turns it into a playable 2D tile map to refine by hand: a quick canvas, not a finished world (D-48). The research is [research/world-maps-2026-10.md](research/world-maps-2026-10.md).
+
+- **The workflow:**
+  1. The designer generates a map in Azgaar's generator and downloads its Full JSON.
+  2. The builder's wizard opens it and summarises what's in it.
+  3. The designer chooses the layers to build from, the most fundamental first: terrain, then water, climate and biomes; settlements, routes, points of interest and peoples as suggestions. Choosing a layer pulls in what it needs.
+  4. They choose a region of the source map and a scale in tiles per source pixel (D-53), a seed and options.
+  5. The builder generates the map: rasterised, polished, dressed with foliage, the suggestions marked.
+  6. The designer edits it, and can regenerate without losing their edits.
+- **Rasterising:** each tile's height is interpolated across the cell centres around it, so heights are smooth rather than stepped at cell borders; land, sea and lake follow the source's features.
+- **Polish:** seeded integer noise adds detail, rougher where the source is mountainous; elevation is kept fine (for 3D, D-50) and drawn in 2D as levels, with ledges and cliffs where they meet; coasts are smoothed; rivers are widened from their discharge and carved from source to mouth; lakes sit at their surface height.
+- **Biomes and terrain:** each tile's temperature, precipitation and biome come from the source; its terrain from those, out of a closed vocabulary: deep water, shallow water, sand, grass, forest floor, marsh, rock, snow, ice.
+- **Foliage** is scattered, not tiled: trees, shrubs and grass by Poisson-disc sampling, their kind and density by biome.
+- **Suggestions** (D-49): settlements, routes, points of interest, and cultures and religions as candidate factions, kept as markers with what the source says of them (name, kind, size, figures). They're listed and shown on the map, and can be dismissed; nothing is built from them.
+- **Editing:** brushes paint terrain, raise and lower elevation, draw water and place or clear foliage. Edits are overrides, kept apart from what was generated, so regenerating rebuilds the rest from the recipe and applies them again; "reset to generated" clears them in an area.
+- **The map file** (D-52): `world/<name>.map` beside the content, read and written by `factional-content`, never by the rules. A readable header (format, version, recipe), then the tiles in 64 × 64 chunks, in layers, in postcard, each chunk compressed.
+- **Exact:** generation uses integers and `Fixed`, never floats, so a source, choices and seed give the same map on every machine (P-119).
+- **Drawing:** Bevy's own `TilemapChunk`, one chunk per draw, in flat placeholder colours per terrain, autotiled on a dual grid; art later.
+- **Places** (D-51): reputation rules will refer to places, so places become content the engine checks at load (D-20), derived from the map's regions. The map itself stays the builder's. What a place is and which rules use places is W10's design pass.
+- **3D later** (D-50): a terrain mesh from the elevation layer, foliage as instanced models.
+- **Where the code lives** (P-119): `factional-worldgen` in the main workspace, depending only on core, with no I/O; the file in `factional-content`; the `world` commands in the CLI; the wizard, the map's drawing and the brushes in the builder.
+
+| Increment | Builds |
+| --- | --- |
+| W0 (done) | The design pass: research, D-48 to D-53, P-119, these increments |
+| W1 | The world map and its file: chunks, layers, recipe and overrides, read and written exactly; `factional world info` |
+| W2 | Importing Azgaar's terrain: the JSON checked, a region at a scale rasterised; `factional world import` |
+| W3 | Polishing the terrain: detail, levels and cliffs, coasts, rivers and lakes |
+| W4 | Climate and biomes, and each tile's terrain |
+| W5 | Foliage, scattered by biome |
+| W6 | Suggestions: settlements, routes, points of interest, peoples |
+| W7 | The map in the builder: drawn in chunks, autotiled, panned and zoomed |
+| W8 | The wizard in the builder |
+| W9 | Editing the map: brushes as overrides that survive regenerating |
+| W10 | Places in the engine: the design pass (D-51) |
+| W11 | The map in 3D |
