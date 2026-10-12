@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → U15d → U16 → U17 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → U19 → G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8 → G9 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -112,6 +112,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U15b — Play (D-40, P-96, P-115): beside Problems in the drawer, the REPL on a `factional-session` session of the content as it stands, loaded from the texts in memory and reloaded with `reload`'s rules each time they load, saying what that says; the last world that loaded while they don't; history by arrow; done 2026-10-12 (#81)
 - U15c — Play's links and completion (P-96, P-116): each id Play says a link to its entry; Tab completing the last word typed, from the commands or the world's ids (`Session::complete`), listing them where there's more than one; U15c split, with pages handing commands now U15d; E1 moved next, ahead of U15d to U17, at the user's direction; done 2026-10-12 (#82)
 - E1 — the Bevy plugin (D-33, P-75, P-117): `factional-bevy`, in a workspace of its own with its own CI job; the world and quest log as a resource loaded at startup, stopping the app with the loader's problems if it doesn't load; commands in and events out as messages, refusals included, played after the game's systems each frame; time by `AdvanceTime` at a rate the game sets, in Bevy's game time; a headless example on Riverhold; Bevy 0.20.0; done 2026-10-12 (#83)
+- G0 — the game builder's design pass (D-43 to D-47, P-118, DESIGN.md §20): research ([research/game-builder-2026-10.md](research/game-builder-2026-10.md)); the user's choices: an app of its own, opening and opened by the editor, an inspector first, then a 2D sandbox, then a world editor, `bevy_egui`, placeholder shapes, a builder file; G1 to G9 outlined; the editor's remaining increments planned, the editor's screenshots first and the builder's increments next, at the user's direction; done 2026-10-12 (#84)
 
 ---
 
@@ -133,17 +134,97 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U15d · Pages hand commands to Play — P3 · Next
+### U19 · Editor screenshots — P2 · Next
+
+Image snapshots of the editor's key pages, rendered headless and reviewed like the scenario snapshots, so a UI change is seen in its PR, not only driven through AccessKit; the pages: a faction's form and Relations, a questline's page, Play, the Previews tab.
+
+### G1 · The inspector — P3 · Outline
+
+`factional-bevy-inspector`, a plugin over `factional-bevy`, drawn with `bevy_egui`: a window of the world's characters, factions and event log, shown and hidden by a key; the Bevy workspace's members (D-44, D-45, P-118, DESIGN.md §20).
+
+### G2 · The inspector's console — P3 · Outline
+
+The session's commands run on the game's world, with the engine's explanations; Play's log and line drawn by a crate both the editor and the inspector use (P-118).
+
+### G3 · The inspector's quests and relations — P3 · Outline
+
+Each character's quest progress, and the relations matrix, in the inspector.
+
+### G4 · The builder's shell — P3 · Outline
+
+`factional-builder`, opened on a content directory: character tokens and places on a 2D plane, from `builder.toml` (or laid out when there's none), the inspector beside it, time paused, stepped or run (D-46, D-47).
+
+### G5 · Acting in the builder — P3 · Outline
+
+The player moved among the tokens, acting on the nearest from the content's actions, the characters near enough witnessing it.
+
+### G6 · What the builder shows — P3 · Outline
+
+Each token's disposition toward the player, by band; news spreading along contacts (K2), drawn as it goes.
+
+### G7 · Quests in the builder — P3 · Outline
+
+Quest givers marked; quests started and choices made from a panel.
+
+### G8 · The editor and the builder open each other — P3 · Outline
+
+"Play in the builder" from the editor and "Edit in the editor" from the builder, on the same directory, at the entry or character in view (D-43).
+
+### G9 · The world editor — P3 · Outline
+
+A mode of the builder: tokens and places placed, moved and named, saved to `builder.toml` (D-44, D-47).
+
+### U15d · Pages hand commands to Play — P3 · Outline
 
 A quest's "Can the player start this?" and "Start it in Play", and a character's "Act as…", each typing its command into Play, opening it, so it's seen and can be run again (P-96).
 
-### U16 · Watches and scenarios from Play — P3 · Outline
+### U16a · Watches — P3 · Outline
 
-Pinned commands run again after every command, each showing what changed, with the engine's explanations; "Save as scenario" writing the session to `scenarios/` (P-96).
+Commands pinned in Play, run again after every command, each showing what changed, with the engine's explanations (`--explain`) (P-96).
 
-### U17 · Renaming, pickers and quick open — P3 · Outline
+### U16b · Save as scenario — P3 · Outline
 
-Renaming an id everywhere as one change; pickers that search, show names and offer "+ New …" for an id that doesn't exist; quick open, back and forward, reordering, duplicating and the usual keys, where an earlier increment hasn't brought them (P-97).
+Play's commands written to `scenarios/<name>.scenario`, after its `load`, for the designer to add asserts to (P-96).
+
+### U20 · Completion in the CLI's REPL — P3 · Outline
+
+Tab completion in `factional repl`, through rustyline, from `Session::complete` (P-116).
+
+### U17a · Renaming everywhere — P3 · Outline
+
+Renaming an id renames every place that names it, as one change across files, offered with the count of places (P-97).
+
+### U17b · Pickers — P3 · Outline
+
+Id fields picked from a searchable list showing names, *The City Watch* · `city_watch`, offering only what fits there (P-97).
+
+### U17c · Making what's missing — P3 · Outline
+
+Typing an id that doesn't exist into a picker offers "+ New faction 'x'…", made and named in one change (P-97).
+
+### U17d · Quick open and keys — P3 · Outline
+
+⌘K to any entry by name or id, across files; ⌘S, ⌘Z, ⇧⌘Z (redo) and Esc (P-97).
+
+### U17e · Back and forward — P3 · Outline
+
+Through what's been chosen, entries, pages and links alike (P-97).
+
+### U17f · Reordering and duplicating — P3 · Outline
+
+↑ and ↓ for every ordered list (ranks, stages, choices), as steps have (P-109); duplicating an entry under a new id (P-97).
+
+### U22 · Drag to reorder — P3 · Outline
+
+Dragging as a shortcut beside the ↑ and ↓ and menus of U13c and U17f (P-94, P-109).
+
+### U18 · Previews where you work — P3 · Outline
+
+A faction's page shows its alignment map, and a character's how each faction regards them: the Previews tab's engine queries beside what changes them.
+
+### U21 · Problems under relation rows — P3 · Outline
+
+A problem at a faction's `relations`, such as a misspelt id, shown beside its row, as a field's is (P-105).
 
 ---
 

@@ -70,6 +70,11 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
 - **D-41 · Adding and removing sit where each place is** (agreed 2026-10-11 in U10b, at the user's direction). A place's × and "+" are beside it in the form, so adding a rank is a "+" next to the ranks, rather than in a list of places after the form (§18).
 - **D-42 · Every section is shown, with its adding in it** (agreed 2026-10-11 in U10d, at the user's direction). An entry shows every section its schema gives it, even with nothing in it, such as a character's Memberships and Standing, and each section holds the buttons that add to it: a new membership, a line of standing. Nothing is added from a list after the form, nor from a menu beside the entry's name (§18).
 - **D-40 · Play is a drawer along the bottom of every tab** (agreed 2026-10-11 in U9, at the user's choice; was O-8). The REPL runs in the editor below whatever is being edited, not in a tab of its own, so D-34's three tabs stay (§18; built in U15).
+- **D-43 · The game builder is an application of its own** (agreed 2026-10-12 in G0, at the user's direction). A Bevy app, separate from the egui content editor; each opens the other on the same content directory: the editor's "Play in the builder", the builder's "Edit in the editor" (§20).
+- **D-44 · The inspector first, then the sandbox, then the world editor** (agreed 2026-10-12 in G0, at the user's choice; was O-9). First a runtime inspector any game using the plugin can turn on; then the builder, a 2D sandbox built around it, where the content is played as a game would play it; then a world-editing mode of the sandbox (§20).
+- **D-45 · The builder's UI is `bevy_egui`** (agreed 2026-10-12 in G0, at the user's choice; was O-10). egui inside Bevy, the content editor's egui, so what the two draw alike can be shared (§20).
+- **D-46 · The sandbox is 2D, with placeholder shapes** (agreed 2026-10-12 in G0, at the user's choice; was O-11). Characters as labelled tokens on a plane, places as areas; no art and no map crate (§20).
+- **D-47 · The sandbox's layout is a builder file beside the content** (agreed 2026-10-12 in G0, at the user's choice; was O-12). Who stands where, and the places, in a file the builder reads and writes and the engine never does, so the module's content and its checks are unchanged (D-20, §20).
 
 ## Proposed — 2026-10-04
 
@@ -869,9 +874,17 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **When things happen in a frame:** time's `AdvanceTime` is sent before the game's systems (`PreUpdate`), and every command is executed after them (`PostUpdate`), so what the game sends in `Update` is played the same frame. A tick rate of zero is none.
   - *Why:* the user chose a separate workspace, to keep the main gates fast, and the newest Bevy; the rest follows P-75.
 
+- **P-118 · How the game builder is built** (made in G0, 2026-10-12; D-43 to D-47).
+  - **In the Bevy workspace:** `crates/bevy`, today the plugin's own workspace (P-117), gains members for the inspector (`factional-bevy-inspector`, a plugin) and the builder (`factional-builder`, an app), so none of them is compiled by the main gates and one CI job checks them all.
+  - **The inspector is a plugin over the plugin:** panels drawn with `bevy_egui` from the `Factional` resource and the messages, toggled by a key, so any game can ship it, as RimWorld ships its development mode. What it draws alike with the content editor, such as Play's log and line, moves into a crate of egui drawing both use, when the inspector first needs it, rather than being drawn twice.
+  - **The builder is a game:** it uses the plugin and the inspector exactly as a game would, so it's the reference for wiring them, and who's near decides who witnesses an act, as a game's rule, sent as `Witnesses` in each command; the module learns nothing about space.
+  - **The builder file is the builder's:** `builder.toml` beside the content, positions and places by character and place id, checked by the builder when it loads (an id that names no character is said, as the loader would say it, and left out), never read by the engine.
+  - **Launching each other is two processes:** each starts the other with the content directory, and the entry or character in view; edits not saved don't cross.
+  - *Why:* the user's choices (D-43 to D-47); the research is [research/game-builder-2026-10.md](research/game-builder-2026-10.md).
+
 ## Open
 
-None right now. A new question gets the next free number, starting at O-9.
+None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).
 
 ## Deferred
 

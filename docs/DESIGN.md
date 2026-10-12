@@ -1226,3 +1226,27 @@ The module embeds in games through a Bevy plugin (D-33, settling X-2). The core 
 | E1 (done) | The plugin: the resource, commands and events as messages, time, and an example app |
 | T5 | Binary saves, beside JSON (P-54) |
 
+## 20. The game builder (designed in G0; D-43 to D-47, P-118)
+
+A Bevy application of its own, beside the content editor, where the content is played as a game would play it, with the system laid bare: who saw what, how far news went, how everyone regards the player, as RimWorld's development mode and Crusader Kings' debug console show their makers. The research is [research/game-builder-2026-10.md](research/game-builder-2026-10.md).
+
+- **First, an inspector any game can turn on** (D-44): `factional-bevy-inspector`, a plugin over `factional-bevy`, drawn with `bevy_egui` (D-45): the world's characters and factions, their alignments, memberships, standings and relations; the event log; quest progress; and a console running the session's commands on the game's world, with the engine's explanations. A key shows and hides it.
+- **Then the builder, a 2D sandbox** (D-46): `factional-builder`, opened on a content directory. Characters are labelled tokens on a plane, places are areas, and the player is moved among them. The player acts on whoever is nearest, from a menu of the content's actions; who's near witnesses it; news spreads along contacts (K2), drawn as it goes; each token shows its disposition toward the player by band. Time is paused, stepped or run. Quests are offered by their givers, started and chosen from a panel. The inspector sits beside it.
+- **Then a world-editing mode** of the sandbox: tokens and places dragged and named, and saved to the builder file (D-47).
+- **The builder file** is `builder.toml` beside the content: where each character stands, and the places, by id. Only the builder reads it, checking its ids against the content as it loads; the module's content and checks are unchanged (D-20).
+- **The editor and the builder open each other** (D-43): "Play in the builder" from the editor, "Edit in the editor" from the builder, each on the same directory and at the entry or character in view.
+- **Where the code lives** (P-118): in the Bevy workspace, `crates/bevy`, beside the plugin, checked by its CI job. Drawing the inspector shares with the content editor what both draw alike.
+
+| Increment | Builds |
+| --- | --- |
+| G0 (done) | The design pass: research, D-43 to D-47, P-118, these increments |
+| G1 | The inspector: a `bevy_egui` window of the world's characters, factions and event log, shown and hidden by a key |
+| G2 | The inspector's console: the session's commands run on the game's world, sharing Play's drawing with the editor |
+| G3 | The inspector's quests and relations: each character's quest progress, the relations matrix |
+| G4 | The builder's shell: a 2D plane of character tokens and places from the builder file, the inspector beside it, time paused, stepped or run |
+| G5 | Acting in the builder: the player moved, acting on the nearest, witnesses by who's near |
+| G6 | What the builder shows: disposition toward the player on each token, news spreading along contacts |
+| G7 | Quests in the builder: givers marked, quests started and chosen from a panel |
+| G8 | The editor and the builder open each other |
+| G9 | The world editor: tokens and places placed and named, saved to the builder file |
+
