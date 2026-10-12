@@ -102,7 +102,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U12b — each faction's relations both ways (D-38, P-105): the schema marks a table read both ways (`x-both-ways`); `relation_rows` gives every other faction with each way, its band, the conflict and whether the two are linked, read from the text; `set_relation` writes one way or both in one change; the Relations section draws them, with "same both ways", 0 with Set, and the conflict mark, and keeps the comment above them; `form` prints the same; done 2026-10-12 (#71)
 - U12c — the relations matrix (P-106): the engine's `relations_matrix`, each faction toward each other with its band and conflict; the Previews tab draws it, tinted by band and marked where a pair is in conflict; `relations --matrix [--csv]`; done 2026-10-12 (#72)
 - U13a — a questline's page (P-94, P-107): the Quests tab's right-hand panel shows a questline's steps in order, each a card of what it needs and its quests by name, each opening its own with a way back; "+ Existing quest…" offers the quests in no questline and adds one to the step in one change; U13 split into U13a to U13d; done 2026-10-12 (#73)
-- U13b — "+ New quest" (P-94, P-108): each step's card takes a new quest's id; the quest is made in `quests.toml`, started so it reads, and added to the step, as one change to both files, one Undo (`change_files`); a blank or taken id is refused; the new quest opens; done 2026-10-12
+- U13b — "+ New quest" (P-94, P-108): each step's card takes a new quest's id; the quest is made in `quests.toml`, started so it reads, and added to the step, as one change to both files, one Undo (`change_files`); a blank or taken id is refused; the new quest opens; done 2026-10-12 (#74)
 
 ---
 
