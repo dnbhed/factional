@@ -110,7 +110,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U14c — marked ids (P-95, P-113): `Session::marks` gives each id of the loaded world in what the session said, with where it is and what it names, for the editor to link; done 2026-10-12 (#79)
 - U15a — the drawer (D-40, P-96, P-114): along the bottom of every tab, with the problems moved into it from the Content tab, each going to its entry from any tab; it closes to a strip and opens again, keeping its height; U15 split into U15a to U15c; done 2026-10-12 (#80)
 - U15b — Play (D-40, P-96, P-115): beside Problems in the drawer, the REPL on a `factional-session` session of the content as it stands, loaded from the texts in memory and reloaded with `reload`'s rules each time they load, saying what that says; the last world that loaded while they don't; history by arrow; done 2026-10-12 (#81)
-- U15c — Play's links and completion (P-96, P-116): each id Play says a link to its entry; Tab completing the last word typed, from the commands or the world's ids (`Session::complete`), listing them where there's more than one; U15c split, with pages handing commands now U15d; E1 moved next, ahead of U15d to U17, at the user's direction; done 2026-10-12
+- U15c — Play's links and completion (P-96, P-116): each id Play says a link to its entry; Tab completing the last word typed, from the commands or the world's ids (`Session::complete`), listing them where there's more than one; U15c split, with pages handing commands now U15d; E1 moved next, ahead of U15d to U17, at the user's direction; done 2026-10-12 (#82)
 
 ---
 
