@@ -29,6 +29,17 @@ fn sample() -> PathBuf {
 }
 
 #[test]
+fn the_relations_matrix_shows_each_faction_toward_each_other() {
+    let harness = previews_tab(sample());
+    harness.get_by_label("Relations: each faction, down, toward each other, across");
+    // DESIGN.md §13: the Watch and the Guild are enemies, in conflict.
+    harness.get_by_label("city_watch → lantern_guild: -80.00, enemy, in conflict");
+    harness.get_by_label("free_company → city_watch: -10.00, neutral");
+    harness.get_by_label("temple → free_company: 0.00, neutral");
+    assert!(harness.query_by_label_contains("temple → temple").is_none());
+}
+
+#[test]
 fn the_matrix_shows_every_observer_toward_every_character() {
     let harness = previews_tab(sample());
     harness.get_by_label("observer");
@@ -96,6 +107,27 @@ fn painted(harness: &Harness<'static, Editor>) -> Vec<Shape> {
         open(&clipped.shape, &mut shapes);
     }
     shapes
+}
+
+#[test]
+fn a_relations_cell_is_tinted_by_its_band() {
+    let harness = previews_tab(sample());
+    let shapes = painted(&harness);
+    let background = |shown: &str| {
+        shapes.iter().find_map(|shape| match shape {
+            Shape::Text(text) if text.galley.text() == shown => text
+                .galley
+                .job
+                .sections
+                .first()
+                .map(|s| s.format.background),
+            _ => None,
+        })
+    };
+    let hostile = |alpha: u8| Color32::from_rgba_unmultiplied(0xf0, 0xa3, 0x5e, alpha);
+    // The lowest of five bands, enemy, is tinted strongest; rival, the next, halfway.
+    assert_eq!(background("-80.00 ⚔"), Some(hostile(160)));
+    assert_eq!(background("-30.00"), Some(hostile(100)));
 }
 
 #[test]

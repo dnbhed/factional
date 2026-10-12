@@ -2,6 +2,8 @@
 # other from -100 to 100, and two are in conflict when either regards the other at or below
 # -50. A member of one can't join the other.
 load content/sample
+# Each faction, down, toward each other, across (U12c), * where they're in conflict.
+relations --matrix
 relations city_watch
 # The Watch and the mercenaries are rivals, but not in conflict.
 relations free_company

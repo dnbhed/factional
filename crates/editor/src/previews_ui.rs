@@ -1,7 +1,7 @@
-//! The Previews tab (U5): the disposition matrix and a faction's alignment map, from the
-//! world built from the last content that loaded (D-35). Both are the engine's queries
-//! (`disposition_matrix`, `alignment_map`); this draws them and turns clicks into model
-//! calls.
+//! The Previews tab (U5): the disposition matrix, the relations matrix (U12c) and a faction's
+//! alignment map, from the world built from the last content that loaded (D-35). Each is the
+//! engine's query (`disposition_matrix`, `relations_matrix`, `alignment_map`); this draws them
+//! and turns clicks into model calls.
 
 use std::cmp::Ordering;
 
@@ -54,6 +54,11 @@ impl Editor {
                 egui::ScrollArea::horizontal()
                     .id_salt("matrix")
                     .show(ui, |ui| matrix_ui(ui, world));
+                ui.separator();
+                ui.heading("Relations: each faction, down, toward each other, across");
+                egui::ScrollArea::horizontal()
+                    .id_salt("relations")
+                    .show(ui, |ui| relations_ui(ui, world));
                 ui.separator();
                 ui.heading("Alignment map");
                 chosen = map_ui(ui, world, self.map_faction()).map(Choice::Map);
@@ -153,6 +158,55 @@ fn matrix_ui(ui: &mut egui::Ui, world: &World) {
                 let said = format!(
                     "{} → {subject}: {}, {}",
                     row.observer, disposition.score, disposition.band
+                );
+                ui.label(text)
+                    .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
+            }
+            ui.end_row();
+        }
+    });
+}
+
+/// Each faction's regard for each other, tinted by its relation band as the disposition
+/// matrix is by its, marked where the pair is in conflict, and labelled in full for anyone who
+/// can't see the grid (U12c).
+fn relations_ui(ui: &mut egui::Ui, world: &World) {
+    let matrix = world.relations_matrix();
+    let bands: Vec<&str> = world
+        .balance()
+        .relation_bands
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect();
+    egui::Grid::new("relations").striped(true).show(ui, |ui| {
+        ui.label("faction");
+        for faction in &matrix.factions {
+            ui.label(faction.as_str());
+        }
+        ui.end_row();
+        for row in &matrix.rows {
+            ui.label(row.from.as_str());
+            for cell in &row.cells {
+                let Some(cell) = cell else {
+                    ui.label("—");
+                    continue;
+                };
+                let regard = &cell.regard;
+                let band = bands.iter().position(|b| *b == regard.band);
+                let shown = match cell.conflict {
+                    true => format!("{} ⚔", regard.value),
+                    false => regard.value.to_string(),
+                };
+                let mut text = egui::RichText::new(shown).monospace();
+                if let Some(tint) = band.and_then(|band| tint(band, bands.len())) {
+                    text = text
+                        .background_color(tint)
+                        .color(ui.visuals().strong_text_color());
+                }
+                let conflict = if cell.conflict { ", in conflict" } else { "" };
+                let said = format!(
+                    "{} → {}: {}, {}{conflict}",
+                    regard.from, regard.to, regard.value, regard.band
                 );
                 ui.label(text)
                     .widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, &said));
