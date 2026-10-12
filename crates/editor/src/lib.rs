@@ -20,6 +20,7 @@ use factional_content::{
 use factional_core::Curve;
 use factional_quests::{Next, QuestId, QuestLog, Quests, StartAssessment};
 use factional_reputation::{CharacterId, World};
+use factional_session::Named;
 
 pub use eframe::egui;
 
@@ -1294,6 +1295,7 @@ impl Editor {
             return;
         }
         let mut listed = None;
+        let mut followed = None;
         let mut close = false;
         egui::Panel::bottom("drawer")
             .resizable(true)
@@ -1308,11 +1310,24 @@ impl Editor {
                     }
                 });
                 match self.playing {
-                    true => self.play.ui(ui),
+                    true => followed = self.play.ui(ui),
                     false => listed = self.problems_ui(ui),
                 }
             });
         self.drawer_open = !close;
+        // An id Play said, followed to its entry (U15c).
+        if let Some((named, id)) = followed {
+            let file = match named {
+                Named::Faction => "factions.toml",
+                Named::Character => "characters.toml",
+                Named::Action => "actions.toml",
+                Named::Outcome => "outcomes.toml",
+                Named::Quest => QUESTS_FILE,
+                Named::Questline => QUESTLINES_FILE,
+            };
+            self.workspace = Workspace::Content;
+            self.select_at(file, &id);
+        }
         match listed {
             Some(Listed::Go(file, key)) => {
                 self.workspace = Workspace::Content;

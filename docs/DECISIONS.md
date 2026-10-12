@@ -856,6 +856,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **What it shows:** each command after `>`, in bold monospace, and what it said, the log scrolling to its end; a line labelled "Play command", run with Enter, with the up and down arrows through what's been run. `quit` doesn't close anything; it says to close the drawer.
   - *Why:* the content is tried where it's written, as it stands (P-96).
 
+- **P-116 · Play's links and completion** (made in U15c, 2026-10-12; P-96, P-113).
+  - **Each id Play says is a link,** "Go to <id>" for anyone who can't see it, from the session's marks, to its entry in the Content tab: a faction's in `factions.toml`, a character's in `characters.toml`, and so on. A line with no ids is one label, as before.
+  - **Tab completes the last word typed** (`Session::complete`): the first word from the commands, any after it from the loaded world's ids, in order. One completion is written in, with a space after; with more, what they share is, and they're listed under the line. The cursor goes to the end.
+  - **Completion is the session's,** so the CLI's REPL could offer it too; the ids are the world's, as `marks` finds them (P-113), not the outline's every key.
+  - *Why:* typing ids is where a REPL is slowest, and reading one should lead to it.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.
