@@ -1214,15 +1214,15 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 
 The module embeds in games through a Bevy plugin (D-33, settling X-2). The core stays as it is: no Bevy types below the plugin, no floats in rule code, time only through `AdvanceTime`.
 
-- **A crate beside `cli`, `factional-bevy`,** depending on `content`, `quests` and `reputation`, and on Bevy, pinned to one version. Nothing depends on it.
-- **The plugin holds the world and the quest log as a resource,** loaded from a content directory at startup; a world that doesn't load stops the app with its diagnostics, as `load` would (D-20).
-- **Commands in, events out.** Game systems send reputation and quest commands as Bevy messages; the plugin executes them in the order sent, once per frame, and sends each event out as a message, with refusals as messages too, so a game reacts to `StandingChanged` or `QuestFinished` like any other. Queries are read straight from the resource.
-- **Time** advances only when the game says: the plugin sends `AdvanceTime` from a tick rate the game sets, or the game sends it itself.
+- **A crate beside `cli`, `factional-bevy`,** depending on `content`, `quests` and `reputation`, and on Bevy, pinned to 0.20.0 without its default features. Nothing depends on it. It builds in a workspace of its own, `crates/bevy`, with its own lock file and CI job, so the main gates never compile Bevy (E1, P-117).
+- **The plugin holds the world and the quest log as a resource** (`Factional`), loaded from a content directory at startup (`FactionalPlugin { content, tick_every }`); a world that doesn't load stops the app with its diagnostics, as `load` would (D-20), and leaves them as a resource (`FactionalProblems`).
+- **Commands in, events out.** Game systems send reputation and quest commands as Bevy messages (`FactionalCommand::World`, `::Quest`); the plugin executes them in the order sent, once per frame, after the game's own systems (`PostUpdate`), and sends each event out as a message (`FactionalEvent::World`, `::Quest`), with refusals as messages too (`::WorldRefused`, `::QuestRefused`), so a game reacts to `StandingChanged` or `QuestFinished` like any other. Queries are read straight from the resource.
+- **Time** advances only when the game says: with `tick_every`, the plugin sends one `AdvanceTime` a frame for the ticks that passed in Bevy's game time (`Time`, so pausing it pauses the world), before the game's systems run; without, the game sends it itself.
 - **Saves** are the same saves (P-54, P-73), written and read through `factional-content`; T5 adds the binary encoding a finished game wants.
-- **Left to E1:** the Bevy version, how the plugin is configured, and whether the crate builds in the main workspace or its own, to keep CI's Rust gates fast.
+- **An example app,** `cargo run --example riverhold` in `crates/bevy`: headless, a few frames of Riverhold with a theft, a quest started and time passing, each event printed.
 
 | Increment | Builds |
 | --- | --- |
-| E1 | The plugin: the resource, commands and events as messages, time, and an example app |
+| E1 (done) | The plugin: the resource, commands and events as messages, time, and an example app |
 | T5 | Binary saves, beside JSON (P-54) |
 

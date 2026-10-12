@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The Bevy plugin builds in a workspace of its own, so these gates never compile Bevy (P-117).
+exclude = ["crates/bevy"]
 
 [workspace.package]
 version = "0.1.0"
