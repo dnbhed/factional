@@ -1,13 +1,15 @@
 //! A questline's page (U13a, P-94): beside its read-only graph, its steps in order, each a card
 //! of its quests, which open their own, and "+ Existing quest…", offering the quests in no
 //! questline, added in one change; and "+ New quest", made in `quests.toml` and added to its
-//! step as one change to both files (U13b). Only a copy of the sample is ever saved.
+//! step as one change to both files (U13b); quests moved between steps, steps reordered, and
+//! a step's need and leftovers set on its card (U13c). Only a copy of the sample is ever saved.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use factional_editor::egui::{Key, Modifiers};
 use factional_editor::{Editor, WINDOW};
 
 const SAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../content/sample");
@@ -156,4 +158,86 @@ fn a_new_quests_id_must_be_new() {
             .query_by_label("Back to A Life in the Watch")
             .is_none()
     );
+}
+
+/// Types `input` over what's in the field labelled `label`, and enters it.
+fn enter(harness: &mut Harness<'static, Editor>, label: &str, input: &str) {
+    harness.get_by_label(label).scroll_to_me();
+    harness.run();
+    harness.get_by_label(label).focus();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.key_press(Key::Backspace);
+    harness.get_by_label(label).type_text(input);
+    harness.key_press(Key::Enter);
+    harness.run();
+}
+
+/// Whether what's labelled `label` is in the card of the `step`th step, the last step's card
+/// running to the end.
+fn in_step(harness: &Harness<'static, Editor>, label: &str, step: usize) -> bool {
+    let at = height(harness, label);
+    let after = harness
+        .query_by_label(&format!("Step {}", step + 1))
+        .map_or(f32::MAX, |next| next.rect().center().y);
+    height(harness, &format!("Step {step}")) < at && at < after
+}
+
+#[test]
+fn a_quest_moves_to_another_step_in_one_change() {
+    let mut harness = on_watch_career();
+    let docks = "Inspecting the Docks · dock_inspection";
+    assert!(in_step(&harness, docks, 2));
+    click(&mut harness, "Move dock_inspection…");
+    assert!(
+        harness
+            .query_by_label("Move dock_inspection to step 2")
+            .is_none()
+    );
+    click(&mut harness, "Move dock_inspection to step 3");
+    assert!(in_step(&harness, docks, 3));
+    click(&mut harness, "Undo");
+    assert!(in_step(&harness, docks, 2));
+}
+
+#[test]
+fn a_step_moves_up_or_down() {
+    let mut harness = on_watch_career();
+    assert!(harness.query_by_label("Move step 1 up").is_none());
+    assert!(harness.query_by_label("Move step 4 down").is_none());
+    click(&mut harness, "Move step 3 up");
+    assert!(in_step(&harness, "Harbour Errands · harbour_errands", 2));
+    assert!(in_step(&harness, "Night Patrol · night_patrol", 3));
+    click(&mut harness, "Move step 2 down");
+    assert!(in_step(&harness, "Night Patrol · night_patrol", 2));
+}
+
+#[test]
+fn a_steps_need_and_leftovers_are_set_on_its_card() {
+    let mut harness = on_watch_career();
+    assert_eq!(
+        harness.get_by_label("Need of step 2").value().as_deref(),
+        Some("2")
+    );
+    // Left out, a step needs all its quests.
+    assert_eq!(
+        harness.get_by_label("Need of step 1").value().as_deref(),
+        Some("")
+    );
+    enter(&mut harness, "Need of step 2", "3");
+    harness.get_by_label("all of night_patrol, dock_inspection, smugglers_cove, in any order");
+    enter(&mut harness, "Need of step 2", "");
+    harness.get_by_label("all of night_patrol, dock_inspection, smugglers_cove, in any order");
+    assert_eq!(
+        harness.get_by_label("Need of step 2").value().as_deref(),
+        Some("")
+    );
+    // A step with no need written has one added.
+    enter(&mut harness, "Need of step 1", "0");
+    harness.get_by_label("any of watch_oath, or none");
+    for _ in 0..3 {
+        click(&mut harness, "Undo");
+    }
+    click(&mut harness, "Leftovers of step 2: open");
+    harness.get_by_label("2 of night_patrol, dock_inspection, smugglers_cove, in any order");
 }

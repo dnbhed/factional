@@ -14,7 +14,8 @@ use factional_content::{
     IdChoice, Offer, Offered, Outline, OutlineEntry, QuestGraph, Reference, RelationRow, Step,
     ValuePath, Word, additions, apply_fix, entry_fields, entry_form, entry_places, file_places,
     fix_for, id_choices, is_both_ways, key_info, load_texts, make_offer, outline, outline_texts,
-    place_kinds, place_words, read_texts, referenced_by, set_relation, set_value, words_at,
+    place_kinds, place_words, read_texts, referenced_by, remove, set_relation, set_value,
+    swap_items, words_at,
 };
 use factional_core::Curve;
 use factional_quests::{Next, QuestId, QuestLog, Quests, StartAssessment};
@@ -86,6 +87,8 @@ pub struct Editor {
     unlinked: BTreeSet<String>,
     /// The new quest's id as typed in each step of the questline shown (U13b).
     pub(crate) new_quests: BTreeMap<usize, String>,
+    /// Each step's need as typed on its card, until the text changes (U13c).
+    pub(crate) step_needs: BTreeMap<usize, String>,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -259,6 +262,7 @@ impl Editor {
             styled: false,
             unlinked: BTreeSet::new(),
             new_quests: BTreeMap::new(),
+            step_needs: BTreeMap::new(),
         };
         editor.reload();
         editor
@@ -408,6 +412,110 @@ impl Editor {
         self.change(file, said, |text| {
             make_offer(QUESTLINES_FILE, text, &offer, Some(quest)).map(|(text, _)| text)
         })
+    }
+
+    /// Moves `quest` from the `from`th step of `line` to the end of the `to`th (U13c), as one
+    /// change.
+    pub fn move_quest(
+        &mut self,
+        line: &str,
+        from: usize,
+        quest: &str,
+        to: usize,
+    ) -> Result<(), EditError> {
+        let Some(file) = CONTENT_FILES
+            .iter()
+            .position(|name| *name == QUESTLINES_FILE)
+        else {
+            return Ok(());
+        };
+        let place = self
+            .graph
+            .quests
+            .questlines
+            .values()
+            .find(|found| found.id.as_str() == line)
+            .and_then(|found| found.steps.get(from))
+            .and_then(|step| step.quests.iter().position(|id| id.as_str() == quest));
+        let Some(place) = place else {
+            return Ok(());
+        };
+        let at = step_quests(line, from).at.then(Step::Index(place));
+        let said = format!("Moved {quest} to step {} of {line}", to + 1);
+        self.change(file, said, |text| {
+            let text = remove(text, &at)?;
+            make_offer(QUESTLINES_FILE, &text, &step_quests(line, to), Some(quest))
+                .map(|(text, _)| text)
+        })
+    }
+
+    /// Swaps the `step`th step of `line` with the one before it, or with `down` the one after
+    /// (U13c), as one change.
+    pub fn move_step(&mut self, line: &str, step: usize, down: bool) -> Result<(), EditError> {
+        let Some(file) = CONTENT_FILES
+            .iter()
+            .position(|name| *name == QUESTLINES_FILE)
+        else {
+            return Ok(());
+        };
+        let Some(other) = (match down {
+            true => step.checked_add(1),
+            false => step.checked_sub(1),
+        }) else {
+            return Ok(());
+        };
+        let steps = ValuePath(vec![
+            Step::Key(line.to_owned()),
+            Step::Key("steps".to_owned()),
+        ]);
+        let way = if down { "down" } else { "up" };
+        let said = format!("Moved step {} of {line} {way}", step + 1);
+        self.change(file, said, |text| swap_items(text, &steps, step, other))
+    }
+
+    /// Sets the `step`th step of `line`'s `key`, its `need` or `leftovers`, to `input` (U13c):
+    /// added if it isn't written, and with nothing entered, left out.
+    pub fn set_step(
+        &mut self,
+        line: &str,
+        step: usize,
+        key: &str,
+        input: &str,
+    ) -> Result<(), EditError> {
+        let Some(file) = CONTENT_FILES
+            .iter()
+            .position(|name| *name == QUESTLINES_FILE)
+        else {
+            return Ok(());
+        };
+        let place = ValuePath(vec![
+            Step::Key(line.to_owned()),
+            Step::Key("steps".to_owned()),
+            Step::Index(step),
+        ]);
+        let at = place.then(Step::Key(key.to_owned()));
+        let input = input.trim();
+        let text = self
+            .texts
+            .as_ref()
+            .and_then(|texts| texts[file].as_deref())
+            .unwrap_or_default();
+        let written = entry_fields(text, line)
+            .iter()
+            .any(|field| field.path == at);
+        let said = match input {
+            "" => format!("Left out step {}'s {key}", step + 1),
+            input => format!("Set step {}'s {key} to {input}", step + 1),
+        };
+        match (input, written) {
+            ("", false) => Ok(()),
+            ("", true) => self.change(file, said, |text| remove(text, &at)),
+            (input, true) => self.change(file, said, |text| set_value(text, &at, input)),
+            (input, false) => self.change(file, said, |text| {
+                let (text, at) = factional_content::add(QUESTLINES_FILE, text, &place, Some(key))?;
+                set_value(&text, &at, input)
+            }),
+        }
     }
 
     /// Makes a quest `id` in `quests.toml`, with its name and the stage and choice a quest
@@ -852,6 +960,7 @@ impl Editor {
     /// Makes the outline again from the text as edited, keeping the selection if that entry
     /// is still there, and shows its values afresh.
     fn refresh(&mut self) {
+        self.step_needs.clear();
         let was = self
             .selected_entry()
             .map(|(file, entry)| (file.to_owned(), entry.key.clone()));

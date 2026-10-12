@@ -103,6 +103,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U12c — the relations matrix (P-106): the engine's `relations_matrix`, each faction toward each other with its band and conflict; the Previews tab draws it, tinted by band and marked where a pair is in conflict; `relations --matrix [--csv]`; done 2026-10-12 (#72)
 - U13a — a questline's page (P-94, P-107): the Quests tab's right-hand panel shows a questline's steps in order, each a card of what it needs and its quests by name, each opening its own with a way back; "+ Existing quest…" offers the quests in no questline and adds one to the step in one change; U13 split into U13a to U13d; done 2026-10-12 (#73)
 - U13b — "+ New quest" (P-94, P-108): each step's card takes a new quest's id; the quest is made in `quests.toml`, started so it reads, and added to the step, as one change to both files, one Undo (`change_files`); a blank or taken id is refused; the new quest opens; done 2026-10-12 (#74)
+- U13c — moving quests and steps (P-94, P-109): each step's card moves it up or down and each of its quests to another step, and sets its `need` and `leftovers`, each as one change; `swap_items` in the writer swaps two items of a list, a `[[table]]` with its comments; done 2026-10-12 (#75)
 
 ---
 
@@ -128,11 +129,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U13c · Moving quests and steps — P3 · Next
-
-A quest moved between steps and steps reordered, by menu; a step's `need` and `leftovers` set on its card (P-94).
-
-### U13d · Nested pages — P3 · Outline
+### U13d · Nested pages — P3 · Next
 
 Pages nested with a breadcrumb, *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*: a quest's page its stages, a stage's its choices (P-94).
 

@@ -1064,6 +1064,41 @@ fn push_inline(list: &mut Array, mut value: Value) {
     list.push_formatted(value);
 }
 
+/// `text` with the `a`th and `b`th items of the list at `list` swapped (U13c), each with the
+/// comments above it: a list of `[[tables]]`, or an inline list.
+pub fn swap_items(text: &str, list: &ValuePath, a: usize, b: usize) -> Result<String, EditError> {
+    let mut document = parse(text)?;
+    let (low, high) = (a.min(b), a.max(b));
+    let not_there = |at: usize| EditError::NotThere(list.then(Step::Index(at)));
+    match walk(&mut document, None, &list.0) {
+        // Each table keeps its comments; the two trade places in the text.
+        Some((Place::Tables(tables), _)) => {
+            let (Some(first), Some(second)) = (tables.get(low).cloned(), tables.get(high).cloned())
+            else {
+                return Err(not_there(high));
+            };
+            let (first_at, second_at) = (first.position(), second.position());
+            for (at, mut table, position) in [(low, second, first_at), (high, first, second_at)] {
+                table.set_position(position);
+                if let Some(slot) = tables.get_mut(at) {
+                    *slot = table;
+                }
+            }
+        }
+        // An inline list's spacing stays where it is.
+        Some((Place::List(items), _)) => {
+            let (Some(first), Some(second)) = (items.get(low).cloned(), items.get(high).cloned())
+            else {
+                return Err(not_there(high));
+            };
+            items.replace(low, second.decorated("", ""));
+            items.replace(high, first.decorated("", ""));
+        }
+        _ => return Err(EditError::NotThere(list.clone())),
+    }
+    Ok(document.to_string())
+}
+
 /// `text` without what's at `path`: a key, an entry or a list item. A table or a key goes
 /// with the comments directly above it; any set apart by a blank line stay, above what's
 /// written next. A list of `[[tables]]` left empty goes too, since TOML can't write it. An

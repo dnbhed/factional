@@ -22,7 +22,7 @@ pub use describe::{
 };
 pub use edit::{
     Addition, EditError, Field, KeyInfo, Step, ValueKind, ValuePath, add, additions, entry_fields,
-    entry_places, file_places, key_info, remove, rename_key, set_value,
+    entry_places, file_places, key_info, remove, rename_key, set_value, swap_items,
 };
 pub use fix::{Change, Fix, apply_fix, fix_for};
 pub use form::{

@@ -7,7 +7,7 @@ use factional_content::{
 };
 use std::collections::BTreeMap;
 
-use factional_quests::{Next, Quest, Questline};
+use factional_quests::{Leftovers, Next, Quest, Questline};
 
 use crate::egui::{self, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2, WidgetInfo, WidgetType};
 use crate::layout::{GAP_Y, line_layout, quest_layout, rounded};
@@ -59,7 +59,8 @@ impl Editor {
                 .resizable(true)
                 .default_size(340.0)
                 .show(ui, |ui| {
-                    paged = page_ui(ui, &self.graph, line, &mut self.new_quests)
+                    let typed = (&mut self.new_quests, &mut self.step_needs);
+                    paged = page_ui(ui, &self.graph, line, typed);
                 });
         }
         if edit {
@@ -78,6 +79,21 @@ impl Editor {
             Some(Paged::New(line, step, quest)) => {
                 if let Err(refused) = self.new_quest_in_step(&line, step, &quest) {
                     self.note = Some(format!("couldn't add: {refused}"));
+                }
+            }
+            Some(Paged::MoveQuest(line, from, quest, to)) => {
+                if let Err(refused) = self.move_quest(&line, from, &quest, to) {
+                    self.note = Some(format!("couldn't move: {refused}"));
+                }
+            }
+            Some(Paged::MoveStep(line, step, down)) => {
+                if let Err(refused) = self.move_step(&line, step, down) {
+                    self.note = Some(format!("couldn't move: {refused}"));
+                }
+            }
+            Some(Paged::Set(line, step, key, input)) => {
+                if let Err(refused) = self.set_step(&line, step, key, &input) {
+                    self.note = Some(format!("couldn't set: {refused}"));
                 }
             }
             None => {}
@@ -143,17 +159,24 @@ enum Paged {
     Add(String, usize, String),
     /// A new quest made in the questline's `n`th step, by its id (U13b).
     New(String, usize, String),
+    /// A quest moved from one step to another (U13c).
+    MoveQuest(String, usize, String, usize),
+    /// A step moved up, or with `true` down (U13c).
+    MoveStep(String, usize, bool),
+    /// A step's `need` or `leftovers` set (U13c).
+    Set(String, usize, &'static str, String),
 }
 
 /// A questline's page (U13a, P-94): its name, then its steps in order, each a card saying what
 /// it needs, with its quests by name, each opening its own, and "+ Existing quest…", offering
 /// the quests in no questline, as a quest is in one at most; and "+ New quest", its id typed
-/// in `new_quests` by step (U13b).
+/// in `new_quests` by step (U13b). Each step moves up and down, each quest to another step,
+/// and a step's need, typed in `needs` by step, and leftovers are set on its card (U13c).
 fn page_ui(
     ui: &mut egui::Ui,
     graph: &QuestGraph,
     line: &Questline,
-    new_quests: &mut BTreeMap<usize, String>,
+    (new_quests, needs_typed): (&mut BTreeMap<usize, String>, &mut BTreeMap<usize, String>),
 ) -> Option<Paged> {
     let mut paged = None;
     let named = |id: &str| {
@@ -169,17 +192,94 @@ fn page_ui(
     let id = line.id.as_str();
     ui.heading(&line.name);
     egui::ScrollArea::vertical().show(ui, |ui| {
+        let last = line.steps.len().saturating_sub(1);
         for (index, step) in line.steps.iter().enumerate() {
             let number = index + 1;
             ui.group(|ui| {
                 ui.set_width(ui.available_width());
-                ui.strong(format!("Step {number}"));
+                ui.horizontal(|ui| {
+                    ui.strong(format!("Step {number}"));
+                    for (down, shown, there) in [(false, "↑", index > 0), (true, "↓", index < last)]
+                    {
+                        if !there {
+                            continue;
+                        }
+                        let way = if down { "down" } else { "up" };
+                        let said = format!("Move step {number} {way}");
+                        let button = ui.small_button(shown);
+                        button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+                        if button.clicked() {
+                            paged = Some(Paged::MoveStep(id.to_owned(), index, down));
+                        }
+                    }
+                });
                 ui.add(egui::Label::new(describe_step(step) + &needs(&step.requires)).wrap());
                 for quest in &step.quests {
-                    if ui.selectable_label(false, named(quest.as_str())).clicked() {
-                        paged = Some(Paged::Open(quest.to_string()));
-                    }
+                    let quest = quest.as_str();
+                    ui.horizontal(|ui| {
+                        if ui.selectable_label(false, named(quest)).clicked() {
+                            paged = Some(Paged::Open(quest.to_owned()));
+                        }
+                        if last == 0 {
+                            return;
+                        }
+                        let menu = ui.menu_button("⋯", |ui| {
+                            for to in (0..=last).filter(|to| *to != index) {
+                                let said = format!("Move {quest} to step {}", to + 1);
+                                let button = ui.button(format!("To step {}", to + 1));
+                                button.widget_info(|| {
+                                    WidgetInfo::labeled(WidgetType::Button, true, &said)
+                                });
+                                if button.clicked() {
+                                    paged = Some(Paged::MoveQuest(
+                                        id.to_owned(),
+                                        index,
+                                        quest.to_owned(),
+                                        to,
+                                    ));
+                                }
+                            }
+                        });
+                        let said = format!("Move {quest}…");
+                        menu.response
+                            .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+                    });
                 }
+                ui.horizontal(|ui| {
+                    // Left out, all its quests are needed.
+                    let written = step.need.map(|need| need.to_string()).unwrap_or_default();
+                    let typed = needs_typed.entry(index).or_insert_with(|| written.clone());
+                    let label = ui.label("Need");
+                    let field = ui
+                        .add(egui::TextEdit::singleline(typed).desired_width(40.0))
+                        .labelled_by(label.id);
+                    field.widget_info(|| {
+                        let mut info = WidgetInfo::text_edit(true, &written, typed.as_str(), "");
+                        info.label = Some(format!("Need of step {number}"));
+                        info
+                    });
+                    if field.lost_focus() && *typed != written {
+                        paged = Some(Paged::Set(id.to_owned(), index, "need", typed.clone()));
+                    }
+                    ui.label("Leftovers");
+                    for leftovers in Leftovers::ALL {
+                        let key = leftovers.key();
+                        let on = step.leftovers == leftovers;
+                        let said = format!("Leftovers of step {number}: {key}");
+                        let button = ui.selectable_label(on, key);
+                        button.widget_info(|| {
+                            WidgetInfo::selected(WidgetType::SelectableLabel, true, on, &said)
+                        });
+                        if button.clicked() && !on {
+                            paged = Some(Paged::Set(
+                                id.to_owned(),
+                                index,
+                                "leftovers",
+                                key.to_owned(),
+                            ));
+                        }
+                    }
+                });
                 if !loose.is_empty() {
                     let menu = ui.menu_button("+ Existing quest…", |ui| {
                         for quest in &loose {
