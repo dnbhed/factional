@@ -4,7 +4,7 @@
 //! the schema doesn't and writes no TOML itself: the outline, the schema and the writer are
 //! `factional-content`'s.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use factional_content::{
     place_kinds, place_words, read_texts, referenced_by, set_relation, set_value, words_at,
 };
 use factional_core::Curve;
-use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
+use factional_quests::{Next, QuestId, QuestLog, Quests, StartAssessment};
 use factional_reputation::{CharacterId, World};
 
 pub use eframe::egui;
@@ -49,7 +49,7 @@ mod quests_ui;
 mod removing_ui;
 pub mod theme;
 
-/// The file whose entries are quests, for "Edit in Content".
+/// The file whose entries are quests, for "Edit in Content" and "+ New quest" (U13b).
 const QUESTS_FILE: &str = "quests.toml";
 
 /// The files whose entries other content can name, so the Content tab says what refers to
@@ -84,6 +84,8 @@ pub struct Editor {
     /// The other factions the selected faction's pair with is unlinked from, for a grudge,
     /// though the two are the same (U12b).
     unlinked: BTreeSet<String>,
+    /// The new quest's id as typed in each step of the questline shown (U13b).
+    pub(crate) new_quests: BTreeMap<usize, String>,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -256,6 +258,7 @@ impl Editor {
             confirming: None,
             styled: false,
             unlinked: BTreeSet::new(),
+            new_quests: BTreeMap::new(),
         };
         editor.reload();
         editor
@@ -378,6 +381,7 @@ impl Editor {
         if !self.is_there(&shown) {
             return;
         }
+        self.new_quests.clear();
         // A quest is chosen with it; a questline opens on its own page (U13a).
         self.chosen = match &shown {
             Shown::Quest(quest) => Some(quest.clone()),
@@ -399,20 +403,66 @@ impl Editor {
         else {
             return Ok(());
         };
-        let offer = Offer {
-            label: "Quest".to_owned(),
-            at: ValuePath(vec![
-                Step::Key(line.to_owned()),
-                Step::Key("steps".to_owned()),
-                Step::Index(step),
-                Step::Key("quests".to_owned()),
-            ]),
-            what: Offered::Pick(Vec::new()),
-        };
+        let offer = step_quests(line, step);
         let said = format!("Added {quest} to step {} of {line}", step + 1);
         self.change(file, said, |text| {
             make_offer(QUESTLINES_FILE, text, &offer, Some(quest)).map(|(text, _)| text)
         })
+    }
+
+    /// Makes a quest `id` in `quests.toml`, with its name and the stage and choice a quest
+    /// must have, and adds it to the `step`th step of `line` (U13b): one change to both files,
+    /// one Undo. The new quest is chosen, to be written.
+    pub fn new_quest_in_step(
+        &mut self,
+        line: &str,
+        step: usize,
+        id: &str,
+    ) -> Result<(), EditError> {
+        let (Some(texts), Some(quests), Some(lines)) = (
+            self.texts.as_ref(),
+            CONTENT_FILES.iter().position(|name| *name == QUESTS_FILE),
+            CONTENT_FILES
+                .iter()
+                .position(|name| *name == QUESTLINES_FILE),
+        ) else {
+            return Ok(());
+        };
+        let text = |file: usize| texts[file].as_deref().unwrap_or_default();
+        let id = id.trim();
+        if id.is_empty() {
+            return Err(EditError::Blank);
+        }
+        // What a quest must have, started so it reads: a stage and a choice that ends it.
+        let mut made =
+            factional_content::add(QUESTS_FILE, text(quests), &ValuePath::ROOT, Some(id))?.0;
+        let stage = ValuePath(vec![
+            Step::Key(id.to_owned()),
+            Step::Key("stages".to_owned()),
+            Step::Index(0),
+        ]);
+        let choice = stage
+            .then(Step::Key("choices".to_owned()))
+            .then(Step::Index(0));
+        for (at, value) in [
+            (stage.then(Step::Key("id".to_owned())), "start"),
+            (choice.then(Step::Key("id".to_owned())), "done"),
+            (choice.then(Step::Key("next".to_owned())), Next::END),
+        ] {
+            made = set_value(&made, &at, value)?;
+        }
+        let added = make_offer(
+            QUESTLINES_FILE,
+            text(lines),
+            &step_quests(line, step),
+            Some(id),
+        )?
+        .0;
+        let said = format!("Made {id} in step {} of {line}", step + 1);
+        self.change_files(said, vec![(quests, made), (lines, added)]);
+        self.new_quests.clear();
+        self.choose(id);
+        Ok(())
     }
 
     /// Whether the questline or quest is in the graph.
@@ -740,15 +790,26 @@ impl Editor {
         said: String,
         edit: impl FnOnce(&str) -> Result<String, EditError>,
     ) -> Result<(), EditError> {
-        let Some(texts) = self.texts.as_mut() else {
-            return Ok(());
-        };
-        let Some(text) = texts.get(file) else {
+        let Some(text) = self.texts.as_ref().and_then(|texts| texts.get(file)) else {
             return Ok(());
         };
         let changed = edit(text.as_deref().unwrap_or_default())?;
+        self.change_files(said, vec![(file, changed)]);
+        Ok(())
+    }
+
+    /// Writes each of `changed`, a file's new text by its place, as one change: one Undo
+    /// takes back all of them (U13b, P-94).
+    fn change_files(&mut self, said: String, changed: Vec<(usize, String)>) {
+        let Some(texts) = self.texts.as_mut() else {
+            return;
+        };
         self.undo.push(texts.clone());
-        texts[file] = Some(changed);
+        for (file, text) in changed {
+            if let Some(slot) = texts.get_mut(file) {
+                *slot = Some(text);
+            }
+        }
         self.note = None;
         let before = self.said.clone();
         self.refresh();
@@ -759,7 +820,6 @@ impl Editor {
             .cloned()
             .collect();
         self.consequence = Some(Consequence { said, problems });
-        Ok(())
     }
 
     /// Steps back one change.
@@ -1304,6 +1364,20 @@ fn is_paired(file: &str, path: &ValuePath) -> bool {
         return false;
     };
     key_info(file, &ValuePath(list.to_vec())).is_some_and(|info| info.pair)
+}
+
+/// Where the `step`th step of the questline `line` lists its quests, as an offer of one.
+fn step_quests(line: &str, step: usize) -> Offer {
+    Offer {
+        label: "Quest".to_owned(),
+        at: ValuePath(vec![
+            Step::Key(line.to_owned()),
+            Step::Key("steps".to_owned()),
+            Step::Index(step),
+            Step::Key("quests".to_owned()),
+        ]),
+        what: Offered::Pick(Vec::new()),
+    }
 }
 
 /// Each of `paths` in `file`, with what can be added there, the ids it may take, what its

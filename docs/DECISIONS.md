@@ -805,6 +805,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **What else a step holds is set in Content for now:** its `need` and `leftovers` on its card are U13c's.
   - *Why:* a questline is where its quests are thought of (P-94); this is its first page, and "+ New quest" builds on it.
 
+- **P-108 · How "+ New quest" makes one** (made in U13b, 2026-10-12; P-94).
+  - **The quest is made with the writer's `add`, then started so it reads:** its stage's id `start`, its one choice `done`, whose `next` is `end`. Blank, as `add` leaves them, the ids wouldn't read, so the quest wouldn't be in the graph to open; these are a start to rename, not content to keep. Its `name` is left blank, for the designer.
+  - **Both files are written as one change:** the editor's undo already holds every file's text, so a change to several is one push (`change_files`), one Undo; "Edit in Content" and renaming everywhere (P-97) can use the same.
+  - **A blank id, or one taken, is refused before anything is written,** saying why ("lost_ring is already there").
+  - **The new quest opens** beside the graph, with "‹ <questline>" back to the page; what was typed in each step's field is cleared.
+  - *Why:* a designer makes a questline's quests where they think of them (P-94), and comes away with one that loads.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

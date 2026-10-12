@@ -1259,6 +1259,7 @@ dependencies = [
  "factional-core",
  "factional-quests",
  "factional-reputation",
+ "toml",
 ]
 
 [[package]]
