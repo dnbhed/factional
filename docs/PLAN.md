@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → U19 → G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8 → G9 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8 → G9 → W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -113,6 +113,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U15c — Play's links and completion (P-96, P-116): each id Play says a link to its entry; Tab completing the last word typed, from the commands or the world's ids (`Session::complete`), listing them where there's more than one; U15c split, with pages handing commands now U15d; E1 moved next, ahead of U15d to U17, at the user's direction; done 2026-10-12 (#82)
 - E1 — the Bevy plugin (D-33, P-75, P-117): `factional-bevy`, in a workspace of its own with its own CI job; the world and quest log as a resource loaded at startup, stopping the app with the loader's problems if it doesn't load; commands in and events out as messages, refusals included, played after the game's systems each frame; time by `AdvanceTime` at a rate the game sets, in Bevy's game time; a headless example on Riverhold; Bevy 0.20.0; done 2026-10-12 (#83)
 - G0 — the game builder's design pass (D-43 to D-47, P-118, DESIGN.md §20): research ([research/game-builder-2026-10.md](research/game-builder-2026-10.md)); the user's choices: an app of its own, opening and opened by the editor, an inspector first, then a 2D sandbox, then a world editor, `bevy_egui`, placeholder shapes, a builder file; G1 to G9 outlined; the editor's remaining increments planned, the editor's screenshots first and the builder's increments next, at the user's direction; done 2026-10-12 (#84)
+- W0 — world maps from generated worlds, the design pass (D-48 to D-53, P-119, DESIGN.md §21): research ([research/world-maps-2026-10.md](research/world-maps-2026-10.md)); the user's direction: an Azgaar export imported by a wizard, the most fundamental layers first, polished, dressed with foliage and edited by hand; settlements, routes and points of interest as suggestions, not built; 2D tile maps first and 3D later; the most efficient format; places known to the engine, the map the builder's, amending D-47 and P-118; a region at a scale first; W1 to W11 outlined after G9, at the user's direction; done 2026-10-12 (#PR)
 
 ---
 
@@ -126,7 +127,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 
 ### T5 · Binary saves — P3 · Outline
 
-The user's choice for a finished game (P-54): a compact binary encoding of the same save, beside JSON, with the format and version still readable first. After E1, once the Bevy plugin shows what a game needs (D-33).
+The user's choice for a finished game (P-54): a compact binary encoding of the same save, beside JSON, with the format and version still readable first. After E1, once the Bevy plugin shows what a game needs (D-33). The encoding is the world maps' (P-119).
 
 ## Phase 5 — Knowledge and rumour
 
@@ -173,6 +174,50 @@ Quest givers marked; quests started and choices made from a panel.
 ### G9 · The world editor — P3 · Outline
 
 A mode of the builder: tokens and places placed, moved and named, saved to `builder.toml` (D-44, D-47).
+
+### W1 · The world map and its file — P3 · Outline
+
+`factional-worldgen` and the map: tiles in 64 × 64 chunks, in layers, with the recipe and the designer's overrides; the map file (a readable header, then postcard, compressed by `lz4_flex` or zstd as measured on a real map), written and read back exactly by `factional-content`; `factional world info <file>`; tested on hand-made maps (D-52, P-119, DESIGN.md §21).
+
+### W2 · Importing Azgaar's terrain — P3 · Outline
+
+Azgaar's Full JSON read, its version checked and its problems named by key path; cells, heights and features; a region at a scale (D-53) rasterised to tiles, heights interpolated across cell centres; land, sea and lake; `factional world import`; fixtures generated at Azgaar's smallest size (P-119).
+
+### W3 · Polishing the terrain — P3 · Outline
+
+Detail from seeded integer noise, following the source's roughness; elevation levels with ledges and cliffs; coasts smoothed; rivers widened from their discharge and carved, lakes at their surface height.
+
+### W4 · Climate and biomes — P3 · Outline
+
+Each tile's temperature, precipitation and biome from the source, and its terrain from those.
+
+### W5 · Foliage — P3 · Outline
+
+Trees, shrubs and grass scattered by Poisson-disc sampling, their kind and density by biome, seeded; each density an option with its default.
+
+### W6 · Suggestions — P3 · Outline
+
+Settlements, routes, points of interest, and cultures and religions as candidate factions, kept as markers with what the source says of them; nothing built from them (D-49).
+
+### W7 · The map in the builder — P3 · Outline
+
+The map drawn with Bevy's `TilemapChunk`, chunk by chunk, in placeholder colours, autotiled on a dual grid; panned and zoomed; suggestions shown. After G4's shell.
+
+### W8 · The wizard — P3 · Outline
+
+In the builder: a file opened and summarised, layers chosen with what they need, a region and scale on a preview, a seed and options, then generated, previewed and saved (D-48).
+
+### W9 · Editing the map — P3 · Outline
+
+Brushes for terrain, elevation, water and foliage in G9's world editor, saved as overrides that survive regenerating; reset to generated in an area; undo.
+
+### W10 · Places in the engine — P3 · Outline
+
+A design pass: what a place is in the content, how places come from the map, and which reputation rules use them (D-51), the user's choices settling what D-47 and P-118 leave to it.
+
+### W11 · The map in 3D — P3 · Outline
+
+A terrain mesh from the elevation layer, foliage as instanced models (D-50).
 
 ### U15d · Pages hand commands to Play — P3 · Outline
 
