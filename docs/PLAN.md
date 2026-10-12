@@ -106,6 +106,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U13c — moving quests and steps (P-94, P-109): each step's card moves it up or down and each of its quests to another step, and sets its `need` and `leftovers`, each as one change; `swap_items` in the writer swaps two items of a list, a `[[table]]` with its comments; done 2026-10-12 (#75)
 - U13d — nested pages (P-94, P-110): a breadcrumb, *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*, each part going back there; a quest's page its stages, each counting its choices' problems, and a stage's its choices with theirs; done 2026-10-12 (#76)
 - U14a — the session as a library (D-39, P-95, P-111): `factional-session`, the REPL's session and every command module moved out of the CLI unchanged, the scenarios and snapshots the proof; the CLI keeps its binary, line editing and scenario runner; CLAUDE.md's and DESIGN.md §15's dependency direction; U14 split into U14a to U14c; done 2026-10-12 (#77)
+- U14b — the session from texts (P-81, P-95, P-112): `Session::load_texts` and `Session::reload_texts` load and reload the world written in texts in memory, unsaved edits included, with `load`'s and `reload`'s checks and output; a typed `reload` reloads what it was loaded from; `load_texts_fingerprinted` in the content crate; done 2026-10-12 (#78)
 
 ---
 
@@ -131,11 +132,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U14b · The session from texts — P3 · Next
-
-`Session` loading from the texts in memory, as the editor holds them, unsaved edits included, as well as from a directory (P-81, P-95).
-
-### U14c · Marked ids — P3 · Outline
+### U14c · Marked ids — P3 · Next
 
 What the session says, with each id in it marked with what it names, so the editor links them without searching the text; the CLI prints the same text unmarked (P-95).
 

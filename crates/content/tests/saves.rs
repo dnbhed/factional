@@ -241,3 +241,16 @@ fn fingerprints_follow_the_fnv_1a_test_vectors() {
         "fnv1a64:85944171f73967e8"
     );
 }
+
+#[test]
+fn texts_read_in_memory_are_fingerprinted_as_their_directory_is() {
+    let dir = Path::new(REPO).join("content/sample");
+    let (content, quests, fingerprint) = load_dir_fingerprinted(&dir).expect("loads");
+    let texts = factional_content::read_texts(&dir).expect("readable");
+    let (from_texts, quests_from_texts, printed) =
+        factional_content::load_texts_fingerprinted(&texts).expect("loads");
+    assert_eq!(printed, fingerprint);
+    assert_eq!(from_texts.characters, content.characters);
+    assert_eq!(quests_from_texts.quests.len(), quests.quests.len());
+    assert!(!quests.quests.is_empty());
+}

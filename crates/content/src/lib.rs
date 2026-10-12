@@ -32,7 +32,7 @@ pub use form::{
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
     CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, load_texts,
-    outline, outline_texts, read_texts,
+    load_texts_fingerprinted, outline, outline_texts, read_texts,
 };
 pub use references::{Names, Reference, defined_in, referenced_by, references};
 pub use relations::{Regard, RelationRow, relation_rows, set_relation};

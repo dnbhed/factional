@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
-use factional_content::Fingerprint;
+use factional_content::{ContentError, ContentTexts, Fingerprint};
 use factional_quests::Quests;
-use factional_reputation::World;
+use factional_reputation::{Content, World};
 
 /// A content directory that would load: its world and quests, how much is in them, and their
 /// warnings.
@@ -21,14 +21,25 @@ pub(crate) struct Checked {
 
 /// Reads and checks the content in `path`; every problem, one per line, if it wouldn't load.
 pub(crate) fn check(path: &Path) -> Result<Checked, Vec<String>> {
-    let (content, quests, fingerprint) =
-        factional_content::load_dir_fingerprinted(path).map_err(|error| {
-            error
-                .diagnostics
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-        })?;
+    checked(factional_content::load_dir_fingerprinted(path))
+}
+
+/// Checks the content written in `texts`, as [`check`] does a directory's (U14b).
+pub(crate) fn check_texts(texts: &ContentTexts) -> Result<Checked, Vec<String>> {
+    checked(factional_content::load_texts_fingerprinted(texts))
+}
+
+/// What was read, checked: its world, counts and warnings; or every problem, one per line.
+fn checked(
+    read: Result<(Content, Quests, Fingerprint), ContentError>,
+) -> Result<Checked, Vec<String>> {
+    let (content, quests, fingerprint) = read.map_err(|error| {
+        error
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    })?;
     let counts = [
         content.characters.len(),
         content.factions.len(),

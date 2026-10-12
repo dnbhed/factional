@@ -831,6 +831,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The scenarios and their snapshots stay in the CLI** and are unchanged: they're the proof the move changed nothing.
   - *Why:* one session, tested once, for the CLI and the editor (D-39); loading from texts and marking ids are its next increments.
 
+- **P-112 · How the session loads from texts** (made in U14b, 2026-10-12; P-81, P-95).
+  - **Two calls, not commands:** `Session::load_texts(name, texts)` and `Session::reload_texts(texts)`, for the editor, which holds the texts; what they say is what `load` and `reload` say, `name` standing for the directory (`loaded 6 characters from content/sample`).
+  - **The same checks, the same fingerprint:** texts are read and checked as a directory is (`check_texts`, `load_texts_fingerprinted`), each file fingerprinted as it would be on disk, so a save made from texts names the content as its directory would.
+  - **A typed `reload` reloads what it was loaded from:** the texts last given, if it was loaded from texts, else the directory; `load` and `restore` read a directory again.
+  - **Texts that don't load change nothing,** saying every problem, as a directory's would.
+  - *Why:* the editor's Play runs on the content as it stands, unsaved edits included (P-81, U15).
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.
