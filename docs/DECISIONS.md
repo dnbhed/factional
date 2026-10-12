@@ -850,6 +850,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **"Close the drawer" (▾) leaves a strip,** "▴ Problems 3", to open it again ("Open the drawer"); its height is kept while it's closed, as egui keeps a panel's.
   - *Why:* Play (U15b) goes beside Problems, and trying content happens on every tab.
 
+- **P-115 · How Play runs** (made in U15b, 2026-10-12; D-40, P-96, P-112).
+  - **The editor holds one `factional-session` session,** started in the content's directory, so a typed `load` or `save` works as in the CLI.
+  - **It follows the content in memory:** the first texts that load are loaded (`load_texts`), and each change that loads after reloaded (`reload_texts`), its output in Play's log as `reload` would say it, the first command that comes out differently included; texts that don't load leave the session as it is, and Play says it has the last world that did.
+  - **What it shows:** each command after `>`, in bold monospace, and what it said, the log scrolling to its end; a line labelled "Play command", run with Enter, with the up and down arrows through what's been run. `quit` doesn't close anything; it says to close the drawer.
+  - *Why:* the content is tried where it's written, as it stands (P-96).
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

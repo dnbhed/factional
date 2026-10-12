@@ -109,6 +109,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U14b — the session from texts (P-81, P-95, P-112): `Session::load_texts` and `Session::reload_texts` load and reload the world written in texts in memory, unsaved edits included, with `load`'s and `reload`'s checks and output; a typed `reload` reloads what it was loaded from; `load_texts_fingerprinted` in the content crate; done 2026-10-12 (#78)
 - U14c — marked ids (P-95, P-113): `Session::marks` gives each id of the loaded world in what the session said, with where it is and what it names, for the editor to link; done 2026-10-12 (#79)
 - U15a — the drawer (D-40, P-96, P-114): along the bottom of every tab, with the problems moved into it from the Content tab, each going to its entry from any tab; it closes to a strip and opens again, keeping its height; U15 split into U15a to U15c; done 2026-10-12 (#80)
+- U15b — Play (D-40, P-96, P-115): beside Problems in the drawer, the REPL on a `factional-session` session of the content as it stands, loaded from the texts in memory and reloaded with `reload`'s rules each time they load, saying what that says; the last world that loaded while they don't; history by arrow; done 2026-10-12
 
 ---
 
@@ -134,11 +135,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U15b · Play — P3 · Next
-
-Play beside Problems in the drawer: the REPL, each command and what it said, with history; the session loaded from the content in memory, and reloaded with `reload`'s rules each time the content loads, saying which command first comes out differently; while the content doesn't load, the last world that did, saying so (D-40, P-96, P-112).
-
-### U15c · Play's links and completion — P3 · Outline
+### U15c · Play's links and completion — P3 · Next
 
 Completion of commands and of every id in the outline; ids in what Play says as links to their entries (P-113); pages handing commands to Play, typed into it: a quest's "Can the player start this?" and "Start it in Play", a character's "Act as…" (P-96).
 
