@@ -7,7 +7,7 @@ use factional_content::{
 };
 use std::collections::BTreeMap;
 
-use factional_quests::{Leftovers, Next, Quest, Questline};
+use factional_quests::{Leftovers, Next, Quest, Questline, Stage};
 
 use crate::egui::{self, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2, WidgetInfo, WidgetType};
 use crate::layout::{GAP_Y, line_layout, quest_layout, rounded};
@@ -28,8 +28,7 @@ impl Editor {
         if let Some(shown) = show {
             self.show(shown);
         }
-        let mut edit = false;
-        let mut back = false;
+        let mut chose = None;
         let mut paged = None;
         // The chosen quest beside the graph, or the questline's own page (U13a).
         let line = match &self.shown {
@@ -46,13 +45,21 @@ impl Editor {
                 .resizable(true)
                 .default_size(340.0)
                 .show(ui, |ui| {
-                    if let Some(line) = line {
-                        let said = format!("Back to {}", line.name);
-                        let button = ui.button(format!("‹ {}", line.name));
-                        button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
-                        back = button.clicked();
-                    }
-                    edit = chosen_ui(ui, &self.graph, quest);
+                    chose = breadcrumb_ui(ui, line, quest, self.stage);
+                    let page = match self.stage.and_then(|stage| quest.stages.get(stage)) {
+                        Some(stage) => {
+                            stage_ui(
+                                ui,
+                                &self.graph,
+                                quest,
+                                self.stage.unwrap_or_default(),
+                                stage,
+                            );
+                            None
+                        }
+                        None => chosen_ui(ui, &self.graph, quest),
+                    };
+                    chose = chose.take().or(page);
                 });
         } else if let Some(line) = line {
             egui::Panel::right("questline page")
@@ -63,11 +70,12 @@ impl Editor {
                     paged = page_ui(ui, &self.graph, line, typed);
                 });
         }
-        if edit {
-            self.edit_in_content();
-        }
-        if back {
-            self.unchoose();
+        match chose {
+            Some(Chose::Edit) => self.edit_in_content(),
+            Some(Chose::Line) => self.unchoose(),
+            Some(Chose::Quest) => self.open_stage(None),
+            Some(Chose::Stage(stage)) => self.open_stage(Some(stage)),
+            None => {}
         }
         match paged {
             Some(Paged::Open(quest)) => self.choose(&quest),
@@ -115,7 +123,7 @@ impl Editor {
         }
     }
 
-    fn chosen_quest(&self) -> Option<&Quest> {
+    pub(crate) fn chosen_quest(&self) -> Option<&Quest> {
         let chosen = self.chosen.as_deref()?;
         self.graph
             .quests
@@ -321,35 +329,126 @@ fn page_ui(
     paged
 }
 
-/// The chosen quest: its heading and gate, each stage with its choices, and what the loader
-/// says at each. Whether "Edit in Content" was clicked.
-fn chosen_ui(ui: &mut egui::Ui, graph: &QuestGraph, quest: &Quest) -> bool {
+/// What was chosen beside the graph: "Edit in Content", a part of the breadcrumb to go back
+/// to, or a stage's page (U13d).
+enum Chose {
+    Edit,
+    /// The questline's page, from its name or the quest's step.
+    Line,
+    /// The quest's page, its stages.
+    Quest,
+    Stage(usize),
+}
+
+/// Where the page shown is (U13d, P-94): *A Life in the Watch › Step 2 › Night Patrol › Stage
+/// "walk"*, the questline and step only for a quest shown in one, each part but the last
+/// going back there, labelled "Back to <part>" for anyone who can't see it.
+fn breadcrumb_ui(
+    ui: &mut egui::Ui,
+    line: Option<&Questline>,
+    quest: &Quest,
+    stage: Option<usize>,
+) -> Option<Chose> {
+    let mut parts: Vec<(String, Option<Chose>)> = Vec::new();
+    if let Some(line) = line {
+        parts.push((line.name.clone(), Some(Chose::Line)));
+        let step = line
+            .steps
+            .iter()
+            .position(|step| step.quests.contains(&quest.id));
+        if let Some(step) = step {
+            parts.push((format!("Step {}", step + 1), Some(Chose::Line)));
+        }
+    }
+    let name = match quest.name.is_empty() {
+        true => quest.id.to_string(),
+        false => quest.name.clone(),
+    };
+    match stage.and_then(|stage| quest.stages.get(stage)) {
+        Some(stage) => {
+            parts.push((name, Some(Chose::Quest)));
+            parts.push((format!("Stage \"{}\"", stage.id), None));
+        }
+        None => parts.push((name, None)),
+    }
+    let mut chose = None;
+    ui.horizontal_wrapped(|ui| {
+        let last = parts.len() - 1;
+        for (place, (said, back)) in parts.into_iter().enumerate() {
+            match back {
+                Some(back) => {
+                    let button = ui.link(&said);
+                    let label = format!("Back to {said}");
+                    button.widget_info(|| WidgetInfo::labeled(WidgetType::Link, true, &label));
+                    if button.clicked() {
+                        chose = Some(back);
+                    }
+                }
+                None => {
+                    ui.strong(said);
+                }
+            }
+            if place < last {
+                ui.weak("›");
+            }
+        }
+    });
+    chose
+}
+
+/// The chosen quest's page: "Edit in Content", its heading and gate, and each stage in order,
+/// opening its own page, with what the loader says at it and how many problems its choices
+/// have (U13d).
+fn chosen_ui(ui: &mut egui::Ui, graph: &QuestGraph, quest: &Quest) -> Option<Chose> {
     let id = quest.id.as_str();
-    let edit = ui.button("Edit in Content").clicked();
+    let mut chose = ui
+        .button("Edit in Content")
+        .clicked()
+        .then_some(Chose::Edit);
     egui::ScrollArea::vertical().show(ui, |ui| {
         let heading = quest_heading(&graph.quests, quest, true) + &needs(&quest.requires);
         ui.add(egui::Label::new(egui::RichText::new(heading).strong()).wrap());
         notes_ui(ui, &graph.at_quest(id), id);
         for (index, stage) in quest.stages.iter().enumerate() {
             ui.separator();
-            ui.label(format!(
-                "{}. {}{}",
+            let in_choices: Vec<&Note> = (0..stage.choices.len())
+                .flat_map(|place| graph.at_choice(id, index, place))
+                .collect();
+            let shown = format!(
+                "{}. {}{}{}",
                 index + 1,
                 stage.id,
-                needs(&stage.requires)
-            ));
+                needs(&stage.requires),
+                counts(&in_choices)
+            );
+            if ui.selectable_label(false, shown).clicked() {
+                chose = Some(Chose::Stage(index));
+            }
             let node = format!("{id}.stages[{index}]");
             notes_ui(ui, &graph.at_stage(id, index), &node);
-            for (place, choice) in stage.choices.iter().enumerate() {
-                ui.indent(&node, |ui| {
-                    ui.add(egui::Label::new(describe_choice(choice)).wrap());
-                    let node = format!("{node}.choices[{place}]");
-                    notes_ui(ui, &graph.at_choice(id, index, place), &node);
-                });
-            }
         }
     });
-    edit
+    chose
+}
+
+/// A stage's page (U13d): what it needs, what the loader says at it, and each choice with
+/// what the loader says at that.
+fn stage_ui(ui: &mut egui::Ui, graph: &QuestGraph, quest: &Quest, index: usize, stage: &Stage) {
+    let id = quest.id.as_str();
+    let gate = needs(&stage.requires);
+    if let Some(gate) = gate.strip_prefix(" — ") {
+        ui.add(egui::Label::new(gate).wrap());
+    }
+    let node = format!("{id}.stages[{index}]");
+    notes_ui(ui, &graph.at_stage(id, index), &node);
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for (place, choice) in stage.choices.iter().enumerate() {
+            ui.separator();
+            ui.add(egui::Label::new(describe_choice(choice)).wrap());
+            let node = format!("{node}.choices[{place}]");
+            notes_ui(ui, &graph.at_choice(id, index, place), &node);
+        }
+    });
 }
 
 /// A questline: its steps in columns, each headed by what it needs, with its quests beneath;

@@ -89,6 +89,8 @@ pub struct Editor {
     pub(crate) new_quests: BTreeMap<usize, String>,
     /// Each step's need as typed on its card, until the text changes (U13c).
     pub(crate) step_needs: BTreeMap<usize, String>,
+    /// The chosen quest's stage whose page is open, its choices (U13d).
+    stage: Option<usize>,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -263,6 +265,7 @@ impl Editor {
             unlinked: BTreeSet::new(),
             new_quests: BTreeMap::new(),
             step_needs: BTreeMap::new(),
+            stage: None,
         };
         editor.reload();
         editor
@@ -386,6 +389,7 @@ impl Editor {
             return;
         }
         self.new_quests.clear();
+        self.stage = None;
         // A quest is chosen with it; a questline opens on its own page (U13a).
         self.chosen = match &shown {
             Shown::Quest(quest) => Some(quest.clone()),
@@ -397,6 +401,13 @@ impl Editor {
     /// Goes back from the chosen quest to the questline's page (U13a).
     pub fn unchoose(&mut self) {
         self.chosen = None;
+        self.stage = None;
+    }
+
+    /// Opens the page of the chosen quest's `stage`th stage, or with `None` goes back to the
+    /// quest's (U13d); a stage it doesn't have shows the quest's.
+    pub fn open_stage(&mut self, stage: Option<usize>) {
+        self.stage = stage;
     }
 
     /// Adds `quest` to the `step`th step of the questline `line` (U13a), as one change.
@@ -591,6 +602,7 @@ impl Editor {
     pub fn choose(&mut self, quest: &str) {
         if self.is_there(&Shown::Quest(quest.to_owned())) {
             self.chosen = Some(quest.to_owned());
+            self.stage = None;
         }
     }
 
