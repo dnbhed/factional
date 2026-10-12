@@ -812,6 +812,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The new quest opens** beside the graph, with "‹ <questline>" back to the page; what was typed in each step's field is cleared.
   - *Why:* a designer makes a questline's quests where they think of them (P-94), and comes away with one that loads.
 
+- **P-109 · How a questline's steps and quests move** (made in U13c, 2026-10-12; P-94).
+  - **By buttons and menus, not drag:** a step's ↑ and ↓ ("Move step 3 up") swap it with the step before or after, the first having no ↑ and the last no ↓; a quest's ⋯ ("Move dock_inspection…") lists every other step, and the quest goes to the end of the one chosen. Drag as a shortcut is left for later (P-94 calls it one).
+  - **The writer swaps two items of a list** (`swap_items`): two `[[tables]]` trade places, each with the comments above it; two items of an inline list trade values, the list's spacing staying. Moving a quest is a removal and an addition, in one change.
+  - **A step's `need` is a field on its card,** empty when it's left out (all its quests); entering nothing leaves it out again. `leftovers` is `open` or `close`, the one in force marked, whether written or the default.
+  - **A move may leave a step with no quests,** which the loader reports, as removing its last quest would; nothing is refused for it.
+  - *Why:* reordering a questline is what a designer does most with one, and should be one click.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.
