@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
-use crate::session::{Outcome, Session, is_blank_or_comment};
+use factional_session::{Outcome, Session, is_blank_or_comment};
 
 /// Why a scenario script stopped: the line it stopped at, what went wrong, and the transcript
 /// up to and including that line.
