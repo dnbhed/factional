@@ -36,6 +36,7 @@ fn said(offer: &Offer) -> String {
             let ids: Vec<&str> = choices.iter().map(|choice| choice.id.as_str()).collect();
             format!("one of {}", ids.join(", "))
         }
+        Offered::Kinds(kinds) => format!("{} kinds", kinds.len()),
     };
     format!("{} at {}: {what}", offer.label, offer.at)
 }

@@ -12,7 +12,7 @@ use factional_content::{
     Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
     IdChoice, Offer, Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, Word,
     additions, apply_fix, entry_fields, entry_form, entry_places, file_places, fix_for, id_choices,
-    key_info, load_texts, make_offer, outline, outline_texts, place_words, read_texts,
+    key_info, load_texts, make_offer, outline, outline_texts, place_kinds, place_words, read_texts,
     referenced_by, set_value, words_at,
 };
 use factional_core::Curve;
@@ -193,6 +193,8 @@ pub struct PlaceInput {
     pub item: Option<String>,
     /// Where it is, in words, from its file's start (U10b).
     pub words: String,
+    /// For a requirements or effects table, the kinds it takes (U11b).
+    pub kinds: Option<Offer>,
 }
 
 impl Editor {
@@ -544,30 +546,17 @@ impl Editor {
         self.add(file, &place, Some(&key))
     }
 
-    /// Makes the `offer`th offer of the selected entry's `section`th section (U10d), with `id`
-    /// for one that takes it, as one change, and keeps the entry selected.
-    pub fn make_offer(
-        &mut self,
-        section: usize,
-        offer: usize,
-        id: Option<&str>,
-    ) -> Result<(), EditError> {
+    /// Makes `made`, an offer of the selected entry's (U10d, U11b), with `id` for one that takes
+    /// it, as one change, and keeps the entry selected.
+    pub fn make_offer(&mut self, made: &Offer, id: Option<&str>) -> Result<(), EditError> {
         let Some((file, _)) = self.selected else {
-            return Ok(());
-        };
-        let Some(made) = self
-            .sections
-            .get(section)
-            .and_then(|section| section.offers.get(offer))
-            .map(|offer| offer.offer.clone())
-        else {
             return Ok(());
         };
         let name = CONTENT_FILES[file];
         let said = format!("Added a {} to {}", made.label, self.named(file, &made.at));
         let mut added = None;
         self.change(file, said, |text| {
-            let (text, path) = make_offer(name, text, &made, id)?;
+            let (text, path) = make_offer(name, text, made, id)?;
             added = Some(path);
             Ok(text)
         })?;
@@ -1147,8 +1136,8 @@ impl Editor {
                     adding = Some((file, at, key));
                 }
             }
-            Some(Acted::Offer(section, offer, id)) => {
-                if let Err(refused) = self.make_offer(section, offer, id.as_deref()) {
+            Some(Acted::Make(offer, id)) => {
+                if let Err(refused) = self.make_offer(&offer, id.as_deref()) {
                     self.note = Some(format!("couldn't add: {refused}"));
                 }
             }
@@ -1202,6 +1191,7 @@ fn places_in(texts: &ContentTexts, file: &str, paths: Vec<ValuePath>) -> Vec<Pla
             choices: id_choices(texts, file, &path),
             item: key_info(file, &path).and_then(|info| info.item),
             words: words_at(texts, file, &path.to_string()),
+            kinds: place_kinds(texts, file, &path),
             path,
             id: String::new(),
         })

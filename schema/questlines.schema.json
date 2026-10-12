@@ -140,7 +140,8 @@
           "type": "array"
         }
       },
-      "type": "object"
+      "type": "object",
+      "x-kinds": "Requirement"
     },
     "step": {
       "additionalProperties": false,

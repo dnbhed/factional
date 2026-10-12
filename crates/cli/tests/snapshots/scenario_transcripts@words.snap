@@ -19,7 +19,7 @@ Identity
   Name · name = Inspecting the Docks
   + Giver
 Requirements
-  + Requirements
+  + Requirement: Done, Member of, Not a member of, Rank at least, Standing or Within tolerance of
 Stages
   Stage "inspect" › Id · stages[0].id = inspect
   Stage "inspect" › Choice "seize" › Id · stages[0].choices[0].id = seize

@@ -47,6 +47,114 @@ pub enum Offered {
     Id(Vec<IdChoice>),
     /// An id in a list of ids, from those that exist and aren't in it yet.
     Pick(Vec<IdChoice>),
+    /// One of the kinds a requirements or effects table takes, each its own offer (U11b).
+    Kinds(Vec<Offer>),
+}
+
+/// The kinds the table at `path` in `file` takes, if its schema says it's a requirements or
+/// an effects table (`x-kinds`), as one offer: "Requirement" or "Effect" (U11b).
+pub fn place_kinds(texts: &ContentTexts, file: &str, path: &ValuePath) -> Option<Offer> {
+    let (root, wording) = (schema_of(file)?, Wording::new(texts, file)?);
+    let table = form(&root, schema_at(&root, path)?, "object");
+    let kind = table.get("x-kinds")?.as_str()?;
+    kinds_offer(texts, &root, &wording, path, kind)
+}
+
+/// "+ `kind`…" for the table of kinds at `path`, if it takes any more.
+fn kinds_offer(
+    texts: &ContentTexts,
+    root: &Json,
+    wording: &Wording,
+    path: &ValuePath,
+    kind: &str,
+) -> Option<Offer> {
+    let kinds = kinds_in(texts, root, wording, path, &[]);
+    (!kinds.is_empty()).then(|| Offer {
+        label: kind.to_owned(),
+        at: path.clone(),
+        what: Offered::Kinds(kinds),
+    })
+}
+
+/// Each kind the table at `at` takes (U11b), key by key in the schema's order, labelled by its
+/// words from the table, such as *Alignment › Good*: for a list, what [`list_offered`] says; for
+/// a table keyed by ids, an id; for a table, each kind within it; for anything else not yet
+/// there, the key.
+fn kinds_in(
+    texts: &ContentTexts,
+    root: &Json,
+    wording: &Wording,
+    at: &ValuePath,
+    said: &[String],
+) -> Vec<Offer> {
+    let Some(table) = schema_at(root, at).map(|node| form(root, node, "object")) else {
+        return Vec::new();
+    };
+    let Some(properties) = table.get("properties").and_then(Json::as_object) else {
+        return Vec::new();
+    };
+    let written = wording.keys_at(at);
+    let mut kinds = Vec::new();
+    for (key, node) in properties {
+        if !allowed(table, &written, key) {
+            continue;
+        }
+        let path = at.then(Step::Key(key.clone()));
+        let mut words = said.to_vec();
+        words.push(wording_title(root, node).unwrap_or(key).to_owned());
+        let label = words.join(" › ");
+        let list = form(root, node, "array");
+        let inner = form(root, node, "object");
+        if list.get("type").and_then(Json::as_str) == Some("array") {
+            if let Some((what, _)) = list_offered(texts, root, wording, list, &path) {
+                kinds.push(Offer {
+                    label,
+                    at: path,
+                    what,
+                });
+            }
+        } else if let Some(names) = names_of(inner, "x-names-keys") {
+            let there = wording.keys_at(&path);
+            kinds.push(Offer {
+                label,
+                at: path,
+                what: Offered::Id(choices_of(texts, wording, names, &there)),
+            });
+        } else if inner.get("properties").is_some() {
+            kinds.extend(kinds_in(texts, root, wording, &path, &words));
+        } else if wording.value_at(&path).is_none() {
+            kinds.push(Offer {
+                label,
+                at: at.clone(),
+                what: Offered::Key(key.clone()),
+            });
+        }
+    }
+    kinds
+}
+
+/// What adding to the list `list` at `path` offers, if it has room and anything is left: an
+/// item, or for a list of ids one of those not in it yet; with what one is called, if the
+/// schema says or it's an id.
+fn list_offered(
+    texts: &ContentTexts,
+    root: &Json,
+    wording: &Wording,
+    list: &Json,
+    path: &ValuePath,
+) -> Option<(Offered, Option<String>)> {
+    let written = wording.texts_at(path);
+    let names = list
+        .get("items")
+        .and_then(|items| names_of(form(root, items, "string"), "x-names"));
+    let what = match names {
+        Some(names) => Offered::Pick(choices_of(texts, wording, names, &written)),
+        None => Offered::Item,
+    };
+    let left = !matches!(&what, Offered::Pick(choices) if choices.is_empty());
+    let called = list.get("x-item").and_then(Json::as_str).map(str::to_owned);
+    let called = called.or_else(|| names.map(|names| noun(names).to_owned()));
+    (item_schema_at(list, written.len()) && left).then_some((what, called))
 }
 
 /// Makes `offer` in `file`'s `text`, with `id` for an id: writes what it's within if it isn't
@@ -95,6 +203,8 @@ pub fn make_offer(
             let (text, path) = add(file, &text, &offer.at, None)?;
             Ok((set_value(&text, &path, id()?)?, path))
         }
+        // A kind is chosen, and made as its own offer.
+        Offered::Kinds(_) => Err(EditError::CantAdd(offer.at.clone())),
     }
 }
 
@@ -346,24 +456,12 @@ fn offers_in(
         let title = wording_title(root, node).unwrap_or(key).to_owned();
         let list = form(root, node, "array");
         let table = form(root, node, "object");
-        if list.get("type").and_then(Json::as_str) == Some("array") {
-            let written = wording.texts_at(&path);
-            let room = item_schema_at(list, written.len());
-            let names = list
-                .get("items")
-                .and_then(|items| names_of(form(root, items, "string"), "x-names"));
-            let called = list.get("x-item").and_then(Json::as_str);
-            let what = match names {
-                Some(names) => Offered::Pick(choices_of(texts, wording, names, &written)),
-                None => Offered::Item,
-            };
-            let left = !matches!(&what, Offered::Pick(choices) if choices.is_empty());
-            if room && left {
-                let label = called
-                    .map(str::to_owned)
-                    .or_else(|| names.map(|n| noun(n).to_owned()));
+        if let Some(kind) = table.get("x-kinds").and_then(Json::as_str) {
+            offers.extend(kinds_offer(texts, root, wording, &path, kind));
+        } else if list.get("type").and_then(Json::as_str) == Some("array") {
+            if let Some((what, called)) = list_offered(texts, root, wording, list, &path) {
                 offers.push(Offer {
-                    label: label.unwrap_or(title),
+                    label: called.unwrap_or(title),
                     at: path,
                     what,
                 });

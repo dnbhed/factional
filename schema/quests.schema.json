@@ -33,7 +33,8 @@
             }
           },
           "title": "Effects",
-          "type": "object"
+          "type": "object",
+          "x-kinds": "Effect"
         },
         "id": {
           "description": "The choice's id, unique within its stage.",
@@ -319,7 +320,8 @@
           "type": "array"
         }
       },
-      "type": "object"
+      "type": "object",
+      "x-kinds": "Requirement"
     },
     "stage": {
       "additionalProperties": false,
