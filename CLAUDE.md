@@ -29,6 +29,8 @@ Before starting any increment, read:
    ```
 
    A surviving mutant means an assertion is missing. Add the test, or explain in the PR why the mutant is equivalent.
+
+   The Bevy plugin builds in its own workspace, `crates/bevy`, so the gates above never compile Bevy. When an increment touches it, run its gates there too: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and `git diff --relative main... -- . > branch.diff && cargo mutants --in-diff branch.diff`.
 7. **Docs, in the same PR:**
    - Compress the increment to one line under **Done** in PLAN.md: id, what shipped, date, PR.
    - Update DESIGN.md if the model, a formula or the tuning table changed.

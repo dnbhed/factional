@@ -1,0 +1,24 @@
+[package]
+name = "factional-bevy"
+description = "The Bevy plugin: the world and its quests as a resource, commands in and events out as messages, time at a rate the game sets (DESIGN.md §19)."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+# Its own workspace, so the main workspace's gates never compile Bevy (P-117).
+[workspace]
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false }
+factional-content = { path = "../content" }
+factional-core = { path = "../core" }
+factional-quests = { path = "../quests" }
+factional-reputation = { path = "../reputation" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+inconsistent_digit_grouping = "allow"

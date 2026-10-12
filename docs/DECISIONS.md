@@ -862,6 +862,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Completion is the session's,** so the CLI's REPL could offer it too; the ids are the world's, as `marks` finds them (P-113), not the outline's every key.
   - *Why:* typing ids is where a REPL is slowest, and reading one should lead to it.
 
+- **P-117 · How the Bevy plugin is built and configured** (made in E1, 2026-10-12, the workspace and version at the user's choice; D-33, P-75).
+  - **Its own workspace:** `crates/bevy` has its own `[workspace]`, lock file, `clippy.toml` and toolchain file, and the main workspace excludes it, so the main gates, and their mutation testing, never compile Bevy. CI runs its fmt, clippy, tests and mutants in a job of its own, the mutants on its part of the PR's diff.
+  - **Bevy 0.20.0, without default features:** the plugin needs only the app, ECS, messages and time, so nothing for windows, rendering or audio is compiled; a game adds the rest.
+  - **Configured by its fields:** `FactionalPlugin { content, tick_every }`. Messages in are `FactionalCommand`, out `FactionalEvent`, each for the world or the quest log, refusals included; the world and quest log are the `Factional` resource; content that doesn't load leaves `FactionalProblems` and stops the app with an error, its problems printed.
+  - **When things happen in a frame:** time's `AdvanceTime` is sent before the game's systems (`PreUpdate`), and every command is executed after them (`PostUpdate`), so what the game sends in `Update` is played the same frame. A tick rate of zero is none.
+  - *Why:* the user chose a separate workspace, to keep the main gates fast, and the newest Bevy; the rest follows P-75.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.
