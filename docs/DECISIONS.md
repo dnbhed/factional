@@ -783,6 +783,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The editor's checks of an entry's forms (`oneOf`) and of a list's room are kept,** tested directly: no entry has forms now, nor a list at its top with a most, but a schema that gains one is offered nothing that doesn't fit.
   - *Why:* only the content moves (P-91), so the engine, its commands and the quests' relation shifts stay as they are.
 
+- **P-105 · How a faction's relations are shown both ways** (made in U12b, 2026-10-12; D-38, P-91).
+  - **The schema marks a table read both ways** (`x-both-ways`), a faction's `relations`: each key's way back is the same key in the entry it names. Its section has no rows or offers of its own, nor its places a "+" or ×; `relation_rows` gives the section every other faction in id order, and every id written that names no faction, shown with no way back.
+  - **Each row is read from the text,** so it shows while the world doesn't load: each way as written, or 0 where it isn't, and what isn't a number has no value. Its band and the conflict come from `balance.toml` read on its own, or the defaults if it doesn't read; a pair is in conflict when either way is at or below the threshold.
+  - **Linked means the two are the same** and not unticked: a change to one way then writes both, in one change to `factions.toml`, one Undo (`set_relation`). Unticking is for the visit, while the faction is selected: it isn't written, as two different values say a grudge themselves.
+  - **Set, where nothing's written, writes 0.0,** both ways while linked, which says the pair is meant to be neutral.
+  - **The comment above a faction's `relations` is its section's,** drawn under its name.
+  - **The CLI's `form` prints each row** as the editor shows it: `The City Watch · relations.city_watch = 60.0 (allied) ↔ city_watch.relations.temple = 60.0 (allied), same both ways`.
+  - *Why:* a designer thinks of the pair, the Temple and the Watch, not of two keys in two tables.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

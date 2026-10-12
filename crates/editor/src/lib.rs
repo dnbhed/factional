@@ -4,16 +4,17 @@
 //! the schema doesn't and writes no TOML itself: the outline, the schema and the writer are
 //! `factional-content`'s.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use factional_content::{
     Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
-    IdChoice, Offer, Outline, OutlineEntry, QuestGraph, Reference, Step, ValuePath, Word,
-    additions, apply_fix, entry_fields, entry_form, entry_places, file_places, fix_for, id_choices,
-    key_info, load_texts, make_offer, outline, outline_texts, place_kinds, place_words, read_texts,
-    referenced_by, set_value, words_at,
+    IdChoice, Offer, Outline, OutlineEntry, QuestGraph, Reference, RelationRow, Step, ValuePath,
+    Word, additions, apply_fix, entry_fields, entry_form, entry_places, file_places, fix_for,
+    id_choices, is_both_ways, key_info, load_texts, make_offer, outline, outline_texts,
+    place_kinds, place_words, read_texts, referenced_by, set_relation, set_value, words_at,
 };
 use factional_core::Curve;
 use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
@@ -77,6 +78,9 @@ pub struct Editor {
     referenced_words: Vec<String>,
     /// The selected entry's sections, each with what it offers to add (U10d).
     sections: Vec<SectionInput>,
+    /// The other factions the selected faction's pair with is unlinked from, for a grudge,
+    /// though the two are the same (U12b).
+    unlinked: BTreeSet<String>,
     /// By file, in [`CONTENT_FILES`]' order.
     file_places: Vec<Vec<PlaceInput>>,
     /// Something to say at the top, such as a save that failed.
@@ -170,6 +174,21 @@ pub struct FieldInput {
 pub struct SectionInput {
     pub name: Option<String>,
     pub offers: Vec<OfferInput>,
+    /// For a faction's Relations, each other faction both ways (U12b).
+    pub relations: Vec<RelationInput>,
+    /// The comments of what it shows other than as rows (U12b).
+    pub comment: Vec<String>,
+}
+
+/// One other faction on a faction's Relations, with each way as typed, and whether a change to
+/// one writes both (U12b, D-38).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelationInput {
+    pub row: RelationRow,
+    pub regard: String,
+    pub back: String,
+    /// The two are the same, and not unlinked for a grudge.
+    pub linked: bool,
 }
 
 /// Something a section offers to add, with a new id as typed for one that takes it.
@@ -233,6 +252,7 @@ impl Editor {
             consequence: None,
             confirming: None,
             styled: false,
+            unlinked: BTreeSet::new(),
         };
         editor.reload();
         editor
@@ -546,6 +566,47 @@ impl Editor {
         self.add(file, &place, Some(&key))
     }
 
+    /// Sets how the selected faction regards `other`, or with `back` how `other` regards it,
+    /// to `input` (U12b): with `both`, the other way too, as one change.
+    pub fn set_relation(
+        &mut self,
+        other: &str,
+        back: bool,
+        input: &str,
+        both: bool,
+    ) -> Result<(), EditError> {
+        let Some((file, entry)) = self
+            .selected_entry()
+            .map(|(file, entry)| (file, entry.key.clone()))
+        else {
+            return Ok(());
+        };
+        let Some(place) = CONTENT_FILES.iter().position(|name| *name == file) else {
+            return Ok(());
+        };
+        let (from, to) = match back {
+            false => (entry.as_str(), other),
+            true => (other, entry.as_str()),
+        };
+        let said = match both {
+            true => format!("Set {from} and {to}'s regard for each other to {input}"),
+            false => format!("Set {from}'s regard for {to} to {input}"),
+        };
+        self.change(place, said, |text| {
+            set_relation(text, from, to, input, both)
+        })
+    }
+
+    /// Links or unlinks the selected faction's pair with `other` (U12b): unlinked, a change to
+    /// one way writes only that one, for a grudge.
+    pub fn link(&mut self, other: &str, linked: bool) {
+        match linked {
+            true => self.unlinked.remove(other),
+            false => self.unlinked.insert(other.to_owned()),
+        };
+        self.show_fields();
+    }
+
     /// Makes `made`, an offer of the selected entry's (U10d, U11b), with `id` for one that takes
     /// it, as one change, and keeps the entry selected.
     pub fn make_offer(&mut self, made: &Offer, id: Option<&str>) -> Result<(), EditError> {
@@ -795,10 +856,26 @@ impl Editor {
             .collect();
         let saved = &saved;
         let form = entry_form(texts, name, key);
+        let unlinked = &self.unlinked;
         self.sections = form
             .iter()
             .map(|group| SectionInput {
+                relations: group
+                    .relations
+                    .iter()
+                    .map(|row| RelationInput {
+                        regard: row.regard.written.clone().unwrap_or_default(),
+                        back: row
+                            .back
+                            .as_ref()
+                            .and_then(|back| back.written.clone())
+                            .unwrap_or_default(),
+                        linked: row.linked() && !unlinked.contains(&row.other),
+                        row: row.clone(),
+                    })
+                    .collect(),
                 name: group.name.clone(),
+                comment: group.comment.clone(),
                 offers: group
                     .offers
                     .iter()
@@ -838,7 +915,12 @@ impl Editor {
                 })
             })
             .collect();
-        self.places = places_in(texts, name, entry_places(text, key));
+        // A table read both ways is its section's pairs, not places (U12b).
+        let places = entry_places(text, key)
+            .into_iter()
+            .filter(|place| !is_both_ways(name, place))
+            .collect();
+        self.places = places_in(texts, name, places);
         self.referenced = NAMED_FILES
             .contains(&name)
             .then(|| referenced_by(texts, name, key));
@@ -858,6 +940,9 @@ impl Editor {
             .get(file)
             .is_some_and(|f| entry < f.entries.len());
         if there {
+            if self.selected != Some((file, entry)) {
+                self.unlinked.clear();
+            }
             self.selected = Some((file, entry));
             self.show_fields();
         }
@@ -1136,6 +1221,17 @@ impl Editor {
                     adding = Some((file, at, key));
                 }
             }
+            Some(Acted::Regard {
+                other,
+                back,
+                input,
+                both,
+            }) => {
+                if let Err(refused) = self.set_relation(&other, back, &input, both) {
+                    self.note = Some(format!("couldn't set: {refused}"));
+                }
+            }
+            Some(Acted::Link(other, linked)) => self.link(&other, linked),
             Some(Acted::Make(offer, id)) => {
                 if let Err(refused) = self.make_offer(&offer, id.as_deref()) {
                     self.note = Some(format!("couldn't add: {refused}"));

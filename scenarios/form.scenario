@@ -9,7 +9,8 @@ form content/sample factions.toml city_watch
 # his membership is open, by default.
 form content/sample characters.toml captain_hale
 
-# The Temple's relations are in its form (U12a), each how it regards another faction.
+# The Temple's relations are in its form (U12a): every other faction both ways, each with its
+# band, "same both ways" where the two are equal, and the Circle in conflict (U12b).
 form content/sample factions.toml temple
 
 # The Watch's Oath needs not to be in the Guild; its Requirements offer each kind of

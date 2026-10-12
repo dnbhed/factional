@@ -99,11 +99,8 @@ fn a_key_with_a_default_is_set_rather_than_offered() {
         [
             ("Identity", vec![]),
             ("Where it stands", vec![]),
-            // The Watch regards every other faction already, so only a new id is left.
-            (
-                "Relations",
-                vec!["Faction at city_watch.relations: one of ".to_owned()]
-            ),
+            // Every other faction is a row of the Relations section already (U12b).
+            ("Relations", vec![]),
             ("Membership", vec![]),
             ("Drift", vec![]),
             (
@@ -280,14 +277,12 @@ fn a_misspelt_key_is_in_a_group_of_its_own() {
 
 #[test]
 fn an_entry_is_never_offered_itself() {
-    // A faction regarding itself is a problem (P-91), so the Temple's relations offer only the
-    // factions it doesn't regard yet, besides itself.
-    let groups = form("factions.toml", "temple");
-    assert_eq!(
-        said(offer(&groups, "Faction")),
-        "Faction at temple.relations: one of free_company, lantern_guild"
-    );
-    // Nor is a character offered as their own contact.
+    // A character isn't offered their own standing, nor as their own contact.
+    let groups = form("characters.toml", "vex");
+    let Offered::Id(standing) = &offer(&groups, "Character").what else {
+        panic!("standing is by id");
+    };
+    assert!(standing.iter().all(|choice| choice.id != "vex"));
     let groups = form("characters.toml", "vex");
     let Offered::Pick(contacts) = &offer(&groups, "Contact").what else {
         panic!("contacts are picked");

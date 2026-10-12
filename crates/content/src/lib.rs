@@ -10,6 +10,7 @@ mod outline;
 mod quests;
 mod reader;
 mod references;
+mod relations;
 mod save;
 mod schema;
 mod unread;
@@ -25,8 +26,8 @@ pub use edit::{
 };
 pub use fix::{Change, Fix, apply_fix, fix_for};
 pub use form::{
-    FormGroup, FormRow, IdChoice, Offer, Offered, Sentence, entry_form, id_choices, make_offer,
-    place_kinds,
+    FormGroup, FormRow, IdChoice, Offer, Offered, Sentence, entry_form, id_choices, is_both_ways,
+    make_offer, place_kinds,
 };
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
@@ -34,6 +35,7 @@ pub use outline::{
     outline, outline_texts, read_texts,
 };
 pub use references::{Names, Reference, defined_in, referenced_by, references};
+pub use relations::{Regard, RelationRow, relation_rows, set_relation};
 pub use save::{Fingerprint, Restored, SAVE_VERSION, SaveError, fingerprint_of, restore, save};
 pub use schema::{SCHEMA_FILES, schema, schema_text};
 pub use words::{Word, place_words, words_at};

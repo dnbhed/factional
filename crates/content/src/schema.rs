@@ -308,6 +308,14 @@ fn said_as(mut schema: Value, says: usize, text: &str) -> Value {
 }
 
 /// `schema` with its own title, in place of the one its key has elsewhere.
+/// `schema`, a table keyed by ids of what its entry is, each key's way back the same key in
+/// the entry it names (U12b), as a faction's relations are: its form shows each pair both ways
+/// (`relation_rows`), not its rows.
+fn both_ways(mut schema: Value) -> Value {
+    schema["x-both-ways"] = json!(true);
+    schema
+}
+
 /// `schema`, a table of requirements or effects, each key a kind of `kind` (U11b): its form
 /// offers one of each kind to add, as "+ <kind>…".
 fn of_kinds(mut schema: Value, kind: &str) -> Value {
@@ -1052,13 +1060,13 @@ fn faction() -> Value {
                 ("drift", json!({ "$ref": "#/$defs/drift" })),
                 (
                     "relations",
-                    keys_name(
+                    both_ways(keys_name(
                         id_table(
-                            said_as(within_axis("-100 to 100."), 2, "Regards {key} at {value}"),
+                            within_axis("-100 to 100."),
                             "How the faction regards each other faction, by id, -100 to 100; any left out is 0, and a faction whose regard back isn't written is warned of (DESIGN.md §9.4).",
                         ),
                         "faction",
-                    ),
+                    )),
                 ),
                 defectors,
                 deserters,
