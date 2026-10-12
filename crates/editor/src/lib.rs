@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 
 use factional_content::{
     Addition, CONTENT_FILES, Change, ContentTexts, Diagnostic, EditError, FileState, Fix, FormRow,
-    IdChoice, Offer, Outline, OutlineEntry, QuestGraph, Reference, RelationRow, Step, ValuePath,
-    Word, additions, apply_fix, entry_fields, entry_form, entry_places, file_places, fix_for,
-    id_choices, is_both_ways, key_info, load_texts, make_offer, outline, outline_texts,
+    IdChoice, Offer, Offered, Outline, OutlineEntry, QuestGraph, Reference, RelationRow, Step,
+    ValuePath, Word, additions, apply_fix, entry_fields, entry_form, entry_places, file_places,
+    fix_for, id_choices, is_both_ways, key_info, load_texts, make_offer, outline, outline_texts,
     place_kinds, place_words, read_texts, referenced_by, set_relation, set_value, words_at,
 };
 use factional_core::Curve;
@@ -21,6 +21,9 @@ use factional_quests::{QuestId, QuestLog, Quests, StartAssessment};
 use factional_reputation::{CharacterId, World};
 
 pub use eframe::egui;
+
+/// The file questlines are written in, where a step's quests are added (U13a).
+const QUESTLINES_FILE: &str = "questlines.toml";
 
 /// The window's size when it opens, as the design canvas draws it (1440 by 900), so the
 /// entries, the form and what's beside it all fit.
@@ -375,10 +378,41 @@ impl Editor {
         if !self.is_there(&shown) {
             return;
         }
-        if let Shown::Quest(quest) = &shown {
-            self.chosen = Some(quest.clone());
-        }
+        // A quest is chosen with it; a questline opens on its own page (U13a).
+        self.chosen = match &shown {
+            Shown::Quest(quest) => Some(quest.clone()),
+            Shown::Questline(_) => None,
+        };
         self.shown = Some(shown);
+    }
+
+    /// Goes back from the chosen quest to the questline's page (U13a).
+    pub fn unchoose(&mut self) {
+        self.chosen = None;
+    }
+
+    /// Adds `quest` to the `step`th step of the questline `line` (U13a), as one change.
+    pub fn add_to_step(&mut self, line: &str, step: usize, quest: &str) -> Result<(), EditError> {
+        let Some(file) = CONTENT_FILES
+            .iter()
+            .position(|name| *name == QUESTLINES_FILE)
+        else {
+            return Ok(());
+        };
+        let offer = Offer {
+            label: "Quest".to_owned(),
+            at: ValuePath(vec![
+                Step::Key(line.to_owned()),
+                Step::Key("steps".to_owned()),
+                Step::Index(step),
+                Step::Key("quests".to_owned()),
+            ]),
+            what: Offered::Pick(Vec::new()),
+        };
+        let said = format!("Added {quest} to step {} of {line}", step + 1);
+        self.change(file, said, |text| {
+            make_offer(QUESTLINES_FILE, text, &offer, Some(quest)).map(|(text, _)| text)
+        })
     }
 
     /// Whether the questline or quest is in the graph.

@@ -798,6 +798,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The CLI's `relations --matrix [--csv]` prints the same,** `*` marking a conflict, explained under the table; the CSV has the values alone.
   - *Why:* the pair rows of one faction (P-105) don't show the whole web at once; a designer tuning a war wants every pair.
 
+- **P-107 · A questline's page** (made in U13a, 2026-10-12; P-94).
+  - **It's the right-hand panel of the Quests tab** while a questline is shown and no quest is chosen; showing a questline opens it there, rather than keeping whichever quest was chosen before. A quest chosen, from the page or the graph, has the panel, as before, with "‹ <questline>" back to the page.
+  - **Each step is a card:** "Step 2", what it needs as the graph's heading says it (`2 of night_patrol, dock_inspection, smugglers_cove, in any order; the rest close`), its quests as `<name> · <id>`, each opening its own, and "+ Existing quest…".
+  - **"+ Existing quest…" offers only quests in no questline,** as a quest is in one at most (§17.1), each added to the step's `quests` in one change to `questlines.toml`. With none left, there's no menu.
+  - **What else a step holds is set in Content for now:** its `need` and `leftovers` on its card are U13c's.
+  - *Why:* a questline is where its quests are thought of (P-94); this is its first page, and "+ New quest" builds on it.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.
