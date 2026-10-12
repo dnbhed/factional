@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12 → U13 → U14 → U15 → U16 → U17 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13 → U14 → U15 → U16 → U17 → E1 → T5`
 
 ## Done
 
@@ -98,6 +98,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U10d — every section, with its adding in it, at the user's direction (D-42, P-101): every group of an entry's schema in its form, even empty, with what it offers (`FormGroup::offers`, `Offer`, `Offered`): a list's item, a pick from a list of ids, an id in a table keyed by ids or each within one, or a key not there with no default, none the entry's form rules out; `make_offer` makes one in one change, writing what it's within first; each section ends with its "+" buttons, a place's own "+" not drawn where an offer covers it, the entry's "+…" and the list after the form gone; `form` prints the offers; contacts are "Contact"s; done 2026-10-11 (#67)
 - U11a — requirements and effects as sentences (P-93, P-102): the schema says each one's sentence and how many of its words it says (`x-sentence`), such as "Needs standing {value} with {key}" or "Standing with {key} changes by {value}", and a character's standing where it starts; `FormRow::sentence` (`Sentence`) gives the words before and after the value; the Content tab draws it on one line under the headings it doesn't say; `form` prints it with its value; U11 split, with adding by kind now U11b; done 2026-10-11 (#68)
 - U11b — requirements and effects added by kind (P-93, P-103): the schema marks tables of kinds (`x-kinds`), a quest's, stage's or step's `requires` and a choice's `effects`; `Offered::Kinds` and `place_kinds` give each kind they take, in words, with each id's choices; the Requirements section offers "+ Requirement…" and a stage's requirements or a choice's effects have it as their "+", each kind by id a submenu; made in one change with what it's within; done 2026-10-12 (#69)
+- U12a — relations in each faction (D-37, P-91, P-104): `factions.toml`'s `relations`, keyed by faction id, read one way each, with its checks at `<faction>.relations.<other>`, the engine's warning for one side written alone, and the problem for a `relations.toml` left in a directory; `relations.toml` gone from the sample, the complete example, the fixtures, the schema and the file lists; each faction's Relations section in the form; no entry offered its own id; U12 split, with the faction's pair rows now U12b and the matrix U12c; done 2026-10-12
 
 ---
 
@@ -123,9 +124,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U12 · Relations in each faction — P3 · Outline
+### U12b · Each faction's relations, both ways — P3 · Next
 
-`relations` in each faction in `factions.toml`, keyed by faction id, with its load checks, the warning for a pair written on one side only, and the problem for a `relations.toml` still there; `relations.toml` gone from the sample, the complete example, the fixtures and the schema; each faction's Relations group, every other faction a row with both values, its band, its conflict and "same both ways"; the relations matrix in Previews (D-37, D-38, P-91).
+Each faction's Relations group as D-38 has it: every other faction a row with how this faction regards it and how it regards this one back, the band's name, a mark where the pair is in conflict, and "same both ways", linked while the two are equal, a change to one then writing both in one change; a faction with nothing written shows 0 with Set (P-91).
+
+### U12c · The relations matrix — P3 · Outline
+
+The relations matrix in Previews, each cell tinted by its band like the disposition matrix (P-91).
 
 ### U13 · Questlines make their own quests — P3 · Outline
 

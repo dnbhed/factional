@@ -34,6 +34,7 @@ fn a_factions_values_are_grouped_by_what_they_mean_in_the_schemas_order() {
         [
             Some("Identity"),
             Some("Where it stands"),
+            Some("Relations"),
             Some("Membership"),
             Some("Drift"),
             Some("Ranks"),
@@ -51,8 +52,18 @@ fn a_factions_values_are_grouped_by_what_they_mean_in_the_schemas_order() {
             "weights.good"
         ]
     );
+    // How the Watch regards each other faction, as written (U12a).
     assert_eq!(
-        keys(&form[4]),
+        keys(&form[2]),
+        [
+            "relations.lantern_guild",
+            "relations.temple",
+            "relations.ashen_circle",
+            "relations.free_company",
+        ]
+    );
+    assert_eq!(
+        keys(&form[5]),
         [
             "ranks[0].id",
             "ranks[1].id",
@@ -63,7 +74,7 @@ fn a_factions_values_are_grouped_by_what_they_mean_in_the_schemas_order() {
         ]
     );
     assert_eq!(
-        keys(&form[3]),
+        keys(&form[4]),
         ["drift.policy", "drift.grace_ticks", "drift.then"]
     );
     assert_eq!(written(row(&form, "name")), Some("The City Watch"));
@@ -74,7 +85,7 @@ fn a_factions_values_are_grouped_by_what_they_mean_in_the_schemas_order() {
 fn a_key_left_out_shows_its_default_after_what_is_written() {
     let form = entry_form(&sample(), "factions.toml", "city_watch");
     assert_eq!(
-        keys(&form[2]),
+        keys(&form[3]),
         [
             "tolerance",
             "member_tolerance",
@@ -83,7 +94,7 @@ fn a_key_left_out_shows_its_default_after_what_is_written() {
             "secret_members",
         ]
     );
-    let defaults: Vec<(Option<&str>, Option<&str>)> = form[2]
+    let defaults: Vec<(Option<&str>, Option<&str>)> = form[3]
         .rows
         .iter()
         .map(|row| (written(row), row.default.as_deref()))
@@ -139,11 +150,9 @@ fn a_value_has_the_comment_directly_above_it_or_above_its_tables_header() {
         row(&mira, "contacts[0]").comment,
         ["She ministers to Brother Ash, hoping to turn him."]
     );
-    // One after a value on its line is its too.
-    let relation = entry_form(&texts, "relations.toml", "relation[0]");
-    assert_eq!(row(&relation, "value").comment, ["enemies, so in conflict"]);
-    // A comment above a table's header belongs to its first value.
-    let text = "[a]\nname = \"A\"\nalignment = { law = 0.0, good = 0.0 }\ntolerance = 10.0\n\n\
+    // A comment above a table's header belongs to its first value, and one after a value on
+    // its line is its too.
+    let text = "[a]\nname = \"A\"\nalignment = { law = 0.0, good = 0.0 }\ntolerance = 10.0 # loose\n\n\
                 # The first rung.\n# Everyone starts here.\n[[a.ranks]]\nid = \"one\"\n";
     let mut texts = ContentTexts::default();
     texts[1] = Some(text.to_owned());
@@ -152,6 +161,7 @@ fn a_value_has_the_comment_directly_above_it_or_above_its_tables_header() {
         row(&form, "ranks[0].id").comment,
         ["The first rung.", "Everyone starts here."]
     );
+    assert_eq!(row(&form, "tolerance").comment, ["loose"]);
 }
 
 #[test]
@@ -202,7 +212,7 @@ fn a_value_may_be_one_of_the_ids_that_exist_or_of_the_schemas_choices() {
 }
 
 #[test]
-fn the_groups_of_a_character_and_of_a_list_entry_come_from_their_schemas() {
+fn the_groups_of_a_character_come_from_its_schema() {
     let texts = sample();
     let hale = entry_form(&texts, "characters.toml", "captain_hale");
     let names: Vec<Option<&str>> = hale.iter().map(|group| group.name.as_deref()).collect();
@@ -227,16 +237,6 @@ fn the_groups_of_a_character_and_of_a_list_entry_come_from_their_schemas() {
             "inertia",
         ]
     );
-    let relation = entry_form(&texts, "relations.toml", "relation[0]");
-    assert_eq!(relation[0].name.as_deref(), Some("Factions"));
-    assert!(
-        relation[0]
-            .rows
-            .iter()
-            .all(|row| row.key.starts_with("between"))
-    );
-    assert_eq!(relation[0].rows[0].choices.len(), 5);
-    assert_eq!(relation[1].name.as_deref(), Some("Regard"));
     // Balance's entries are groups of their own, so their values have none.
     let knowledge = entry_form(&texts, "balance.toml", "knowledge");
     assert_eq!(knowledge.len(), 1);
@@ -260,7 +260,6 @@ fn every_key_an_entry_may_have_is_in_one_of_its_groups() {
         ("characters", "character"),
         ("actions", "action"),
         ("outcomes", "outcome"),
-        ("relations", "relation"),
         ("quests", "quest"),
         ("questlines", "questline"),
     ] {

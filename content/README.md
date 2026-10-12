@@ -9,9 +9,8 @@ Every file is optional. A missing file means the defaults, or none of that kind.
 | File | What's in it |
 | --- | --- |
 | `balance.toml` | World-wide rules and defaults: alignment labels and distance, inertia profiles, disposition, standing spillover, relations, and the membership rules for drift, wars, defectors and deserters. |
-| `factions.toml` | Each faction, keyed by its id: name, alignment, weights, tolerances, rank ladder, drift policy, and any rule tables of its own. |
+| `factions.toml` | Each faction, keyed by its id: name, alignment, weights, tolerances, how it regards each other faction, rank ladder, drift policy, and any rule tables of its own. |
 | `characters.toml` | Everyone in the world, the player included, keyed by id: name, alignment, weights, inertia, starting memberships and standing. |
-| `relations.toml` | How factions regard each other, as `[[relation]]` entries. |
 | `actions.toml` | What characters can do: each act's effect on alignment and standing, and how its target changes it. |
 | `outcomes.toml` | Named bundles of effects, such as a quest's result: alignment, standing, and shifts in how factions regard each other. |
 | `quests.toml` | Quests, keyed by id: who gives each, what it needs to start, and its stages, each with requirements and choices. |
@@ -31,7 +30,7 @@ cargo run -q -p factional-cli -- validate content/sample
 
 - It lists every problem, each with its file and key path, such as `characters.toml: vex.memberships[0].faction: unknown faction 'lantern_gild' (did you mean 'lantern_guild'?)`.
 - It lists every warning, for things that are allowed but probably not meant, such as a faction no one starts close enough to join.
-- It ends with a summary line, such as `content/sample loads: 6 characters, 5 factions, 6 actions, 7 relations and 4 outcomes`.
+- It ends with a summary line, such as `content/sample loads: 6 characters, 5 factions, 6 actions, 12 relations, 6 outcomes, 10 quests and 1 questline`.
 
 It exits with 0 if the world would load, warnings or not, and 1 if it wouldn't. A world with any problem never loads (DESIGN.md §12.2). Inside the REPL, `validate <dir>` does the same without replacing the loaded world.
 

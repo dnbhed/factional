@@ -90,8 +90,7 @@ fn a_save_starts_with_its_format_and_version() {
             "factions.toml",
             "outcomes.toml",
             "questlines.toml",
-            "quests.toml",
-            "relations.toml"
+            "quests.toml"
         ]
     );
     assert!(
@@ -152,10 +151,12 @@ fn restoring_refuses_content_that_has_changed_naming_the_files() {
     let factions = dir.join("factions.toml");
     let edited = fs::read_to_string(&factions).expect("readable") + "\n# edited\n";
     fs::write(&factions, edited).expect("written");
-    fs::remove_file(dir.join("relations.toml")).expect("removed");
+    let actions = dir.join("actions.toml");
+    let edited = fs::read_to_string(&actions).expect("readable") + "\n# edited\n";
+    fs::write(&actions, edited).expect("written");
     assert_eq!(
         restore(&text, base()).map(|_| ()).unwrap_err().to_string(),
-        "the content in save_changed has changed since this save: factions.toml, relations.toml"
+        "the content in save_changed has changed since this save: actions.toml, factions.toml"
     );
 }
 

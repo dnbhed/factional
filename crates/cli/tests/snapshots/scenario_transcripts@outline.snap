@@ -13,7 +13,6 @@ characters.toml — 2 entries
   vex — 1 problem
     error: alignment.law: 120.00 is outside -100.00..100.00
 actions.toml — not there
-relations.toml — not there
 outcomes.toml — not there
 quests.toml — not there
 questlines.toml — not there
@@ -25,7 +24,6 @@ factions.toml — 1 entry
     warning: tolerance: no one starts within The Watch's tolerance of 40.00: there are no characters
 characters.toml — not there
 actions.toml — not there
-relations.toml — not there
 outcomes.toml — not there
 quests.toml — 2 entries
   inspect

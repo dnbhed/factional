@@ -67,8 +67,9 @@ fn kind<'o>(offer: &'o Offer, label: &str) -> &'o Offer {
 const FACTIONS: &str = "ashen_circle, city_watch, free_company, lantern_guild, temple";
 const PARTIES: &str = "ashen_circle, brother_ash, captain_hale, city_watch, free_company, \
                        lantern_guild, merchant_ava, player, sister_mira, temple, vex";
+/// Every quest but the Watch's Oath, which never needs itself done (U12a).
 const QUESTS: &str = "circle_rite, dock_inspection, harbour_errands, lost_dog, lost_ring, \
-                      night_patrol, smugglers_cove, the_long_winter, watch_captain, watch_oath";
+                      night_patrol, smugglers_cove, the_long_winter, watch_captain";
 
 #[test]
 fn a_quests_requirements_offer_each_kind_of_requirement() {

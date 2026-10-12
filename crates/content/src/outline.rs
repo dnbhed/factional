@@ -11,16 +11,15 @@ use crate::edit::{ValuePath, entries_as_written};
 use crate::quests::{QUESTLINES_FILE, QUESTS_FILE};
 use crate::{
     ACTIONS_FILE, BALANCE_FILE, CHARACTERS_FILE, ContentError, Diagnostic, FACTIONS_FILE,
-    OUTCOMES_FILE, RELATIONS_FILE, Sources, Texts, parse_quests, quest_warnings, warnings,
+    OUTCOMES_FILE, Sources, Texts, parse_quests, quest_warnings, warnings,
 };
 
 /// The content files, in the order an outline lists them.
-pub const CONTENT_FILES: [&str; 8] = [
+pub const CONTENT_FILES: [&str; 7] = [
     BALANCE_FILE,
     FACTIONS_FILE,
     CHARACTERS_FILE,
     ACTIONS_FILE,
-    RELATIONS_FILE,
     OUTCOMES_FILE,
     QUESTS_FILE,
     QUESTLINES_FILE,
@@ -159,7 +158,7 @@ impl OutlineEntry {
 
 /// The text of each content file, in [`CONTENT_FILES`]' order; `None` for a file that isn't
 /// there.
-pub type ContentTexts = [Option<String>; 8];
+pub type ContentTexts = [Option<String>; 7];
 
 /// Reads the text of each content file in `dir`.
 pub fn read_texts(dir: &Path) -> Result<ContentTexts, ContentError> {
@@ -230,7 +229,6 @@ pub(crate) fn sources(texts: &ContentTexts) -> Sources<'_> {
         factions: text(FACTIONS_FILE),
         characters: text(CHARACTERS_FILE),
         actions: text(ACTIONS_FILE),
-        relations: text(RELATIONS_FILE),
         outcomes: text(OUTCOMES_FILE),
         quests: text(QUESTS_FILE),
         questlines: text(QUESTLINES_FILE),
@@ -358,11 +356,12 @@ mod tests {
             &[
                 (
                     "factions.toml",
-                    "[watch]\nname = \"The Watch\"\nalignment = { law = 60.0, good = 0.0 }\ntolerance = 40.0\n\n[[watch.ranks]]\nid = \"recruit\"\n",
+                    "[watch]\nname = \"The Watch\"\nalignment = { law = 60.0, good = 0.0 }\ntolerance = 40.0\nrelations = { watch = 1.0, nobody = 2.0 }\n\n[[watch.ranks]]\nid = \"recruit\"\n",
                 ),
+                // No content file is a list of tables, but one written as one is still shown.
                 (
-                    "relations.toml",
-                    "[[relation]]\nbetween = [\"watch\", \"watch\"]\nvalue = 1.0\n\n[[relation]]\nfrom = \"watch\"\nto = \"nobody\"\nvalue = 2.0\n",
+                    "outcomes.toml",
+                    "[[odd]]\nweight = 1\n\n[[odd]]\nweight = 2\n",
                 ),
             ],
         );
@@ -375,18 +374,18 @@ mod tests {
                 .collect()
         };
         assert_eq!(keys(1), ["watch"]);
-        assert_eq!(keys(4), ["relation[0]", "relation[1]"]);
-        assert!(outline.files[4].entries[1].toml.starts_with("[[relation]]"));
+        assert_eq!(keys(4), ["odd[0]", "odd[1]"]);
+        assert!(outline.files[4].entries[1].toml.starts_with("[[odd]]"));
         assert!(
             outline.files[1].entries[0]
                 .toml
                 .contains("name = \"The Watch\"")
         );
-        // A relation with itself, and one with a faction that doesn't exist: each at its own.
-        assert_eq!(outline.files[4].entries[0].problems.len(), 1);
-        assert_eq!(outline.files[4].entries[1].problems.len(), 1);
+        // A relation with itself, and one with a faction that doesn't exist: both at the
+        // faction they're written in.
+        assert_eq!(outline.files[1].entries[0].problems.len(), 2);
         assert!(!outline.loads());
-        assert_eq!(outline.problem_count(), 2);
+        assert_eq!(outline.problem_count(), 3);
     }
 
     #[test]

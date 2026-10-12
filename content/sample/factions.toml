@@ -38,6 +38,13 @@
 # its members are reviewed the same way.
 # expel_standing_change (optional): -100 to 100; -20 if left out. It spills to other
 # factions like any standing change.
+#
+# relations (optional): how the faction regards each other faction, by id, -100 to 100
+# (DESIGN.md §9.4). Each direction is written in the faction that holds it; a faction left
+# out is regarded at 0. Writing one way without the other is warned of, as a pair probably
+# half-entered; write 0.0 for a grudge that isn't returned. Two factions are in conflict
+# when either regards the other at or below balance.toml's relations.conflict_threshold
+# (-50); a member of one can't join the other.
 
 [city_watch]
 name = "The City Watch"
@@ -46,6 +53,9 @@ alignment = { law = 70.0, good = 20.0 }
 weights = { law = 1.0, good = 0.25 }
 tolerance = 40.0
 member_tolerance = 50.0
+# Enemies of the Guild, so in conflict; allied with the Temple; rivals of the Circle, but not
+# in conflict; and distrusting mercenaries more than they distrust it.
+relations = { lantern_guild = -80.0, temple = 60.0, ashen_circle = -40.0, free_company = -30.0 }
 # The Watch gives a straying officer a hundred ticks to mend their ways.
 drift = { policy = "probation", grace_ticks = 100, then = "expel" }
 
@@ -68,6 +78,7 @@ alignment = { law = 30.0, good = 80.0 }
 weights = { law = 0.5, good = 1.0 }
 tolerance = 35.0
 member_tolerance = 45.0
+relations = { city_watch = 60.0, ashen_circle = -90.0 }
 # The Temple steps a lapsing priest down rather than casting them out.
 drift = { policy = "demote" }
 
@@ -89,6 +100,7 @@ alignment = { law = -60.0, good = -10.0 }
 weights = { law = 1.0, good = 0.5 }
 tolerance = 45.0
 member_tolerance = 60.0
+relations = { city_watch = -80.0, free_company = 20.0 }
 drift = { policy = "flag" }
 # Members may belong secretly, known only to the Guild and its members (DESIGN.md §10.4).
 secret_members = true
@@ -111,6 +123,7 @@ alignment = { law = -10.0, good = 0.0 }
 weights = { law = 0.25, good = 0.25 }
 tolerance = 60.0
 member_tolerance = 80.0
+relations = { city_watch = -10.0, lantern_guild = 20.0 }
 # Mercenaries don't take kindly to deserters, but don't care what you believe.
 leave_standing_change = -10.0
 drift = { policy = "ignore" }
@@ -128,6 +141,7 @@ alignment = { law = 20.0, good = -80.0 }
 weights = { law = 0.25, good = 1.0 }
 tolerance = 30.0
 member_tolerance = 40.0
+relations = { temple = -90.0, city_watch = -40.0 }
 # Stray from the Circle's path and you're out.
 drift = { policy = "expel" }
 secret_members = true

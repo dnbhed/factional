@@ -117,8 +117,8 @@ fn kinds_in(
             let there = wording.keys_at(&path);
             kinds.push(Offer {
                 label,
+                what: Offered::Id(choices_of(texts, wording, names, &path, &there)),
                 at: path,
-                what: Offered::Id(choices_of(texts, wording, names, &there)),
             });
         } else if inner.get("properties").is_some() {
             kinds.extend(kinds_in(texts, root, wording, &path, &words));
@@ -148,7 +148,7 @@ fn list_offered(
         .get("items")
         .and_then(|items| names_of(form(root, items, "string"), "x-names"));
     let what = match names {
-        Some(names) => Offered::Pick(choices_of(texts, wording, names, &written)),
+        Some(names) => Offered::Pick(choices_of(texts, wording, names, path, &written)),
         None => Offered::Item,
     };
     let left = !matches!(&what, Offered::Pick(choices) if choices.is_empty());
@@ -356,15 +356,7 @@ pub fn id_choices(texts: &ContentTexts, file: &str, path: &ValuePath) -> Vec<IdC
     let Some(names) = names else {
         return Vec::new();
     };
-    let there = wording.keys_at(path);
-    ids_named(texts, names)
-        .into_iter()
-        .filter(|id| !there.contains(id))
-        .map(|id| IdChoice {
-            name: wording.name_of(names, &id).map(str::to_owned),
-            id,
-        })
-        .collect()
+    choices_of(texts, &wording, names, path, &wording.keys_at(path))
 }
 
 /// The entry at `at` in `document`, as a table.
@@ -470,8 +462,8 @@ fn offers_in(
             let there = wording.keys_at(&path);
             offers.push(Offer {
                 label: noun(names).to_owned(),
+                what: Offered::Id(choices_of(texts, wording, names, &path, &there)),
                 at: path,
-                what: Offered::Id(choices_of(texts, wording, names, &there)),
             });
         } else if let Some(inner) = id_tables(root, table) {
             for (inner, names) in inner {
@@ -479,8 +471,8 @@ fn offers_in(
                 let there = wording.keys_at(&path);
                 offers.push(Offer {
                     label: noun(names).to_owned(),
+                    what: Offered::Id(choices_of(texts, wording, names, &path, &there)),
                     at: path,
-                    what: Offered::Id(choices_of(texts, wording, names, &there)),
                 });
             }
         } else if wording.value_at(&path).is_none()
@@ -563,16 +555,22 @@ fn id_tables(root: &Json, table: &Json) -> Option<Vec<(String, Names)>> {
     inner.filter(|inner| !inner.is_empty())
 }
 
-/// The ids named as `names` that aren't among `there`, with their names.
+/// The ids named as `names` that may go at `path`: those not among `there`, nor the entry
+/// `path` is in, which never names itself (U12a), with their names.
 fn choices_of(
     texts: &ContentTexts,
     wording: &Wording,
     names: Names,
+    path: &ValuePath,
     there: &[String],
 ) -> Vec<IdChoice> {
+    let entry = match path.0.first() {
+        Some(Step::Key(entry)) => Some(entry),
+        _ => None,
+    };
     ids_named(texts, names)
         .into_iter()
-        .filter(|id| !there.contains(id))
+        .filter(|id| !there.contains(id) && Some(id) != entry)
         .map(|id| IdChoice {
             name: wording.name_of(names, &id).map(str::to_owned),
             id,
@@ -702,4 +700,41 @@ fn lines_of(text: &str) -> Vec<String> {
         .filter_map(|line| line.trim().strip_prefix('#'))
         .map(|comment| comment.strip_prefix(' ').unwrap_or(comment).to_owned())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use serde_json::json;
+
+    fn written(keys: &[&str]) -> Vec<String> {
+        keys.iter().map(|key| (*key).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_key_the_form_written_rules_out_isnt_allowed() {
+        // A relation shift's two forms: between = [a, b], or from and to.
+        let shift = json!({ "oneOf": [
+            { "required": ["between"], "not": { "anyOf": [{ "required": ["from"] }, { "required": ["to"] }] } },
+            { "required": ["from", "to"], "not": { "required": ["between"] } },
+        ] });
+        assert!(!allowed(&shift, &written(&["between", "by"]), "from"));
+        assert!(!allowed(&shift, &written(&["between", "by"]), "to"));
+        assert!(allowed(&shift, &written(&["from"]), "to"));
+        assert!(!allowed(&shift, &written(&["from"]), "between"));
+        // Before either is written, either may be.
+        assert!(allowed(&shift, &written(&["by"]), "between"));
+        assert!(allowed(&shift, &written(&["by"]), "from"));
+        // A table with one form allows any key.
+        assert!(allowed(&json!({}), &written(&["between"]), "from"));
+    }
+
+    #[test]
+    fn a_list_has_room_until_it_holds_as_many_as_it_may() {
+        let pair = json!({ "maxItems": 2 });
+        assert!(item_schema_at(&pair, 1));
+        assert!(!item_schema_at(&pair, 2));
+        assert!(item_schema_at(&json!({}), 100));
+    }
 }

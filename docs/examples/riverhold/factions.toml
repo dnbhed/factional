@@ -18,6 +18,13 @@ drift = { policy = "probation", grace_ticks = 100, then = "expel" }
 # Standing change on expulsion, and on leaving voluntarily. (M8, M3)
 expel_standing_change = -20.0
 leave_standing_change = 0.0
+# How the Watch regards each other faction, -100 to 100; any left out is 0. Each faction
+# writes its own side, so a grudge can run deeper one way, as the Watch's against the Free
+# Company does. Bands are named in balance.toml: enemy ≤ -50 < rival ≤ -15 < neutral ≤ 15 <
+# friendly ≤ 50 < allied; enemies are in conflict, so membership of one bars the other.
+# One side written without the other is warned of; write 0.0 for a grudge not returned.
+# (M2; in each faction from U12a)
+relations = { lantern_guild = -80.0, temple = 60.0, ashen_circle = -40.0, free_company = -30.0 }
 
 # The rank ladder, lowest first; members join on the bottom rung and are promoted only when
 # a quest, dialogue or the CLI asks. (M5)
@@ -42,6 +49,7 @@ weights = { law = 0.5, good = 1.0 }
 tolerance = 35.0
 member_tolerance = 45.0
 drift = { policy = "demote" }
+relations = { ashen_circle = -90.0, city_watch = 60.0 }
 
 [[temple.ranks]]
 id = "acolyte"
@@ -66,6 +74,7 @@ drift = { policy = "flag" }
 # Members may belong secretly, unknown to anyone outside the Guild until they're exposed.
 # A starting membership says so with `secret = true`. (K4)
 secret_members = true
+relations = { city_watch = -80.0, free_company = 20.0 }
 
 [[lantern_guild.ranks]]
 id = "cutpurse"
@@ -87,6 +96,7 @@ weights = { law = 0.25, good = 0.25 }
 tolerance = 60.0
 member_tolerance = 80.0
 drift = { policy = "ignore" }
+relations = { lantern_guild = 20.0, city_watch = -10.0 }
 
 [[free_company.ranks]]
 id = "sellsword"
@@ -104,6 +114,7 @@ tolerance = 30.0
 member_tolerance = 40.0
 drift = { policy = "expel" }
 secret_members = true
+relations = { temple = -90.0, city_watch = -40.0 }
 
 # A faction can replace balance.toml's defectors or deserters rules with its own, and may
 # name its ranks in them. The Circle lets no one go to its enemies. (M7)

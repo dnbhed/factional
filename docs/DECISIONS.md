@@ -773,6 +773,16 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **In the editor, the menu is the table's "+",** "+ Requirement…" or "+ Effect…": a kind of key or item is a button; a kind by id is a submenu of its ids, by name. Within the table, a place on the way to where a kind adds, such as a requirement's `standing` or an effect's `alignment`, has no "+" of its own, so nothing is offered twice; places outside it keep theirs, and every × stays. The CLI's `form` prints the offer as "+ Requirement: Done, Member of, …".
   - *Why:* a designer adds "a requirement" and then says which, rather than choosing among keys such as `rank_at_least`.
 
+- **P-104 · How relations moved into each faction** (made in U12a, 2026-10-12; D-37, P-91).
+  - **A faction's `relations` is read as a table of ids and values, like a standing's,** each key a direction from this faction, in id order; the engine's `Relation` is unchanged, each one way (`Directed`). A problem with one is at `<faction>.relations.<other>` in `factions.toml`, as the loader and the editor's fixes key it.
+  - **The one-sided warning is the engine's** (`ContentWarning::OneSidedRelation`), naming both factions by name: *The City Watch regards The Lantern Guild at -80.00, but The Lantern Guild's regard for The City Watch isn't written, so it's 0*.
+  - **A `relations.toml` in a directory stops it being read,** as an unreadable directory does, with the one problem saying where relations live now and how they're written. Read as if it had none, an old directory would be a different world that loads; a file kept beside the moved relations would be read twice in the designer's head.
+  - **The form says each one as a sentence,** *Regards {key} at {value}*, in a Relations section after *Where it stands*; U12b replaces the section with the pair rows of D-38.
+  - **No entry is offered its own id** (`id_choices`, a section's offers, a menu of kinds): a faction isn't offered a relation with itself, a character their own contact or standing, a quest itself as done. Each would be a problem, or say nothing.
+  - **`validate` counts relations as written,** one a direction: Riverhold's 7 entries become 12.
+  - **The editor's checks of an entry's forms (`oneOf`) and of a list's room are kept,** tested directly: no entry has forms now, nor a list at its top with a most, but a schema that gains one is offered nothing that doesn't fit.
+  - *Why:* only the content moves (P-91), so the engine, its commands and the quests' relation shifts stay as they are.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.
