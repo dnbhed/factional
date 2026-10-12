@@ -85,7 +85,7 @@ fn describe(row: &FormRow) -> String {
 }
 
 /// `+ Rank`, `+ Faction: a, b or c, or a new id` or `+ Contact: a or b`: what a section offers
-/// to add (U10d).
+/// to add (U10d), or `+ Requirement: Done, … or Standing`, its kinds (U11b).
 fn offered(offer: &Offer) -> String {
     let ids = |choices: &[IdChoice]| {
         let ids: Vec<String> = choices.iter().map(|choice| choice.id.clone()).collect();
@@ -99,6 +99,14 @@ fn offered(offer: &Offer) -> String {
         },
         Offered::Pick(choices) => {
             format!("  + {}: {}", offer.label, ids(choices).unwrap_or_default())
+        }
+        Offered::Kinds(kinds) => {
+            let kinds: Vec<String> = kinds.iter().map(|kind| kind.label.clone()).collect();
+            format!(
+                "  + {}: {}",
+                offer.label,
+                either(&kinds).unwrap_or_default()
+            )
         }
     }
 }

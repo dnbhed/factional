@@ -69,5 +69,29 @@ Factions
 Regard
   # enemies, so in conflict
   Value · value = -80.0
+> form content/sample quests.toml watch_oath
+quests.toml › watch_oath: The Watch's Oath
+Identity
+  Name · name = The Watch's Oath
+  Giver · giver = city_watch (ashen_circle, brother_ash, captain_hale, city_watch, free_company, lantern_guild, merchant_ava, player, sister_mira, temple or vex)
+Requirements
+  Requirements › Needs not to be in lantern_guild · requires.not_member[0] (ashen_circle, city_watch, free_company, lantern_guild or temple)
+  + Requirement: Done, Member of, Not a member of, Rank at least, Standing or Within tolerance of
+Stages
+  Stage "patrol" › Id · stages[0].id = patrol
+  Stage "patrol" › Choice "report" › Id · stages[0].choices[0].id = report
+  Stage "patrol" › Choice "report" › Outcome · stages[0].choices[0].outcome = turned_in_vex (fenced_the_crown_jewels, fined_by_watch, rescued_merchant, sowed_discord, took_a_bribe or turned_in_vex)
+  Stage "patrol" › Choice "report" › Next · stages[0].choices[0].next = oath
+  Stage "patrol" › Choice "look_away" › Id · stages[0].choices[1].id = look_away
+  Stage "patrol" › Choice "look_away" › Outcome · stages[0].choices[1].outcome = took_a_bribe (fenced_the_crown_jewels, fined_by_watch, rescued_merchant, sowed_discord, took_a_bribe or turned_in_vex)
+  Stage "patrol" › Choice "look_away" › Next · stages[0].choices[1].next = end
+  # Swearing in is the oath; joining the Watch is the character's own act, never a
+  # quest's (D-30).
+  Stage "oath" › Id · stages[1].id = oath
+  Stage "oath" › Requirements › Needs standing 10.0 with The City Watch · stages[1].requires.standing.city_watch
+  Stage "oath" › Choice "swear" › Id · stages[1].choices[0].id = swear
+  Stage "oath" › Choice "swear" › Effects › Moves law by 5.0 · stages[1].choices[0].effects.alignment.law
+  Stage "oath" › Choice "swear" › Next · stages[1].choices[0].next = end
+  + Stage
 > assert form content/sample factions.toml city_wach == error: no entry 'city_wach' in factions.toml (did you mean 'city_watch'?)
 > assert form content/sample faction.toml city_watch == error: unknown file 'faction.toml' (did you mean 'factions.toml'?)

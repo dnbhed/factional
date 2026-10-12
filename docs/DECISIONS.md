@@ -767,6 +767,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The CLI's `form` prints the sentence with its value in it,** under the headings it doesn't say, then its key: `Stage "oath" › Requirements › Needs standing 10.0 with The City Watch · stages[1].requires.standing.city_watch`.
   - *Why:* a designer writes "needs standing 40 with the Watch", not `requires.standing.city_watch = 40.0`.
 
+- **P-103 · How requirements and effects are added by kind** (made in U11b, 2026-10-12; P-93, P-101).
+  - **The schema marks a table of kinds** (`x-kinds`, with what one is called): `requires`, wherever it is (a quest's, a stage's, a questline step's), is *Requirement*; a choice's `effects` is *Effect*. A rank's requirements, an outcome and an action aren't marked: they're entries or have one kind.
+  - **Its kinds are its keys, in the schema's order,** each labelled by its words from the table, a table within it said by its own words first (*Alignment › Good*, *Standing › Factions*): a list's item, or a pick from a list of ids of those not in it yet; an id in a table keyed by ids, of those not there yet; a key not yet there. A kind with nothing left to add isn't offered, and a table with no kinds left offers nothing. `place_kinds` gives a place's; a section offers a table of kinds as one offer (`Offered::Kinds`) in place of its key.
+  - **In the editor, the menu is the table's "+",** "+ Requirement…" or "+ Effect…": a kind of key or item is a button; a kind by id is a submenu of its ids, by name. Within the table, a place on the way to where a kind adds, such as a requirement's `standing` or an effect's `alignment`, has no "+" of its own, so nothing is offered twice; places outside it keep theirs, and every × stays. The CLI's `form` prints the offer as "+ Requirement: Done, Member of, …".
+  - *Why:* a designer adds "a requirement" and then says which, rather than choosing among keys such as `rank_at_least`.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

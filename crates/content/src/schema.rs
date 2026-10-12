@@ -328,6 +328,13 @@ fn said_as(mut schema: Value, says: usize, text: &str) -> Value {
 }
 
 /// `schema` with its own title, in place of the one its key has elsewhere.
+/// `schema`, a table of requirements or effects, each key a kind of `kind` (U11b): its form
+/// offers one of each kind to add, as "+ <kind>…".
+fn of_kinds(mut schema: Value, kind: &str) -> Value {
+    schema["x-kinds"] = json!(kind);
+    schema
+}
+
 fn with_title(mut schema: Value, title: &str) -> Value {
     schema["title"] = title.into();
     schema
@@ -1418,12 +1425,13 @@ fn requires() -> Value {
             (key.to_owned(), schema)
         })
         .collect();
-    json!({
+    let requires = json!({
         "type": "object",
         "description": "What must hold for the character doing the quest, all of it.",
         "properties": keys,
         "additionalProperties": false,
-    })
+    });
+    of_kinds(requires, "Requirement")
 }
 
 /// A quest, a stage or a choice in `done`: up to three ids joined by dots.
@@ -1510,14 +1518,17 @@ fn choice() -> Value {
             ),
             (
                 "effects",
-                object(
-                    [
-                        ("alignment", json!({ "$ref": "#/$defs/delta" })),
-                        ("standing", json!({ "$ref": "#/$defs/standing" })),
-                        ("relations", relation_shifts()),
-                    ],
-                    &[],
-                    Some("Effects written here, of the kinds an outcome has."),
+                of_kinds(
+                    object(
+                        [
+                            ("alignment", json!({ "$ref": "#/$defs/delta" })),
+                            ("standing", json!({ "$ref": "#/$defs/standing" })),
+                            ("relations", relation_shifts()),
+                        ],
+                        &[],
+                        Some("Effects written here, of the kinds an outcome has."),
+                    ),
+                    "Effect",
                 ),
             ),
             (

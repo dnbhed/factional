@@ -97,6 +97,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U10c — pairs as pairs (P-100): `KeyInfo::pair` for a list of exactly two ids, such as `between`; `Line::Pair` draws its two fields on one line either side of ↔, under the pair's word, with the pair's × beside them; half a pair stays a heading and a row; done 2026-10-11 (#66)
 - U10d — every section, with its adding in it, at the user's direction (D-42, P-101): every group of an entry's schema in its form, even empty, with what it offers (`FormGroup::offers`, `Offer`, `Offered`): a list's item, a pick from a list of ids, an id in a table keyed by ids or each within one, or a key not there with no default, none the entry's form rules out; `make_offer` makes one in one change, writing what it's within first; each section ends with its "+" buttons, a place's own "+" not drawn where an offer covers it, the entry's "+…" and the list after the form gone; `form` prints the offers; contacts are "Contact"s; done 2026-10-11 (#67)
 - U11a — requirements and effects as sentences (P-93, P-102): the schema says each one's sentence and how many of its words it says (`x-sentence`), such as "Needs standing {value} with {key}" or "Standing with {key} changes by {value}", and a character's standing where it starts; `FormRow::sentence` (`Sentence`) gives the words before and after the value; the Content tab draws it on one line under the headings it doesn't say; `form` prints it with its value; U11 split, with adding by kind now U11b; done 2026-10-11 (#68)
+- U11b — requirements and effects added by kind (P-93, P-103): the schema marks tables of kinds (`x-kinds`), a quest's, stage's or step's `requires` and a choice's `effects`; `Offered::Kinds` and `place_kinds` give each kind they take, in words, with each id's choices; the Requirements section offers "+ Requirement…" and a stage's requirements or a choice's effects have it as their "+", each kind by id a submenu; made in one change with what it's within; done 2026-10-12 (#69)
 
 ---
 
@@ -121,10 +122,6 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 `factional-bevy` (D-33, P-75, DESIGN.md §19): the world and quest log as a resource loaded at startup, commands in and events out as Bevy messages, time by `AdvanceTime` at a rate the game sets, and an example app. Settles the Bevy version and whether the crate builds in the main workspace.
 
 ## Beyond this module
-
-### U11b · Adding requirements and effects by kind — P3 · Next
-
-"+ Requirement…" and "+ Effect…", each a menu of the kinds its place takes, with each id's choices, made in one change (P-93, P-101).
 
 ### U12 · Relations in each faction — P3 · Outline
 

@@ -12,6 +12,10 @@ form content/sample characters.toml captain_hale
 # A relation has no name; the comment after its value on its line is shown.
 form content/sample relations.toml relation[0]
 
+# The Watch's Oath needs not to be in the Guild; its Requirements offer each kind of
+# requirement to add (U11b).
+form content/sample quests.toml watch_oath
+
 # A misspelt entry or file is offered the nearest.
 assert form content/sample factions.toml city_wach == error: no entry 'city_wach' in factions.toml (did you mean 'city_watch'?)
 assert form content/sample faction.toml city_watch == error: unknown file 'faction.toml' (did you mean 'factions.toml'?)

@@ -3,7 +3,7 @@
 //! there are any; then what the loader says, what refers to the entry, and the entry as
 //! written. The form is `factional-content`'s `entry_form`; this draws it.
 
-use factional_content::{Addition, Fix, Offered, Step, ValuePath, Word, key_info};
+use factional_content::{Addition, Fix, Offer, Offered, Step, ValuePath, Word, key_info};
 
 use crate::egui::{self, RichText, WidgetInfo, WidgetType};
 use crate::layout::{Line, ListTable, Shape, cell_removes, column_titles, form_layout};
@@ -22,8 +22,8 @@ pub(crate) enum Acted {
     Fix(Fix),
     /// A key, or with none an item, added at a place.
     Add(ValuePath, Option<String>),
-    /// The `m`th offer of the `n`th section made, with an id for one that takes it (U10d).
-    Offer(usize, usize, Option<String>),
+    /// An offer made, with an id for one that takes it (U10d, U11b).
+    Make(Offer, Option<String>),
 }
 
 /// How wide a value's field is, so every value lines up and what's after it fits; a table's
@@ -87,9 +87,25 @@ pub(crate) fn form_ui(
             .collect();
         form_layout(&names, &shapes, &at)
     };
-    // A place whose "+" a section's offer says, as the place the offer adds at or what that's
-    // within, has none of its own.
-    let covered = sections
+    // A place whose "+" a section's offer says, or a kind in a menu of kinds (U11b), as the
+    // place it adds at or what that's within, has none of its own.
+    let offered: Vec<&Offer> = sections
+        .iter()
+        .flat_map(|section| &section.offers)
+        .map(|offer| &offer.offer)
+        .chain(places.iter().filter_map(|place| place.kinds.as_ref()))
+        .collect();
+    let covered = offered
+        .iter()
+        .flat_map(|offer| {
+            let kinds = match &offer.what {
+                Offered::Kinds(kinds) => kinds.as_slice(),
+                _ => &[],
+            };
+            kinds.iter().map(|kind| (offer.at.clone(), kind.at.clone()))
+        })
+        .collect();
+    let sections_at = sections
         .iter()
         .flat_map(|section| &section.offers)
         .map(|offer| offer.offer.at.clone())
@@ -98,6 +114,7 @@ pub(crate) fn form_ui(
         file,
         entry,
         places,
+        sections_at,
         covered,
     };
     egui::Grid::new("form").num_columns(2).show(ui, |ui| {
@@ -176,9 +193,10 @@ pub(crate) fn form_ui(
                 && !section.offers.is_empty()
             {
                 ui.horizontal_wrapped(|ui| {
-                    for (offer, input) in section.offers.iter_mut().enumerate() {
-                        if let Some(id) = offer_ui(ui, file, entry, input) {
-                            done(Some(Acted::Offer(place, offer, id)));
+                    for input in section.offers.iter_mut() {
+                        let OfferInput { offer, id } = input;
+                        if let Some((made, id)) = offer_ui(ui, file, entry, offer, id) {
+                            done(Some(Acted::Make(made, id)));
                         }
                     }
                 });
@@ -190,31 +208,23 @@ pub(crate) fn form_ui(
 }
 
 /// One offer's "+": a key's or an item's, added at once, "+ Weights" or "+ Membership"; an id's,
-/// a menu of those that exist with their names, and for a table keyed by ids a new one typed.
-/// Each is labelled as the place's own "+" would be, for anyone who can't see it: "Add weights
-/// to vex", "Add to memberships", "Add to standing.factions…". What's chosen, with its id.
+/// a menu of those that exist with their names, and for a table keyed by ids a new one typed;
+/// a kinds', a menu of each kind its place takes (U11b). Each is labelled as the place's own
+/// "+" would be, for anyone who can't see it: "Add weights to vex", "Add to memberships",
+/// "Add to standing.factions…". The offer chosen, a kind's own for a kind, with its id.
 fn offer_ui(
     ui: &mut egui::Ui,
     file: &str,
     entry: &ValuePath,
-    input: &mut OfferInput,
-) -> Option<Option<String>> {
-    let OfferInput { offer, id } = input;
-    let at = in_entry(entry, &offer.at);
-    let name = match at.0.is_empty() {
-        true => entry.to_string(),
-        false => at.to_string(),
-    };
+    offer: &Offer,
+    id: &mut String,
+) -> Option<(Offer, Option<String>)> {
+    let name = name_of(entry, &offer.at);
     let shown = format!("+ {}", offer.label);
-    let button = |ui: &mut egui::Ui, shown: &str, said: &str| {
-        let button = ui.button(shown);
-        button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, said));
-        button
-    };
     let mut chosen = None;
     match &offer.what {
         Offered::Key(key) => {
-            let mut added = button(ui, &shown, &format!("Add {key} to {name}"));
+            let mut added = labelled(ui, &shown, &format!("Add {key} to {name}"));
             if let Some(info) = key_info(file, &offer.at.then(Step::Key(key.clone()))) {
                 let default = info
                     .default
@@ -224,37 +234,51 @@ fn offer_ui(
                 added = added.on_hover_text(format!("{}{default}. {about}", info.kind));
             }
             if added.clicked() {
-                chosen = Some(None);
+                chosen = Some((offer.clone(), None));
             }
         }
         Offered::Item => {
-            if button(ui, &shown, &format!("Add to {name}")).clicked() {
-                chosen = Some(None);
+            if labelled(ui, &shown, &format!("Add to {name}")).clicked() {
+                chosen = Some((offer.clone(), None));
             }
         }
-        Offered::Id(choices) | Offered::Pick(choices) => {
-            let said = format!("Add to {name}…");
+        Offered::Id(_) | Offered::Pick(_) => {
             let menu = ui.menu_button(format!("{shown}…"), |ui| {
-                for choice in choices {
-                    let named = match &choice.name {
-                        Some(named) => format!("{named} · {}", choice.id),
-                        None => choice.id.clone(),
+                chosen = choices_ui(ui, entry, offer, id);
+            });
+            let said = format!("Add to {name}…");
+            menu.response
+                .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+        }
+        // Each kind a button, or for one by id its own menu of the ids.
+        Offered::Kinds(kinds) => {
+            let menu = ui.menu_button(format!("{shown}…"), |ui| {
+                for kind in kinds {
+                    let inner = name_of(entry, &kind.at);
+                    let made = match &kind.what {
+                        Offered::Key(key) => {
+                            labelled(ui, &kind.label, &format!("Add {key} to {inner}"))
+                                .clicked()
+                                .then(|| (kind.clone(), None))
+                        }
+                        Offered::Item => labelled(ui, &kind.label, &format!("Add to {inner}"))
+                            .clicked()
+                            .then(|| (kind.clone(), None)),
+                        _ => {
+                            let menu =
+                                ui.menu_button(&kind.label, |ui| choices_ui(ui, entry, kind, id));
+                            menu.response.widget_info(|| {
+                                WidgetInfo::labeled(WidgetType::Button, true, &kind.label)
+                            });
+                            menu.inner.flatten()
+                        }
                     };
-                    let said = format!("Add {} to {name}", choice.id);
-                    if button(ui, &named, &said).clicked() {
-                        chosen = Some(Some(choice.id.clone()));
-                    }
-                }
-                // A table keyed by ids takes one not made yet, too.
-                if matches!(offer.what, Offered::Id(_)) {
-                    let label = ui.label(format!("New id in {name}"));
-                    ui.add(egui::TextEdit::singleline(id).desired_width(160.0))
-                        .labelled_by(label.id);
-                    if ui.button(format!("Add to {name}")).clicked() {
-                        chosen = Some(Some(id.clone()));
+                    if made.is_some() {
+                        chosen = made;
                     }
                 }
             });
+            let said = format!("Add to {name}…");
             menu.response
                 .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
         }
@@ -262,23 +286,76 @@ fn offer_ui(
     chosen
 }
 
+/// An id offer's choices, each "<name> · <id>", and for a table keyed by ids a new one typed;
+/// the one chosen.
+fn choices_ui(
+    ui: &mut egui::Ui,
+    entry: &ValuePath,
+    offer: &Offer,
+    id: &mut String,
+) -> Option<(Offer, Option<String>)> {
+    let (Offered::Id(choices) | Offered::Pick(choices)) = &offer.what else {
+        return None;
+    };
+    let name = name_of(entry, &offer.at);
+    let mut chosen = None;
+    for choice in choices {
+        let named = match &choice.name {
+            Some(named) => format!("{named} · {}", choice.id),
+            None => choice.id.clone(),
+        };
+        if labelled(ui, &named, &format!("Add {} to {name}", choice.id)).clicked() {
+            chosen = Some((offer.clone(), Some(choice.id.clone())));
+        }
+    }
+    // A table keyed by ids takes one not made yet, too.
+    if matches!(offer.what, Offered::Id(_)) {
+        let label = ui.label(format!("New id in {name}"));
+        ui.add(egui::TextEdit::singleline(id).desired_width(160.0))
+            .labelled_by(label.id);
+        if ui.button(format!("Add to {name}")).clicked() {
+            chosen = Some((offer.clone(), Some(id.clone())));
+        }
+    }
+    chosen
+}
+
+/// A button showing `shown`, labelled `said` for anyone who can't see it.
+fn labelled(ui: &mut egui::Ui, shown: &str, said: &str) -> egui::Response {
+    let button = ui.button(shown);
+    button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, said));
+    button
+}
+
+/// Where `at` is in the entry `entry`, as its own "+" names it: the entry's key for the entry
+/// itself.
+fn name_of(entry: &ValuePath, at: &ValuePath) -> String {
+    let within = in_entry(entry, at);
+    match within.0.is_empty() {
+        true => entry.to_string(),
+        false => within.to_string(),
+    }
+}
+
 /// `path`, a place in the entry at `entry`, from the entry's start.
 fn in_entry(entry: &ValuePath, path: &ValuePath) -> ValuePath {
     ValuePath(path.0.iter().skip(entry.0.len()).cloned().collect())
 }
 
-/// What drawing a part of the form needs besides its own: the file, the entry, its places and
-/// where the sections' offers add.
+/// What drawing a part of the form needs besides its own: the file, the entry, its places,
+/// where the sections' offers add, and each menu of kinds' table with where a kind adds.
 struct Drawing<'d> {
     file: &'d str,
     entry: &'d ValuePath,
     places: &'d mut [PlaceInput],
-    covered: Vec<ValuePath>,
+    sections_at: Vec<ValuePath>,
+    covered: Vec<(ValuePath, ValuePath)>,
 }
 
 impl Drawing<'_> {
     /// The × (if `removable`) and "+" of each of `here`, by their place among the places,
-    /// side by side; no "+" where a section's offer says it.
+    /// side by side: for a table of kinds, its menu of them (U11b); none where a section's
+    /// offer or a kind says it.
     fn controls(&mut self, ui: &mut egui::Ui, here: &[usize], removable: bool) -> Option<Acted> {
         let mut acted = None;
         for &place in here {
@@ -289,11 +366,21 @@ impl Drawing<'_> {
             if removable && remove_button(ui, &name) {
                 acted = Some(Acted::Remove(place.path.clone()));
             }
-            let covered = self
+            let path = &place.path.0;
+            if self.sections_at.iter().any(|at| at.0.starts_with(path)) {
+                continue;
+            }
+            // Within a table of kinds, on the way to where a kind adds.
+            let kind = self
                 .covered
                 .iter()
-                .any(|at| at.0.starts_with(&place.path.0));
-            if !covered && let Some((at, key)) = adding(ui, self.file, place, &name) {
+                .any(|(table, at)| path.starts_with(&table.0) && at.0.starts_with(path));
+            if let Some(kinds) = &place.kinds {
+                if let Some((made, id)) = offer_ui(ui, self.file, self.entry, kinds, &mut place.id)
+                {
+                    acted = Some(Acted::Make(made, id));
+                }
+            } else if !kind && let Some((at, key)) = adding(ui, self.file, place, &name) {
                 acted = Some(Acted::Add(at, key));
             }
         }

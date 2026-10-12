@@ -26,6 +26,7 @@ pub use edit::{
 pub use fix::{Change, Fix, apply_fix, fix_for};
 pub use form::{
     FormGroup, FormRow, IdChoice, Offer, Offered, Sentence, entry_form, id_choices, make_offer,
+    place_kinds,
 };
 pub use graph::{Edge, LineView, Note, QuestGraph};
 pub use outline::{
