@@ -5,9 +5,9 @@
 use factional_content::{
     Edge, Note, QuestGraph, describe_choice, describe_step, needs, quest_heading,
 };
-use factional_quests::{Next, Quest};
+use factional_quests::{Next, Quest, Questline};
 
-use crate::egui::{self, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2};
+use crate::egui::{self, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2, WidgetInfo, WidgetType};
 use crate::layout::{GAP_Y, line_layout, quest_layout, rounded};
 use crate::theme;
 use crate::{Editor, Shown};
@@ -27,14 +27,51 @@ impl Editor {
             self.show(shown);
         }
         let mut edit = false;
+        let mut back = false;
+        let mut paged = None;
+        // The chosen quest beside the graph, or the questline's own page (U13a).
+        let line = match &self.shown {
+            Some(Shown::Questline(line)) => self
+                .graph
+                .quests
+                .questlines
+                .values()
+                .find(|found| found.id.as_str() == line),
+            _ => None,
+        };
         if let Some(quest) = self.chosen_quest() {
             egui::Panel::right("chosen quest")
                 .resizable(true)
                 .default_size(340.0)
-                .show(ui, |ui| edit = chosen_ui(ui, &self.graph, quest));
+                .show(ui, |ui| {
+                    if let Some(line) = line {
+                        let said = format!("Back to {}", line.name);
+                        let button = ui.button(format!("‹ {}", line.name));
+                        button.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+                        back = button.clicked();
+                    }
+                    edit = chosen_ui(ui, &self.graph, quest);
+                });
+        } else if let Some(line) = line {
+            egui::Panel::right("questline page")
+                .resizable(true)
+                .default_size(340.0)
+                .show(ui, |ui| paged = page_ui(ui, &self.graph, line));
         }
         if edit {
             self.edit_in_content();
+        }
+        if back {
+            self.unchoose();
+        }
+        match paged {
+            Some(Paged::Open(quest)) => self.choose(&quest),
+            Some(Paged::Add(line, step, quest)) => {
+                if let Err(refused) = self.add_to_step(&line, step, &quest) {
+                    self.note = Some(format!("couldn't add: {refused}"));
+                }
+            }
+            None => {}
         }
         let mut choose = None;
         egui::CentralPanel::default().show(ui, |ui| {
@@ -87,6 +124,66 @@ fn list_ui(ui: &mut egui::Ui, graph: &QuestGraph, shown: Option<&Shown>) -> Opti
         }
     });
     show
+}
+
+/// What was done on a questline's page (U13a).
+enum Paged {
+    /// A quest's own page opened.
+    Open(String),
+    /// A quest added to the questline's `n`th step.
+    Add(String, usize, String),
+}
+
+/// A questline's page (U13a, P-94): its name, then its steps in order, each a card saying what
+/// it needs, with its quests by name, each opening its own, and "+ Existing quest…", offering
+/// the quests in no questline, as a quest is in one at most.
+fn page_ui(ui: &mut egui::Ui, graph: &QuestGraph, line: &Questline) -> Option<Paged> {
+    let mut paged = None;
+    let named = |id: &str| {
+        graph
+            .quests
+            .quests
+            .values()
+            .find(|quest| quest.id.as_str() == id)
+            .map_or_else(|| id.to_owned(), |quest| format!("{} · {id}", quest.name))
+    };
+    let loose = graph.loose();
+    let id = line.id.as_str();
+    ui.heading(&line.name);
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for (index, step) in line.steps.iter().enumerate() {
+            let number = index + 1;
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                ui.strong(format!("Step {number}"));
+                ui.add(egui::Label::new(describe_step(step) + &needs(&step.requires)).wrap());
+                for quest in &step.quests {
+                    if ui.selectable_label(false, named(quest.as_str())).clicked() {
+                        paged = Some(Paged::Open(quest.to_string()));
+                    }
+                }
+                if !loose.is_empty() {
+                    let menu = ui.menu_button("+ Existing quest…", |ui| {
+                        for quest in &loose {
+                            let quest = quest.id.as_str();
+                            let said = format!("Add {quest} to step {number}");
+                            let button = ui.button(named(quest));
+                            button.widget_info(|| {
+                                WidgetInfo::labeled(WidgetType::Button, true, &said)
+                            });
+                            if button.clicked() {
+                                paged = Some(Paged::Add(id.to_owned(), index, quest.to_owned()));
+                            }
+                        }
+                    });
+                    let said = format!("Add an existing quest to step {number}…");
+                    menu.response
+                        .widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, &said));
+                }
+            });
+        }
+    });
+    paged
 }
 
 /// The chosen quest: its heading and gate, each stage with its choices, and what the loader

@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13 → U14 → U15 → U16 → U17 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14 → U15 → U16 → U17 → E1 → T5`
 
 ## Done
 
@@ -101,6 +101,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U12a — relations in each faction (D-37, P-91, P-104): `factions.toml`'s `relations`, keyed by faction id, read one way each, with its checks at `<faction>.relations.<other>`, the engine's warning for one side written alone, and the problem for a `relations.toml` left in a directory; `relations.toml` gone from the sample, the complete example, the fixtures, the schema and the file lists; each faction's Relations section in the form; no entry offered its own id; U12 split, with the faction's pair rows now U12b and the matrix U12c; done 2026-10-12 (#70)
 - U12b — each faction's relations both ways (D-38, P-105): the schema marks a table read both ways (`x-both-ways`); `relation_rows` gives every other faction with each way, its band, the conflict and whether the two are linked, read from the text; `set_relation` writes one way or both in one change; the Relations section draws them, with "same both ways", 0 with Set, and the conflict mark, and keeps the comment above them; `form` prints the same; done 2026-10-12 (#71)
 - U12c — the relations matrix (P-106): the engine's `relations_matrix`, each faction toward each other with its band and conflict; the Previews tab draws it, tinted by band and marked where a pair is in conflict; `relations --matrix [--csv]`; done 2026-10-12 (#72)
+- U13a — a questline's page (P-94, P-107): the Quests tab's right-hand panel shows a questline's steps in order, each a card of what it needs and its quests by name, each opening its own with a way back; "+ Existing quest…" offers the quests in no questline and adds one to the step in one change; U13 split into U13a to U13d; done 2026-10-12
 
 ---
 
@@ -126,9 +127,17 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U13 · Questlines make their own quests — P3 · Next
+### U13b · "+ New quest" — P3 · Next
 
-The Quests tab's pages beside its read-only graph: a questline's steps with "+ New quest" and "+ Existing quest…", quests moved between steps and steps reordered, pages nested with a breadcrumb down to a stage's choices; the editor's undo holding a change to several files (P-94).
+Each step's "+ New quest": the id typed, the quest made in `quests.toml` with its name and the stage and choice a quest must have, and its id added to the step, as one change to both files, one Undo (P-94).
+
+### U13c · Moving quests and steps — P3 · Outline
+
+A quest moved between steps and steps reordered, by menu; a step's `need` and `leftovers` set on its card (P-94).
+
+### U13d · Nested pages — P3 · Outline
+
+Pages nested with a breadcrumb, *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*: a quest's page its stages, a stage's its choices (P-94).
 
 ### U14 · The session as a library — P3 · Outline
 
