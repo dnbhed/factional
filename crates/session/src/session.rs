@@ -1,11 +1,11 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use factional_content::{Fingerprint, named_effects, named_shifts};
+use factional_content::{ContentTexts, Fingerprint, named_effects, named_shifts};
 use factional_quests::QuestLog;
 
 use crate::charts;
-use crate::check::{check, count, validate};
+use crate::check::{Checked, check, check_texts, count, validate};
 use crate::compare::report;
 
 use factional_core::{Fixed, ParseFixedError, Ratio, Tick, article, suggest};
@@ -302,6 +302,9 @@ pub struct Session {
     loaded: Option<String>,
     /// Exactly what was read from it, for `save`.
     fingerprint: Fingerprint,
+    /// The texts the world was loaded from, if it was from texts rather than its directory
+    /// (U14b), for `reload`.
+    texts: Option<ContentTexts>,
 }
 
 impl Default for Session {
@@ -319,7 +322,28 @@ impl Session {
             quests: QuestLog::default(),
             loaded: None,
             fingerprint: Fingerprint::default(),
+            texts: None,
         }
+    }
+
+    /// Loads the world written in `texts`, as the editor holds them, unsaved edits included
+    /// (U14b, P-81), named `name` as a directory loaded would be: as `load` does.
+    pub fn load_texts(&mut self, name: &str, texts: &ContentTexts) -> Outcome {
+        let loaded = self.loaded(name, check_texts(texts));
+        if matches!(loaded, Outcome::Output(_)) {
+            self.texts = Some(texts.clone());
+        }
+        loaded
+    }
+
+    /// Reloads the world from `texts` with `reload`'s rules (U14b): every command in the
+    /// journal replayed on it, and nothing changed if any is accepted differently.
+    pub fn reload_texts(&mut self, texts: &ContentTexts) -> Outcome {
+        let reloaded = self.reload_with(check_texts(texts));
+        if matches!(reloaded, Outcome::Output(_)) {
+            self.texts = Some(texts.clone());
+        }
+        reloaded
     }
 
     /// The loaded world, if there is one.
@@ -439,7 +463,18 @@ impl Session {
         if dir.is_empty() {
             return Outcome::Error("load needs the form: load <dir>".to_owned());
         }
-        match check(&self.base_dir.join(dir)) {
+        let checked = check(&self.base_dir.join(dir));
+        let loaded = self.loaded(dir, checked);
+        if matches!(loaded, Outcome::Output(_)) {
+            self.texts = None;
+        }
+        loaded
+    }
+
+    /// The world `checked` loaded, named `dir`, its journal starting afresh; or its problems,
+    /// with nothing changed.
+    fn loaded(&mut self, dir: &str, checked: Result<Checked, Vec<String>>) -> Outcome {
+        match checked {
             Ok(checked) => {
                 let count = checked.counts[0];
                 let noun = if count == 1 {
@@ -467,10 +502,23 @@ impl Session {
     /// content no longer loads, or any command's acceptance differs from before, nothing
     /// changes (P-52).
     fn reload(&mut self) -> Outcome {
+        let Some(dir) = &self.loaded else {
+            return no_world();
+        };
+        // Loaded from texts, it reloads from the texts last given (U14b).
+        let checked = match &self.texts {
+            Some(texts) => check_texts(texts),
+            None => check(&self.base_dir.join(dir)),
+        };
+        self.reload_with(checked)
+    }
+
+    /// `reload`'s rules, on the content `checked`.
+    fn reload_with(&mut self, checked: Result<Checked, Vec<String>>) -> Outcome {
         let (Some(world), Some(dir)) = (&self.world, &self.loaded) else {
             return no_world();
         };
-        let checked = match check(&self.base_dir.join(dir)) {
+        let checked = match checked {
             Ok(checked) => checked,
             Err(problems) => return Outcome::Error(problems.join("\n")),
         };
@@ -595,6 +643,7 @@ impl Session {
                 self.quests = restored.quests;
                 self.loaded = Some(restored.dir);
                 self.fingerprint = restored.fingerprint;
+                self.texts = None;
                 Outcome::Output(summary)
             }
             Err(error) => Outcome::Error(error.to_string()),

@@ -11,7 +11,7 @@ use crate::edit::{ValuePath, entries_as_written};
 use crate::quests::{QUESTLINES_FILE, QUESTS_FILE};
 use crate::{
     ACTIONS_FILE, BALANCE_FILE, CHARACTERS_FILE, ContentError, Diagnostic, FACTIONS_FILE,
-    OUTCOMES_FILE, Sources, Texts, parse_quests, quest_warnings, warnings,
+    Fingerprint, OUTCOMES_FILE, Sources, Texts, parse_quests, quest_warnings, warnings,
 };
 
 /// The content files, in the order an outline lists them.
@@ -216,6 +216,21 @@ pub fn outline_texts(texts: &ContentTexts) -> Outline {
 /// problem if they don't load (U5's previews).
 pub fn load_texts(texts: &ContentTexts) -> Result<(Content, Quests), ContentError> {
     parse_quests(sources(texts))
+}
+
+/// Reads and validates the content in `texts`, as [`load_texts`] does, with a fingerprint of
+/// exactly what was read, for saves, as a directory's would have (U14b).
+pub fn load_texts_fingerprinted(
+    texts: &ContentTexts,
+) -> Result<(Content, Quests, Fingerprint), ContentError> {
+    let fingerprint = Fingerprint::of(
+        CONTENT_FILES
+            .iter()
+            .zip(texts)
+            .map(|(name, text)| (*name, text.as_deref())),
+    );
+    let (content, quests) = parse_quests(sources(texts))?;
+    Ok((content, quests, fingerprint))
 }
 
 /// Each content file's text in `texts`, for the loader.

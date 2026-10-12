@@ -20,4 +20,5 @@ mod words;
 
 pub use check::validate;
 pub use compare::compare;
+pub use factional_content::ContentTexts;
 pub use session::{Outcome, ScriptError, Session, help_text, is_blank_or_comment};

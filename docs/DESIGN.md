@@ -1159,7 +1159,8 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
   - **A questline's steps and quests move on its page** (U13c, P-94, P-109; built): each step's ↑ and ↓ swap it with its neighbour, each quest's ⋯ moves it to the end of another step, and a step's `need` (left out, all) and `leftovers` are set on its card, each as one change. The writer swaps two items of a list, a `[[table]]` keeping its comments (`swap_items`).
   - **Pages nest under a breadcrumb** (U13d, P-94, P-110; built): *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*, each part but the last going back there; a quest's page is its stages, each opening its own and counting what the loader says at its choices, and a stage's is its choices, each with what the loader says at it. The graph stays read-only (D-36).
   - **The REPL is a library** (U14a, D-39, P-95, P-111; built): `factional-session` holds `Session` and every command module, moved from the CLI unchanged, its scenarios and snapshots the proof; the CLI keeps its binary, the REPL's line editing and the scenario runner over it.
-  - **The session loads from texts, and marks the ids it names** (U14b, U14c, P-95): from the texts the editor holds as well as a directory, and each id in what it says marked with what it names.
+  - **The session loads from texts** (U14b, P-95, P-112; built): `Session::load_texts` loads the world written in the texts the editor holds, unsaved edits included, as `load` does a directory's; `Session::reload_texts` reloads it from new texts with `reload`'s rules; a typed `reload` after either reloads the texts last given.
+  - **The session marks the ids it names** (U14c, P-95): each id in what it says marked with what it names.
   - **Play is a drawer along the bottom of every tab** (U15, U16, D-40, P-96), beside Problems, which moves into it from the Content tab. It runs the REPL on the content as it stands: history, completion of commands and ids, ids as links, and the session reloaded with `reload`'s rules each time the content loads, saying which command first comes out differently. Pages hand it commands, such as a quest's "Start it in Play". Watches re-run pinned commands after every command, with the engine's explanations; "Save as scenario" writes the session to `scenarios/`.
   - **Smaller things** (U17, P-97): renaming an id everywhere it's named, as one change; pickers that search, show names and offer "+ New …" for an id that doesn't exist; quick open, back and forward, reordering, duplicating, and the usual keys.
 - **The quest graphs' lines go around the boxes** (U8, D-36, P-90): each leaves the side of its box facing where it goes and turns in the gaps between columns; a line further than the next column runs along a corridor below every box. Each has its own lane and its own point on a box's side, and its turns are rounded as it's drawn. A questline's outside quests have a column of their own after its last step.
@@ -1197,7 +1198,7 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 | U13c (done) | Quests moved between steps, steps reordered, and a step's `need` and `leftovers` set on its card |
 | U13d (done) | Pages nested with a breadcrumb: a quest's stages, a stage's choices |
 | U14a (done) | `factional-session`: the REPL's session moved out of the CLI, unchanged |
-| U14b | The session loading from texts in memory, unsaved edits included |
+| U14b (done) | The session loading from texts in memory, unsaved edits included |
 | U14c | The ids in what the session says, marked with what they name |
 | U15 | Play, in a drawer along the bottom with Problems |
 | U16 | Watches, and saving Play as a scenario |
