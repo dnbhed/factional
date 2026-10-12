@@ -290,6 +290,25 @@ impl fmt::Display for ScriptError {
 
 impl std::error::Error for ScriptError {}
 
+/// An id in what the session said (U14c): where it is, in bytes, and what it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mark {
+    pub start: usize,
+    pub end: usize,
+    pub named: Named,
+}
+
+/// What an id the session marks names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Named {
+    Faction,
+    Character,
+    Action,
+    Outcome,
+    Quest,
+    Questline,
+}
+
 /// One CLI session: the state that commands act on, shared by the REPL and the script runner.
 #[derive(Debug)]
 pub struct Session {
@@ -344,6 +363,70 @@ impl Session {
             self.texts = Some(texts.clone());
         }
         reloaded
+    }
+
+    /// Each id of the loaded world in `said`, in order, marked with what it names (U14c).
+    ///
+    /// An id is a word of lowercase letters, digits and `_`, so each such word that's an id is
+    /// one, and nothing within a longer word is; the session knows the world's ids, so the
+    /// editor needn't (P-113).
+    pub fn marks(&self, said: &str) -> Vec<Mark> {
+        let Some(world) = &self.world else {
+            return Vec::new();
+        };
+        let quests = self.quests.quests();
+        let mut named: std::collections::BTreeMap<&str, Named> = std::collections::BTreeMap::new();
+        let ids = [
+            (
+                world.factions().map(|f| f.id.as_str()).collect::<Vec<_>>(),
+                Named::Faction,
+            ),
+            (
+                world.characters().map(|c| c.id.as_str()).collect(),
+                Named::Character,
+            ),
+            (
+                world.actions().map(|a| a.id.as_str()).collect(),
+                Named::Action,
+            ),
+            (
+                world.outcomes().map(|o| o.id.as_str()).collect(),
+                Named::Outcome,
+            ),
+            (
+                quests.quests.keys().map(|q| q.as_str()).collect(),
+                Named::Quest,
+            ),
+            (
+                quests.questlines.keys().map(|l| l.as_str()).collect(),
+                Named::Questline,
+            ),
+        ];
+        for (ids, what) in ids {
+            for id in ids {
+                named.insert(id, what);
+            }
+        }
+        let is_id = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_';
+        let mut marks = Vec::new();
+        let mut start = None;
+        for (at, c) in said.char_indices().chain([(said.len(), ' ')]) {
+            match (is_id(c), start) {
+                (true, None) => start = Some(at),
+                (false, Some(from)) => {
+                    if let Some(what) = named.get(&said[from..at]) {
+                        marks.push(Mark {
+                            start: from,
+                            end: at,
+                            named: *what,
+                        });
+                    }
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+        marks
     }
 
     /// The loaded world, if there is one.

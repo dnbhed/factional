@@ -838,6 +838,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Texts that don't load change nothing,** saying every problem, as a directory's would.
   - *Why:* the editor's Play runs on the content as it stands, unsaved edits included (P-81, U15).
 
+- **P-113 · How the session marks the ids it says** (made in U14c, 2026-10-12; P-95).
+  - **The session finds them in its own text,** knowing the loaded world's ids: each word of lowercase letters, digits and `_` that's an id of a faction, character, action, outcome, quest or questline is one (`Session::marks`, each a `Mark` of bytes and what it `Named`). Nothing within a longer word is, and a key path's steps are each their own word, so `city_watch.relations.temple` marks the Watch and the Temple.
+  - **Not each command marking as it writes:** every command formats its own text, and threading marks through all of them would touch the whole session for the same result. Ids are words of their own by their pattern (P-32), so a word that's an id names it; the editor still never searches the text itself (P-95).
+  - **Without a world, nothing is marked;** the CLI prints the text as it always has.
+  - *Why:* Play links each id said to its page (U15).
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

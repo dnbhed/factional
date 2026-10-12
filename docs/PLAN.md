@@ -107,6 +107,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U13d — nested pages (P-94, P-110): a breadcrumb, *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*, each part going back there; a quest's page its stages, each counting its choices' problems, and a stage's its choices with theirs; done 2026-10-12 (#76)
 - U14a — the session as a library (D-39, P-95, P-111): `factional-session`, the REPL's session and every command module moved out of the CLI unchanged, the scenarios and snapshots the proof; the CLI keeps its binary, line editing and scenario runner; CLAUDE.md's and DESIGN.md §15's dependency direction; U14 split into U14a to U14c; done 2026-10-12 (#77)
 - U14b — the session from texts (P-81, P-95, P-112): `Session::load_texts` and `Session::reload_texts` load and reload the world written in texts in memory, unsaved edits included, with `load`'s and `reload`'s checks and output; a typed `reload` reloads what it was loaded from; `load_texts_fingerprinted` in the content crate; done 2026-10-12 (#78)
+- U14c — marked ids (P-95, P-113): `Session::marks` gives each id of the loaded world in what the session said, with where it is and what it names, for the editor to link; done 2026-10-12 (#79)
 
 ---
 
@@ -132,11 +133,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U14c · Marked ids — P3 · Next
-
-What the session says, with each id in it marked with what it names, so the editor links them without searching the text; the CLI prints the same text unmarked (P-95).
-
-### U15 · Play in the editor — P3 · Outline
+### U15 · Play in the editor — P3 · Next
 
 The drawer along the bottom of every tab, with Problems moved into it and Play beside it: commands with history and completion, ids as links, the session reloaded as the content loads with the first changed command said, and pages handing commands to it (D-40, P-96).
 
