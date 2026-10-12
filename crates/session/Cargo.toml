@@ -1,0 +1,16 @@
+[package]
+name = "factional-session"
+description = "The REPL's session: every command the CLI and the editor's Play run, over a loaded world (D-39, P-95)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+factional-content = { path = "../content" }
+factional-core = { path = "../core" }
+factional-quests = { path = "../quests" }
+factional-reputation = { path = "../reputation" }
+
+[lints]
+workspace = true

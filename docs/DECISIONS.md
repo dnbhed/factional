@@ -825,6 +825,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Choosing a quest, from the graph or a page, opens its page,** not a stage's; showing a questline or quest closes any stage.
   - *Why:* a quest's insides nest in it, as articy's do (P-94), and each page has room for its own editing to come.
 
+- **P-111 · What moved into `factional-session`** (made in U14a, 2026-10-12; D-39, P-95).
+  - **The session and every command module:** `session` with `charts`, `check`, `compare`, `fixes`, `form`, `graph`, `keys`, `outline`, `play`, `quests`, `references` and `words`, moved file for file. `validate` and `compare` move with them, since the session's own commands use them.
+  - **The CLI keeps its binary, the REPL's line editing (`rustyline`) and the scenario runner,** each over the session, and re-exports `Session`, `Outcome`, `ScriptError`, `help_text`, `validate` and `compare`, so what's built on it is unchanged; `is_blank_or_comment` is the session's, public, for both.
+  - **The scenarios and their snapshots stay in the CLI** and are unchanged: they're the proof the move changed nothing.
+  - *Why:* one session, tested once, for the CLI and the editor (D-39); loading from texts and marking ids are its next increments.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-9.

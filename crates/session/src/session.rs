@@ -2689,7 +2689,7 @@ fn calculate(args: &str) -> Result<Fixed, String> {
 }
 
 /// Whether a (trimmed) line has nothing to run: it's blank, or a `#` comment.
-pub(crate) fn is_blank_or_comment(line: &str) -> bool {
+pub fn is_blank_or_comment(line: &str) -> bool {
     line.is_empty() || line.starts_with('#')
 }
 

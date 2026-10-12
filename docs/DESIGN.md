@@ -937,7 +937,7 @@ crates/
   reputation/    factional-reputation   the model, rules, World, commands, events, queries. No I/O.
   quests/        factional-quests       quests, questlines and their checks (§17). No I/O.
   content/       factional-content      reads TOML from disk, validates, diagnostics, JSON Schema.
-  session/       factional-session      the REPL's session, for the CLI and the editor (§18; from U14).
+  session/       factional-session      the REPL's session, for the CLI and the editor (§18; U14a).
   cli/           factional-cli          the `factional` binary: repl, run, validate, schema, compare.
   editor/        factional-editor       the visual editor, in egui (§18; from U1).
   bevy/          factional-bevy         the Bevy plugin (§19; from E1).
@@ -945,7 +945,7 @@ content/sample/  Riverhold
 scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/snapshots/
 ```
 
-- **Dependencies point one way:** core ← reputation ← quests ← content ← cli; from U14, core ← reputation ← quests ← content ← session ← cli, with the editor depending on `session` too (D-39, P-95). `factional-content` reads every module's files, so it sits above them all (P-67). The editor and the Bevy plugin sit beside `cli`, at the top: nothing depends on them (D-32, D-33).
+- **Dependencies point one way:** core ← reputation ← quests ← content ← session ← cli (U14a), the editor to depend on `session` too for Play (D-39, P-95). `factional-content` reads every module's files, so it sits above them all (P-67). The editor and the Bevy plugin sit beside `cli`, at the top: nothing depends on them (D-32, D-33).
 - **Other modules** (quests, then combat and the rest) are sibling crates. They talk to reputation only through §11. `factional-quests` also reads reputation's content, to check itself at load (§17, P-64).
 - **The host engine is Bevy** (D-33, settling X-2): the module embeds as a Bevy plugin (§19). The core stays engine-agnostic, so nothing below the plugin knows Bevy exists.
 
@@ -1158,7 +1158,8 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
   - **"+ New quest" makes one in its step** (U13b, P-94, P-108; built): the id typed, the quest made in `quests.toml`, started so it reads (a stage, `start`, with one choice, `done`, that ends it; its name for the designer to write), and its id added to the step, as one change to both files, one Undo; the new quest opens.
   - **A questline's steps and quests move on its page** (U13c, P-94, P-109; built): each step's ↑ and ↓ swap it with its neighbour, each quest's ⋯ moves it to the end of another step, and a step's `need` (left out, all) and `leftovers` are set on its card, each as one change. The writer swaps two items of a list, a `[[table]]` keeping its comments (`swap_items`).
   - **Pages nest under a breadcrumb** (U13d, P-94, P-110; built): *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*, each part but the last going back there; a quest's page is its stages, each opening its own and counting what the loader says at its choices, and a stage's is its choices, each with what the loader says at it. The graph stays read-only (D-36).
-  - **The REPL is a library** (U14, D-39, P-95): `factional-session`, holding `Session` as the CLI has it, loading from texts in memory as well as a directory, and marking the ids in what it says.
+  - **The REPL is a library** (U14a, D-39, P-95, P-111; built): `factional-session` holds `Session` and every command module, moved from the CLI unchanged, its scenarios and snapshots the proof; the CLI keeps its binary, the REPL's line editing and the scenario runner over it.
+  - **The session loads from texts, and marks the ids it names** (U14b, U14c, P-95): from the texts the editor holds as well as a directory, and each id in what it says marked with what it names.
   - **Play is a drawer along the bottom of every tab** (U15, U16, D-40, P-96), beside Problems, which moves into it from the Content tab. It runs the REPL on the content as it stands: history, completion of commands and ids, ids as links, and the session reloaded with `reload`'s rules each time the content loads, saying which command first comes out differently. Pages hand it commands, such as a quest's "Start it in Play". Watches re-run pinned commands after every command, with the engine's explanations; "Save as scenario" writes the session to `scenarios/`.
   - **Smaller things** (U17, P-97): renaming an id everywhere it's named, as one change; pickers that search, show names and offer "+ New …" for an id that doesn't exist; quick open, back and forward, reordering, duplicating, and the usual keys.
 - **The quest graphs' lines go around the boxes** (U8, D-36, P-90): each leaves the side of its box facing where it goes and turns in the gaps between columns; a line further than the next column runs along a corridor below every box. Each has its own lane and its own point on a box's side, and its turns are rounded as it's drawn. A questline's outside quests have a column of their own after its last step.
@@ -1195,7 +1196,9 @@ A visual editor for content, in egui (eframe), all Rust (D-32, settling X-5). It
 | U13b (done) | "+ New quest": a quest made in `quests.toml` and added to its step, as one change to two files |
 | U13c (done) | Quests moved between steps, steps reordered, and a step's `need` and `leftovers` set on its card |
 | U13d (done) | Pages nested with a breadcrumb: a quest's stages, a stage's choices |
-| U14 | `factional-session`: the REPL's session as a library, loading from texts |
+| U14a (done) | `factional-session`: the REPL's session moved out of the CLI, unchanged |
+| U14b | The session loading from texts in memory, unsaved edits included |
+| U14c | The ids in what the session says, marked with what they name |
 | U15 | Play, in a drawer along the bottom with Problems |
 | U16 | Watches, and saving Play as a scenario |
 | U17 | Renaming everywhere, pickers that search, making what a picker names |

@@ -1214,9 +1214,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "factional-content",
- "factional-core",
- "factional-quests",
- "factional-reputation",
+ "factional-session",
  "insta",
  "jsonschema",
  "rustyline",
@@ -1279,6 +1277,16 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "factional-session"
+version = "0.1.0"
+dependencies = [
+ "factional-content",
+ "factional-core",
+ "factional-quests",
+ "factional-reputation",
 ]
 
 [[package]]

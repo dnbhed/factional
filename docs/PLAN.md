@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14 → U15 → U16 → U17 → E1 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15 → U16 → U17 → E1 → T5`
 
 ## Done
 
@@ -105,6 +105,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - U13b — "+ New quest" (P-94, P-108): each step's card takes a new quest's id; the quest is made in `quests.toml`, started so it reads, and added to the step, as one change to both files, one Undo (`change_files`); a blank or taken id is refused; the new quest opens; done 2026-10-12 (#74)
 - U13c — moving quests and steps (P-94, P-109): each step's card moves it up or down and each of its quests to another step, and sets its `need` and `leftovers`, each as one change; `swap_items` in the writer swaps two items of a list, a `[[table]]` with its comments; done 2026-10-12 (#75)
 - U13d — nested pages (P-94, P-110): a breadcrumb, *A Life in the Watch › Step 2 › Night Patrol › Stage "walk"*, each part going back there; a quest's page its stages, each counting its choices' problems, and a stage's its choices with theirs; done 2026-10-12 (#76)
+- U14a — the session as a library (D-39, P-95, P-111): `factional-session`, the REPL's session and every command module moved out of the CLI unchanged, the scenarios and snapshots the proof; the CLI keeps its binary, line editing and scenario runner; CLAUDE.md's and DESIGN.md §15's dependency direction; U14 split into U14a to U14c; done 2026-10-12
 
 ---
 
@@ -130,9 +131,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U14 · The session as a library — P3 · Next
+### U14b · The session from texts — P3 · Next
 
-`factional-session`: `Session` moved out of `factional-cli`, unchanged, its scenarios and snapshots the proof; loading from texts in memory; the ids in what it says marked; CLAUDE.md's and DESIGN.md §15's dependency direction (D-39, P-95).
+`Session` loading from the texts in memory, as the editor holds them, unsaved edits included, as well as from a directory (P-81, P-95).
+
+### U14c · Marked ids — P3 · Outline
+
+What the session says, with each id in it marked with what it names, so the editor links them without searching the text; the CLI prints the same text unmarked (P-95).
 
 ### U15 · Play in the editor — P3 · Outline
 

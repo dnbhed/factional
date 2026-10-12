@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use rustyline::error::ReadlineError;
 use rustyline::{Config, DefaultEditor};
 
-use crate::session::{Outcome, Session, is_blank_or_comment};
+use factional_session::{Outcome, Session, is_blank_or_comment};
 
 const PROMPT: &str = "factional> ";
 
