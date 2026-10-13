@@ -182,6 +182,9 @@ impl Play {
                 egui::ScrollArea::vertical()
                     .id_salt("play")
                     .auto_shrink(false)
+                    // Only the room above the line, however little, so it never covers it.
+                    .min_scrolled_height(0.0)
+                    .max_height(ui.available_height())
                     .stick_to_bottom(true)
                     .show(ui, |ui| {
                         for (command, said, marks) in &self.log {

@@ -24,9 +24,17 @@ jobs:
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - name: Install a software GPU for the editor's pictures (U19)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Keep the editor's pictures when one doesn't match
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: editor-pictures
+          path: crates/editor/tests/snapshots
 
   mutants:
     name: mutation testing (PR diff, shard ${{ matrix.shard }}/4)
@@ -45,6 +53,8 @@ jobs:
       - name: Install the toolchain pinned in rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - name: Install a software GPU for the editor's pictures (U19)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants

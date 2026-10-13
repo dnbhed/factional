@@ -68,6 +68,9 @@ Keep increments small: one concept, reviewable in one sitting. If an increment g
   - Use `assert` lines for what the scenario is about; the snapshot catches knock-on changes.
   - Read every snapshot diff before accepting it. An unexplained change is a bug until it's explained.
   - Never bulk-accept snapshots.
+- **Pictures:** the editor's key pages are image snapshots in `crates/editor/tests/snapshots/` (P-120).
+  - Look at every new or changed picture, and its diff, before accepting it with `UPDATE_SNAPSHOTS=1`. Never accept them in bulk.
+  - A defect a picture finds also gets an AccessKit test.
 - **Expected values** come from DESIGN.md's worked examples, or are worked out by hand from its formulas. Never paste them from the code's own output.
 - **Test names state the rule:** `steal_moves_alignment_toward_chaotic_evil`, not `test_steal`.
 
