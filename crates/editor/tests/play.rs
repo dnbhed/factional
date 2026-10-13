@@ -164,3 +164,16 @@ fn click_first(harness: &mut Harness<'static, Editor>, label: &str) {
         .click();
     harness.run();
 }
+
+#[test]
+fn what_play_says_stays_above_the_line_to_type_on() {
+    let mut harness = open();
+    play(&mut harness, "characters");
+    play(&mut harness, "act player steal --target merchant_ava");
+    let line = harness.get_by_label("Play command").rect();
+    // The last thing said, at the bottom of the log.
+    let last = harness
+        .get_by_label_contains("moved from 0.00 to -20.00")
+        .rect();
+    assert!(last.bottom() <= line.top(), "{last:?} covers {line:?}");
+}

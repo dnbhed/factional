@@ -8,15 +8,21 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use factional_editor::{Editor, WINDOW, Workspace};
 
+const SAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../content/sample");
+
 const TYPOS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../cli/tests/fixtures/worlds/typos"
 );
 
 fn open() -> Harness<'static, Editor> {
+    open_on(TYPOS)
+}
+
+fn open_on(dir: &str) -> Harness<'static, Editor> {
     let mut harness = Harness::builder().with_size(WINDOW).build_ui_state(
         |ui, editor: &mut Editor| editor.ui(ui),
-        Editor::open(Path::new(TYPOS)),
+        Editor::open(Path::new(dir)),
     );
     harness.run();
     harness
@@ -57,4 +63,16 @@ fn the_drawer_closes_and_opens_again() {
     // Closed, it counts the problems, not the warnings.
     click(&mut harness, "Open the drawer, with 3 problems");
     harness.get_by_label("Problems 3");
+}
+
+#[test]
+fn the_drawer_opens_at_its_height_however_little_it_shows() {
+    // The sample has no problems, the shortest list there is.
+    let mut harness = open_on(SAMPLE);
+    for tab in ["Problems", "Play"] {
+        click(&mut harness, tab);
+        let top = harness.get_by_label("Close the drawer").rect().top();
+        // It opens 160 points tall; its edge and margins take a few.
+        assert!(WINDOW.y - top >= 150.0, "{tab}: the drawer's top at {top}");
+    }
 }

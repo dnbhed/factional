@@ -901,6 +901,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Fixtures are small:** maps the user generates in Azgaar at its smallest size, and hand-made JSON for each refusal; never a full-size export.
   - *Why:* the user's choices (D-48 to D-53); exactness, so that a seed means one map; overrides, so that generating never undoes the designer; the research is [research/world-maps-2026-10.md](research/world-maps-2026-10.md).
 
+- **P-120 · How the editor's pictures are taken** (made in U19, 2026-10-13).
+  - **`egui_kittest`'s own snapshots, rendered by wgpu:** each key page at the editor's window size (1440 × 900), a point a pixel, as a PNG in `crates/editor/tests/snapshots/`, beside the AccessKit tests. The pages: a faction's form, with its Relations among it; a questline's page; Play; Previews.
+  - **The same picture on every machine:** the sample is opened by a relative path, as the status line and Play print it; the editor's own fonts; the pointer drawn where the last click was.
+  - **CI renders on a software GPU,** Mesa's lavapipe, which kittest prefers wherever there's one; a Mac renders on Metal. `kittest.toml` holds any tolerance a platform needs, set from what CI measured, never loosened to pass a change.
+  - **Reviewed like the scenario snapshots:** a missing or changed picture fails, leaving `<name>.new.png` and `<name>.diff.png` beside it (ignored by git, kept by CI as an artifact). Each is looked at before `UPDATE_SNAPSHOTS=1` accepts it, never in bulk.
+  - **What a picture shows is pinned in words too:** a defect a picture finds gets an AccessKit test as well, so a tolerance can't hide its return.
+  - *Why:* AccessKit proves what's on a page and what it does, not how it looks. The first pictures showed Play's log drawn over its line and the drawer shrunk to its list, both passing every AccessKit test.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

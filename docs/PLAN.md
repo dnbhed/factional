@@ -114,6 +114,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - E1 — the Bevy plugin (D-33, P-75, P-117): `factional-bevy`, in a workspace of its own with its own CI job; the world and quest log as a resource loaded at startup, stopping the app with the loader's problems if it doesn't load; commands in and events out as messages, refusals included, played after the game's systems each frame; time by `AdvanceTime` at a rate the game sets, in Bevy's game time; a headless example on Riverhold; Bevy 0.20.0; done 2026-10-12 (#83)
 - G0 — the game builder's design pass (D-43 to D-47, P-118, DESIGN.md §20): research ([research/game-builder-2026-10.md](research/game-builder-2026-10.md)); the user's choices: an app of its own, opening and opened by the editor, an inspector first, then a 2D sandbox, then a world editor, `bevy_egui`, placeholder shapes, a builder file; G1 to G9 outlined; the editor's remaining increments planned, the editor's screenshots first and the builder's increments next, at the user's direction; done 2026-10-12 (#84)
 - W0 — world maps from generated worlds, the design pass (D-48 to D-53, P-119, DESIGN.md §21): research ([research/world-maps-2026-10.md](research/world-maps-2026-10.md)); the user's direction: an Azgaar export imported by a wizard, the most fundamental layers first, polished, dressed with foliage and edited by hand; settlements, routes and points of interest as suggestions, not built; 2D tile maps first and 3D later; the most efficient format; places known to the engine, the map the builder's, amending D-47 and P-118; a region at a scale first; W1 to W11 outlined after G9, at the user's direction; done 2026-10-12 (#85)
+- U19 — editor screenshots (P-120): image snapshots of a faction's form with its Relations, a questline's page, Play and Previews, rendered headless by `egui_kittest` with wgpu, on a software GPU in CI; two defects they found fixed, each with an AccessKit test: Play's log drawn over its command line, and the drawer shrinking below its 160 points to fit a short list; done 2026-10-13 (#PR)
 
 ---
 
@@ -135,11 +136,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### U19 · Editor screenshots — P2 · Next
-
-Image snapshots of the editor's key pages, rendered headless and reviewed like the scenario snapshots, so a UI change is seen in its PR, not only driven through AccessKit; the pages: a faction's form and Relations, a questline's page, Play, the Previews tab.
-
-### G1 · The inspector — P3 · Outline
+### G1 · The inspector — P3 · Next
 
 `factional-bevy-inspector`, a plugin over `factional-bevy`, drawn with `bevy_egui`: a window of the world's characters, factions and event log, shown and hidden by a key; the Bevy workspace's members (D-44, D-45, P-118, DESIGN.md §20).
 

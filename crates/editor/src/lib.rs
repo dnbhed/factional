@@ -1301,6 +1301,8 @@ impl Editor {
             .resizable(true)
             .default_size(160.0)
             .show(ui, |ui| {
+                // Filled, so it keeps its height rather than shrinking to a short list.
+                ui.set_min_height(ui.available_height());
                 ui.horizontal(|ui| {
                     close = labelled(ui, "▾", "Close the drawer");
                     for (playing, name) in [(false, "Problems"), (true, "Play")] {
