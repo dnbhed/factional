@@ -1,0 +1,54 @@
+[package]
+name = "factional-builder"
+description = "The game builder: Riverhold's or any content's characters as tokens on a 2D plane, the inspector beside them, time paused, stepped or run (DESIGN.md §20)."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false }
+bevy_egui = { version = "=0.43.1", default-features = false, features = ["default_fonts"] }
+factional-bevy = { path = ".." }
+factional-bevy-inspector = { path = "../inspector" }
+factional-core = { path = "../../core" }
+factional-reputation = { path = "../../reputation" }
+serde = { version = "1", features = ["derive"] }
+toml = "1.1.6"
+
+[dev-dependencies]
+egui_kittest = { version = "0.36.2", features = ["snapshot", "wgpu"] }
+
+[features]
+# The app's window and drawing, so the workspace's tests stay headless: Cargo gives every
+# package built together the same features (P-121).
+window = [
+    "bevy/default_app",
+    "bevy/std",
+    "bevy/multi_threaded",
+    "bevy/bevy_winit",
+    "bevy/x11",
+    "bevy/bevy_window",
+    "bevy/bevy_render",
+    "bevy/bevy_core_pipeline",
+    "bevy/bevy_camera",
+    "bevy/bevy_sprite",
+    "bevy/bevy_sprite_render",
+    "bevy/bevy_mesh",
+    "bevy/bevy_color",
+    "bevy/bevy_text",
+    "bevy/default_font",
+    "bevy_egui/render",
+]
+
+[[bin]]
+name = "factional-builder"
+path = "src/main.rs"
+required-features = ["window"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+inconsistent_digit_grouping = "allow"
