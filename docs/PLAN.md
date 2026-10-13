@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2 → G3 → G4 → G5 → G6 → G7 → G8 → G9 → W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6 → G7 → G8 → G9 → W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -116,6 +116,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W0 — world maps from generated worlds, the design pass (D-48 to D-53, P-119, DESIGN.md §21): research ([research/world-maps-2026-10.md](research/world-maps-2026-10.md)); the user's direction: an Azgaar export imported by a wizard, the most fundamental layers first, polished, dressed with foliage and edited by hand; settlements, routes and points of interest as suggestions, not built; 2D tile maps first and 3D later; the most efficient format; places known to the engine, the map the builder's, amending D-47 and P-118; a region at a scale first; W1 to W11 outlined after G9, at the user's direction; done 2026-10-12 (#85)
 - U19 — editor screenshots (P-120): image snapshots of a faction's form with its Relations, a questline's page, Play and Previews, rendered headless by `egui_kittest` with wgpu, on a software GPU in CI; two defects they found fixed, each with an AccessKit test: Play's log drawn over its command line, and the drawer shrinking below its 160 points to fit a short list; done 2026-10-13 (#86)
 - G1 — the inspector (D-44, D-45, P-121): `factional-bevy-inspector`, a member of the Bevy workspace; a `bevy_egui` window of the tick, the characters, the factions and the event log, each a line in the CLI's words (`describe_character`, `describe_faction` and `describe_event`, made public in the session); opened and closed by the backquote or the game's key; `bevy_egui` added if the game hasn't; its own fonts, after its first picture came out blank; tested headless with kittest, a picture, and a windowless egui context; an example opening Riverhold in a window; done 2026-10-13 (#87)
+- G2a — the console, shared (P-118, P-122): `factional-console`, Play's log and line drawn with egui for the editor and the inspector, holding no session: it hands back what's entered and which id is followed, and is told what was said; the editor's Play keeps its session and its following of the content, its tests and picture unchanged; its own UI tests; G2 split into G2a and G2b; done 2026-10-13 (#88)
 
 ---
 
@@ -137,9 +138,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G2 · The inspector's console — P3 · Next
+### G2b · The inspector's console — P3 · Next
 
-The session's commands run on the game's world, with the engine's explanations; Play's log and line drawn by a crate both the editor and the inspector use (P-118).
+The session's commands run on the game's world, with the engine's explanations, in the shared console (G2a): what they change sent to the game as the plugin's events, and what works on content directories refused there (P-118).
 
 ### G3 · The inspector's quests and relations — P3 · Outline
 
