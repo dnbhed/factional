@@ -22,6 +22,8 @@ pub struct Console {
     /// The commands run, oldest first, and how far back the up arrow has gone.
     history: Vec<String>,
     back: Option<usize>,
+    /// Whether the line is to take the focus next frame.
+    focus: bool,
 }
 
 /// What the console asks of whoever holds the session, after a frame.
@@ -43,6 +45,7 @@ impl Console {
             input: String::new(),
             history: Vec::new(),
             back: None,
+            focus: false,
         }
     }
 
@@ -69,6 +72,11 @@ impl Console {
     /// What Tab offered, when it offered more than one.
     pub fn offered(&self) -> Option<&str> {
         self.offered.as_deref()
+    }
+
+    /// Puts the focus on the line next frame, so what's typed goes there.
+    pub fn focus(&mut self) {
+        self.focus = true;
     }
 
     /// The line typed, taken to run and kept in the history; nothing, if it's blank.
@@ -141,6 +149,9 @@ impl Console {
                     .lock_focus(true)
                     .desired_width(f32::INFINITY),
             );
+            if std::mem::take(&mut self.focus) {
+                field.request_focus();
+            }
             // Tab completes the line, which keeps the focus.
             let tab = ui.input(|input| input.key_pressed(Key::Tab));
             if tab && (field.has_focus() || field.lost_focus()) {

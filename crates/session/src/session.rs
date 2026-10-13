@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use factional_content::{ContentTexts, Fingerprint, named_effects, named_shifts};
-use factional_quests::QuestLog;
+use factional_quests::{Played, QuestLog};
 
 use crate::charts;
 use crate::check::{Checked, check, check_texts, count, validate};
@@ -324,7 +324,29 @@ pub struct Session {
     /// The texts the world was loaded from, if it was from texts rather than its directory
     /// (U14b), for `reload`.
     texts: Option<ContentTexts>,
+    /// Whether the world was handed to it rather than loaded (G2b), so what works on content
+    /// directories is refused.
+    handed: bool,
+    /// What the last command played, in order (G2b).
+    played: Vec<Played>,
 }
+
+/// What works on content directories, refused by a session handed its world (G2b); `quests`
+/// only with a directory named.
+const ON_DIRECTORIES: &[&str] = &[
+    "load",
+    "reload",
+    "save",
+    "restore",
+    "validate",
+    "outline",
+    "graph",
+    "references",
+    "form",
+    "fixes",
+    "keys",
+    "words",
+];
 
 impl Default for Session {
     /// A session whose relative paths start from the current directory.
@@ -342,7 +364,38 @@ impl Session {
             loaded: None,
             fingerprint: Fingerprint::default(),
             texts: None,
+            handed: false,
+            played: Vec::new(),
         }
+    }
+
+    /// A session on `world` and its `quests`, handed to it rather than loaded, as the
+    /// inspector hands it the game's (G2b).
+    /// What works on content directories is refused, so it can't replace the world.
+    pub fn on(world: World, quests: QuestLog) -> Session {
+        Session {
+            world: Some(world),
+            quests,
+            handed: true,
+            ..Session::default()
+        }
+    }
+
+    /// The world and its quests, given back: as handed, with what was played on them.
+    pub fn into_world(self) -> Option<(World, QuestLog)> {
+        self.world.map(|world| (world, self.quests))
+    }
+
+    /// What the last command played, in order: a world command's events, or what a quest
+    /// command played, world and quest events in the quest log's order. Nothing, for a
+    /// command that changed nothing or that loaded a world.
+    pub fn played(&self) -> &[Played] {
+        &self.played
+    }
+
+    /// Whether `name rest` works on a content directory, which a handed session refuses.
+    fn on_directories(&self, name: &str, rest: &str) -> bool {
+        self.handed && (ON_DIRECTORIES.contains(&name) || (name == "quests" && !rest.is_empty()))
     }
 
     /// Loads the world written in `texts`, as the editor holds them, unsaved edits included
@@ -405,6 +458,7 @@ impl Session {
             true => COMMANDS
                 .iter()
                 .filter_map(|(usage, _)| usage.split_whitespace().next())
+                .filter(|command| !self.on_directories(command, ""))
                 .map(str::to_owned)
                 .collect(),
             false => self.ids().into_keys().map(str::to_owned).collect(),
@@ -461,9 +515,33 @@ impl Session {
         self.world.as_ref()
     }
 
-    /// Runs one command line.
+    /// Runs one command line, keeping what it played (G2b).
     pub fn execute(&mut self, line: &str) -> Result<Outcome, ScriptError> {
         let (name, rest) = split_command(line);
+        self.played.clear();
+        if self.on_directories(name, rest) {
+            return Ok(Outcome::Error(format!(
+                "{name} works on a content directory, and this session was handed its world rather than loading one"
+            )));
+        }
+        let before = self.world.as_ref().map(|world| world.events().len());
+        let outcome = self.dispatch(name, rest);
+        // A quest command keeps what it played itself; a world command's are its events.
+        let loads = matches!(name, "load" | "reload" | "restore");
+        if let (Some(before), Some(world), false) = (before, &self.world, loads)
+            && self.played.is_empty()
+        {
+            self.played = world.events()[before..]
+                .iter()
+                .cloned()
+                .map(Played::World)
+                .collect();
+        }
+        outcome
+    }
+
+    /// Runs the command `name` with its arguments, `rest`.
+    fn dispatch(&mut self, name: &str, rest: &str) -> Result<Outcome, ScriptError> {
         match name {
             "help" => Ok(Outcome::Output(help_text())),
             "quit" => Ok(Outcome::Quit),
@@ -478,11 +556,11 @@ impl Session {
                 None => no_world(),
             }),
             "start" => Ok(match &mut self.world {
-                Some(world) => crate::play::start(world, &mut self.quests, rest),
+                Some(world) => crate::play::start(world, &mut self.quests, rest, &mut self.played),
                 None => no_world(),
             }),
             "choose" => Ok(match &mut self.world {
-                Some(world) => crate::play::choose(world, &mut self.quests, rest),
+                Some(world) => crate::play::choose(world, &mut self.quests, rest, &mut self.played),
                 None => no_world(),
             }),
             "progress" => Ok(match &self.world {

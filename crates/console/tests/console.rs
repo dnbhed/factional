@@ -226,3 +226,13 @@ fn enter_runs_only_what_is_typed_in_the_line() {
     assert!(harness.state().1.is_empty());
     assert_eq!(harness.state().0.input(), "characters");
 }
+
+#[test]
+fn a_console_asked_to_take_the_focus_puts_it_on_its_line() {
+    let mut harness = harness(Console::new("Console"), Vec::new());
+    harness.run();
+    assert!(!harness.get_by_label("Console command").is_focused());
+    harness.state_mut().0.focus();
+    harness.run();
+    assert!(harness.get_by_label("Console command").is_focused());
+}

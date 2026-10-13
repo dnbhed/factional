@@ -2154,9 +2154,19 @@ dependencies = [
  "bevy_egui",
  "egui_kittest",
  "factional-bevy",
+ "factional-console",
  "factional-content",
  "factional-core",
+ "factional-quests",
  "factional-reputation",
+ "factional-session",
+]
+
+[[package]]
+name = "factional-console"
+version = "0.1.0"
+dependencies = [
+ "egui",
  "factional-session",
 ]
 

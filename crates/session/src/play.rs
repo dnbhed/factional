@@ -34,18 +34,32 @@ pub(crate) fn can_start(world: &World, log: &QuestLog, args: &str) -> Outcome {
     }
 }
 
-/// `start <character> <quest>`.
-pub(crate) fn start(world: &mut World, log: &mut QuestLog, args: &str) -> Outcome {
+/// `start <character> <quest>`, keeping what it played in `played`.
+pub(crate) fn start(
+    world: &mut World,
+    log: &mut QuestLog,
+    args: &str,
+    played: &mut Vec<Played>,
+) -> Outcome {
     let (character, quest) =
         match character_and_quest(args, "start needs the form: start <character> <quest>") {
             Ok(ids) => ids,
             Err(usage) => return usage,
         };
-    played(log.execute(world, QuestCommand::StartQuest { character, quest }))
+    said(
+        log.execute(world, QuestCommand::StartQuest { character, quest }),
+        played,
+    )
 }
 
-/// `choose <character> <quest> <choice> [--seen-by <id>,... | --unseen]`.
-pub(crate) fn choose(world: &mut World, log: &mut QuestLog, args: &str) -> Outcome {
+/// `choose <character> <quest> <choice> [--seen-by <id>,... | --unseen]`, keeping what it
+/// played in `played`.
+pub(crate) fn choose(
+    world: &mut World,
+    log: &mut QuestLog,
+    args: &str,
+    played: &mut Vec<Played>,
+) -> Outcome {
     const USAGE: &str = "choose needs the form: choose <character> <quest> <choice> [--seen-by <id>,... | --unseen]";
     let words: Vec<&str> = args.split_whitespace().collect();
     let (ids, seen_by) = match words[..] {
@@ -80,16 +94,23 @@ pub(crate) fn choose(world: &mut World, log: &mut QuestLog, args: &str) -> Outco
             return Outcome::Error(invalid.to_string());
         }
     };
-    played(log.execute(world, command))
+    said(log.execute(world, command), played)
 }
 
-/// What a quest command did, one line each, in order; or why it was refused.
-fn played(result: Result<Vec<Played>, factional_quests::QuestError>) -> Outcome {
+/// What a quest command did, one line each, in order, kept in `kept`; or why it was refused.
+fn said(
+    result: Result<Vec<Played>, factional_quests::QuestError>,
+    kept: &mut Vec<Played>,
+) -> Outcome {
     match result {
-        Ok(played) => Outcome::Output(lines(played.iter().map(|each| match each {
-            Played::Quest(event) => event.to_string(),
-            Played::World(event) => describe_event(event),
-        }))),
+        Ok(played) => {
+            let said = lines(played.iter().map(|each| match each {
+                Played::Quest(event) => event.to_string(),
+                Played::World(event) => describe_event(event),
+            }));
+            *kept = played;
+            Outcome::Output(said)
+        }
         Err(error) => Outcome::Error(error.to_string()),
     }
 }
