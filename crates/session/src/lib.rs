@@ -21,6 +21,7 @@ mod words;
 pub use check::validate;
 pub use compare::compare;
 pub use factional_content::ContentTexts;
+pub use play::describe_progress;
 pub use session::{
     Mark, Named, Outcome, ScriptError, Session, describe_character, describe_event,
     describe_faction, help_text, is_blank_or_comment,

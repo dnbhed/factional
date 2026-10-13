@@ -8,8 +8,8 @@ publish.workspace = true
 
 [dependencies]
 eframe = "0.36.2"
-factional-console = { path = "../console" }
 factional-content = { path = "../content" }
+factional-egui = { path = "../egui" }
 factional-core = { path = "../core" }
 factional-quests = { path = "../quests" }
 factional-reputation = { path = "../reputation" }

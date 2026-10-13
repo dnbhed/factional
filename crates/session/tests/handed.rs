@@ -173,3 +173,40 @@ fn handed_a_world_tab_offers_no_command_it_refuses() {
     assert!(offered.contains(&"relate".to_owned()), "{offered:?}");
     assert_eq!(session.complete("re"), offered);
 }
+
+#[test]
+fn progress_is_each_quest_then_how_far_its_questline_has_opened() {
+    let (mut world, mut log) = riverhold();
+    let player = id("player");
+    assert_eq!(
+        factional_session::describe_progress(&log, &player),
+        "player hasn't started any quests"
+    );
+    let start = |quest: &str| QuestCommand::StartQuest {
+        character: id("player"),
+        quest: QuestId::new(quest).expect("an id"),
+    };
+    log.execute(&mut world, start("watch_oath"))
+        .expect("starts");
+    // The Watch's Oath is the first step of A Life in the Watch, of four (quests.toml).
+    assert_eq!(
+        factional_session::describe_progress(&log, &player),
+        "watch_oath — at patrol\nwatch_career — up to step 1 of 4"
+    );
+    log.execute(&mut world, start("lost_ring")).expect("starts");
+    log.execute(
+        &mut world,
+        QuestCommand::MakeChoice {
+            character: id("player"),
+            quest: QuestId::new("lost_ring").expect("an id"),
+            choice: ChoiceId::new("pawn_it").expect("an id"),
+            witnesses: factional_reputation::Witnesses::Everyone,
+        },
+    )
+    .expect("chosen");
+    // In id order; lost_ring is in no questline.
+    assert_eq!(
+        factional_session::describe_progress(&log, &player),
+        "lost_ring — finished\nwatch_oath — at patrol\nwatch_career — up to step 1 of 4"
+    );
+}

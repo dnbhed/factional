@@ -20,8 +20,8 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use factional_bevy::{Factional, FactionalEvent, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin, inspector_window, run_in_console};
-use factional_console::Console;
 use factional_core::Fixed;
+use factional_egui::console::Console;
 use factional_quests::{Played, QuestLog};
 use factional_reputation::{ActionId, Change, CharacterId, Command, Witnesses, World};
 use factional_session::{describe_event, describe_faction};
@@ -377,10 +377,57 @@ fn what_the_console_plays_is_sent_to_the_game_as_its_events() {
     assert_eq!(events, expected);
 }
 
+#[test]
+fn the_window_has_every_factions_regard_for_every_other_as_the_editor_draws_it() {
+    let harness = drawn(riverhold());
+    harness.get_by_label("Relations");
+    // DESIGN.md §13: the Watch and the Guild are enemies, in conflict.
+    harness.get_by_label("city_watch → lantern_guild: -80.00, enemy, in conflict");
+    harness.get_by_label("temple → free_company: 0.00, neutral");
+    // Five factions, each toward the four others.
+    assert_eq!(harness.query_all_by_label_contains(" → ").count(), 20);
+    assert!(harness.query_by_label_contains("temple → temple").is_none());
+}
+
+#[test]
+fn the_window_has_each_characters_quest_progress_as_progress_says_it() {
+    let mut harness = drawn(riverhold());
+    harness.get_by_label("Quests");
+    harness.get_by_label("player hasn't started any quests");
+    assert_eq!(
+        harness
+            .query_all_by_label_contains("hasn't started any quests")
+            .count(),
+        6
+    );
+    enter(&mut harness, "start player watch_oath");
+    // The Watch's Oath is the first step of A Life in the Watch, of four (quests.toml).
+    harness.get_by_label("watch_oath — at patrol");
+    harness.get_by_label("watch_career — up to step 1 of 4");
+    assert_eq!(
+        harness
+            .query_all_by_label_contains("hasn't started any quests")
+            .count(),
+        5
+    );
+}
+
 /// Its picture, taken as the editor's are (P-120): the console after a theft.
 #[test]
 fn the_window_after_a_theft_in_its_console() {
     let mut harness = drawn(riverhold());
     enter(&mut harness, "act player steal --target merchant_ava");
     harness.snapshot("inspector");
+}
+
+/// Its picture scrolled to the relations and quests, after a quest is started (P-120).
+#[test]
+fn the_window_at_its_relations_and_quests() {
+    let mut harness = drawn(riverhold());
+    enter(&mut harness, "start player watch_oath");
+    harness
+        .get_by_label("watch_career — up to step 1 of 4")
+        .scroll_to_me();
+    harness.run();
+    harness.snapshot("inspector_quests");
 }

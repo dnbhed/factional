@@ -1277,15 +1277,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "factional-console"
-version = "0.1.0"
-dependencies = [
- "egui",
- "egui_kittest",
- "factional-session",
-]
-
-[[package]]
 name = "factional-content"
 version = "0.1.0"
 dependencies = [
@@ -1317,13 +1308,24 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "egui_kittest",
- "factional-console",
  "factional-content",
  "factional-core",
+ "factional-egui",
  "factional-quests",
  "factional-reputation",
  "factional-session",
  "toml",
+]
+
+[[package]]
+name = "factional-egui"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "egui_kittest",
+ "factional-content",
+ "factional-reputation",
+ "factional-session",
 ]
 
 [[package]]

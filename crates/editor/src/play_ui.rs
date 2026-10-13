@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use factional_console::Console;
+use factional_egui::console::Console;
 use factional_session::{ContentTexts, Named, Outcome, Session};
 
 use crate::egui;

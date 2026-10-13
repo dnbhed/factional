@@ -919,7 +919,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - *Why:* the user's choices (D-44, D-45); the CLI's words, so the engine's explanations aren't recomputed; plain egui, so drawing is tested without a window.
 
 - **P-122 · The console is a crate both draw with** (made in G2a, 2026-10-13; P-118).
-  - **`factional-console`, in the main workspace,** on `factional-session` and egui 0.36, the egui both the editor's eframe and the inspector's `bevy_egui` use: what was said, a line at a time, each id a link; the line to type on, named for its console ("Play command", "Console command"), its history by arrow and Tab completing it; and a notice above, such as Play's that the content doesn't load.
+  - **`factional-console`, in the main workspace** (renamed `factional-egui` in G3, P-124, when the relations matrix joined it; the console is its `console` module), on `factional-session` and egui 0.36, the egui both the editor's eframe and the inspector's `bevy_egui` use: what was said, a line at a time, each id a link; the line to type on, named for its console ("Play command", "Console command"), its history by arrow and Tab completing it; and a notice above, such as Play's that the content doesn't load.
   - **It holds no session.** Each frame it hands back what was entered and which id was followed (`Asked`), and asks for completions through a function; whoever holds the session runs the line and tells it what was said (`Console::say`). So the editor's Play keeps its session and its following of the content, and the inspector can run lines on the game's world (G2b).
   - **What's said shows the frame after it's run:** the console asks egui for another frame when a line is entered, so nothing waits on input.
   - **Its behaviour is tested where it lives:** mutation testing runs only the mutated crate's tests, so the console has its own UI tests, beside the editor's, which still drive it as Play.
@@ -932,6 +932,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **What it plays reaches the game as the plugin's own events:** `FactionalEvent`, in order, as if the game had sent the command (`From<Played>`, which the plugin uses too). Refusals stay in the console: the game didn't send them. The world is marked changed only when something was played.
   - **The window:** the sections scroll above, the console below them, its line labelled "Console command"; opening the inspector puts the cursor on it. `quit` there says to close the inspector with its key instead.
   - *Why:* RimWorld's and Crusader Kings' consoles act on the running game; a copy keeps the game's world untouched by what changes nothing; the game hears of every change the way it hears of its own.
+
+- **P-124 · The inspector's quests and relations** (made in G3, 2026-10-13; P-118, P-122).
+  - **One crate of shared drawing, `factional-egui`:** the crate G2a made for the console is renamed, as the relations matrix joins it (`relations_ui`, and `tint` for the bands' colours, which the editor's disposition matrix uses too). What the editor and the inspector both draw goes there, a module each, rather than a crate each.
+  - **Relations as the editor draws them:** the inspector's Relations section is the editor's matrix, tinted by band, marked in conflict, each cell labelled in full.
+  - **Quests as `progress` says them:** `describe_progress`, made public in the session as G1 made `characters`' words public; each character in id order, their quests under their name, or one line that they haven't started any.
+  - **Each crate tests what it holds:** the shared crate has its own label tests and a picture of the matrix, since a band's tint is only seen in one; the session tests `describe_progress` itself, not only through the CLI's scenarios.
+  - **The event log stays the world's:** starting a quest plays only quest events, which have no place among the world's numbered events, so they show in the console and the Quests section, not the Events log.
+  - *Why:* P-118's sharing; the CLI's and the editor's words and pictures, not new ones.
 
 ## Open
 
