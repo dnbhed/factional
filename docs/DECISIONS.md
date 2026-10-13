@@ -957,6 +957,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The Act window** lists the content's actions in id order, saying on whom and seen by whom; the app tints the played token green and the nearest orange.
   - *Why:* nearness decides who witnesses, as a game would decide it; walking in game time keeps the world's pause the world's.
 
+- **P-127 · Regard on the tokens** (made in G6a, 2026-10-13; K3, P-118, P-126).
+  - **The engine's disposition, toward the played one:** each other character's `disposition` toward the played character, from their own picture of them (K3), so a theft they didn't see changes nothing until the news reaches them. With no one played there are none.
+  - **In the editor's words and colours:** `-5.49, neutral`, as the editor's matrix labels a cell, under the token's name; the disc tinted by band with the matrix's `tint`, from neutral grey toward hostile orange or friendly blue. The played token stays green; the nearest is ringed in white, now that orange means hostile.
+  - **Worked out when the world changes:** `Regards` is recomputed after the frame's commands (`Last`), only when `Factional` has changed, so a frame that changes nothing writes nothing.
+  - **G6 split:** news drawn as it goes is G6b, with its own design: news in flight knows whom it will reach and when, not who passes it on, and a faction's hop has no place on the plane.
+  - *Why:* reputation is how everyone regards the one played; seen on the plane, and changing as the news does, it's what the builder is for.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

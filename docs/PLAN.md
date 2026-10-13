@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6 → G7 → G8 → G9 → W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -121,6 +121,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G3 — the inspector's quests and relations (P-124): the relations matrix, as the editor's Previews draws it, and each character's quest progress, as `progress` says it (`describe_progress`, made public), in the inspector; the shared crate renamed `factional-egui`, holding the console and the relations matrix; its own tests and a picture of the matrix; a second picture of the inspector at its relations and quests; done 2026-10-13 (#90)
 - G4 — the builder's shell (P-125): `factional-builder`, a library and an app in the Bevy workspace; each character a Bevy entity, a token placed from `builder.toml` beside the content or laid out on a ring, its problems said; the inspector open beside them; time paused, stepped or run a tick a second; places left for W10, at the user's choice (D-51); the sample's `builder.toml`; done 2026-10-13 (#91)
 - G5 — acting in the builder (P-126): one character played, `player` or `--as`'s, walked by the arrow keys or WASD in game time, not while egui has the keyboard; the nearest within `reach` acted on from the Act window, witnessed by those within `sight`, sent as `Witnesses`; `[play]`'s `reach`, `sight` and `speed` in `builder.toml`, each with its default; the played token and the nearest tinted; done 2026-10-13 (#92)
+- G6a — regard on the tokens (P-127): each other character's disposition toward the played one, from their own picture, labelled as the editor's matrix says it and tinted by band, the nearest ringed; recomputed only when the world changes; DESIGN.md §10.2's pickpocketing changing Hale's regard only when the news reaches him; G6 split into G6a and G6b; done 2026-10-13 (#93)
 
 ---
 
@@ -142,9 +143,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G6 · What the builder shows — P3 · Next
+### G6b · News drawn as it goes — P3 · Next
 
-Each token's disposition toward the player, by band; news spreading along contacts (K2), drawn as it goes.
+News spreading along contacts (K2), drawn on the plane as it travels between tokens, each hop's arrival when it lands.
 
 ### G7 · Quests in the builder — P3 · Outline
 

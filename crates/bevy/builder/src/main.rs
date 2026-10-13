@@ -2,7 +2,8 @@
 //! opens the content's world in a window, each character a token where `builder.toml` puts
 //! them, the inspector open beside them, and time paused until it's stepped or run. The
 //! played character, `player` unless `--as` names another, walks by the arrow keys or WASD
-//! and acts on the nearest from the Act window.
+//! and acts on the nearest from the Act window; each other token shows how they regard them
+//! (G6a, P-127).
 
 use std::path::PathBuf;
 
@@ -12,14 +13,22 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalCommand, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
-    BuilderPlugin, Clock, KeyboardTaken, Nearby, Played, Token, act, act_ui, controls_ui,
+    BuilderPlugin, Clock, KeyboardTaken, Nearby, Played, Regards, Token, act, act_ui, controls_ui,
 };
+use factional_egui::relations::tint;
 use factional_reputation::ActionId;
 
-/// The colours of tokens: anyone, the one played, and the nearest to them.
-const ANYONE: Color = Color::srgb(0.35, 0.66, 0.9);
+/// The colours of tokens: the one played, and anyone else before their band's tint.
 const PLAYED: Color = Color::srgb(0.45, 0.8, 0.45);
-const NEAREST: Color = Color::srgb(0.94, 0.64, 0.37);
+const NEUTRAL: Color = Color::srgb(0.55, 0.57, 0.6);
+const RING: Color = Color::WHITE;
+
+/// A token's label, and the ring shown while it's nearest.
+#[derive(Component)]
+struct Parts {
+    label: Entity,
+    ring: Entity,
+}
 
 fn main() -> AppExit {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -65,8 +74,8 @@ fn keyboard_taken(wants: Res<EguiWantsInput>, mut taken: ResMut<KeyboardTaken>) 
     taken.0 = wants.wants_any_keyboard_input();
 }
 
-/// Each new token drawn: a disc of its own colour, its character's id under it. Placeholder
-/// shapes (D-46).
+/// Each new token drawn: a disc of its own colour, its label under it, and a ring behind it
+/// for when it's nearest. Placeholder shapes (D-46).
 fn draw_tokens(
     mut commands: Commands,
     added: Query<(Entity, &Token), Added<Token>>,
@@ -74,33 +83,80 @@ fn draw_tokens(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     for (entity, token) in &added {
+        let label = commands
+            .spawn((
+                Text2d::new(token.character.as_str()),
+                Transform::from_xyz(0.0, -34.0, 1.0),
+            ))
+            .id();
+        let ring = commands
+            .spawn((
+                Mesh2d(meshes.add(Circle::new(19.0))),
+                MeshMaterial2d(materials.add(RING)),
+                Transform::from_xyz(0.0, 0.0, -0.1),
+                Visibility::Hidden,
+            ))
+            .id();
         commands
             .entity(entity)
             .insert((
                 Mesh2d(meshes.add(Circle::new(14.0))),
-                MeshMaterial2d(materials.add(ANYONE)),
+                MeshMaterial2d(materials.add(NEUTRAL)),
+                Parts { label, ring },
             ))
-            .with_child((
-                Text2d::new(token.character.as_str()),
-                Transform::from_xyz(0.0, -28.0, 1.0),
-            ));
+            .add_children(&[label, ring]);
     }
 }
 
-/// The played token and the nearest to it in their colours, everyone else in theirs.
+/// The played token green; anyone else by how they regard it, tinted by band as the
+/// relations matrix is, and labelled with it; the nearest ringed.
 fn tint_tokens(
     nearby: Res<Nearby>,
-    tokens: Query<(&Token, &MeshMaterial2d<ColorMaterial>, Has<Played>)>,
+    regards: Res<Regards>,
+    tokens: Query<(&Token, &MeshMaterial2d<ColorMaterial>, &Parts, Has<Played>)>,
+    mut labels: Query<&mut Text2d>,
+    mut rings: Query<&mut Visibility>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    for (token, material, played) in &tokens {
-        let colour = match (played, nearby.nearest.as_ref() == Some(&token.character)) {
+    for (token, material, parts, played) in &tokens {
+        let regard = regards.0.get(&token.character);
+        let colour = match (played, regard) {
             (true, _) => PLAYED,
-            (false, true) => NEAREST,
-            (false, false) => ANYONE,
+            (false, Some(regard)) => band_colour(regard.index, regard.bands),
+            (false, None) => NEUTRAL,
         };
         if let Some(mut material) = materials.get_mut(&material.0) {
             material.color = colour;
+        }
+        if let Ok(mut label) = labels.get_mut(parts.label) {
+            let said = match regard {
+                Some(regard) => format!("{}\n{}", token.character, regard.said()),
+                None => token.character.to_string(),
+            };
+            if label.0 != said {
+                label.0 = said;
+            }
+        }
+        if let Ok(mut ring) = rings.get_mut(parts.ring) {
+            let nearest = nearby.nearest.as_ref() == Some(&token.character);
+            ring.set_if_neq(if nearest {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
+            });
+        }
+    }
+}
+
+/// A band's colour on a disc: neutral grey, toward the matrix's tint as strongly as it's
+/// tinted there.
+fn band_colour(index: usize, bands: usize) -> Color {
+    match tint(index, bands) {
+        None => NEUTRAL,
+        Some(tint) => {
+            let [r, g, b, a] = tint.to_srgba_unmultiplied();
+            let strength = (f32::from(a) / 160.0).min(1.0);
+            NEUTRAL.mix(&Color::srgb_u8(r, g, b), strength)
         }
     }
 }

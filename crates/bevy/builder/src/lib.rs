@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use bevy::app::{App, Plugin, PreUpdate, Startup, Update};
+use bevy::app::{App, Last, Plugin, PreUpdate, Startup, Update};
 use bevy::ecs::component::Component;
 use bevy::ecs::message::MessageWriter;
 use bevy::ecs::resource::Resource;
@@ -28,8 +28,10 @@ pub const RING: f32 = 240.0;
 const TICK_EVERY: Duration = Duration::from_secs(1);
 
 pub mod play;
+pub mod regard;
 
 pub use play::{KeyboardTaken, Nearby, Play, Played, act, act_ui, nearby};
+pub use regard::{Regard, Regards, regards};
 
 /// The builder, on the content in `content`, whose `builder.toml` it reads, playing the
 /// character `player` names.
@@ -195,7 +197,9 @@ impl Plugin for BuilderPlugin {
             .init_resource::<KeyboardTaken>()
             .add_systems(Startup, spawn_tokens)
             .add_systems(PreUpdate, keep_time)
-            .add_systems(Update, (play::walk, play::find_nearby).chain());
+            .init_resource::<Regards>()
+            .add_systems(Update, (play::walk, play::find_nearby).chain())
+            .add_systems(Last, regard::follow_regards);
     }
 }
 
