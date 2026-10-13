@@ -1,0 +1,4 @@
+# The builder's app (G4) is built only with its `window` feature, so the workspace's tests,
+# and mutation testing, never compile it: a mutant there can't be built or caught. What it
+# draws is checked by running it; its library, the builder's logic, is tested headless.
+exclude_globs = ["builder/src/main.rs"]

@@ -941,6 +941,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The event log stays the world's:** starting a quest plays only quest events, which have no place among the world's numbered events, so they show in the console and the Quests section, not the Events log.
   - *Why:* P-118's sharing; the CLI's and the editor's words and pictures, not new ones.
 
+- **P-125 · How the builder's shell is built** (made in G4, 2026-10-13; D-43 to D-47, D-51, P-118).
+  - **Tokens, no places yet:** each character a Bevy entity (`Token` and a `Transform`) on a 2D plane; places wait for W10's design, at the user's choice, since D-51 made them content.
+  - **`builder.toml`, beside the content:** `[positions]`, each character's `x` and `y` in points, x right and y up. A character it doesn't place is laid out on a ring of radius `RING` (240 points), in id order, the first at the top and the rest clockwise. A position naming no character is said, with a "did you mean", and left out; a file that isn't valid, or has keys it doesn't know, is said and everyone laid out. Only the builder reads it.
+  - **Time under the maker's hand:** the plugin keeps no time of its own here (`tick_every: None`); the builder's `Clock` starts paused, Step sends one tick next frame, and Run sends a tick a second of game time, what's left over carried to the next frame. Pausing doesn't pause the game's own time, so what moves on the plane (G5) moves while the world waits.
+  - **A library and an app:** `BuilderPlugin`, the clock and the controls are the library, tested headless; the app, `factional-builder <content dir>`, adds the window, the inspector (open), and the drawing, a disc and a label a token, behind a `window` feature, as the inspector's example is (P-121). Mutation testing leaves the app out (`crates/bevy/.cargo/mutants.toml`): it can't be built without the feature.
+  - **Drawn as Bevy entities,** at the user's choice: what G5's movement and witnessing by distance, and W7's tile map, build on.
+  - *Why:* the user's choices; a shell that later increments add to without undoing.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

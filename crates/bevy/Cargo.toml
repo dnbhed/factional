@@ -9,7 +9,7 @@ publish = false
 # Its own workspace, so the main workspace's gates never compile Bevy (P-117); the inspector
 # and the builder are its members (P-118).
 [workspace]
-members = ["inspector"]
+members = ["inspector", "builder"]
 
 [dependencies]
 bevy = { version = "=0.20.0", default-features = false }

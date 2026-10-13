@@ -1,0 +1,11 @@
+# Where Riverhold's characters stand in the builder (G4, D-47): read only by the builder,
+# never by the engine. Each position is in points on the builder's plane, x to the right and
+# y up, the player at the middle. A character not placed here is laid out on a ring.
+
+[positions]
+player = { x = 0.0, y = 0.0 }
+captain_hale = { x = -180.0, y = 90.0 }
+merchant_ava = { x = 140.0, y = -40.0 }
+sister_mira = { x = 200.0, y = 140.0 }
+vex = { x = -140.0, y = -130.0 }
+brother_ash = { x = 40.0, y = 220.0 }

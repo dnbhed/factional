@@ -119,6 +119,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G2a — the console, shared (P-118, P-122): `factional-console`, Play's log and line drawn with egui for the editor and the inspector, holding no session: it hands back what's entered and which id is followed, and is told what was said; the editor's Play keeps its session and its following of the content, its tests and picture unchanged; its own UI tests; G2 split into G2a and G2b; done 2026-10-13 (#88)
 - G2b — the inspector's console (P-123): the shared console in the inspector, running the session's commands on a copy of the game's world, written back only when a command played something, and what it played sent to the game as `FactionalEvent`s in order; `Session::on` and `into_world`, a session handed a world refusing what works on content directories; `Session::played`, what the last command played in order; `From<Played>` for the plugin's events; the plugin no longer marks the world changed on frames with nothing sent; done 2026-10-13 (#89)
 - G3 — the inspector's quests and relations (P-124): the relations matrix, as the editor's Previews draws it, and each character's quest progress, as `progress` says it (`describe_progress`, made public), in the inspector; the shared crate renamed `factional-egui`, holding the console and the relations matrix; its own tests and a picture of the matrix; a second picture of the inspector at its relations and quests; done 2026-10-13 (#90)
+- G4 — the builder's shell (P-125): `factional-builder`, a library and an app in the Bevy workspace; each character a Bevy entity, a token placed from `builder.toml` beside the content or laid out on a ring, its problems said; the inspector open beside them; time paused, stepped or run a tick a second; places left for W10, at the user's choice (D-51); the sample's `builder.toml`; done 2026-10-13 (#91)
 
 ---
 
@@ -140,11 +141,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G4 · The builder's shell — P3 · Next
-
-`factional-builder`, opened on a content directory: character tokens and places on a 2D plane, from `builder.toml` (or laid out when there's none), the inspector beside it, time paused, stepped or run (D-46, D-47).
-
-### G5 · Acting in the builder — P3 · Outline
+### G5 · Acting in the builder — P3 · Next
 
 The player moved among the tokens, acting on the nearest from the content's actions, the characters near enough witnessing it.
 

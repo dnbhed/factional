@@ -16,6 +16,8 @@ Every file is optional. A missing file means the defaults, or none of that kind.
 | `quests.toml` | Quests, keyed by id: who gives each, what it needs to start, and its stages, each with requirements and choices. |
 | `questlines.toml` | Questlines, keyed by id: who gives each, and its steps, each a group of quests done in any order. |
 
+`builder.toml`, beside these, isn't the module's: only the game builder reads it, for where each character stands on its plane (G4, D-47). The engine never reads it, and `validate` doesn't check it; the builder says what's wrong with it as it opens.
+
 `sample/` has Riverhold's quests. They're checked with everything else, and once a world is loaded `quests` lists them and `start`, `choose` and `progress` play them; `quests <dir>` reads a directory's without loading it. A choice that can shut another quest off for good must say so in its `locks`, or loading refuses it (DESIGN.md §17.2). Riverhold's are in [`docs/examples/riverhold`](../docs/examples/riverhold).
 
 Each file's comments explain its settings. [DESIGN.md §12](../docs/DESIGN.md) lists every setting, with its default and its checks.
