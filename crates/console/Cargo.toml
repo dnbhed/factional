@@ -1,0 +1,18 @@
+[package]
+name = "factional-console"
+description = "Play's log and line, drawn with egui for the editor and the inspector alike (P-118, P-122)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+egui = { version = "0.36.2", default-features = false }
+factional-session = { path = "../session" }
+
+[dev-dependencies]
+egui_kittest = "0.36.2"
+egui = { version = "0.36.2", default-features = false, features = ["default_fonts"] }
+
+[lints]
+workspace = true

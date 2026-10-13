@@ -918,6 +918,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The workspace:** `crates/bevy` stays the plugin's package and gains `inspector` as a member. CI runs its gates with `--workspace`, clippy again with `--all-features` for the example, and lavapipe for the picture, with the editor's tolerance in `crates/bevy/kittest.toml`.
   - *Why:* the user's choices (D-44, D-45); the CLI's words, so the engine's explanations aren't recomputed; plain egui, so drawing is tested without a window.
 
+- **P-122 · The console is a crate both draw with** (made in G2a, 2026-10-13; P-118).
+  - **`factional-console`, in the main workspace,** on `factional-session` and egui 0.36, the egui both the editor's eframe and the inspector's `bevy_egui` use: what was said, a line at a time, each id a link; the line to type on, named for its console ("Play command", "Console command"), its history by arrow and Tab completing it; and a notice above, such as Play's that the content doesn't load.
+  - **It holds no session.** Each frame it hands back what was entered and which id was followed (`Asked`), and asks for completions through a function; whoever holds the session runs the line and tells it what was said (`Console::say`). So the editor's Play keeps its session and its following of the content, and the inspector can run lines on the game's world (G2b).
+  - **What's said shows the frame after it's run:** the console asks egui for another frame when a line is entered, so nothing waits on input.
+  - **Its behaviour is tested where it lives:** mutation testing runs only the mutated crate's tests, so the console has its own UI tests, beside the editor's, which still drive it as Play.
+  - *Why:* P-118's sharing, drawn once; a console without a session, so the two hosts can each run lines their own way.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).
