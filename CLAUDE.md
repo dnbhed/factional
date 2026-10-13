@@ -30,7 +30,17 @@ Before starting any increment, read:
 
    A surviving mutant means an assertion is missing. Add the test, or explain in the PR why the mutant is equivalent.
 
-   The Bevy plugin builds in its own workspace, `crates/bevy`, so the gates above never compile Bevy. When an increment touches it, run its gates there too: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and `git diff --relative main... -- . > branch.diff && cargo mutants --in-diff branch.diff`.
+   The Bevy plugin and the inspector build in their own workspace, `crates/bevy`, so the gates above never compile Bevy. When an increment touches it, run its gates there too:
+
+   ```bash
+   cargo fmt --all --check
+   cargo clippy --workspace --all-targets -- -D warnings
+   cargo clippy --workspace --all-targets --all-features -- -D warnings
+   cargo test --workspace
+   git diff --relative main... -- . > target/branch.diff && cargo mutants --workspace --in-place --in-diff target/branch.diff
+   ```
+
+   `--workspace` matters: without it, `crates/bevy`'s root package is the only one checked, and cargo-mutants silently finds nothing in the members. `--in-place`, because a copied tree loses the `../../` paths to the main workspace's crates.
 7. **Docs, in the same PR:**
    - Compress the increment to one line under **Done** in PLAN.md: id, what shipped, date, PR.
    - Update DESIGN.md if the model, a formula or the tuning table changed.

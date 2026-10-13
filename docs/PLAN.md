@@ -115,6 +115,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G0 — the game builder's design pass (D-43 to D-47, P-118, DESIGN.md §20): research ([research/game-builder-2026-10.md](research/game-builder-2026-10.md)); the user's choices: an app of its own, opening and opened by the editor, an inspector first, then a 2D sandbox, then a world editor, `bevy_egui`, placeholder shapes, a builder file; G1 to G9 outlined; the editor's remaining increments planned, the editor's screenshots first and the builder's increments next, at the user's direction; done 2026-10-12 (#84)
 - W0 — world maps from generated worlds, the design pass (D-48 to D-53, P-119, DESIGN.md §21): research ([research/world-maps-2026-10.md](research/world-maps-2026-10.md)); the user's direction: an Azgaar export imported by a wizard, the most fundamental layers first, polished, dressed with foliage and edited by hand; settlements, routes and points of interest as suggestions, not built; 2D tile maps first and 3D later; the most efficient format; places known to the engine, the map the builder's, amending D-47 and P-118; a region at a scale first; W1 to W11 outlined after G9, at the user's direction; done 2026-10-12 (#85)
 - U19 — editor screenshots (P-120): image snapshots of a faction's form with its Relations, a questline's page, Play and Previews, rendered headless by `egui_kittest` with wgpu, on a software GPU in CI; two defects they found fixed, each with an AccessKit test: Play's log drawn over its command line, and the drawer shrinking below its 160 points to fit a short list; done 2026-10-13 (#86)
+- G1 — the inspector (D-44, D-45, P-121): `factional-bevy-inspector`, a member of the Bevy workspace; a `bevy_egui` window of the tick, the characters, the factions and the event log, each a line in the CLI's words (`describe_character`, `describe_faction` and `describe_event`, made public in the session); opened and closed by the backquote or the game's key; `bevy_egui` added if the game hasn't; its own fonts, after its first picture came out blank; tested headless with kittest, a picture, and a windowless egui context; an example opening Riverhold in a window; done 2026-10-13 (#PR)
 
 ---
 
@@ -136,11 +137,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G1 · The inspector — P3 · Next
-
-`factional-bevy-inspector`, a plugin over `factional-bevy`, drawn with `bevy_egui`: a window of the world's characters, factions and event log, shown and hidden by a key; the Bevy workspace's members (D-44, D-45, P-118, DESIGN.md §20).
-
-### G2 · The inspector's console — P3 · Outline
+### G2 · The inspector's console — P3 · Next
 
 The session's commands run on the game's world, with the engine's explanations; Play's log and line drawn by a crate both the editor and the inspector use (P-118).
 

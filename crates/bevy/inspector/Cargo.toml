@@ -1,0 +1,49 @@
+[package]
+name = "factional-bevy-inspector"
+description = "The inspector: a window of the world's characters, factions and event log, any game using the plugin can turn on (DESIGN.md §20)."
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false }
+# Its own fonts, so it can be read whatever the game chose for egui.
+bevy_egui = { version = "=0.43.1", default-features = false, features = ["default_fonts"] }
+factional-bevy = { path = ".." }
+factional-reputation = { path = "../../reputation" }
+factional-session = { path = "../../session" }
+
+[dev-dependencies]
+# Window messages without a window, which egui's input needs, for the headless tests.
+bevy = { version = "=0.20.0", default-features = false, features = ["bevy_window"] }
+egui_kittest = { version = "0.36.2", features = ["snapshot", "wgpu"] }
+factional-content = { path = "../../content" }
+factional-core = { path = "../../core" }
+
+[features]
+# A window and rendering, for the example only, so the tests stay headless: Cargo would
+# otherwise give the tests the example's features too.
+example = [
+    "bevy/default_app",
+    "bevy/std",
+    "bevy/multi_threaded",
+    "bevy/bevy_winit",
+    "bevy/x11",
+    "bevy/bevy_window",
+    "bevy/bevy_render",
+    "bevy/bevy_core_pipeline",
+    "bevy/bevy_camera",
+    "bevy_egui/render",
+]
+
+[[example]]
+name = "riverhold"
+required-features = ["example"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+inconsistent_digit_grouping = "allow"

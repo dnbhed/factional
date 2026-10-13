@@ -69,10 +69,11 @@ jobs:
           name: mutants.out-shard-${{ matrix.shard }}
           path: mutants.out
 
-  # The Bevy plugin builds in a workspace of its own (P-117), so the gates above never compile
-  # Bevy; its own gates run here, its mutants on its part of the PR's diff.
+  # The Bevy plugin and the inspector build in a workspace of their own (P-117, P-121), so
+  # the gates above never compile Bevy; its own gates run here, its mutants on its part of the
+  # PR's diff.
   bevy:
-    name: Bevy plugin (fmt, clippy, test, mutants)
+    name: Bevy workspace (fmt, clippy, test, mutants)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -86,9 +87,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/bevy
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - name: Install a software GPU for the inspector's picture (G1)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The example's window and rendering are behind a feature, so the tests stay headless.
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace
+      - name: Keep the inspector's picture when it doesn't match
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: inspector-picture
+          path: crates/bevy/inspector/tests/snapshots
       - uses: taiki-e/install-action@v2
         if: github.event_name == 'pull_request'
         with:
@@ -97,7 +108,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git diff --relative "origin/${{ github.base_ref }}...HEAD" -- . > branch.diff
       - if: github.event_name == 'pull_request'
-        run: cargo mutants --no-shuffle --in-place --in-diff branch.diff
+        run: cargo mutants --workspace --no-shuffle --in-place --in-diff branch.diff
       - name: Keep the report when mutants survive
         if: failure()
         uses: actions/upload-artifact@v7
