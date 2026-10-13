@@ -7,10 +7,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use bevy::app::{App, Plugin, PreUpdate, Startup};
+use bevy::app::{App, Plugin, PreUpdate, Startup, Update};
 use bevy::ecs::component::Component;
 use bevy::ecs::message::MessageWriter;
 use bevy::ecs::resource::Resource;
+use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Commands, Res, ResMut};
 use bevy::math::Vec2;
 use bevy::time::Time;
@@ -26,9 +27,15 @@ pub const RING: f32 = 240.0;
 /// How much game time a tick is, while time runs.
 const TICK_EVERY: Duration = Duration::from_secs(1);
 
-/// The builder, on the content in `content`, whose `builder.toml` it reads.
+pub mod play;
+
+pub use play::{KeyboardTaken, Nearby, Play, Played, act, act_ui, nearby};
+
+/// The builder, on the content in `content`, whose `builder.toml` it reads, playing the
+/// character `player` names.
 pub struct BuilderPlugin {
     pub content: PathBuf,
+    pub player: String,
 }
 
 /// A character's token on the plane.
@@ -78,6 +85,8 @@ impl Clock {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Placed {
     pub positions: Vec<(CharacterId, Vec2)>,
+    /// How near is near.
+    pub play: Play,
     pub problems: Vec<String>,
 }
 
@@ -87,6 +96,17 @@ pub struct Placed {
 struct BuilderFile {
     #[serde(default)]
     positions: BTreeMap<String, Position>,
+    #[serde(default)]
+    play: PlayFile,
+}
+
+/// `builder.toml`'s `[play]`: how near is near, each left out for its default.
+#[derive(serde::Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct PlayFile {
+    reach: Option<f32>,
+    sight: Option<f32>,
+    speed: Option<f32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -125,6 +145,20 @@ pub fn place(file: Option<&str>, characters: &[CharacterId]) -> Placed {
             ));
         }
     }
+    let mut play = Play::default();
+    for (name, read, kept) in [
+        ("reach", read.play.reach, &mut play.reach),
+        ("sight", read.play.sight, &mut play.sight),
+        ("speed", read.play.speed, &mut play.speed),
+    ] {
+        match read {
+            Some(value) if value > 0.0 => *kept = value,
+            Some(_) => problems.push(format!(
+                "builder.toml: play.{name} must be above 0, so it's {kept}"
+            )),
+            None => {}
+        }
+    }
     let count = characters.len().max(1) as f32;
     let positions = characters
         .iter()
@@ -142,6 +176,7 @@ pub fn place(file: Option<&str>, characters: &[CharacterId]) -> Placed {
         .collect();
     Placed {
         positions,
+        play,
         problems,
     }
 }
@@ -152,10 +187,15 @@ impl Plugin for BuilderPlugin {
     fn build(&self, app: &mut App) {
         let file = std::fs::read_to_string(self.content.join("builder.toml")).ok();
         app.insert_resource(Layout(file))
+            .insert_resource(PlayAs(self.player.clone()))
             .init_resource::<BuilderProblems>()
             .init_resource::<Clock>()
+            .init_resource::<Play>()
+            .init_resource::<Nearby>()
+            .init_resource::<KeyboardTaken>()
             .add_systems(Startup, spawn_tokens)
-            .add_systems(PreUpdate, keep_time);
+            .add_systems(PreUpdate, keep_time)
+            .add_systems(Update, (play::walk, play::find_nearby).chain());
     }
 }
 
@@ -163,12 +203,19 @@ impl Plugin for BuilderPlugin {
 #[derive(Resource)]
 struct Layout(Option<String>);
 
-/// Each of the world's characters, a token where `builder.toml` puts them; its problems said.
+/// Who the builder plays, as `--as` named them.
+#[derive(Resource)]
+struct PlayAs(String);
+
+/// Each of the world's characters, a token where `builder.toml` puts them, the played one
+/// marked; and how near is near. Its problems said.
 fn spawn_tokens(
     mut commands: Commands,
     file: Res<Layout>,
+    play_as: Res<PlayAs>,
     factional: Option<Res<Factional>>,
     mut problems: ResMut<BuilderProblems>,
+    mut play: ResMut<Play>,
 ) {
     let Some(factional) = factional else {
         return;
@@ -178,16 +225,33 @@ fn spawn_tokens(
         .characters()
         .map(|character| character.id.clone())
         .collect();
-    let placed = place(file.0.as_deref(), &characters);
+    let mut placed = place(file.0.as_deref(), &characters);
+    if !characters
+        .iter()
+        .any(|character| character.as_str() == play_as.0)
+    {
+        let hint = suggest(&play_as.0, characters.iter().map(CharacterId::as_str))
+            .map(|close| format!(" (did you mean '{close}'?)"))
+            .unwrap_or_default();
+        placed.problems.push(format!(
+            "--as {} names no character{hint}, so no one is played",
+            play_as.0
+        ));
+    }
     for problem in &placed.problems {
         eprintln!("{problem}");
     }
     problems.0 = placed.problems;
+    *play = placed.play;
     for (character, at) in placed.positions {
-        commands.spawn((
+        let played = character.as_str() == play_as.0;
+        let mut token = commands.spawn((
             Token { character },
             Transform::from_translation(at.extend(0.0)),
         ));
+        if played {
+            token.insert(Played);
+        }
     }
 }
 

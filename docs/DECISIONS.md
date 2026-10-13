@@ -949,6 +949,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Drawn as Bevy entities,** at the user's choice: what G5's movement and witnessing by distance, and W7's tile map, build on.
   - *Why:* the user's choices; a shell that later increments add to without undoing.
 
+- **P-126 · Playing a character in the builder** (made in G5, 2026-10-13; P-118, P-125).
+  - **One character is played:** `player`, or whoever `--as` names; one that names no character is said, with a "did you mean", and no one is played. The player is an ordinary character: the builder plays whoever it's told to.
+  - **Walking:** the arrow keys or WASD, at `speed` points a second of game time, so whether the world's time runs or not. Not while egui has the keyboard (`KeyboardTaken`, which the app fills from `bevy_egui`'s `EguiWantsInput`), so typing in the inspector's console doesn't walk.
+  - **Who's near is the builder's rule:** the nearest is the closest other character within `reach`, ties by id; those who'd see are every other character within `sight`. Acting sends `PerformAction` on the nearest (no target with no one in reach), at scale 1, witnessed by exactly those in sight (`Witnesses::Nobody` with none). The module learns nothing about space.
+  - **How near is `builder.toml`'s:** `[play]`'s `reach` (80), `sight` (240) and `speed` (200), defaults defined once in the builder; one not above 0 is said and its default used.
+  - **The Act window** lists the content's actions in id order, saying on whom and seen by whom; the app tints the played token green and the nearest orange.
+  - *Why:* nearness decides who witnesses, as a game would decide it; walking in game time keeps the world's pause the world's.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

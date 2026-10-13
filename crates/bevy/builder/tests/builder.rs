@@ -57,6 +57,7 @@ fn app_at(dir: &str, frame: Duration) -> App {
         })
         .add_plugins(BuilderPlugin {
             content: content(dir),
+            player: "player".to_owned(),
         });
     // Game time takes whole seconds a frame here, not Bevy's quarter-second at most.
     app.world_mut()
