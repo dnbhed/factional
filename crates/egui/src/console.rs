@@ -1,9 +1,7 @@
-//! The console (G2a, P-118, P-122): what a session said, each id in it a link, and the line
-//! to type a command on, its history by arrow and Tab completing it; drawn with egui for the
-//! editor's Play and the inspector alike. It holds no session: it hands back what to run and
-//! which id was followed, and is told what was said.
-
-pub use egui;
+//! The console (G2a, P-122): what a session said, each id in it a link, and the line to type
+//! a command on, its history by arrow and Tab completing it; drawn for the editor's Play and
+//! the inspector alike. It holds no session: it hands back what to run and which id was
+//! followed, and is told what was said.
 
 use egui::{Key, RichText};
 use factional_session::{Mark, Named};

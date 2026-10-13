@@ -11,7 +11,7 @@ bevy = { version = "=0.20.0", default-features = false }
 # Its own fonts, so it can be read whatever the game chose for egui.
 bevy_egui = { version = "=0.43.1", default-features = false, features = ["default_fonts"] }
 factional-bevy = { path = ".." }
-factional-console = { path = "../../console" }
+factional-egui = { path = "../../egui" }
 factional-quests = { path = "../../quests" }
 factional-reputation = { path = "../../reputation" }
 factional-session = { path = "../../session" }

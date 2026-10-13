@@ -12,10 +12,12 @@ use bevy::input::ButtonInput;
 use bevy::input::keyboard::KeyCode;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalEvent};
-use factional_console::{Asked, Console};
+use factional_egui::console::{Asked, Console};
+use factional_egui::relations::relations_ui;
 use factional_quests::Played;
-use factional_reputation::World;
-use factional_session::{Outcome, Session, describe_character, describe_event, describe_faction};
+use factional_session::{
+    Outcome, Session, describe_character, describe_event, describe_faction, describe_progress,
+};
 
 /// The inspector, opened and closed by `toggle`.
 pub struct InspectorPlugin {
@@ -123,7 +125,7 @@ pub fn inspector_window(
                 });
             egui::ScrollArea::vertical()
                 .id_salt("inspector")
-                .show(ui, |ui| inspector_ui(ui, &factional.world));
+                .show(ui, |ui| inspector_ui(ui, factional));
         });
     asked
 }
@@ -156,9 +158,11 @@ pub fn run_in_console(
     played
 }
 
-/// What the inspector's window shows of `world`: the tick, then its characters, its factions
-/// and its events, each a line as the CLI says it.
-pub fn inspector_ui(ui: &mut egui::Ui, world: &World) {
+/// What the inspector's window shows of the game's world: the tick, then its characters, its
+/// factions, their relations, each character's quests and its events, each as the CLI or the
+/// editor says it.
+pub fn inspector_ui(ui: &mut egui::Ui, factional: &Factional) {
+    let Factional { world, quests } = factional;
     ui.heading(format!("Tick {}", world.now()));
     let section = |ui: &mut egui::Ui, title: String, lines: Vec<String>| {
         egui::CollapsingHeader::new(title)
@@ -179,6 +183,27 @@ pub fn inspector_ui(ui: &mut egui::Ui, world: &World) {
         .map(|faction| describe_faction(world, faction))
         .collect();
     section(ui, format!("Factions ({})", factions.len()), factions);
+    egui::CollapsingHeader::new("Relations")
+        .default_open(true)
+        .show(ui, |ui| relations_ui(ui, world));
+    egui::CollapsingHeader::new("Quests")
+        .default_open(true)
+        .show(ui, |ui| {
+            for character in world.characters() {
+                let progress = describe_progress(quests, &character.id);
+                // Those who haven't started any say so in a line with their id in it.
+                if quests.record(&character.id).states.is_empty() {
+                    ui.label(egui::RichText::new(progress).monospace());
+                    continue;
+                }
+                ui.label(egui::RichText::new(character.id.as_str()).strong());
+                ui.indent(character.id.as_str(), |ui| {
+                    for line in progress.lines() {
+                        ui.label(egui::RichText::new(line).monospace());
+                    }
+                });
+            }
+        });
     let events = world.events();
     egui::CollapsingHeader::new(format!("Events ({})", events.len()))
         .default_open(true)

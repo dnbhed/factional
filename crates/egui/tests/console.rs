@@ -3,7 +3,7 @@
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use factional_console::{Asked, Console, Piece, pieces, shared};
+use factional_egui::console::{Asked, Console, Piece, pieces, shared};
 use factional_session::{Mark, Named};
 
 fn words(list: &[&str]) -> Vec<String> {

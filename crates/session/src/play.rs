@@ -132,9 +132,16 @@ pub(crate) fn progress(world: &World, log: &QuestLog, args: &str) -> Outcome {
             crate::session::hint(character.as_str(), ids)
         ));
     }
-    let record = log.record(&character);
+    Outcome::Output(describe_progress(log, &character))
+}
+
+/// A character's quest progress, as `progress` says it: each quest they've started or had
+/// closed, in id order, then how far each questline those are in has opened for them; or
+/// that they haven't started any.
+pub fn describe_progress(log: &QuestLog, character: &CharacterId) -> String {
+    let record = log.record(character);
     if record.states.is_empty() {
-        return Outcome::Output(format!("{character} hasn't started any quests"));
+        return format!("{character} hasn't started any quests");
     }
     let quests = log.quests();
     let mut shown: Vec<String> = record
@@ -157,14 +164,14 @@ pub(crate) fn progress(world: &World, log: &QuestLog, args: &str) -> Outcome {
         .filter_map(|quest| quests.place_of(quest).map(|(line, _)| line))
         .collect();
     for line in lines_in {
-        let open = log.open_step(&character, line).unwrap_or_default();
+        let open = log.open_step(character, line).unwrap_or_default();
         shown.push(format!(
             "{line} — up to step {} of {}",
             open + 1,
             quests.questlines[line].steps.len()
         ));
     }
-    Outcome::Output(lines(shown.into_iter()))
+    lines(shown.into_iter())
 }
 
 /// How each character's progress differs between two logs, one line per quest that changed:
