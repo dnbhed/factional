@@ -182,3 +182,25 @@ fn content_that_doesnt_load_stops_the_app_saying_why() {
     );
     assert!(app.world().get_resource::<Factional>().is_none());
 }
+
+#[test]
+fn a_frame_with_no_commands_leaves_the_world_unchanged() {
+    let mut app = app("content/sample", None);
+    app.update();
+    let changed = |app: &App| {
+        app.world()
+            .get_resource_change_ticks::<Factional>()
+            .expect("the world")
+            .changed
+    };
+    let before = changed(&app);
+    app.update();
+    app.update();
+    assert_eq!(
+        changed(&app),
+        before,
+        "nothing was sent, so nothing changed"
+    );
+    send(&mut app, FactionalCommand::World(steal()));
+    assert_ne!(changed(&app), before, "a command sent changes it");
+}

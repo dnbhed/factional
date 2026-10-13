@@ -50,6 +50,17 @@ pub enum FactionalEvent {
     QuestRefused(QuestCommand, QuestError),
 }
 
+impl From<Played> for FactionalEvent {
+    /// What a quest command played, as the event a game is sent: to the quest log, or through
+    /// its effects, to the world.
+    fn from(played: Played) -> FactionalEvent {
+        match played {
+            Played::Quest(event) => FactionalEvent::Quest(event),
+            Played::World(event) => FactionalEvent::World(event),
+        }
+    }
+}
+
 /// How often a tick passes, and how long since the last.
 #[derive(Resource)]
 struct Ticking {
@@ -110,6 +121,10 @@ fn execute(
     mut commands: MessageReader<FactionalCommand>,
     mut out: MessageWriter<FactionalEvent>,
 ) {
+    // Untouched on a frame with nothing sent, so a game watching it isn't told it changed.
+    if commands.is_empty() {
+        return;
+    }
     let Factional { world, quests } = &mut *factional;
     for command in commands.read() {
         match command.clone() {
@@ -123,10 +138,7 @@ fn execute(
             },
             FactionalCommand::Quest(command) => match quests.execute(world, command.clone()) {
                 Ok(played) => {
-                    out.write_batch(played.into_iter().map(|played| match played {
-                        Played::Quest(event) => FactionalEvent::Quest(event),
-                        Played::World(event) => FactionalEvent::World(event),
-                    }));
+                    out.write_batch(played.into_iter().map(FactionalEvent::from));
                 }
                 Err(refused) => {
                     out.write(FactionalEvent::QuestRefused(command, refused));

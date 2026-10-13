@@ -4,14 +4,18 @@
 //! what the CLI says, in the session's own words.
 
 use bevy::app::{App, Plugin, Update};
+use bevy::ecs::change_detection::DetectChangesMut;
+use bevy::ecs::message::MessageWriter;
 use bevy::ecs::resource::Resource;
 use bevy::ecs::system::{Res, ResMut};
 use bevy::input::ButtonInput;
 use bevy::input::keyboard::KeyCode;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
-use factional_bevy::Factional;
+use factional_bevy::{Factional, FactionalEvent};
+use factional_console::{Asked, Console};
+use factional_quests::Played;
 use factional_reputation::World;
-use factional_session::{describe_character, describe_event, describe_faction};
+use factional_session::{Outcome, Session, describe_character, describe_event, describe_faction};
 
 /// The inspector, opened and closed by `toggle`.
 pub struct InspectorPlugin {
@@ -33,6 +37,10 @@ pub struct Inspector {
     pub open: bool,
 }
 
+/// The inspector's console (G2b).
+#[derive(Resource)]
+struct InspectorConsole(Console);
+
 /// The key that opens and closes it.
 #[derive(Resource)]
 struct Toggle(KeyCode);
@@ -44,6 +52,7 @@ impl Plugin for InspectorPlugin {
             app.add_plugins(EguiPlugin::default());
         }
         app.insert_resource(Inspector::default())
+            .insert_resource(InspectorConsole(Console::new("Console")))
             .insert_resource(Toggle(self.toggle))
             .add_systems(Update, toggle)
             .add_systems(EguiPrimaryContextPass, draw);
@@ -51,30 +60,100 @@ impl Plugin for InspectorPlugin {
 }
 
 /// Opens or closes the inspector as its key is pressed.
-fn toggle(keys: Res<ButtonInput<KeyCode>>, key: Res<Toggle>, mut inspector: ResMut<Inspector>) {
+/// Opening it puts the cursor on its console's line.
+fn toggle(
+    keys: Res<ButtonInput<KeyCode>>,
+    key: Res<Toggle>,
+    mut inspector: ResMut<Inspector>,
+    mut console: ResMut<InspectorConsole>,
+) {
     if keys.just_pressed(key.0) {
         inspector.open = !inspector.open;
+        if inspector.open {
+            console.0.focus();
+        }
     }
 }
 
-/// The window, while it's open and there's a world to show.
+/// The window, while it's open and there's a world to show; a line entered in its console
+/// run on the game's world, and what it played sent to the game.
 fn draw(
     mut contexts: EguiContexts,
     inspector: Res<Inspector>,
-    factional: Option<Res<Factional>>,
+    mut console: ResMut<InspectorConsole>,
+    factional: Option<ResMut<Factional>>,
+    mut out: MessageWriter<FactionalEvent>,
 ) -> bevy::ecs::error::Result {
-    let Some(factional) = factional.filter(|_| inspector.open) else {
+    let Some(mut factional) = factional.filter(|_| inspector.open) else {
         return Ok(());
     };
-    inspector_window(contexts.ctx_mut()?, &factional.world);
+    let asked = inspector_window(contexts.ctx_mut()?, &factional, &mut console.0);
+    if let Some(line) = asked.run {
+        // Written, and so changed for the game, only if the line played something.
+        let played = run_in_console(factional.bypass_change_detection(), &mut console.0, line);
+        if !played.is_empty() {
+            factional.set_changed();
+        }
+        out.write_batch(played.into_iter().map(FactionalEvent::from));
+    }
     Ok(())
 }
 
-/// The inspector's window, showing `world`.
-pub fn inspector_window(ctx: &egui::Context, world: &World) {
+/// The inspector's window over the game's world: what `inspector_ui` shows, and below it the
+/// console, Tab completing from the world. What the console asked.
+pub fn inspector_window(
+    ctx: &egui::Context,
+    factional: &Factional,
+    console: &mut Console,
+) -> Asked {
+    let mut asked = Asked::default();
     egui::Window::new("Factional")
         .default_width(720.0)
-        .show(ctx, |ui| inspector_ui(ui, world));
+        .default_height(760.0)
+        .show(ctx, |ui| {
+            egui::Panel::bottom("inspector console")
+                .resizable(true)
+                .default_size(220.0)
+                .show(ui, |ui| {
+                    ui.set_min_height(ui.available_height());
+                    asked = console.ui(ui, None, |typed| {
+                        Session::on(factional.world.clone(), factional.quests.clone())
+                            .complete(typed)
+                    });
+                });
+            egui::ScrollArea::vertical()
+                .id_salt("inspector")
+                .show(ui, |ui| inspector_ui(ui, &factional.world));
+        });
+    asked
+}
+
+/// Runs `line` in the console on the game's world, as the session runs it on a world it was
+/// handed, and says what it said. The world is written back only if the line played
+/// something; what it played is given back, in order.
+pub fn run_in_console(
+    factional: &mut Factional,
+    console: &mut Console,
+    line: String,
+) -> Vec<Played> {
+    let mut session = Session::on(factional.world.clone(), factional.quests.clone());
+    let said = match session.execute(&line) {
+        Ok(Outcome::Quit) => {
+            "The console doesn't quit: close the inspector with its key instead".to_owned()
+        }
+        Ok(outcome) => outcome.render(),
+        Err(error) => format!("error: {error}"),
+    };
+    let marks = session.marks(&said);
+    console.say(Some(line), said, marks);
+    let played = session.played().to_vec();
+    if !played.is_empty()
+        && let Some((world, quests)) = session.into_world()
+    {
+        factional.world = world;
+        factional.quests = quests;
+    }
+    played
 }
 
 /// What the inspector's window shows of `world`: the tick, then its characters, its factions

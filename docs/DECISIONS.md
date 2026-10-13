@@ -877,7 +877,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Its own workspace:** `crates/bevy` has its own `[workspace]`, lock file, `clippy.toml` and toolchain file, and the main workspace excludes it, so the main gates, and their mutation testing, never compile Bevy. CI runs its fmt, clippy, tests and mutants in a job of its own, the mutants on its part of the PR's diff.
   - **Bevy 0.20.0, without default features:** the plugin needs only the app, ECS, messages and time, so nothing for windows, rendering or audio is compiled; a game adds the rest.
   - **Configured by its fields:** `FactionalPlugin { content, tick_every }`. Messages in are `FactionalCommand`, out `FactionalEvent`, each for the world or the quest log, refusals included; the world and quest log are the `Factional` resource; content that doesn't load leaves `FactionalProblems` and stops the app with an error, its problems printed.
-  - **When things happen in a frame:** time's `AdvanceTime` is sent before the game's systems (`PreUpdate`), and every command is executed after them (`PostUpdate`), so what the game sends in `Update` is played the same frame. A tick rate of zero is none.
+  - **When things happen in a frame:** time's `AdvanceTime` is sent before the game's systems (`PreUpdate`), and every command is executed after them (`PostUpdate`), so what the game sends in `Update` is played the same frame. A tick rate of zero is none. A frame with nothing sent leaves `Factional` untouched, so a game watching it for changes isn't told of one (fixed in G2b: it had been marked changed every frame).
   - *Why:* the user chose a separate workspace, to keep the main gates fast, and the newest Bevy; the rest follows P-75.
 
 - **P-118 · How the game builder is built** (made in G0, 2026-10-12; D-43 to D-47).
@@ -924,6 +924,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **What's said shows the frame after it's run:** the console asks egui for another frame when a line is entered, so nothing waits on input.
   - **Its behaviour is tested where it lives:** mutation testing runs only the mutated crate's tests, so the console has its own UI tests, beside the editor's, which still drive it as Play.
   - *Why:* P-118's sharing, drawn once; a console without a session, so the two hosts can each run lines their own way.
+
+- **P-123 · The inspector's console runs on the game's world** (made in G2b, 2026-10-13; P-118, P-122).
+  - **A session can be handed a world:** `Session::on(world, quests)` rather than loading one, and `Session::into_world` gives it back. Handed one, it refuses what works on content directories, so the game's world can't be replaced or read past: `load`, `reload`, `save`, `restore`, `validate`, `quests <dir>`, `outline`, `graph`, `references`, `form`, `fixes`, `keys` and `words`, each saying `<name> works on a content directory, and this session was handed its world rather than loading one`. Tab doesn't offer them.
+  - **A session says what its last command played** (`Session::played`), in order: a world command's events, or what a quest command played, world and quest events in the quest log's own order. Loading plays nothing.
+  - **The console runs a line on a copy:** the game's world and quests are cloned into a session handed them, the line runs, and they're written back only if it played something; Tab completes from a copy too. So drawing and completing only read the game's world.
+  - **What it plays reaches the game as the plugin's own events:** `FactionalEvent`, in order, as if the game had sent the command (`From<Played>`, which the plugin uses too). Refusals stay in the console: the game didn't send them. The world is marked changed only when something was played.
+  - **The window:** the sections scroll above, the console below them, its line labelled "Console command"; opening the inspector puts the cursor on it. `quit` there says to close the inspector with its key instead.
+  - *Why:* RimWorld's and Crusader Kings' consoles act on the running game; a copy keeps the game's world untouched by what changes nothing; the game hears of every change the way it hears of its own.
 
 ## Open
 
