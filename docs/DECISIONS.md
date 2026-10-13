@@ -909,6 +909,15 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **What a picture shows is pinned in words too:** a defect a picture finds gets an AccessKit test as well, so a tolerance can't hide its return.
   - *Why:* AccessKit proves what's on a page and what it does, not how it looks. The first pictures showed Play's log drawn over its line and the drawer shrunk to its list, both passing every AccessKit test.
 
+- **P-121 · How the inspector is built** (made in G1, 2026-10-13; D-44, D-45, P-118).
+  - **The plugin:** `InspectorPlugin { toggle }`, the backquote by default, the key games open their consoles with. It adds the `Inspector` resource, closed, which a game may open itself, and adds `bevy_egui`'s plugin if the game hasn't.
+  - **In the CLI's words:** each line is the session's, made public for it: `describe_character`, `describe_faction` and `describe_event`, as `characters`, `factions` and `events` say them. Nothing is worded twice, and the inspector depends on `factional-session`, as G2's console will.
+  - **Drawn by plain egui:** `inspector_window` and `inspector_ui` draw a world into an egui context or `Ui`; the Bevy system only calls them, in `EguiPrimaryContextPass`, while the inspector is open. So they're tested with `egui_kittest`, AccessKit labels and a picture (P-120), as the editor is.
+  - **Its own fonts:** it turns on `bevy_egui`'s `default_fonts`, so it can be read whatever a game chose for egui. Its first picture was blank: without fonts egui draws no text, though AccessKit still finds every label.
+  - **Headless tests:** the example's window and rendering are behind an `example` feature, which the example requires, since Cargo gives a crate's tests its dev-dependencies' features too. The tests add `WindowPlugin` without a window, for egui's input messages, and an entity with `PrimaryEguiContext` to draw into, clearing each frame's render output as a renderer would.
+  - **The workspace:** `crates/bevy` stays the plugin's package and gains `inspector` as a member. CI runs its gates with `--workspace`, clippy again with `--all-features` for the example, and lavapipe for the picture, with the editor's tolerance in `crates/bevy/kittest.toml`.
+  - *Why:* the user's choices (D-44, D-45); the CLI's words, so the engine's explanations aren't recomputed; plain egui, so drawing is tested without a window.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

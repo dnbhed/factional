@@ -942,6 +942,7 @@ crates/
   editor/        factional-editor       the visual editor, in egui (§18; from U1).
   worldgen/      factional-worldgen     world maps from generated worlds (§21; from W1). No I/O.
   bevy/          factional-bevy         the Bevy plugin (§19; from E1).
+  bevy/inspector/ factional-bevy-inspector  the inspector, a plugin over the plugin (§20; from G1).
 content/sample/  Riverhold
 scenarios/       *.scenario scripts; their snapshots are in crates/cli/tests/snapshots/
 ```
@@ -1231,7 +1232,7 @@ The module embeds in games through a Bevy plugin (D-33, settling X-2). The core 
 
 A Bevy application of its own, beside the content editor, where the content is played as a game would play it, with the system laid bare: who saw what, how far news went, how everyone regards the player, as RimWorld's development mode and Crusader Kings' debug console show their makers. The research is [research/game-builder-2026-10.md](research/game-builder-2026-10.md).
 
-- **First, an inspector any game can turn on** (D-44): `factional-bevy-inspector`, a plugin over `factional-bevy`, drawn with `bevy_egui` (D-45): the world's characters and factions, their alignments, memberships, standings and relations; the event log; quest progress; and a console running the session's commands on the game's world, with the engine's explanations. A key shows and hides it.
+- **First, an inspector any game can turn on** (D-44): `factional-bevy-inspector`, a plugin over `factional-bevy`, drawn with `bevy_egui` (D-45): the world's characters and factions, their alignments, memberships, standings and relations; the event log; quest progress; and a console running the session's commands on the game's world, with the engine's explanations. A key shows and hides it. Built so far (G1, P-121): a window of the tick, the characters, the factions and the event log, each a line as the CLI says it, opened and closed by the backquote or a key the game chooses.
 - **Then the builder, a 2D sandbox** (D-46): `factional-builder`, opened on a content directory. Characters are labelled tokens on a plane, places are areas, and the player is moved among them. The player acts on whoever is nearest, from a menu of the content's actions; who's near witnesses it; news spreads along contacts (K2), drawn as it goes; each token shows its disposition toward the player by band. Time is paused, stepped or run. Quests are offered by their givers, started and chosen from a panel. The inspector sits beside it.
 - **Then a world-editing mode** of the sandbox: tokens and places dragged and named, and saved to the builder file (D-47). World maps generated from Azgaar's, and the brushes that refine them, extend it (§21); places themselves move to the content (D-51).
 - **The builder file** is `builder.toml` beside the content: where each character stands, and the places, by id. Only the builder reads it, checking its ids against the content as it loads; the module's content and checks are unchanged (D-20).

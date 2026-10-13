@@ -775,7 +775,7 @@ impl Session {
             Some(world) => {
                 let lines: Vec<String> = world
                     .characters()
-                    .map(|character| describe(world, character))
+                    .map(|character| describe_character(world, character))
                     .collect();
                 Outcome::Output(lines.join("\n"))
             }
@@ -800,7 +800,7 @@ impl Session {
             world
                 .characters()
                 .find(|character| character.id.as_str() == id)
-                .map(|character| describe(world, character))
+                .map(|character| describe_character(world, character))
         } else {
             world
                 .factions()
@@ -2146,8 +2146,8 @@ fn seen_flags(witnesses: &Witnesses) -> String {
     }
 }
 
-/// `#1 at tick 0: time advanced from 0 to 5`.
-pub(crate) fn describe_event(event: &Event) -> String {
+/// One event, as `events` says it: `#1 at tick 0: time advanced from 0 to 5`.
+pub fn describe_event(event: &Event) -> String {
     format!(
         "#{} at tick {}: {}",
         event.seq,
@@ -2673,8 +2673,9 @@ fn describe_drift(policy: DriftPolicy) -> String {
     }
 }
 
-/// One line about a faction: `temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good`.
-fn describe_faction(world: &World, faction: &Faction) -> String {
+/// One line about a faction, as `factions` says it:
+/// `temple — Temple of the Dawn — law 30.00, good 80.00 — Neutral Good`.
+pub fn describe_faction(world: &World, faction: &Faction) -> String {
     let members: Vec<String> = world
         .members(&faction.id)
         .expect("a faction from the world")
@@ -2777,9 +2778,9 @@ pub(crate) fn hint(word: &str, ids: Vec<&str>) -> String {
         .unwrap_or_default()
 }
 
-/// One line about a character as they are now:
+/// One line about a character as they are now, as `characters` says it:
 /// `vex — Vex — law -55.00, good -20.00 — Chaotic Neutral`.
-fn describe(world: &World, character: &Character) -> String {
+pub fn describe_character(world: &World, character: &Character) -> String {
     let alignment = world
         .alignment(&character.id)
         .expect("every character in the world has an alignment");
