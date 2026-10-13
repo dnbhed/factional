@@ -120,6 +120,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G2b — the inspector's console (P-123): the shared console in the inspector, running the session's commands on a copy of the game's world, written back only when a command played something, and what it played sent to the game as `FactionalEvent`s in order; `Session::on` and `into_world`, a session handed a world refusing what works on content directories; `Session::played`, what the last command played in order; `From<Played>` for the plugin's events; the plugin no longer marks the world changed on frames with nothing sent; done 2026-10-13 (#89)
 - G3 — the inspector's quests and relations (P-124): the relations matrix, as the editor's Previews draws it, and each character's quest progress, as `progress` says it (`describe_progress`, made public), in the inspector; the shared crate renamed `factional-egui`, holding the console and the relations matrix; its own tests and a picture of the matrix; a second picture of the inspector at its relations and quests; done 2026-10-13 (#90)
 - G4 — the builder's shell (P-125): `factional-builder`, a library and an app in the Bevy workspace; each character a Bevy entity, a token placed from `builder.toml` beside the content or laid out on a ring, its problems said; the inspector open beside them; time paused, stepped or run a tick a second; places left for W10, at the user's choice (D-51); the sample's `builder.toml`; done 2026-10-13 (#91)
+- G5 — acting in the builder (P-126): one character played, `player` or `--as`'s, walked by the arrow keys or WASD in game time, not while egui has the keyboard; the nearest within `reach` acted on from the Act window, witnessed by those within `sight`, sent as `Witnesses`; `[play]`'s `reach`, `sight` and `speed` in `builder.toml`, each with its default; the played token and the nearest tinted; done 2026-10-13 (#PR)
 
 ---
 
@@ -141,11 +142,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G5 · Acting in the builder — P3 · Next
-
-The player moved among the tokens, acting on the nearest from the content's actions, the characters near enough witnessing it.
-
-### G6 · What the builder shows — P3 · Outline
+### G6 · What the builder shows — P3 · Next
 
 Each token's disposition toward the player, by band; news spreading along contacts (K2), drawn as it goes.
 

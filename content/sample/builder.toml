@@ -9,3 +9,12 @@ merchant_ava = { x = 140.0, y = -40.0 }
 sister_mira = { x = 200.0, y = 140.0 }
 vex = { x = -140.0, y = -130.0 }
 brother_ash = { x = 40.0, y = 220.0 }
+
+# How near is near, for the character the builder plays (G5): `reach`, how close the nearest
+# must be to be acted on; `sight`, how close a character must be to see an act; both in
+# points. `speed`, how fast the played character walks, in points a second of game time.
+# Each must be above 0; one left out is its default, shown here.
+[play]
+reach = 80.0
+sight = 240.0
+speed = 200.0
