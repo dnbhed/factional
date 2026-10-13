@@ -1,0 +1,11 @@
+# How closely the editor's pictures must match (U19, P-120).
+#
+# They're taken on macOS (Metal); CI renders on Mesa's lavapipe, which blends a few
+# antialiased edges differently, such as a line half-clipped at the top of a scroll area.
+# Measured on CI, 2026-10-13, as pixels failing at each per-pixel threshold, worst picture:
+# 44 at 0.6, 23 at 1.0, 5 at 1.5, 0 at 3.0. A change a reader could see moves hundreds.
+# Never loosen this to make a change pass: look at the diff.
+
+[linux]
+threshold = 1.0
+max_failed_pixels = 48
