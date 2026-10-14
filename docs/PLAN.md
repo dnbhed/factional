@@ -122,6 +122,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G4 — the builder's shell (P-125): `factional-builder`, a library and an app in the Bevy workspace; each character a Bevy entity, a token placed from `builder.toml` beside the content or laid out on a ring, its problems said; the inspector open beside them; time paused, stepped or run a tick a second; places left for W10, at the user's choice (D-51); the sample's `builder.toml`; done 2026-10-13 (#91)
 - G5 — acting in the builder (P-126): one character played, `player` or `--as`'s, walked by the arrow keys or WASD in game time, not while egui has the keyboard; the nearest within `reach` acted on from the Act window, witnessed by those within `sight`, sent as `Witnesses`; `[play]`'s `reach`, `sight` and `speed` in `builder.toml`, each with its default; the played token and the nearest tinted; done 2026-10-13 (#92)
 - G6a — regard on the tokens (P-127): each other character's disposition toward the played one, from their own picture, labelled as the editor's matrix says it and tinted by band, the nearest ringed; recomputed only when the world changes; DESIGN.md §10.2's pickpocketing changing Hale's regard only when the news reaches him; G6 split into G6a and G6b; done 2026-10-13 (#93)
+- G6b — news drawn as it goes (P-128): each token news is coming to shows a ring growing until it lands, from the hop's ticks and the part of one under way, and its label how long; a pulse as it lands; drawn on the tokens, not as lines between them, the engine unchanged, at the user's choice; done 2026-10-14 (#PR)
 
 ---
 
@@ -143,11 +144,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G6b · News drawn as it goes — P3 · Next
-
-News spreading along contacts (K2), drawn on the plane as it travels between tokens, each hop's arrival when it lands.
-
-### G7 · Quests in the builder — P3 · Outline
+### G7 · Quests in the builder — P3 · Next
 
 Quest givers marked; quests started and choices made from a panel.
 
