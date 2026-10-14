@@ -3,7 +3,7 @@
 //! them, the inspector open beside them, and time paused until it's stepped or run. The
 //! played character, `player` unless `--as` names another, walks by the arrow keys or WASD
 //! and acts on the nearest from the Act window; each other token shows how they regard them
-//! (G6a, P-127).
+//! (G6a, P-127), and news coming to them, landing with a pulse (G6b, P-128).
 
 use std::path::PathBuf;
 
@@ -13,7 +13,8 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalCommand, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
-    BuilderPlugin, Clock, KeyboardTaken, Nearby, Played, Regards, Token, act, act_ui, controls_ui,
+    BuilderPlugin, Clock, KeyboardTaken, Nearby, PULSE, Played, Regards, Spreading, Token, act,
+    act_ui, controls_ui,
 };
 use factional_egui::relations::tint;
 use factional_reputation::ActionId;
@@ -22,12 +23,16 @@ use factional_reputation::ActionId;
 const PLAYED: Color = Color::srgb(0.45, 0.8, 0.45);
 const NEUTRAL: Color = Color::srgb(0.55, 0.57, 0.6);
 const RING: Color = Color::WHITE;
+const NEWS: Color = Color::srgb(0.98, 0.83, 0.35);
 
-/// A token's label, and the ring shown while it's nearest.
+/// A token's label, the ring shown while it's nearest, and the arc of news coming to it, with
+/// the arc's mesh, regrown as the news comes.
 #[derive(Component)]
 struct Parts {
     label: Entity,
     ring: Entity,
+    arc: Entity,
+    arc_mesh: Handle<Mesh>,
 }
 
 fn main() -> AppExit {
@@ -64,7 +69,7 @@ fn main() -> AppExit {
             commands.spawn(Camera2d);
         })
         .add_systems(PreUpdate, keyboard_taken)
-        .add_systems(Update, (draw_tokens, tint_tokens).chain())
+        .add_systems(Update, (draw_tokens, show_tokens).chain())
         .add_systems(EguiPrimaryContextPass, (controls, act_window))
         .run()
 }
@@ -97,29 +102,55 @@ fn draw_tokens(
                 Visibility::Hidden,
             ))
             .id();
+        let arc_mesh = meshes.add(CircularSector::new(24.0, 0.0));
+        let arc = commands
+            .spawn((
+                Mesh2d(arc_mesh.clone()),
+                MeshMaterial2d(materials.add(NEWS)),
+                Transform::from_xyz(0.0, 0.0, -0.2),
+                Visibility::Hidden,
+            ))
+            .id();
         commands
             .entity(entity)
             .insert((
                 Mesh2d(meshes.add(Circle::new(14.0))),
                 MeshMaterial2d(materials.add(NEUTRAL)),
-                Parts { label, ring },
+                Parts {
+                    label,
+                    ring,
+                    arc,
+                    arc_mesh,
+                },
             ))
-            .add_children(&[label, ring]);
+            .add_children(&[label, ring, arc]);
     }
 }
 
 /// The played token green; anyone else by how they regard it, tinted by band as the
-/// relations matrix is, and labelled with it; the nearest ringed.
-fn tint_tokens(
+/// relations matrix is, and labelled with it; the nearest ringed; news coming to a token an
+/// arc growing as it comes, and said in its label; a token news has just reached swelling and
+/// settling.
+#[allow(clippy::too_many_arguments)]
+fn show_tokens(
     nearby: Res<Nearby>,
     regards: Res<Regards>,
-    tokens: Query<(&Token, &MeshMaterial2d<ColorMaterial>, &Parts, Has<Played>)>,
+    spreading: Res<Spreading>,
+    clock: Res<Clock>,
+    factional: Option<Res<Factional>>,
+    mut tokens: Query<TokenParts>,
     mut labels: Query<&mut Text2d>,
-    mut rings: Query<&mut Visibility>,
+    mut shown: Query<&mut Visibility>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    for (token, material, parts, played) in &tokens {
+    let Some(factional) = factional else {
+        return;
+    };
+    let now = factional.world.now();
+    for (token, material, parts, mut at, played) in &mut tokens {
         let regard = regards.0.get(&token.character);
+        let coming = spreading.hearing.get(&token.character);
         let colour = match (played, regard) {
             (true, _) => PLAYED,
             (false, Some(regard)) => band_colour(regard.index, regard.bands),
@@ -129,22 +160,51 @@ fn tint_tokens(
             material.color = colour;
         }
         if let Ok(mut label) = labels.get_mut(parts.label) {
-            let said = match regard {
-                Some(regard) => format!("{}\n{}", token.character, regard.said()),
-                None => token.character.to_string(),
-            };
+            let mut said = token.character.to_string();
+            if let Some(regard) = regard {
+                said = format!("{said}\n{}", regard.said());
+            }
+            if let Some(coming) = coming {
+                said = format!("{said}\n{}", coming.said(now));
+            }
             if label.0 != said {
                 label.0 = said;
             }
         }
-        if let Ok(mut ring) = rings.get_mut(parts.ring) {
+        if let Ok(mut ring) = shown.get_mut(parts.ring) {
             let nearest = nearby.nearest.as_ref() == Some(&token.character);
-            ring.set_if_neq(if nearest {
-                Visibility::Inherited
-            } else {
-                Visibility::Hidden
-            });
+            ring.set_if_neq(visible(nearest));
         }
+        if let Ok(mut arc) = shown.get_mut(parts.arc) {
+            arc.set_if_neq(visible(coming.is_some()));
+        }
+        if let (Some(coming), Some(mut mesh)) = (coming, meshes.get_mut(&parts.arc_mesh)) {
+            let half_turn = std::f32::consts::PI * coming.progress(now, clock.part());
+            *mesh = CircularSector::new(24.0, half_turn).into();
+        }
+        // Swelling to 1.4 and settling, over the pulse.
+        let pulse = spreading.pulsing.get(&token.character).map_or(0.0, |left| {
+            let gone = 1.0 - left.as_secs_f32() / PULSE.as_secs_f32();
+            (std::f32::consts::PI * gone).sin()
+        });
+        at.scale = Vec3::splat(1.0 + 0.4 * pulse);
+    }
+}
+
+/// A token, its disc's material, its parts, where it is, and whether it's played.
+type TokenParts<'a> = (
+    &'a Token,
+    &'a MeshMaterial2d<ColorMaterial>,
+    &'a Parts,
+    &'a mut Transform,
+    Has<Played>,
+);
+
+/// Shown, or hidden.
+fn visible(shown: bool) -> Visibility {
+    match shown {
+        true => Visibility::Inherited,
+        false => Visibility::Hidden,
     }
 }
 

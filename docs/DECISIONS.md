@@ -964,6 +964,12 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **G6 split:** news drawn as it goes is G6b, with its own design: news in flight knows whom it will reach and when, not who passes it on, and a faction's hop has no place on the plane.
   - *Why:* reputation is how everyone regards the one played; seen on the plane, and changing as the news does, it's what the builder is for.
 
+- **P-128 · News drawn on the tokens it's coming to** (made in G6b, 2026-10-14, at the user's choice; K2, P-127).
+  - **From what the engine records:** news in flight says whom its next hop reaches and when (`NextHop`), not who passes it on. So news is drawn on the tokens it's coming to, a ring growing until it lands, rather than as lines between tokens, and the engine is unchanged. Drawing lines would need the engine to record each hop's senders (a change to its events and saves), or the builder to work them out, recomputing the engine's ripple; the user chose neither.
+  - **How far it's come:** the ticks gone of the hop's `hop_ticks`, with the part of a tick under way while time runs (`Clock::part`), so the ring grows smoothly between ticks. Someone hearing two pieces of news shows the soonest. The label says `news in 10 ticks`.
+  - **Landing:** each `NewsArrived` event since the last frame's makes the characters it reached pulse for `PULSE`, a second of game time; the token swells and settles.
+  - *Why:* the ripple model's news is the part of reputation that can't be seen; showing it coming, from the engine's own record, shows why a regard (G6a) changes when it does.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

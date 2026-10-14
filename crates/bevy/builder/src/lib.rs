@@ -27,9 +27,11 @@ pub const RING: f32 = 240.0;
 /// How much game time a tick is, while time runs.
 const TICK_EVERY: Duration = Duration::from_secs(1);
 
+pub mod news;
 pub mod play;
 pub mod regard;
 
+pub use news::{Hearing, PULSE, Spreading, hearing};
 pub use play::{KeyboardTaken, Nearby, Play, Played, act, act_ui, nearby};
 pub use regard::{Regard, Regards, regards};
 
@@ -80,6 +82,14 @@ impl Clock {
     /// Advances time a tick, next frame.
     pub fn step(&mut self) {
         self.steps += 1;
+    }
+
+    /// The part of a tick under way while time runs, 0 to 1; 0 while it's paused.
+    pub fn part(&self) -> f32 {
+        match self.running {
+            true => self.since.as_nanos() as f32 / TICK_EVERY.as_nanos() as f32,
+            false => 0.0,
+        }
     }
 }
 
@@ -199,7 +209,9 @@ impl Plugin for BuilderPlugin {
             .add_systems(PreUpdate, keep_time)
             .init_resource::<Regards>()
             .add_systems(Update, (play::walk, play::find_nearby).chain())
-            .add_systems(Last, regard::follow_regards);
+            .init_resource::<Spreading>()
+            .init_resource::<news::Seen>()
+            .add_systems(Last, (regard::follow_regards, news::follow_news));
     }
 }
 
