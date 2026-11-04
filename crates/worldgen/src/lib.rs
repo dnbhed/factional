@@ -7,9 +7,11 @@
 #![deny(clippy::float_arithmetic)]
 
 mod map;
+mod source;
 mod tile;
 
 pub use map::{Area, Chunk, ChunkPos, MAX_SIDE, MapError, Recipe, Region, Size, TilePos, WorldMap};
+pub use source::{Feature, Point, Source, SourceCell, SourceVertex};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 
 /// How many tiles a chunk has each way.

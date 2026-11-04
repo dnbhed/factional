@@ -1017,6 +1017,17 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The seed is a `u32`:** TOML integers stop at `i64::MAX`, and four billion seeds are plenty, so the header holds every seed as a plain number.
   - **`world info <file>`** reads the whole map, so it doubles as a check that the file is sound, and says its size, chunks, overrides, length and recipe.
   - *Why:* D-52's most efficient format, measured rather than assumed; a file that names what's wrong with it in a designer's words before trying to decode it.
+- **P-134 · Reading Azgaar's map** (made in W2a, 2026-11-04; P-119, D-53).
+  - **Read in `factional-content`, kept in `factional-worldgen`:** the JSON is parsed and checked in content, which reads files and formats; what's kept is worldgen's `Source`, plain values with every reference resolved, so worldgen still depends only on core and rasterises values (W2b).
+  - **What's kept:** the map's name, the generator's version, its size in pixels; each `pack` cell's centre, height (0 to 100, as Azgaar has it), feature, neighbours and corners; each vertex's position and three cells; each feature, an ocean, a lake with its surface height, or an island. The rest (`grid`, rivers, biomes, peoples) is read when an increment needs it. Azgaar's placeholder `features[0]` isn't kept, so a cell's feature counts from the first real one.
+  - **Versions 1.154.x:** the export's own version, the one the user's map was made with. Another major or minor version is refused, naming both, since fields change between versions; a patch release is read.
+  - **Refused whole, before anything else:** text that isn't JSON; JSON with no `info.version`; another version; an export that isn't Full, naming the list it lacks and saying to export the Full JSON.
+  - **Then every problem at once,** each at its key path, in the order read: a missing or misshapen value, a height outside 0 to 100, a size below 1 pixel, a feature Factional doesn't read, a lake with no surface, and a neighbour, corner or feature that doesn't exist, saying how many there are. Keys Factional doesn't read are ignored, as the format is Azgaar's own.
+  - **A vertex's cell past the last is the map's edge,** kept as none: Azgaar's mesh has points beyond the map, 636 such references in Menayland.
+  - **Decimals rounded once, exactly:** a whole number is taken as it is; a number with decimals is read from its shortest decimal form, the digits the export wrote, and rounded to hundredths half away from zero, so no binary rounding creeps in.
+  - **Fixtures are hand-made, at the user's choice:** a four-cell export in Azgaar's shape, and changes to it for each problem. The user's own export is read by a test only when `FACTIONAL_AZGAAR` names it, never committed.
+  - **`world source <file>`** says what an export holds (its name, version, size, cells, vertices, features and fingerprint) or every problem in it: the wizard's summary (W8), in the CLI.
+  - *Why:* P-119's import, split so that what's read is checked in a designer's words before any tile depends on it.
 
 ## Open
 

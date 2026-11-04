@@ -1,0 +1,7 @@
+# Reading Azgaar's map (W2a): what a hand-made export in Azgaar's shape holds, and files that aren't one.
+
+# Its two-line summary ends with its fingerprint, so the snapshot checks it.
+world source crates/content/tests/fixtures/azgaar/tiny.json
+
+assert world source crates/content/tests/fixtures/maps/hand-made.map == error: cannot read crates/content/tests/fixtures/maps/hand-made.map: stream did not contain valid UTF-8
+assert world source == error: world needs the form: world info <file>, or world source <file>

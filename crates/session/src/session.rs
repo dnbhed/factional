@@ -77,6 +77,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "world info <file>",
         "what a world map file holds: its size, chunks and overrides, and the recipe it was made from",
     ),
+    (
+        "world source <file>",
+        "what an Azgaar Full JSON export holds: its cells, vertices and features, or every problem in it",
+    ),
     ("quests", "list the loaded world's quests and questlines"),
     (
         "can-start <character> <quest>",
@@ -334,6 +338,9 @@ pub struct Session {
     /// What the last command played, in order (G2b).
     played: Vec<Played>,
 }
+
+/// How `world` is used.
+const WORLD_FORM: &str = "world needs the form: world info <file>, or world source <file>";
 
 /// What works on content directories, refused by a session handed its world (G2b); `quests`
 /// only with a directory named.
@@ -852,16 +859,21 @@ impl Session {
         Outcome::Output(report.trim_end().to_owned())
     }
 
-    /// `world info <file>`: what the map in `file` holds (W1b).
+    /// `world info <file>`: what the map in `file` holds (W1b); `world source <file>`: what
+    /// the Azgaar export in `file` holds (W2a).
     fn world_info(&self, args: &str) -> Outcome {
         match split_command(args) {
-            ("info", file) if !file.is_empty() => {
-                match crate::world::world_info(&self.base_dir, file) {
+            (read @ ("info" | "source"), file) if !file.is_empty() => {
+                let read = match read {
+                    "info" => crate::world::world_info,
+                    _ => crate::world::world_source,
+                };
+                match read(&self.base_dir, file) {
                     Ok(info) => Outcome::Output(info),
                     Err(why) => Outcome::Error(why),
                 }
             }
-            _ => Outcome::Error("world needs the form: world info <file>".to_owned()),
+            _ => Outcome::Error(WORLD_FORM.to_owned()),
         }
     }
 
@@ -3201,11 +3213,51 @@ mod tests {
     }
 
     #[test]
+    fn world_source_summarises_an_azgaar_export() {
+        let file = "crates/content/tests/fixtures/azgaar/tiny.json";
+        let text = std::fs::read(format!("{}/../../{file}", env!("CARGO_MANIFEST_DIR")))
+            .expect("the fixture is there");
+        assert_eq!(
+            repo().execute(&format!("world source {file}")),
+            output(&format!(
+                "tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels\n\
+                 4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; fingerprint {}",
+                factional_content::fingerprint_of(&text)
+            ))
+        );
+    }
+
+    #[test]
+    fn world_source_lists_every_problem_then_counts_them() {
+        let dir = std::env::temp_dir().join(format!("factional-w2a-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        let tiny = include_str!("../../content/tests/fixtures/azgaar/tiny.json");
+        let broken =
+            tiny.replacen("\"h\": 10,", "\"h\": 101,", 1)
+                .replacen("\"f\": 2,", "\"f\": 7,", 1);
+        std::fs::write(dir.join("broken.json"), broken).expect("written");
+        assert_eq!(
+            Session::new(&dir).execute("world source broken.json"),
+            command_error(
+                "error: pack.cells[0].h: 101 is outside 0 to 100\n\
+                 error: pack.cells[2].f: feature 7 doesn't exist; there are 3 features\n\
+                 broken.json doesn't read: 2 problems"
+            )
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
     fn world_says_its_form() {
-        let form = command_error("world needs the form: world info <file>");
+        let form = command_error(WORLD_FORM);
+        assert_eq!(
+            WORLD_FORM,
+            "world needs the form: world info <file>, or world source <file>"
+        );
         assert_eq!(run("world"), form);
         assert_eq!(run("world info"), form);
         assert_eq!(run("world inspect hand-made.map"), form);
+        assert_eq!(run("world source"), form);
     }
 
     #[test]

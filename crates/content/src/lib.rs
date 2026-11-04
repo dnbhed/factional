@@ -1,6 +1,7 @@
 //! Loads designer content (TOML) from disk, validates it, and turns mistakes into diagnostics
 //! that name the file and the key path (DESIGN.md §12.1).
 
+mod azgaar;
 mod describe;
 mod edit;
 mod fix;
@@ -17,6 +18,7 @@ mod schema;
 mod unread;
 mod words;
 
+pub use azgaar::{AzgaarError, AzgaarProblem, read_azgaar};
 pub use describe::{
     describe_choice, describe_mark, describe_step, map_heading, named_effects, named_shifts, needs,
     quest_heading,

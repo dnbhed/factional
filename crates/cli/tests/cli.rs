@@ -319,3 +319,28 @@ fn world_info_refuses_a_file_that_isnt_a_map_and_exits_one() {
     assert_eq!(text(&output.stdout), "");
     assert_eq!(text(&output.stderr), "this isn't a Factional map\n");
 }
+
+#[test]
+fn world_source_summarises_an_azgaar_export_and_exits_zero() {
+    let file = "crates/content/tests/fixtures/azgaar/tiny.json";
+    let export = std::fs::read(format!("{}/../../{file}", env!("CARGO_MANIFEST_DIR")))
+        .expect("the fixture is there");
+    let output = factional_in_repo(&["world", "source", file]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels\n\
+             4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; fingerprint {}\n",
+            factional_content::fingerprint_of(&export)
+        )
+    );
+}
+
+#[test]
+fn world_source_refuses_text_that_isnt_json_and_exits_one() {
+    let output = factional_in_repo(&["world", "source", "content/sample/factions.toml"]);
+    assert_eq!(output.status.code(), Some(1));
+    let refused = text(&output.stderr);
+    assert!(refused.starts_with("this isn't JSON: "), "{refused}");
+}

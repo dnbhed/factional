@@ -1,0 +1,10 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/azgaar.scenario
+---
+> world source crates/content/tests/fixtures/azgaar/tiny.json
+tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels
+4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; fingerprint fnv1a64:0f98771b9ef031f6
+> assert world source crates/content/tests/fixtures/maps/hand-made.map == error: cannot read crates/content/tests/fixtures/maps/hand-made.map: stream did not contain valid UTF-8
+> assert world source == error: world needs the form: world info <file>, or world source <file>

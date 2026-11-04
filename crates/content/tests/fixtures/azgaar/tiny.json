@@ -1,0 +1,38 @@
+{
+  "info": {
+    "version": "1.154.0",
+    "description": "Azgaar's Fantasy Map Generator output: azgaar.github.io/Fantasy-map-generator",
+    "exportedAt": "2026-11-04T20:00:00.000Z",
+    "mapName": "Tiny",
+    "width": 40,
+    "height": 30,
+    "seed": "123456789",
+    "mapId": 1
+  },
+  "settings": { "heightExponent": 2 },
+  "pack": {
+    "cells": [
+      { "i": 0, "v": [0, 1, 3], "c": [1, 2], "p": [10, 7.5], "g": 0, "h": 10, "area": 300, "f": 1, "t": -1, "fl": 0, "r": 0, "biome": 0 },
+      { "i": 1, "v": [0, 2, 3], "c": [0, 3], "p": [30.004, 7.5], "g": 1, "h": 40, "area": 300, "f": 3, "t": 1, "fl": 12, "r": 0, "biome": 4 },
+      { "i": 2, "v": [0, 1, 4], "c": [0, 3], "p": [10, 22.5], "g": 2, "h": 19, "area": 300, "f": 2, "t": -1, "fl": 0, "r": 0, "biome": 0 },
+      { "i": 3, "v": [0, 2, 4, 5], "c": [1, 2], "p": [111.666, 22.5], "g": 3, "h": 60, "area": 300, "f": 3, "t": 2, "fl": 3, "r": 0, "biome": 6 }
+    ],
+    "vertices": [
+      { "i": 0, "p": [20, 15], "v": [1, 2, 3], "c": [0, 1, 3] },
+      { "i": 1, "p": [0, 15], "v": [0, 3, 4], "c": [0, 2, 4] },
+      { "i": 2, "p": [40, 15], "v": [0, 3, 5], "c": [1, 3, 5] },
+      { "i": 3, "p": [20, 0], "v": [0, 1, 2], "c": [0, 1, 6] },
+      { "i": 4, "p": [20, 30], "v": [0, 1, 5], "c": [2, 3, 7] },
+      { "i": 5, "p": [-9.597192276750592, 0.125], "v": [2, 4, 3], "c": [3, 8, 9] }
+    ],
+    "features": [
+      0,
+      { "i": 1, "type": "ocean", "land": false, "border": true, "cells": 1, "height": 0, "subtype": "ocean", "name": "Calm" },
+      { "i": 2, "type": "lake", "land": false, "border": false, "cells": 1, "height": 19.9, "subtype": "freshwater", "name": "Still" },
+      { "i": 3, "type": "island", "land": true, "border": true, "cells": 2, "height": 0, "subtype": "continent", "name": "Tiny" }
+    ],
+    "burgs": [0],
+    "rivers": []
+  },
+  "grid": { "cells": [] }
+}

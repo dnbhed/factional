@@ -7,4 +7,4 @@ input_file: scenarios/maps.scenario
 hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; 9333 bytes
 recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7
 > assert world info content/sample/factions.toml == error: this isn't a Factional map
-> assert world info == error: world needs the form: world info <file>
+> assert world info == error: world needs the form: world info <file>, or world source <file>
