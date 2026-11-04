@@ -3,7 +3,9 @@
 //! them, the inspector open beside them, and time paused until it's stepped or run. The
 //! played character, `player` unless `--as` names another, walks by the arrow keys or WASD
 //! and acts on the nearest from the Act window; each other token shows how they regard them
-//! (G6a, P-127), and news coming to them, landing with a pulse (G6b, P-128).
+//! (G6a, P-127), and news coming to them, landing with a pulse (G6b, P-128). A token offering
+//! a quest that can start now is marked, and quests are started and chosen from the Quests
+//! window (G7, P-129).
 
 use std::path::PathBuf;
 
@@ -13,8 +15,8 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalCommand, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
-    BuilderPlugin, Clock, KeyboardTaken, Nearby, PULSE, Played, Regards, Spreading, Token, act,
-    act_ui, controls_ui,
+    BuilderPlugin, Clock, Givers, KeyboardTaken, Nearby, PULSE, Played, Regards, Spreading, Token,
+    act, act_ui, ask, controls_ui, panel, quests_ui,
 };
 use factional_egui::relations::tint;
 use factional_reputation::ActionId;
@@ -24,12 +26,14 @@ const PLAYED: Color = Color::srgb(0.45, 0.8, 0.45);
 const NEUTRAL: Color = Color::srgb(0.55, 0.57, 0.6);
 const RING: Color = Color::WHITE;
 const NEWS: Color = Color::srgb(0.98, 0.83, 0.35);
+const QUEST: Color = Color::srgb(1.0, 0.9, 0.2);
 
-/// A token's label, the ring shown while it's nearest, and the arc of news coming to it, with
-/// the arc's mesh, regrown as the news comes.
+/// A token's label, its quest marker, the ring shown while it's nearest, and the arc of news
+/// coming to it, with the arc's mesh, regrown as the news comes.
 #[derive(Component)]
 struct Parts {
     label: Entity,
+    marker: Entity,
     ring: Entity,
     arc: Entity,
     arc_mesh: Handle<Mesh>,
@@ -70,7 +74,10 @@ fn main() -> AppExit {
         })
         .add_systems(PreUpdate, keyboard_taken)
         .add_systems(Update, (draw_tokens, show_tokens).chain())
-        .add_systems(EguiPrimaryContextPass, (controls, act_window))
+        .add_systems(
+            EguiPrimaryContextPass,
+            (controls, act_window, quests_window),
+        )
         .run()
 }
 
@@ -79,8 +86,9 @@ fn keyboard_taken(wants: Res<EguiWantsInput>, mut taken: ResMut<KeyboardTaken>) 
     taken.0 = wants.wants_any_keyboard_input();
 }
 
-/// Each new token drawn: a disc of its own colour, its label under it, and a ring behind it
-/// for when it's nearest. Placeholder shapes (D-46).
+/// Each new token drawn: a disc of its own colour, its label under it, a quest marker over it
+/// for when it offers one, and a ring behind it for when it's nearest. Placeholder shapes
+/// (D-46).
 fn draw_tokens(
     mut commands: Commands,
     added: Query<(Entity, &Token), Added<Token>>,
@@ -92,6 +100,14 @@ fn draw_tokens(
             .spawn((
                 Text2d::new(token.character.as_str()),
                 Transform::from_xyz(0.0, -34.0, 1.0),
+            ))
+            .id();
+        let marker = commands
+            .spawn((
+                Text2d::new("!"),
+                TextColor(QUEST),
+                Transform::from_xyz(0.0, 30.0, 1.0),
+                Visibility::Hidden,
             ))
             .id();
         let ring = commands
@@ -118,23 +134,26 @@ fn draw_tokens(
                 MeshMaterial2d(materials.add(NEUTRAL)),
                 Parts {
                     label,
+                    marker,
                     ring,
                     arc,
                     arc_mesh,
                 },
             ))
-            .add_children(&[label, ring, arc]);
+            .add_children(&[label, marker, ring, arc]);
     }
 }
 
 /// The played token green; anyone else by how they regard it, tinted by band as the
-/// relations matrix is, and labelled with it; the nearest ringed; news coming to a token an
+/// relations matrix is, and labelled with it; a giver of a quest that can start marked; the
+/// nearest ringed; news coming to a token an
 /// arc growing as it comes, and said in its label; a token news has just reached swelling and
 /// settling.
 #[allow(clippy::too_many_arguments)]
 fn show_tokens(
     nearby: Res<Nearby>,
     regards: Res<Regards>,
+    givers: Res<Givers>,
     spreading: Res<Spreading>,
     clock: Res<Clock>,
     factional: Option<Res<Factional>>,
@@ -170,6 +189,9 @@ fn show_tokens(
             if label.0 != said {
                 label.0 = said;
             }
+        }
+        if let Ok(mut marker) = shown.get_mut(parts.marker) {
+            marker.set_if_neq(visible(givers.0.contains(&token.character)));
         }
         if let Ok(mut ring) = shown.get_mut(parts.ring) {
             let nearest = nearby.nearest.as_ref() == Some(&token.character);
@@ -263,6 +285,35 @@ fn act_window(
         .show(contexts.ctx_mut()?, |ui| {
             if let Some(action) = act_ui(ui, &actions, &nearby) {
                 out.write(act(&played.character, action, &nearby));
+            }
+        });
+    Ok(())
+}
+
+/// The Quests window, at the bottom right: what whoever's nearest offers, what the world
+/// offers, and the played character's quests under way, started and chosen from it.
+fn quests_window(
+    mut contexts: EguiContexts,
+    nearby: Res<Nearby>,
+    played: Query<&Token, With<Played>>,
+    factional: Option<Res<Factional>>,
+    mut out: MessageWriter<FactionalCommand>,
+) -> Result {
+    let (Some(factional), Ok(played)) = (factional, played.single()) else {
+        return Ok(());
+    };
+    let shown = panel(
+        &factional.world,
+        &factional.quests,
+        &played.character,
+        nearby.nearest.as_ref(),
+    );
+    egui::Window::new("Quests")
+        .anchor(egui::Align2::RIGHT_BOTTOM, [-8.0, -8.0])
+        .resizable(false)
+        .show(contexts.ctx_mut()?, |ui| {
+            if let Some(asked) = quests_ui(ui, &shown) {
+                out.write(ask(&played.character, asked, &nearby));
             }
         });
     Ok(())

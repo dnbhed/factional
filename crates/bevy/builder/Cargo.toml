@@ -13,6 +13,7 @@ factional-bevy = { path = ".." }
 factional-bevy-inspector = { path = "../inspector" }
 factional-egui = { path = "../../egui" }
 factional-core = { path = "../../core" }
+factional-quests = { path = "../../quests" }
 factional-reputation = { path = "../../reputation" }
 serde = { version = "1", features = ["derive"] }
 toml = "1.1.6"

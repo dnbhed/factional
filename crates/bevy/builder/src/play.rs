@@ -84,17 +84,21 @@ pub fn nearby(at: Vec2, others: &[(CharacterId, Vec2)], play: &Play) -> Nearby {
 
 /// `played` doing `action`, on whoever's nearest, at scale 1, seen by exactly those near.
 pub fn act(played: &CharacterId, action: ActionId, nearby: &Nearby) -> FactionalCommand {
-    let witnesses = match nearby.seen_by.is_empty() {
-        true => Witnesses::Nobody,
-        false => Witnesses::These(nearby.seen_by.clone()),
-    };
     FactionalCommand::World(Command::PerformAction {
         actor: played.clone(),
         action,
         target: nearby.nearest.clone(),
         scale: Fixed::ONE,
-        witnesses,
+        witnesses: witnesses(nearby),
     })
+}
+
+/// Exactly those near enough to see, or nobody.
+pub(crate) fn witnesses(nearby: &Nearby) -> Witnesses {
+    match nearby.seen_by.is_empty() {
+        true => Witnesses::Nobody,
+        false => Witnesses::These(nearby.seen_by.clone()),
+    }
 }
 
 /// The content's actions to choose from, in the order given, saying who they'd be done to and

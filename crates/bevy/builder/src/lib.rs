@@ -29,10 +29,15 @@ const TICK_EVERY: Duration = Duration::from_secs(1);
 
 pub mod news;
 pub mod play;
+pub mod quests;
 pub mod regard;
 
 pub use news::{Hearing, PULSE, Spreading, hearing};
 pub use play::{KeyboardTaken, Nearby, Play, Played, act, act_ui, nearby};
+pub use quests::{
+    Asked, Givers, Offer, QuestPanel, UnderWay, ask, givers, offered_by, panel, quests_ui,
+    the_worlds,
+};
 pub use regard::{Regard, Regards, regards};
 
 /// The builder, on the content in `content`, whose `builder.toml` it reads, playing the
@@ -211,7 +216,15 @@ impl Plugin for BuilderPlugin {
             .add_systems(Update, (play::walk, play::find_nearby).chain())
             .init_resource::<Spreading>()
             .init_resource::<news::Seen>()
-            .add_systems(Last, (regard::follow_regards, news::follow_news));
+            .init_resource::<Givers>()
+            .add_systems(
+                Last,
+                (
+                    regard::follow_regards,
+                    news::follow_news,
+                    quests::follow_givers,
+                ),
+            );
     }
 }
 
