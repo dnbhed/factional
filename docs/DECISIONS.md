@@ -908,6 +908,7 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Reviewed like the scenario snapshots:** a missing or changed picture fails, leaving `<name>.new.png` and `<name>.diff.png` beside it (ignored by git, kept by CI as an artifact). Each is looked at before `UPDATE_SNAPSHOTS=1` accepts it, never in bulk.
   - **What a picture shows is pinned in words too:** a defect a picture finds gets an AccessKit test as well, so a tolerance can't hide its return.
   - *Why:* AccessKit proves what's on a page and what it does, not how it looks. The first pictures showed Play's log drawn over its line and the drawer shrunk to its list, both passing every AccessKit test.
+  - *Amended in W2a:* a test that takes a picture holds a lock on the GPU for as long as its harness lives, in the editor and the inspector alike, and a test that takes none has no renderer. Each renderer makes its own Vulkan instance, and the Vulkan loader unloads the driver as one is dropped; a test using it on another thread then crashes. CI's Mesa lavapipe did so intermittently, and reproduced on Ubuntu 26.04, 12 of 30 runs under gdb crashed before and none after.
 
 - **P-121 · How the inspector is built** (made in G1, 2026-10-13; D-44, D-45, P-118).
   - **The plugin:** `InspectorPlugin { toggle }`, the backquote by default, the key games open their consoles with. It adds the `Inspector` resource, closed, which a game may open itself, and adds `bevy_egui`'s plugin if the game hasn't.

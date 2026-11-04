@@ -3,6 +3,7 @@
 //! session's commands on the game's world and sending the game what they played.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use bevy::MinimalPlugins;
 use bevy::app::{App, Last};
@@ -16,8 +17,8 @@ use bevy::window::{ExitCondition, WindowPlugin};
 use bevy_egui::egui::{self, Order};
 use bevy_egui::input::EguiInputEvent;
 use bevy_egui::{EguiContext, EguiPlugin, EguiRenderOutput, PrimaryEguiContext};
-use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use egui_kittest::{Harness, HarnessBuilder};
 use factional_bevy::{Factional, FactionalEvent, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin, inspector_window, run_in_console};
 use factional_core::Fixed;
@@ -97,20 +98,40 @@ fn steal(world: &mut World) {
         .expect("the player can steal");
 }
 
-/// The window drawn over `factional`, with its console, each line entered run in it.
+/// The window drawn over `factional`, with its console, each line entered run in it; with
+/// no renderer, since only its pictures need one.
 fn drawn(factional: Factional) -> Harness<'static, (Factional, Console)> {
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(760.0, 900.0))
-        .wgpu()
-        .build_ui_state(
-            |ui, (factional, console): &mut (Factional, Console)| {
-                let asked = inspector_window(ui.ctx(), factional, console);
-                if let Some(line) = asked.run {
-                    run_in_console(factional, console, line);
-                }
-            },
-            (factional, Console::new("Console")),
-        );
+    draw(Harness::builder(), factional)
+}
+
+/// The GPU, held by one picture at a time. Each renderer makes its own Vulkan instance, and
+/// the Vulkan loader unloads the driver as one is dropped, which crashes another test using
+/// it on another thread (found in W2a's CI, on Mesa's lavapipe).
+static GPU: Mutex<()> = Mutex::new(());
+
+/// The GPU, until the guard is dropped; taken before the harness, so it's dropped after it.
+fn gpu() -> MutexGuard<'static, ()> {
+    GPU.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The window drawn as [`drawn`], with a renderer to take its picture; hold [`gpu`] first.
+fn pictured(factional: Factional) -> Harness<'static, (Factional, Console)> {
+    draw(Harness::builder().wgpu(), factional)
+}
+
+fn draw(
+    builder: HarnessBuilder<(Factional, Console)>,
+    factional: Factional,
+) -> Harness<'static, (Factional, Console)> {
+    let mut harness = builder.with_size(egui::vec2(760.0, 900.0)).build_ui_state(
+        |ui, (factional, console): &mut (Factional, Console)| {
+            let asked = inspector_window(ui.ctx(), factional, console);
+            if let Some(line) = asked.run {
+                run_in_console(factional, console, line);
+            }
+        },
+        (factional, Console::new("Console")),
+    );
     harness.run();
     harness
 }
@@ -415,7 +436,8 @@ fn the_window_has_each_characters_quest_progress_as_progress_says_it() {
 /// Its picture, taken as the editor's are (P-120): the console after a theft.
 #[test]
 fn the_window_after_a_theft_in_its_console() {
-    let mut harness = drawn(riverhold());
+    let _gpu = gpu();
+    let mut harness = pictured(riverhold());
     enter(&mut harness, "act player steal --target merchant_ava");
     harness.snapshot("inspector");
 }
@@ -423,7 +445,8 @@ fn the_window_after_a_theft_in_its_console() {
 /// Its picture scrolled to the relations and quests, after a quest is started (P-120).
 #[test]
 fn the_window_at_its_relations_and_quests() {
-    let mut harness = drawn(riverhold());
+    let _gpu = gpu();
+    let mut harness = pictured(riverhold());
     enter(&mut harness, "start player watch_oath");
     harness
         .get_by_label("watch_career — up to step 1 of 4")
