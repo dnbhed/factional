@@ -19,6 +19,7 @@ form <dir> <file> <entry>                                                       
 words <dir> <file> <key>                                                                        where a place in a content file is, in words, as the editor's form and problems say it
 keys <dir> <file> [<path>]                                                                      what can be added at a place in a content file: each key, what it is, its default and its description
 graph <dir> <questline|quest>                                                                   a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about
+world info <file>                                                                               what a world map file holds: its size, chunks and overrides, and the recipe it was made from
 quests                                                                                          list the loaded world's quests and questlines
 can-start <character> <quest>                                                                   whether the character can start the quest now, and every reason not
 start <character> <quest>                                                                       start a quest whose gate and step allow it

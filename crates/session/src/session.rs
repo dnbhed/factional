@@ -73,6 +73,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "graph <dir> <questline|quest>",
         "a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about",
     ),
+    (
+        "world info <file>",
+        "what a world map file holds: its size, chunks and overrides, and the recipe it was made from",
+    ),
     ("quests", "list the loaded world's quests and questlines"),
     (
         "can-start <character> <quest>",
@@ -547,6 +551,7 @@ impl Session {
             "quit" => Ok(Outcome::Quit),
             "load" => Ok(self.load(rest)),
             "validate" => Ok(self.validate(rest)),
+            "world" => Ok(self.world_info(rest)),
             "quests" if rest.is_empty() => Ok(match &self.world {
                 Some(_) => crate::quests::loaded(self.quests.quests()),
                 None => no_world(),
@@ -845,6 +850,19 @@ impl Session {
         }
         let (report, _) = validate(&self.base_dir, dir);
         Outcome::Output(report.trim_end().to_owned())
+    }
+
+    /// `world info <file>`: what the map in `file` holds (W1b).
+    fn world_info(&self, args: &str) -> Outcome {
+        match split_command(args) {
+            ("info", file) if !file.is_empty() => {
+                match crate::world::world_info(&self.base_dir, file) {
+                    Ok(info) => Outcome::Output(info),
+                    Err(why) => Outcome::Error(why),
+                }
+            }
+            _ => Outcome::Error("world needs the form: world info <file>".to_owned()),
+        }
     }
 
     /// `characters`: every loaded character, one per line, in id order.
@@ -3157,6 +3175,37 @@ mod tests {
             run("validate"),
             command_error("validate needs the form: validate <dir>")
         );
+    }
+
+    #[test]
+    fn world_info_summarises_a_map_file() {
+        let file = "crates/content/tests/fixtures/maps/hand-made.map";
+        let bytes = std::fs::metadata(format!("{}/../../{file}", env!("CARGO_MANIFEST_DIR")))
+            .expect("the committed map is there")
+            .len();
+        assert_eq!(
+            repo().execute(&format!("world info {file}")),
+            output(&format!(
+                "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
+                 recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7"
+            ))
+        );
+    }
+
+    #[test]
+    fn world_info_refuses_a_file_that_isnt_a_map() {
+        assert_eq!(
+            repo().execute("world info content/sample/factions.toml"),
+            command_error("this isn't a Factional map")
+        );
+    }
+
+    #[test]
+    fn world_says_its_form() {
+        let form = command_error("world needs the form: world info <file>");
+        assert_eq!(run("world"), form);
+        assert_eq!(run("world info"), form);
+        assert_eq!(run("world inspect hand-made.map"), form);
     }
 
     #[test]

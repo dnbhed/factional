@@ -1,6 +1,6 @@
 //! The `factional` binary: `factional repl` for an interactive session, `factional run
 //! <script>` to replay a scenario (DECISIONS.md P-27), and for designers, `factional validate
-//! <dir>` and `factional schema [<file>]`.
+//! <dir>`, `factional schema [<file>]` and `factional world info <file>`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
-use factional_cli::{compare, run_repl, run_script, validate};
+use factional_cli::{compare, run_repl, run_script, validate, world_info};
 use factional_content::{SCHEMA_FILES, schema_text};
 
 #[derive(Parser)]
@@ -52,6 +52,20 @@ enum Command {
         /// The content file, such as factions
         #[arg(value_parser = PossibleValuesParser::new(SCHEMA_FILES))]
         file: Option<String>,
+    },
+    /// Read world map files
+    World {
+        #[command(subcommand)]
+        command: WorldCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorldCommand {
+    /// What a map file holds: its size, chunks and overrides, and the recipe it was made from
+    Info {
+        /// The map file, such as world/menayland.map
+        file: String,
     },
 }
 
@@ -99,6 +113,18 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
+        Command::World {
+            command: WorldCommand::Info { file },
+        } => match world_info(Path::new(""), &file) {
+            Ok(info) => {
+                println!("{info}");
+                ExitCode::SUCCESS
+            }
+            Err(why) => {
+                eprintln!("{why}");
+                ExitCode::FAILURE
+            }
+        },
     }
 }
 

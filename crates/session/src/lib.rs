@@ -17,6 +17,7 @@ mod quests;
 mod references;
 mod session;
 mod words;
+mod world;
 
 pub use check::validate;
 pub use compare::compare;
@@ -26,3 +27,4 @@ pub use session::{
     Mark, Named, Outcome, ScriptError, Session, describe_character, describe_event,
     describe_faction, help_text, is_blank_or_comment,
 };
+pub use world::world_info;

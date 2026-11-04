@@ -127,6 +127,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G8 — the editor and the builder open each other (P-130): the editor's "Play in the builder", as the selected character if one is, disabled until saved and while the content doesn't load, at the user's choice; the builder's "Edit in the editor", at the nearest character else the one played, by the editor's new `--at <file>:<key>`; each found by `FACTIONAL_EDITOR` or `FACTIONAL_BUILDER`, beside itself, then on `PATH`, or the command that builds it said; started without waiting; the Bevy workspace building into the repository's `target/`, at the user's choice, so the two sit side by side; done 2026-11-04 (#96)
 - G9 — arranging the tokens (P-131): the builder's Arrange mode, the keys not walking; a press within a token's radius picking the nearest, dragged from where it was gripped and dropped where it's let go; each drag one step of Undo; Save layout writing `builder.toml`'s `[positions]` with `toml_edit`, rounded to whole points, changed in place or added in the world's order, comments, `[play]` and positions naming no one kept, a file that can't be read refused; places left to G10, after W10, at the user's choice; done 2026-11-04 (#97)
 - W1a — the map in memory (P-132): `factional-worldgen`, on core only, with no I/O and no floats; a map's size from its recipe's region and scale, at most 8192 tiles a side, a recipe that can't make one refused with why; its tiles generated once each, row by row, into 64 × 64 chunks, each layer an array (elevation, terrain, water, biome, plant); overrides per tile and layer, kept apart, added to, cleared by setting nothing, refused off the map; reset in an area; regenerating to the same size keeping them; a property test; W1 split into W1a and W1b, suggestions left to W6, at the user's choice; done 2026-11-04 (#98)
+- W1b — the map file (P-133): `factional-content` writes and reads `world/<name>.map` exactly: a TOML header (format, version, recipe, the tiles' length and fingerprint) ended by a zero byte, then postcard, each chunk's layers and the overrides compressed by zstd at level 3, chosen over `lz4_flex` by measuring a rough raster of Menayland, elevation as differences; foreign files, other versions, bad headers and recipes, and cut or changed tiles refused with why, and what only a faulty writer makes named by chunk or tile; a committed map that must keep reading; the recipe's seed a `u32`; `world info <file>` and `factional world info <file>`; done 2026-11-04 (#99)
 
 ---
 
@@ -148,11 +149,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W1b · The map file — P3 · Next
-
-The map file (a readable header, then postcard, each chunk compressed by `lz4_flex` or zstd as measured on a rough raster of the user's Menayland map), written and read back exactly by `factional-content`; `factional world info <file>` (D-52, P-119, DESIGN.md §21).
-
-### W2 · Importing Azgaar's terrain — P3 · Outline
+### W2 · Importing Azgaar's terrain — P3 · Next
 
 Azgaar's Full JSON read, its version checked and its problems named by key path; cells, heights and features; a region at a scale (D-53) rasterised to tiles, heights interpolated across cell centres; land, sea and lake; `factional world import`; fixtures generated at Azgaar's smallest size (P-119).
 

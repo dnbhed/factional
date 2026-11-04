@@ -71,7 +71,7 @@ pub struct Recipe {
     pub source: String,
     pub region: Region,
     pub scale: u32,
-    pub seed: u64,
+    pub seed: u32,
 }
 
 impl Recipe {

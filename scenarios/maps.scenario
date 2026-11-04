@@ -1,0 +1,8 @@
+# The map file (W1b): what a map holds, from its header and its tiles, and files that aren't one.
+
+# A hand-made map of 70 × 66 tiles, with three overrides; its summary is two lines, so the
+# snapshot checks it.
+world info crates/content/tests/fixtures/maps/hand-made.map
+
+assert world info content/sample/factions.toml == error: this isn't a Factional map
+assert world info == error: world needs the form: world info <file>

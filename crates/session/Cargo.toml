@@ -11,6 +11,7 @@ factional-content = { path = "../content" }
 factional-core = { path = "../core" }
 factional-quests = { path = "../quests" }
 factional-reputation = { path = "../reputation" }
+factional-worldgen = { path = "../worldgen" }
 
 [lints]
 workspace = true
