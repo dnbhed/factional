@@ -86,7 +86,8 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/bevy
+          # It builds into the repository's target/, beside the main workspace (G8).
+          workspaces: crates/bevy -> ../../target
       - name: Install a software GPU for the inspector's picture (G1)
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - run: cargo fmt --all --check

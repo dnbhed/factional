@@ -37,8 +37,10 @@ Before starting any increment, read:
    cargo clippy --workspace --all-targets -- -D warnings
    cargo clippy --workspace --all-targets --all-features -- -D warnings
    cargo test --workspace
-   git diff --relative main... -- . > target/branch.diff && cargo mutants --workspace --in-place --in-diff target/branch.diff
+   git diff --relative main... -- . > ../../target/bevy-branch.diff && cargo mutants --workspace --in-place --in-diff ../../target/bevy-branch.diff
    ```
+
+   It builds into the repository's `target/`, beside the main workspace, so the editor and the builder sit side by side (P-130); a build in one workspace waits while the other holds the folder.
 
    `--workspace` matters: without it, `crates/bevy`'s root package is the only one checked, and cargo-mutants silently finds nothing in the members. `--in-place`, because a copied tree loses the `../../` paths to the main workspace's crates.
 7. **Docs, in the same PR:**

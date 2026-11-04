@@ -1,0 +1,5 @@
+# The Bevy workspace builds into the repository's `target/`, beside the main workspace, so
+# `factional-editor` and `factional-builder` sit side by side and each can open the other
+# (G8, P-130). A path here is relative to `crates/bevy`.
+[build]
+target-dir = "../../target"
