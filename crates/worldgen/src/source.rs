@@ -41,13 +41,14 @@ pub enum Feature {
     Island,
 }
 
-/// A source map: its name, the generator's version that made it, its size in pixels, and its
-/// cells, vertices and features.
+/// A source map: its name, the generator's version that made it, its size in pixels, the
+/// exponent its heights are raised to in metres, and its cells, vertices and features.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Source {
     pub name: String,
     pub version: String,
     pub size: Size,
+    pub height_exponent: Fixed,
     pub cells: Vec<SourceCell>,
     pub vertices: Vec<SourceVertex>,
     pub features: Vec<Feature>,

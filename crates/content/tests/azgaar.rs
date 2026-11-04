@@ -2,9 +2,12 @@
 //! checked, every problem named by key path. The fixtures are hand-made in Azgaar's shape, at
 //! the user's choice; the user's own export is checked only locally.
 
-use factional_content::{AzgaarError, read_azgaar};
+use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
-use factional_worldgen::{Feature, Point, Size, Source, SourceCell, SourceVertex};
+use factional_worldgen::{
+    Feature, Point, Recipe, Region, Size, Source, SourceCell, SourceVertex, Terrain, Water,
+    rasterise,
+};
 use serde_json::{Value, json};
 
 const TINY: &str = include_str!("fixtures/azgaar/tiny.json");
@@ -64,6 +67,7 @@ fn a_full_export_reads_as_its_cells_vertices_and_features() {
             width: 40,
             height: 30,
         },
+        height_exponent: Fixed::from_hundredths(2_00),
         cells: vec![
             cell(point(10_00, 7_50), 10, 0, &[1, 2], &[0, 1, 3]),
             cell(point(30_00, 7_50), 40, 2, &[0, 3], &[0, 2, 3]),
@@ -165,6 +169,43 @@ fn a_feature_factional_doesnt_read_or_a_lake_without_its_surface_is_named() {
 }
 
 #[test]
+fn the_height_exponent_is_read_to_the_hundredth() {
+    let text = tiny_with(|json| json["settings"]["heightExponent"] = json!(1.785));
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(source.height_exponent, Fixed::from_hundredths(1_79));
+}
+
+#[test]
+fn a_height_exponent_azgaar_doesnt_allow_is_a_problem() {
+    for (exponent, said) in [(json!(2.5), "2.50"), (json!(1.49), "1.49")] {
+        let text = tiny_with(|json| json["settings"]["heightExponent"] = exponent);
+        assert_eq!(
+            problems(&text),
+            [format!(
+                "settings.heightExponent: {said} is outside 1.50 to 2.20, as Azgaar allows"
+            )]
+        );
+    }
+    for edge in [json!(1.5), json!(2.2)] {
+        let text = tiny_with(|json| json["settings"]["heightExponent"] = edge);
+        assert!(read_azgaar(&text).is_ok());
+    }
+}
+
+#[test]
+fn a_missing_or_misshapen_height_exponent_is_named() {
+    let text = tiny_with(|json| json["settings"]["heightExponent"] = json!("steep"));
+    assert_eq!(
+        problems(&text),
+        ["settings.heightExponent: expected a number, not \"steep\""]
+    );
+    let text = tiny_with(|json| {
+        json.as_object_mut().expect("an export").remove("settings");
+    });
+    assert_eq!(problems(&text), ["settings: missing heightExponent"]);
+}
+
+#[test]
 fn text_that_isnt_json_is_refused() {
     let refused = refusal("{ \"info\": ");
     assert!(refused.starts_with("this isn't JSON: "), "{refused}");
@@ -259,4 +300,38 @@ fn the_users_menayland_export_reads() {
     assert_eq!(count(|f| *f == Feature::Ocean), 2);
     assert_eq!(count(|f| matches!(f, Feature::Lake { .. })), 9);
     assert_eq!(count(|f| *f == Feature::Island), 15);
+}
+
+/// The user's own export rasterised whole at a tile a pixel, when `FACTIONAL_AZGAAR` names it;
+/// its tile counts were taken with a separate script.
+#[test]
+#[ignore = "reads the user's own export, named by FACTIONAL_AZGAAR"]
+fn the_users_menayland_export_rasterises_whole() {
+    let path = std::env::var("FACTIONAL_AZGAAR").expect("FACTIONAL_AZGAAR names the export");
+    let text = std::fs::read_to_string(path).expect("the export is readable");
+    let source = read_azgaar(&text).expect("Menayland reads");
+    let recipe = Recipe {
+        source: fingerprint_of(text.as_bytes()),
+        region: Region {
+            x: 0,
+            y: 0,
+            size: source.size,
+        },
+        scale: 1,
+        seed: 0,
+    };
+    let map = rasterise(&source, recipe).expect("Menayland rasterises");
+    let mut counts = [0; 3];
+    for (_, chunk) in map.chunks() {
+        let size = chunk.size();
+        for (x, y) in (0..size.height).flat_map(|y| (0..size.width).map(move |x| (x, y))) {
+            let tile = chunk.tile(x, y).expect("in the chunk");
+            counts[match (tile.terrain, tile.water) {
+                (Terrain::DeepWater, _) => 0,
+                (_, Some(Water::Lake)) => 1,
+                _ => 2,
+            }] += 1;
+        }
+    }
+    assert_eq!(counts, [772_521, 8_931, 396_018]);
 }

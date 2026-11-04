@@ -81,6 +81,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "world source <file>",
         "what an Azgaar Full JSON export holds: its cells, vertices and features, or every problem in it",
     ),
+    (
+        "world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>]",
+        "rasterise an Azgaar Full JSON export into a map file: the whole map at 1 tile a pixel and seed 0 unless told",
+    ),
     ("quests", "list the loaded world's quests and questlines"),
     (
         "can-start <character> <quest>",
@@ -340,7 +344,8 @@ pub struct Session {
 }
 
 /// How `world` is used.
-const WORLD_FORM: &str = "world needs the form: world info <file>, or world source <file>";
+pub(crate) const WORLD_FORM: &str = "world needs the form: world info <file>, world source <file>, \
+     or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>]";
 
 /// What works on content directories, refused by a session handed its world (G2b); `quests`
 /// only with a directory named.
@@ -863,6 +868,14 @@ impl Session {
     /// the Azgaar export in `file` holds (W2a).
     fn world_info(&self, args: &str) -> Outcome {
         match split_command(args) {
+            ("import", args) => {
+                let imported = crate::world::Import::parse(args)
+                    .and_then(|import| crate::world::world_import(&self.base_dir, &import));
+                match imported {
+                    Ok(said) => Outcome::Output(said),
+                    Err(why) => Outcome::Error(why),
+                }
+            }
             (read @ ("info" | "source"), file) if !file.is_empty() => {
                 let read = match read {
                     "info" => crate::world::world_info,
@@ -3247,17 +3260,160 @@ mod tests {
         std::fs::remove_dir_all(&dir).expect("removed");
     }
 
+    /// A scratch directory holding the raster export, for `world import` to write beside.
+    fn import_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("factional-w2b-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a scratch directory");
+        std::fs::write(dir.join("raster.json"), RASTER).expect("written");
+        dir
+    }
+
+    const RASTER: &str = include_str!("../../content/tests/fixtures/azgaar/raster.json");
+
+    fn imported(dir: &std::path::Path, map: &str) -> (u64, factional_worldgen::WorldMap) {
+        let bytes = std::fs::read(dir.join(map)).expect("the map is written");
+        let read = factional_content::read_map(&bytes).expect("it reads");
+        (bytes.len() as u64, read)
+    }
+
+    #[test]
+    fn world_import_rasterises_the_whole_export_at_one_tile_a_pixel() {
+        let dir = import_dir("whole");
+        let mut session = Session::new(&dir);
+        let said = session.execute("world import raster.json raster.map");
+        let (bytes, map) = imported(&dir, "raster.map");
+        // The tile counts were worked out by a separate script.
+        assert_eq!(
+            said,
+            output(&format!(
+                "imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, \
+                 386 ocean, 354 lake and 860 land; heights -50.00 to 1764.00 m; {bytes} bytes"
+            ))
+        );
+        let recipe = factional_worldgen::Recipe {
+            source: factional_content::fingerprint_of(RASTER.as_bytes()),
+            region: factional_worldgen::Region {
+                x: 0,
+                y: 0,
+                size: factional_worldgen::Size {
+                    width: 40,
+                    height: 40,
+                },
+            },
+            scale: 1,
+            seed: 0,
+        };
+        let source = factional_content::read_azgaar(RASTER).expect("it reads");
+        assert_eq!(Ok(map), factional_worldgen::rasterise(&source, recipe));
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_import_takes_a_region_a_scale_and_a_seed() {
+        let dir = import_dir("region");
+        let mut session = Session::new(&dir);
+        let said = session
+            .execute("world import raster.json part.map --scale 2 --seed 7 --region 10,10,20,20");
+        let (bytes, map) = imported(&dir, "part.map");
+        assert_eq!(
+            said,
+            output(&format!(
+                "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
+                 251 ocean, 209 lake and 1140 land; heights -50.00 to 1642.50 m; {bytes} bytes"
+            ))
+        );
+        let recipe = map.recipe();
+        assert_eq!(
+            (
+                recipe.region.x,
+                recipe.region.y,
+                recipe.region.size.width,
+                recipe.region.size.height
+            ),
+            (10, 10, 20, 20)
+        );
+        assert_eq!((recipe.scale, recipe.seed), (2, 7));
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_import_refuses_a_region_off_the_source_and_writes_nothing() {
+        let dir = import_dir("off");
+        let mut session = Session::new(&dir);
+        assert_eq!(
+            session.execute("world import raster.json off.map --region 30,30,20,20"),
+            command_error(
+                "the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels"
+            )
+        );
+        assert!(!dir.join("off.map").exists());
+        assert_eq!(
+            session.execute("world import raster.json off.map --scale 0"),
+            command_error("the scale must be at least 1 tile a source pixel")
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_import_lists_the_exports_problems_like_world_source() {
+        let dir = import_dir("broken");
+        std::fs::write(
+            dir.join("broken.json"),
+            RASTER.replacen("\"heightExponent\": 2", "\"heightExponent\": 2.5", 1),
+        )
+        .expect("written");
+        assert_eq!(
+            Session::new(&dir).execute("world import broken.json broken.map"),
+            command_error(
+                "error: settings.heightExponent: 2.50 is outside 1.50 to 2.20, as Azgaar allows\n\
+                 broken.json doesn't read: 1 problem"
+            )
+        );
+        assert!(!dir.join("broken.map").exists());
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_import_names_an_option_it_cant_read() {
+        let refused = |args: &str| run(&format!("world import raster.json raster.map {args}"));
+        assert_eq!(
+            refused("--region 1,2,3"),
+            command_error("--region needs four whole numbers, <x>,<y>,<width>,<height>, not 1,2,3")
+        );
+        assert_eq!(
+            refused("--scale two"),
+            command_error("--scale needs a whole number, not two")
+        );
+        assert_eq!(
+            refused("--seed"),
+            command_error("--seed needs a whole number")
+        );
+        assert_eq!(
+            refused("--size 4"),
+            command_error(
+                "world import has no option --size; it takes --region, --scale and --seed"
+            )
+        );
+        assert_eq!(run("world import raster.json"), command_error(WORLD_FORM));
+        assert_eq!(
+            run("world import a.json b.map c.map"),
+            command_error(WORLD_FORM)
+        );
+    }
+
     #[test]
     fn world_says_its_form() {
         let form = command_error(WORLD_FORM);
         assert_eq!(
             WORLD_FORM,
-            "world needs the form: world info <file>, or world source <file>"
+            "world needs the form: world info <file>, world source <file>, \
+             or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>]"
         );
         assert_eq!(run("world"), form);
         assert_eq!(run("world info"), form);
         assert_eq!(run("world inspect hand-made.map"), form);
         assert_eq!(run("world source"), form);
+        assert_eq!(run("world import"), form);
     }
 
     #[test]

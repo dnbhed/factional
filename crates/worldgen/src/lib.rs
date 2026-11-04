@@ -7,10 +7,12 @@
 #![deny(clippy::float_arithmetic)]
 
 mod map;
+mod raster;
 mod source;
 mod tile;
 
 pub use map::{Area, Chunk, ChunkPos, MAX_SIDE, MapError, Recipe, Region, Size, TilePos, WorldMap};
+pub use raster::{HEIGHT_EXPONENTS, RasterError, cell_metres, rasterise};
 pub use source::{Feature, Point, Source, SourceCell, SourceVertex};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 

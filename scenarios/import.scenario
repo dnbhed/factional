@@ -1,0 +1,12 @@
+# Rasterising Azgaar's terrain (W2b): a hand-made export of five cells imported into a map file,
+# then read back. The tile counts were worked out by a separate script.
+
+# The whole map at 1 tile a pixel; its length is in the snapshot.
+world import crates/content/tests/fixtures/azgaar/raster.json target/raster.map
+
+# What it wrote: the recipe names the export's fingerprint.
+world info target/raster.map
+
+assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 30,30,20,20 == error: the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels
+assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 10,10 == error: --region needs four whole numbers, <x>,<y>,<width>,<height>, not 10,10
+assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>]

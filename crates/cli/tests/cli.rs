@@ -344,3 +344,50 @@ fn world_source_refuses_text_that_isnt_json_and_exits_one() {
     let refused = text(&output.stderr);
     assert!(refused.starts_with("this isn't JSON: "), "{refused}");
 }
+
+#[test]
+fn world_import_writes_a_map_file_and_exits_zero() {
+    let dir = std::env::temp_dir().join(format!("factional-w2b-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    let map = dir.join("part.map");
+    let output = factional_in_repo(&[
+        "world",
+        "import",
+        "crates/content/tests/fixtures/azgaar/raster.json",
+        map.to_str().expect("a UTF-8 path"),
+        "--region",
+        "10,10,20,20",
+        "--scale",
+        "2",
+        "--seed",
+        "7",
+    ]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    let bytes = std::fs::metadata(&map).expect("the map is written").len();
+    // The tile counts were worked out by a separate script.
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
+             251 ocean, 209 lake and 1140 land; heights -50.00 to 1642.50 m; {bytes} bytes\n"
+        )
+    );
+    std::fs::remove_dir_all(&dir).expect("removed");
+}
+
+#[test]
+fn world_import_refuses_a_region_off_the_source_and_exits_one() {
+    let output = factional_in_repo(&[
+        "world",
+        "import",
+        "crates/content/tests/fixtures/azgaar/raster.json",
+        "target/off.map",
+        "--region",
+        "30,30,20,20",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        text(&output.stderr),
+        "the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels\n"
+    );
+}

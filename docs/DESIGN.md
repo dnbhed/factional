@@ -1267,7 +1267,7 @@ A designer starts a game's world from a map generated in Azgaar's Fantasy Map Ge
   5. The builder generates the map: rasterised, polished, dressed with foliage, the suggestions marked.
   6. The designer edits it, and can regenerate without losing their edits.
 - **Reading the source** (W2a, P-134): `factional-content` reads Azgaar's Full JSON, versions 1.154.x, into `factional-worldgen`'s `Source`: the name, version and size in pixels; each cell's centre, height, feature, neighbours and corners; each vertex's position and three cells, past the last being the edge; and each feature, an ocean, a lake with its surface or an island. Decimals are rounded once to hundredths. Every problem is named by key path, every reference checked; `factional world source <file>` summarises an export.
-- **Rasterising:** each tile's height is interpolated across the cell centres around it, so heights are smooth rather than stepped at cell borders; land, sea and lake follow the source's features.
+- **Rasterising** (W2b, P-135): each cell's height is turned into metres by Azgaar's own formula: (h − 18)^e at sea level (20) and above, ((h − 20) / h) × 50 below it, −990 at 0, where e is the map's `settings.heightExponent`, 1.50 to 2.20; a fractional power is worked in integers and rounded once. Each tile's height is interpolated at its centre across the triangle of cell centres it falls in, the triangles being Azgaar's vertices that meet three cells, by its barycentric weights, exactly and rounded once, so heights are smooth rather than stepped at cell borders; outside every triangle, at the map's edge, a tile takes the nearest cell's. Land, sea and lake follow the nearest cell's feature: the ocean deep water, a lake shallow water with a lake, an island grass, with Marine and Grassland biomes and no plants until W4 and W5. `factional world import <export> <map>` writes the map, the whole source at a tile a pixel unless told a region, scale and seed.
 - **Polish:** seeded integer noise adds detail, rougher where the source is mountainous; elevation is kept fine (for 3D, D-50) and drawn in 2D as levels, with ledges and cliffs where they meet; coasts are smoothed; rivers are widened from their discharge and carved from source to mouth; lakes sit at their surface height.
 - **Biomes and terrain:** each tile's temperature, precipitation and biome come from the source; its terrain from those, out of a closed vocabulary: deep water, shallow water, sand, grass, forest floor, marsh, rock, snow, ice.
 - **Foliage** is scattered, not tiled: trees, shrubs and grass by Poisson-disc sampling, their kind and density by biome.
@@ -1285,7 +1285,7 @@ A designer starts a game's world from a map generated in Azgaar's Fantasy Map Ge
 | --- | --- |
 | W0 (done) | The design pass: research, D-48 to D-53, P-119, these increments |
 | W1a, W1b (done) | The world map and its file: chunks, layers, recipe and overrides, read and written exactly; `factional world info` |
-| W2a (done), W2b | Importing Azgaar's terrain: the JSON read and checked; a region at a scale rasterised; `factional world import` |
+| W2a, W2b (done) | Importing Azgaar's terrain: the JSON read and checked; a region at a scale rasterised; `factional world import` |
 | W3 | Polishing the terrain: detail, levels and cliffs, coasts, rivers and lakes |
 | W4 | Climate and biomes, and each tile's terrain |
 | W5 | Foliage, scattered by biome |
