@@ -6,7 +6,8 @@
 //! (G6a, P-127), and news coming to them, landing with a pulse (G6b, P-128). A token offering
 //! a quest that can start now is marked, and quests are started and chosen from the Quests
 //! window (G7, P-129). "Edit in the editor" opens the editor on the same directory, at the
-//! character in view (G8, P-130).
+//! character in view (G8, P-130). "Arrange" turns on dragging the tokens, each drag
+//! undoable, and saves where they stand to `builder.toml` (G9, P-131).
 
 use std::path::PathBuf;
 
@@ -16,8 +17,9 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalCommand, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
-    BuilderPlugin, Clock, ContentDir, Givers, KeyboardTaken, Nearby, PULSE, Played, Regards,
-    Spreading, Token, act, act_ui, ask, controls_ui, edit_args, edit_ui, panel, quests_ui,
+    Arranging, BuilderPlugin, Clock, ContentDir, Givers, KeyboardTaken, Nearby, PULSE, Played,
+    Pointer, Regards, Spreading, TOKEN_RADIUS, Token, act, act_ui, arrange_ui, ask, controls_ui,
+    edit_args, edit_ui, panel, quests_ui,
 };
 use factional_egui::open::{Lookup, Other, open};
 use factional_egui::relations::tint;
@@ -74,7 +76,7 @@ fn main() -> AppExit {
         .add_systems(Startup, |mut commands: Commands| {
             commands.spawn(Camera2d);
         })
-        .add_systems(PreUpdate, keyboard_taken)
+        .add_systems(PreUpdate, (keyboard_taken, pointer))
         .add_systems(Update, (draw_tokens, show_tokens).chain())
         .add_systems(
             EguiPrimaryContextPass,
@@ -86,6 +88,27 @@ fn main() -> AppExit {
 /// The keys don't walk while egui has the keyboard, as when typing in the console.
 fn keyboard_taken(wants: Res<EguiWantsInput>, mut taken: ResMut<KeyboardTaken>) {
     taken.0 = wants.wants_any_keyboard_input();
+}
+
+/// Where the cursor is on the plane, and whether the left button is down; nothing while egui
+/// has the pointer, as over a window.
+fn pointer(
+    wants: Res<EguiWantsInput>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    mut out: ResMut<Pointer>,
+) {
+    let on_plane = || {
+        let cursor = windows.single().ok()?.cursor_position()?;
+        let (camera, at) = cameras.single().ok()?;
+        camera.viewport_to_world_2d(at, cursor).ok()
+    };
+    let at = (!wants.wants_any_pointer_input()).then(on_plane).flatten();
+    out.set_if_neq(Pointer {
+        at,
+        down: buttons.pressed(MouseButton::Left),
+    });
 }
 
 /// Each new token drawn: a disc of its own colour, its label under it, a quest marker over it
@@ -132,7 +155,7 @@ fn draw_tokens(
         commands
             .entity(entity)
             .insert((
-                Mesh2d(meshes.add(Circle::new(14.0))),
+                Mesh2d(meshes.add(Circle::new(TOKEN_RADIUS))),
                 MeshMaterial2d(materials.add(NEUTRAL)),
                 Parts {
                     label,
@@ -249,12 +272,15 @@ fn band_colour(index: usize, bands: usize) -> Color {
 #[derive(Default)]
 struct EditNote(Option<String>);
 
-/// The controls, at the top left, with "Edit in the editor": the editor opened on the same
-/// directory at the nearest character, else the one played.
+/// The controls, at the top left: time; Arrange, with Undo and Save layout while arranging;
+/// and "Edit in the editor", the editor opened on the same directory at the nearest
+/// character, else the one played.
+#[allow(clippy::too_many_arguments)]
 fn controls(
     mut contexts: EguiContexts,
     mut clock: ResMut<Clock>,
     mut note: Local<EditNote>,
+    mut arranging: ResMut<Arranging>,
     dir: Res<ContentDir>,
     nearby: Res<Nearby>,
     played: Query<&Token, With<Played>>,
@@ -269,6 +295,7 @@ fn controls(
         .resizable(false)
         .show(contexts.ctx_mut()?, |ui| {
             controls_ui(ui, &mut clock, factional.world.now());
+            arrange_ui(ui, &mut arranging);
             if edit_ui(ui, note.0.as_deref()) {
                 let played = played.single().ok().map(|token| &token.character);
                 let args = edit_args(&dir.0, &nearby, played);

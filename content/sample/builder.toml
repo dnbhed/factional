@@ -1,5 +1,5 @@
-# Where Riverhold's characters stand in the builder (G4, D-47): read only by the builder,
-# never by the engine. Each position is in points on the builder's plane, x to the right and
+# Where Riverhold's characters stand in the builder (G4, D-47): read and written only by the
+# builder, whose Arrange mode saves [positions] (G9), never by the engine. Each position is in points on the builder's plane, x to the right and
 # y up, the player at the middle. A character not placed here is laid out on a ring.
 
 [positions]

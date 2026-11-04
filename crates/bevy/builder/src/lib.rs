@@ -28,11 +28,13 @@ pub const RING: f32 = 240.0;
 /// How much game time a tick is, while time runs.
 const TICK_EVERY: Duration = Duration::from_secs(1);
 
+pub mod arrange;
 pub mod news;
 pub mod play;
 pub mod quests;
 pub mod regard;
 
+pub use arrange::{Arranging, Pointer, TOKEN_RADIUS, arrange_ui, pick, write_positions};
 pub use news::{Hearing, PULSE, Spreading, hearing};
 pub use play::{KeyboardTaken, Nearby, Play, Played, act, act_ui, nearby};
 pub use quests::{
@@ -215,10 +217,15 @@ impl Plugin for BuilderPlugin {
             .add_systems(Startup, spawn_tokens)
             .add_systems(PreUpdate, keep_time)
             .init_resource::<Regards>()
-            .add_systems(Update, (play::walk, play::find_nearby).chain())
+            .add_systems(
+                Update,
+                (play::walk, arrange::arrange, play::find_nearby).chain(),
+            )
             .init_resource::<Spreading>()
             .init_resource::<news::Seen>()
             .init_resource::<Givers>()
+            .init_resource::<Arranging>()
+            .init_resource::<Pointer>()
             .add_systems(
                 Last,
                 (

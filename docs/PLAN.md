@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -125,6 +125,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G6b — news drawn as it goes (P-128): each token news is coming to shows a ring growing until it lands, from the hop's ticks and the part of one under way, and its label how long; a pulse as it lands; drawn on the tokens, not as lines between them, the engine unchanged, at the user's choice; done 2026-10-14 (#94)
 - G7 — quests in the builder (P-129): a quest offered by its giver, its own or its questline's: a character themselves, a faction through any member now, the world's own anywhere; a token offering the played character a quest they can start now marked; the Quests window starting what can start, the rest folded under "Not yet" with the engine's reasons, and each quest under way at its stage, its choices witnessed by those in sight and disabled with why while the stage's requirements don't hold; the Watch's Oath played through, spillover worked by hand; done 2026-11-04 (#95)
 - G8 — the editor and the builder open each other (P-130): the editor's "Play in the builder", as the selected character if one is, disabled until saved and while the content doesn't load, at the user's choice; the builder's "Edit in the editor", at the nearest character else the one played, by the editor's new `--at <file>:<key>`; each found by `FACTIONAL_EDITOR` or `FACTIONAL_BUILDER`, beside itself, then on `PATH`, or the command that builds it said; started without waiting; the Bevy workspace building into the repository's `target/`, at the user's choice, so the two sit side by side; done 2026-11-04 (#96)
+- G9 — arranging the tokens (P-131): the builder's Arrange mode, the keys not walking; a press within a token's radius picking the nearest, dragged from where it was gripped and dropped where it's let go; each drag one step of Undo; Save layout writing `builder.toml`'s `[positions]` with `toml_edit`, rounded to whole points, changed in place or added in the world's order, comments, `[play]` and positions naming no one kept, a file that can't be read refused; places left to G10, after W10, at the user's choice; done 2026-11-04 (#PR)
 
 ---
 
@@ -146,11 +147,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G9 · The world editor — P3 · Next
-
-A mode of the builder: tokens and places placed, moved and named, saved to `builder.toml` (D-44, D-47).
-
-### W1 · The world map and its file — P3 · Outline
+### W1 · The world map and its file — P3 · Next
 
 `factional-worldgen` and the map: tiles in 64 × 64 chunks, in layers, with the recipe and the designer's overrides; the map file (a readable header, then postcard, compressed by `lz4_flex` or zstd as measured on a real map), written and read back exactly by `factional-content`; `factional world info <file>`; tested on hand-made maps (D-52, P-119, DESIGN.md §21).
 
@@ -189,6 +186,10 @@ Brushes for terrain, elevation, water and foliage in G9's world editor, saved as
 ### W10 · Places in the engine — P3 · Outline
 
 A design pass: what a place is in the content, how places come from the map, and which reputation rules use them (D-51), the user's choices settling what D-47 and P-118 leave to it.
+
+### G10 · Places in the world editor — P3 · Outline
+
+Places placed, moved and named in the builder's Arrange mode, as W10 designs them; G9 left them out at the user's choice (D-51, P-131).
 
 ### W11 · The map in 3D — P3 · Outline
 
