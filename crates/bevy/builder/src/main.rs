@@ -5,7 +5,8 @@
 //! and acts on the nearest from the Act window; each other token shows how they regard them
 //! (G6a, P-127), and news coming to them, landing with a pulse (G6b, P-128). A token offering
 //! a quest that can start now is marked, and quests are started and chosen from the Quests
-//! window (G7, P-129).
+//! window (G7, P-129). "Edit in the editor" opens the editor on the same directory, at the
+//! character in view (G8, P-130).
 
 use std::path::PathBuf;
 
@@ -15,9 +16,10 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalCommand, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
-    BuilderPlugin, Clock, Givers, KeyboardTaken, Nearby, PULSE, Played, Regards, Spreading, Token,
-    act, act_ui, ask, controls_ui, panel, quests_ui,
+    BuilderPlugin, Clock, ContentDir, Givers, KeyboardTaken, Nearby, PULSE, Played, Regards,
+    Spreading, Token, act, act_ui, ask, controls_ui, edit_args, edit_ui, panel, quests_ui,
 };
+use factional_egui::open::{Lookup, Other, open};
 use factional_egui::relations::tint;
 use factional_reputation::ActionId;
 
@@ -243,10 +245,19 @@ fn band_colour(index: usize, bands: usize) -> Color {
     }
 }
 
-/// The controls, at the top left.
+/// Why the editor didn't open, the last time it was asked to.
+#[derive(Default)]
+struct EditNote(Option<String>);
+
+/// The controls, at the top left, with "Edit in the editor": the editor opened on the same
+/// directory at the nearest character, else the one played.
 fn controls(
     mut contexts: EguiContexts,
     mut clock: ResMut<Clock>,
+    mut note: Local<EditNote>,
+    dir: Res<ContentDir>,
+    nearby: Res<Nearby>,
+    played: Query<&Token, With<Played>>,
     factional: Option<Res<Factional>>,
 ) -> Result {
     let Some(factional) = factional else {
@@ -258,6 +269,11 @@ fn controls(
         .resizable(false)
         .show(contexts.ctx_mut()?, |ui| {
             controls_ui(ui, &mut clock, factional.world.now());
+            if edit_ui(ui, note.0.as_deref()) {
+                let played = played.single().ok().map(|token| &token.character);
+                let args = edit_args(&dir.0, &nearby, played);
+                note.0 = open(Other::Editor, &Lookup::here(Other::Editor), &args).err();
+            }
         });
     Ok(())
 }

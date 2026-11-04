@@ -5,6 +5,7 @@
 //! `factional-content`'s.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,7 @@ use factional_content::{
     swap_items, words_at,
 };
 use factional_core::Curve;
+use factional_egui::open::{Lookup, Other, open};
 use factional_quests::{Next, QuestId, QuestLog, Quests, StartAssessment};
 use factional_reputation::{CharacterId, World};
 use factional_session::Named;
@@ -26,6 +28,41 @@ pub use eframe::egui;
 
 /// The file questlines are written in, where a step's quests are added (U13a).
 const QUESTLINES_FILE: &str = "questlines.toml";
+
+/// The file characters are written in, one of whom the builder can play (G8).
+const CHARACTERS_FILE: &str = "characters.toml";
+
+/// How `factional-editor` is run.
+pub const USAGE: &str =
+    "factional-editor needs a content directory: factional-editor <dir> [--at <file>:<key>]";
+
+/// What `factional-editor` was asked to open: a content directory, and with `--at`, the entry
+/// to select, by file and key (G8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Opening {
+    pub dir: PathBuf,
+    pub at: Option<(String, String)>,
+}
+
+/// Reads `factional-editor`'s arguments: `<dir> [--at <file>:<key>]`; anything else is
+/// [`USAGE`].
+pub fn opening(args: &[String]) -> Result<Opening, String> {
+    let at = |text: &str| {
+        let (file, key) = text.split_once(':')?;
+        (!file.is_empty() && !key.is_empty()).then(|| (file.to_owned(), key.to_owned()))
+    };
+    match args {
+        [dir] => Ok(Opening {
+            dir: PathBuf::from(dir),
+            at: None,
+        }),
+        [dir, flag, place] if flag == "--at" => Ok(Opening {
+            dir: PathBuf::from(dir),
+            at: Some(at(place).ok_or(USAGE)?),
+        }),
+        _ => Err(USAGE.to_owned()),
+    }
+}
 
 /// The window's size when it opens, as the design canvas draws it (1440 by 900), so the
 /// entries, the form and what's beside it all fit.
@@ -727,6 +764,27 @@ impl Editor {
         }
     }
 
+    /// Why "Play in the builder" can't play now, if it can't (G8).
+    pub fn play_blocked(&self) -> Option<&'static str> {
+        if self.has_changes() {
+            Some("Save first: the builder plays what's saved")
+        } else if !self.outline.loads() {
+            Some("The builder needs content that loads")
+        } else {
+            None
+        }
+    }
+
+    /// The builder's arguments for playing this directory (G8): with a character selected,
+    /// playing them.
+    pub fn play_args(&self) -> Vec<OsString> {
+        let mut args = vec![self.dir.clone().into_os_string()];
+        if let Some((CHARACTERS_FILE, entry)) = self.selected_entry() {
+            args.extend(["--as".into(), entry.key.clone().into()]);
+        }
+        args
+    }
+
     /// Whether anything has changed since the files were read or saved.
     pub fn has_changes(&self) -> bool {
         self.texts != self.saved
@@ -1235,6 +1293,17 @@ impl Editor {
                         .save()
                         .err()
                         .map(|error| format!("couldn't save: {error}"));
+                }
+                let play = egui::Button::new("Play in the builder");
+                if ui
+                    .add_enabled(self.play_blocked().is_none(), play)
+                    .clicked()
+                {
+                    let builder = Other::Builder;
+                    self.note = open(builder, &Lookup::here(builder), &self.play_args()).err();
+                }
+                if let Some(blocked) = self.play_blocked() {
+                    ui.label(blocked);
                 }
                 ui.separator();
                 for (workspace, name) in [

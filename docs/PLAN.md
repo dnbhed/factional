@@ -124,6 +124,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G6a — regard on the tokens (P-127): each other character's disposition toward the played one, from their own picture, labelled as the editor's matrix says it and tinted by band, the nearest ringed; recomputed only when the world changes; DESIGN.md §10.2's pickpocketing changing Hale's regard only when the news reaches him; G6 split into G6a and G6b; done 2026-10-13 (#93)
 - G6b — news drawn as it goes (P-128): each token news is coming to shows a ring growing until it lands, from the hop's ticks and the part of one under way, and its label how long; a pulse as it lands; drawn on the tokens, not as lines between them, the engine unchanged, at the user's choice; done 2026-10-14 (#94)
 - G7 — quests in the builder (P-129): a quest offered by its giver, its own or its questline's: a character themselves, a faction through any member now, the world's own anywhere; a token offering the played character a quest they can start now marked; the Quests window starting what can start, the rest folded under "Not yet" with the engine's reasons, and each quest under way at its stage, its choices witnessed by those in sight and disabled with why while the stage's requirements don't hold; the Watch's Oath played through, spillover worked by hand; done 2026-11-04 (#95)
+- G8 — the editor and the builder open each other (P-130): the editor's "Play in the builder", as the selected character if one is, disabled until saved and while the content doesn't load, at the user's choice; the builder's "Edit in the editor", at the nearest character else the one played, by the editor's new `--at <file>:<key>`; each found by `FACTIONAL_EDITOR` or `FACTIONAL_BUILDER`, beside itself, then on `PATH`, or the command that builds it said; started without waiting; the Bevy workspace building into the repository's `target/`, at the user's choice, so the two sit side by side; done 2026-11-04 (#96)
 
 ---
 
@@ -145,11 +146,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G8 · The editor and the builder open each other — P3 · Next
-
-"Play in the builder" from the editor and "Edit in the editor" from the builder, on the same directory, at the entry or character in view (D-43).
-
-### G9 · The world editor — P3 · Outline
+### G9 · The world editor — P3 · Next
 
 A mode of the builder: tokens and places placed, moved and named, saved to `builder.toml` (D-44, D-47).
 

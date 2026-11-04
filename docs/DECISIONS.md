@@ -977,6 +977,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The same commands a game sends:** Start sends `StartQuest`; a choice sends `MakeChoice`, witnessed by those within sight, exactly as acting is (P-126).
   - *Why:* quests are how a designer's factions reach the player; offered by who gives them, on the plane, they can be played through and their effects seen on the tokens.
 
+- **P-130 · The editor and the builder open each other** (made in G8, 2026-11-04, at the user's choice; D-43).
+  - **One build folder:** the Bevy workspace builds into the repository's `target/` (`crates/bevy/.cargo/config.toml`), so after `cargo build` in each, `target/debug` holds both apps side by side. CI's cache for the Bevy job points there. The two workspaces' builds take turns with the folder's lock.
+  - **Finding the other:** the file `FACTIONAL_EDITOR` or `FACTIONAL_BUILDER` names, said if it isn't there; else the first found beside this app, then along `PATH`; else the command that builds it. The opener lives in `factional-egui` (`open`), the one crate both apps share, beside what they both draw.
+  - **Started, not waited on:** each starts the other as its own process and carries on, reaping it when it ends. A failure to find or start it is said in the opener's note. A second press opens a second window; neither app knows whether the other is already open.
+  - **Play in the builder:** `factional-builder <dir>`, with `--as <id>` when a character is selected in `characters.toml`. Disabled, with why, while the editor has unsaved changes (the builder plays what's saved, and nothing is saved behind the designer's back) or while the content doesn't load (the builder wouldn't start).
+  - **Edit in the editor:** `factional-editor <dir> --at characters.toml:<id>`, for the nearest character, else the one played. `--at <file>:<key>` selects the entry the key is in, as a reference's place does; naming nothing there selects nothing, and a malformed `--at` is a usage error.
+  - *Why:* D-43: the designer moves between writing content and playing it on the same directory. Neither reloads when the other saves; that's for later.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

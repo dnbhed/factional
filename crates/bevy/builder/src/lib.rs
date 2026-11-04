@@ -4,7 +4,8 @@
 //! The builder is a game: it uses the plugin and the inspector exactly as a game would.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use bevy::app::{App, Last, Plugin, PreUpdate, Startup, Update};
@@ -205,6 +206,7 @@ impl Plugin for BuilderPlugin {
         let file = std::fs::read_to_string(self.content.join("builder.toml")).ok();
         app.insert_resource(Layout(file))
             .insert_resource(PlayAs(self.player.clone()))
+            .insert_resource(ContentDir(self.content.clone()))
             .init_resource::<BuilderProblems>()
             .init_resource::<Clock>()
             .init_resource::<Play>()
@@ -316,4 +318,27 @@ pub fn controls_ui(ui: &mut egui::Ui, clock: &mut Clock, now: Tick) {
             clock.step();
         }
     });
+}
+
+/// The content directory the builder plays, for "Edit in the editor" (G8).
+#[derive(Resource, Debug, Clone, PartialEq, Eq)]
+pub struct ContentDir(pub PathBuf);
+
+/// The editor's arguments for editing `dir` at the character in view: the nearest, else the
+/// one played (G8).
+pub fn edit_args(dir: &Path, nearby: &Nearby, played: Option<&CharacterId>) -> Vec<OsString> {
+    let mut args = vec![dir.as_os_str().to_owned()];
+    if let Some(character) = nearby.nearest.as_ref().or(played) {
+        args.extend(["--at".into(), format!("characters.toml:{character}").into()]);
+    }
+    args
+}
+
+/// "Edit in the editor", and what became of the last try, if it failed. Whether it was asked.
+pub fn edit_ui(ui: &mut egui::Ui, note: Option<&str>) -> bool {
+    let asked = ui.button("Edit in the editor").clicked();
+    if let Some(note) = note {
+        ui.label(note);
+    }
+    asked
 }

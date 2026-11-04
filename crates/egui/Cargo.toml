@@ -1,6 +1,6 @@
 [package]
 name = "factional-egui"
-description = "What the editor and the inspector both draw, in egui: the console and the relations matrix (P-118, P-122)."
+description = "What the editor and the inspector both draw, in egui: the console and the relations matrix (P-118, P-122); and how the editor and the builder open each other (P-130)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
