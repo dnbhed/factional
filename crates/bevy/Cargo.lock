@@ -2330,6 +2330,7 @@ dependencies = [
  "factional-reputation",
  "serde",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]

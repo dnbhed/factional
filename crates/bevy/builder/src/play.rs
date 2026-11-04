@@ -18,7 +18,7 @@ use factional_bevy::FactionalCommand;
 use factional_core::Fixed;
 use factional_reputation::{ActionId, CharacterId, Command, Witnesses};
 
-use crate::Token;
+use crate::{Arranging, Token};
 
 /// How near the nearest must be to be acted on, by default, in points.
 pub const REACH: f32 = 80.0;
@@ -124,15 +124,16 @@ pub fn act_ui(ui: &mut egui::Ui, actions: &[ActionId], nearby: &Nearby) -> Optio
 }
 
 /// The played token walked by the arrow keys or WASD, at `play`'s speed in game time; not
-/// while something else has the keyboard.
+/// while something else has the keyboard, or while arranging.
 pub(crate) fn walk(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     time: Res<Time>,
     play: Res<Play>,
     taken: Res<KeyboardTaken>,
+    arranging: Res<Arranging>,
     mut played: Query<&mut Transform, With<Played>>,
 ) {
-    let Some(keys) = keys.filter(|_| !taken.0) else {
+    let Some(keys) = keys.filter(|_| !taken.0 && !arranging.on) else {
         return;
     };
     let ways = [

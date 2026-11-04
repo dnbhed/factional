@@ -985,6 +985,14 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Edit in the editor:** `factional-editor <dir> --at characters.toml:<id>`, for the nearest character, else the one played. `--at <file>:<key>` selects the entry the key is in, as a reference's place does; naming nothing there selects nothing, and a malformed `--at` is a usage error.
   - *Why:* D-43: the designer moves between writing content and playing it on the same directory. Neither reloads when the other saves; that's for later.
 
+- **P-131 · Arranging the tokens** (made in G9, 2026-11-04, at the user's choice; D-44, D-47, D-51).
+  - **Tokens only:** places are content since D-51, and what a place is waits for W10; placing them is G10, after W10. Naming a character stays the editor's.
+  - **A mode:** "Arrange" in the builder's controls. While it's on, the keys don't walk and a press on a token holds it: the nearest within `TOKEN_RADIUS` (14 points, the disc's radius), the first by id if as near. It's dragged from where it was gripped and dropped where it's let go. Time, acting and quests carry on as before.
+  - **The pointer:** the app fills `Pointer`, the cursor on the plane through the camera and whether the left button is down, and nothing while egui has the pointer; the dragging itself is the library's, tested headless.
+  - **Undo:** each drag that moved a token is one step, back to where it began.
+  - **Save layout:** writes every token's position, where it stands now, to `[positions]` with `toml_edit`: rounded to whole points (half away from zero), each there changed in place, the rest added in the world's order, and comments, `[play]` and positions naming no character kept. The tokens snap to what was saved. It's enabled while anyone stands elsewhere than where they were placed or last saved, so a walk counts too: the file records where they stand. A file `place` can't read is refused rather than overwritten, as it would lose what the designer wrote; with no file, one is started.
+  - *Why:* D-44's world editor, as far as D-51 leaves it to the builder: where the characters stand, arranged by hand and kept.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).
