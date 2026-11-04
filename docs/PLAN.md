@@ -123,6 +123,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - G5 — acting in the builder (P-126): one character played, `player` or `--as`'s, walked by the arrow keys or WASD in game time, not while egui has the keyboard; the nearest within `reach` acted on from the Act window, witnessed by those within `sight`, sent as `Witnesses`; `[play]`'s `reach`, `sight` and `speed` in `builder.toml`, each with its default; the played token and the nearest tinted; done 2026-10-13 (#92)
 - G6a — regard on the tokens (P-127): each other character's disposition toward the played one, from their own picture, labelled as the editor's matrix says it and tinted by band, the nearest ringed; recomputed only when the world changes; DESIGN.md §10.2's pickpocketing changing Hale's regard only when the news reaches him; G6 split into G6a and G6b; done 2026-10-13 (#93)
 - G6b — news drawn as it goes (P-128): each token news is coming to shows a ring growing until it lands, from the hop's ticks and the part of one under way, and its label how long; a pulse as it lands; drawn on the tokens, not as lines between them, the engine unchanged, at the user's choice; done 2026-10-14 (#94)
+- G7 — quests in the builder (P-129): a quest offered by its giver, its own or its questline's: a character themselves, a faction through any member now, the world's own anywhere; a token offering the played character a quest they can start now marked; the Quests window starting what can start, the rest folded under "Not yet" with the engine's reasons, and each quest under way at its stage, its choices witnessed by those in sight and disabled with why while the stage's requirements don't hold; the Watch's Oath played through, spillover worked by hand; done 2026-11-04 (#95)
 
 ---
 
@@ -144,11 +145,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### G7 · Quests in the builder — P3 · Next
-
-Quest givers marked; quests started and choices made from a panel.
-
-### G8 · The editor and the builder open each other — P3 · Outline
+### G8 · The editor and the builder open each other — P3 · Next
 
 "Play in the builder" from the editor and "Edit in the editor" from the builder, on the same directory, at the entry or character in view (D-43).
 

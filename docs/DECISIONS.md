@@ -970,6 +970,13 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Landing:** each `NewsArrived` event since the last frame's makes the characters it reached pulse for `PULSE`, a second of game time; the token swells and settles.
   - *Why:* the ripple model's news is the part of reputation that can't be seen; showing it coming, from the engine's own record, shows why a regard (G6a) changes when it does.
 
+- **P-129 · Quests in the builder** (made in G7, 2026-11-04, at the user's choice; D-28, P-126).
+  - **Who offers a quest:** its giver, its own or else its questline's (`giver_of`). A character gives it themselves; a faction through any character who is its member now, so a quest follows the membership; the world's own, with no giver, are offered wherever the played character stands. The played character never offers to themselves.
+  - **Marked when it can start:** a token is marked while its character offers the played one a quest they can start now, as `assess_start` decides. A giver whose quests are all begun, or blocked, isn't marked. `Givers` is recomputed after the frame's commands, only when `Factional` has changed, as regards are.
+  - **The Quests window:** what the nearest within reach offers, then what the world offers. A quest that can start is a Start button; the rest are folded under "Not yet", each with the engine's reasons (`StartBlock::describe`). A quest the played character has begun, finished or had closed isn't offered. Each quest under way shows its stage and a button for each choice; while the stage's requirements don't hold, the choices are disabled and each unmet requirement said (`Unmet::describe`). A finished quest leaves the window.
+  - **The same commands a game sends:** Start sends `StartQuest`; a choice sends `MakeChoice`, witnessed by those within sight, exactly as acting is (P-126).
+  - *Why:* quests are how a designer's factions reach the player; offered by who gives them, on the plane, they can be played through and their effects seen on the tokens.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

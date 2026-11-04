@@ -2326,6 +2326,7 @@ dependencies = [
  "factional-content",
  "factional-core",
  "factional-egui",
+ "factional-quests",
  "factional-reputation",
  "serde",
  "toml",
