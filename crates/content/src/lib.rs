@@ -6,6 +6,7 @@ mod edit;
 mod fix;
 mod form;
 mod graph;
+mod map;
 mod outline;
 mod quests;
 mod reader;
@@ -30,6 +31,7 @@ pub use form::{
     make_offer, place_kinds,
 };
 pub use graph::{Edge, LineView, Note, QuestGraph};
+pub use map::{MAP_VERSION, MapFileError, read_map, write_map};
 pub use outline::{
     CONTENT_FILES, ContentTexts, FileState, Outline, OutlineEntry, OutlineFile, load_texts,
     load_texts_fingerprinted, outline, outline_texts, read_texts,

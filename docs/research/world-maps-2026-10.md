@@ -111,6 +111,30 @@ images, screenshots and videos, may be produced without restriction, and sold.
   too, so a wrong file or version is named before anything is decoded. T5 plans a binary
   encoding for saves; one encoding for both is simpler than two.
 
+### Measured in W1b (2026-11-04)
+
+A throwaway program, not committed, rasterised Menayland (1470 × 801 source pixels, 5717
+cells) by nearest cell: elevation from each cell's height, terrain and plants from its
+biome, rivers and lakes from its features. Each chunk's layers were written in postcard,
+then compressed. The noisy rows add ±5 m of smooth noise to elevation, as W3's detail will.
+
+| Map | Postcard | lz4_flex | zstd level 3 | zstd level 19 |
+| --- | --- | --- | --- | --- |
+| Whole map at 1 tile a pixel (1.2 M tiles) | 8.1 MB | 1.13 MB | 0.63 MB | 0.53 MB, written in 1 s |
+| Whole map at 1, noisy | 8.1 MB | 3.54 MB | 2.68 MB | 2.51 MB |
+| 512 × 512 pixels at 4 (4.2 M tiles) | 30.7 MB | 4.58 MB | 2.90 MB | 2.63 MB, written in 3 s |
+| 512 × 512 pixels at 4, noisy | 30.8 MB | 13.5 MB | 10.3 MB | 9.6 MB, written in 2 s |
+| Whole map at 5 (29 M tiles) | 202 MB | 18.2 MB | 11.4 MB | 10.5 MB, written in 12 s |
+
+- zstd at level 3 is 1.3 to 1.8 times smaller than `lz4_flex`, and as fast: 24 ms to write
+  and 10 ms to read 4.2 M tiles, against lz4_flex's 12 ms and 10 ms. Level 19 is 5–10%
+  smaller again, but takes seconds.
+- Elevation as each tile's difference from the one before, rather than its height, takes
+  the noisy maps from 2.68 MB to 1.57 MB and from 10.3 MB to 6.2 MB at level 3, and changes
+  little on the smooth ones.
+- So the map file is zstd at level 3, with elevation as differences (P-133). A raster this
+  rough is blockier than a polished map, so real maps will sit nearer the noisy rows.
+
 ## Sources
 
 - [Azgaar's Fantasy Map Generator](https://github.com/Azgaar/Fantasy-Map-Generator) and [its licence](https://github.com/Azgaar/Fantasy-Map-Generator/blob/master/LICENSE); [its wiki](https://github.com/Azgaar/Fantasy-Map-Generator/wiki); the JSON export's Full, Minimal and Cells variants as its source shows them ([mirror](https://git.korz.dev/backups/Fantasy-Map-Generator/commit/7b475ee0bd7cf30ced8ac5da3f30495ddb7bab55)); *Menayland*, exported 2026-10-12, read directly
@@ -118,4 +142,4 @@ images, screenshots and videos, may be produced without restriction, and sold.
 - [The dual tilemap autotiling technique](https://excaliburjs.com/blog/Dual%20Tilemap%20Autotiling%20Technique); [TileMapDual](https://github.com/pablogila/TileMapDual)
 - [Determinism in Rapier](https://rapier.rs/docs/user_guides/rust/determinism/); [the Rust Rand Book on portability](https://rust-random.github.io/book/portability.html); [libm and determinism, on the Rust forum](https://users.rust-lang.org/t/subtle-floating-point-differences-between-c-library-and-its-rust-re-write/82355?page=2)
 - [RUSTSEC-2025-0141, bincode unmaintained](https://rustsec.org/advisories/RUSTSEC-2025-0141); [postcard](https://docs.rs/crate/postcard) and [its wire format](https://postcard.jamesmunns.com/)
-- [lz4_flex](https://github.com/pseitz/lz4_flex); [ruzstd](https://docs.rs/ruzstd); [structured-zstd](https://docs.rs/crate/structured-zstd/latest)
+- [lz4_flex](https://github.com/pseitz/lz4_flex); [zstd](https://docs.rs/zstd); [ruzstd](https://docs.rs/ruzstd); [structured-zstd](https://docs.rs/crate/structured-zstd/latest)

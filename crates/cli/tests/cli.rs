@@ -293,3 +293,29 @@ fn schema_refuses_a_file_that_isnt_content() {
     assert!(stderr.contains("invalid value 'factionz'"), "{stderr}");
     assert!(stderr.contains("factions"), "{stderr}");
 }
+
+#[test]
+fn world_info_summarises_a_map_file_and_exits_zero() {
+    let file = "crates/content/tests/fixtures/maps/hand-made.map";
+    let bytes = std::fs::metadata(format!("{}/../../{file}", env!("CARGO_MANIFEST_DIR")))
+        .expect("the committed map is there")
+        .len();
+    let output = factional_in_repo(&["world", "info", file]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
+             recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7\n"
+        )
+    );
+    assert_eq!(text(&output.stderr), "");
+}
+
+#[test]
+fn world_info_refuses_a_file_that_isnt_a_map_and_exits_one() {
+    let output = factional_in_repo(&["world", "info", "content/sample/factions.toml"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(text(&output.stdout), "");
+    assert_eq!(text(&output.stderr), "this isn't a Factional map\n");
+}
