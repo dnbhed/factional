@@ -1358,6 +1358,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "factional-worldgen"
+version = "0.1.0"
+dependencies = [
+ "factional-core",
+ "proptest",
+]
+
+[[package]]
 name = "fancy-regex"
 version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

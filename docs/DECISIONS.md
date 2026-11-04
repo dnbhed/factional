@@ -993,6 +993,23 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Save layout:** writes every token's position, where it stands now, to `[positions]` with `toml_edit`: rounded to whole points (half away from zero), each there changed in place, the rest added in the world's order, and comments, `[play]` and positions naming no character kept. The tokens snap to what was saved. It's enabled while anyone stands elsewhere than where they were placed or last saved, so a walk counts too: the file records where they stand. A file `place` can't read is refused rather than overwritten, as it would lose what the designer wrote; with no file, one is started.
   - *Why:* D-44's world editor, as far as D-51 leaves it to the builder: where the characters stand, arranged by hand and kept.
 
+- **P-132 · The map in memory** (made in W1a, 2026-11-04; P-119, D-50, D-53).
+  - **Its size is its recipe's:** the region in source pixels times the scale in tiles a pixel, counted in 64 bits so nothing overflows. At most `MAX_SIDE`, 8192 tiles a side, a structural limit rather than a balance number: 64 Mi tiles is far past any region a designer edits by hand, and it keeps every index in 32 bits. A scale of 0, an empty region or a map too large is refused with why.
+  - **Chunks hold exactly the map:** 64 × 64 tiles, smaller at the right and bottom edges, so every tile is stored once. Each layer is its own array in the chunk, row by row, so a layer compresses well and draws on its own (W1b, W7).
+  - **Rows run down:** tile (x, y) counts columns right and rows down from the top left, as images and Azgaar's map do; the builder's plane, y up, turns it over as it draws. Tiles order row by row, so overrides and anything listed come out in reading order.
+  - **The layers:**
+    - elevation in `Fixed` metres, fine enough for 3D (D-50);
+    - terrain from the closed vocabulary;
+    - water: none, a river with its flow in cubic metres a second, or a lake;
+    - biome: Azgaar's thirteen, as named there;
+    - plant: none, or a tree, shrub or grass at an offset within the tile in 256ths, x then y.
+    
+    Suggestions are the map's, not a tile's, and wait for W6.
+  - **Generated once each, row by row:** `generate` is asked for each tile in reading order, so a generator that keeps state (W3's noise) sees one order everywhere.
+  - **Overrides per tile, each layer set or not:** a later edit adds to the earlier, layer by layer; water and a plant can be overridden to none. An override that sets nothing is removed, so the list holds only real edits. An edit off the map is refused. `reset` clears an area's overrides, the area allowed to run off the map, and says how many.
+  - **Regenerating keeps the overrides:** it rebuilds every tile from the new recipe and leaves the overrides to apply again. A recipe of another size is refused, since every override would land on a different place; how edits follow a changed region is W9's.
+  - *Why:* P-119's map, settled in the detail that W1b's file and every later W increment build on.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).
