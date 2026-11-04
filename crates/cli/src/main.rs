@@ -1,6 +1,7 @@
 //! The `factional` binary: `factional repl` for an interactive session, `factional run
 //! <script>` to replay a scenario (DECISIONS.md P-27), and for designers, `factional validate
-//! <dir>`, `factional schema [<file>]` and `factional world info <file>`.
+//! <dir>`, `factional schema [<file>]`, and `factional world info <file>` and `factional world source
+//! <file>`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,7 +9,7 @@ use std::process::ExitCode;
 
 use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
-use factional_cli::{compare, run_repl, run_script, validate, world_info};
+use factional_cli::{compare, run_repl, run_script, validate, world_info, world_source};
 use factional_content::{SCHEMA_FILES, schema_text};
 
 #[derive(Parser)]
@@ -53,7 +54,7 @@ enum Command {
         #[arg(value_parser = PossibleValuesParser::new(SCHEMA_FILES))]
         file: Option<String>,
     },
-    /// Read world map files
+    /// Read world map files and Azgaar exports
     World {
         #[command(subcommand)]
         command: WorldCommand,
@@ -65,6 +66,11 @@ enum WorldCommand {
     /// What a map file holds: its size, chunks and overrides, and the recipe it was made from
     Info {
         /// The map file, such as world/menayland.map
+        file: String,
+    },
+    /// What an Azgaar Full JSON export holds: its cells, vertices and features, or every problem in it
+    Source {
+        /// The export, such as "Menayland Full.json"
         file: String,
     },
 }
@@ -113,9 +119,10 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
-        Command::World {
-            command: WorldCommand::Info { file },
-        } => match world_info(Path::new(""), &file) {
+        Command::World { command } => match match command {
+            WorldCommand::Info { file } => world_info(Path::new(""), &file),
+            WorldCommand::Source { file } => world_source(Path::new(""), &file),
+        } {
             Ok(info) => {
                 println!("{info}");
                 ExitCode::SUCCESS
