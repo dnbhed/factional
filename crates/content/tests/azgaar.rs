@@ -5,7 +5,7 @@
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Feature, Point, Recipe, Region, Size, Source, SourceCell, SourceVertex, Terrain, Water,
+    Detail, Feature, Point, Recipe, Region, Size, Source, SourceCell, SourceVertex, Terrain, Water,
     rasterise,
 };
 use serde_json::{Value, json};
@@ -319,6 +319,7 @@ fn the_users_menayland_export_rasterises_whole() {
         },
         scale: 1,
         seed: 0,
+        detail: Detail::default(),
     };
     let map = rasterise(&source, recipe).expect("Menayland rasterises");
     let mut counts = [0; 3];

@@ -5,8 +5,8 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Feature, HEIGHT_EXPONENTS, Point, RasterError, Recipe, Region, Size, Source, SourceCell,
-    SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
+    Biome, Detail, Feature, HEIGHT_EXPONENTS, Point, RasterError, Recipe, Region, Size, Source,
+    SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
 };
 use proptest::prelude::*;
 
@@ -87,6 +87,11 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
         },
         scale,
         seed: 0,
+        // No detail, so heights are W2b's.
+        detail: Detail {
+            strength: Fixed::ZERO,
+            ..Detail::default()
+        },
     }
 }
 

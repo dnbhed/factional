@@ -7,7 +7,8 @@ use std::fmt;
 
 use factional_core::{Fixed, div_round};
 
-use crate::map::{MapError, Recipe, Region, Size, TilePos, WorldMap};
+use crate::map::{Detail, MapError, Recipe, Region, Size, TilePos, WorldMap};
+use crate::noise;
 use crate::source::{Feature, Source};
 use crate::tile::{Biome, Terrain, Tile, Water};
 
@@ -66,6 +67,39 @@ fn power(base: u128, exponent: i64) -> i128 {
     div_round(hundredths, i128::try_from(one).expect("one fits"))
 }
 
+/// Each cell's relief: its steepest difference in metres to a neighbour, none without one.
+pub fn cell_reliefs(source: &Source) -> Vec<Fixed> {
+    reliefs(source, &metres(source))
+        .into_iter()
+        .map(|relief| Fixed::from_hundredths(i64::try_from(relief).expect("Azgaar's heights fit")))
+        .collect()
+}
+
+/// Each cell's metres, in hundredths.
+fn metres(source: &Source) -> Vec<i128> {
+    source
+        .cells
+        .iter()
+        .map(|cell| i128::from(cell_metres(cell.height, source.height_exponent).hundredths()))
+        .collect()
+}
+
+/// Each cell's relief, in hundredths, from its `metres`.
+fn reliefs(source: &Source, metres: &[i128]) -> Vec<i128> {
+    source
+        .cells
+        .iter()
+        .zip(metres)
+        .map(|(cell, here)| {
+            cell.neighbours
+                .iter()
+                .map(|&n| (here - metres[n as usize]).abs())
+                .max()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
 /// Why a source can't be rasterised.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RasterError {
@@ -116,7 +150,7 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
     if source.cells.is_empty() {
         return Err(RasterError::NoCells);
     }
-    let raster = Raster::new(source, recipe.scale);
+    let raster = Raster::new(source, &recipe);
     let scale = i128::from(recipe.scale);
     let origin = [region.x, region.y].map(|from| i128::from(from) * 200 * scale);
     WorldMap::new(recipe, |at: TilePos| {
@@ -130,21 +164,25 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
 /// every cell's centre, to the hundredth, is a whole number of them.
 type At = [i128; 2];
 
-/// The source made ready to rasterise: its cells' centres and metres, its triangles, and a
-/// grid of buckets to find them in.
+/// The source made ready to rasterise: its cells' centres, metres and reliefs, its triangles,
+/// a grid of buckets to find them in, and the detail to add, its wavelength in units.
 struct Raster<'a> {
     source: &'a Source,
     centres: Vec<At>,
     metres: Vec<i128>,
+    reliefs: Vec<i128>,
     triangles: Vec<[usize; 3]>,
+    detail: Detail,
+    seed: u32,
+    wavelength: i128,
     grid: Grid,
     cells_in: Vec<Vec<usize>>,
     triangles_in: Vec<Vec<usize>>,
 }
 
 impl Raster<'_> {
-    fn new(source: &Source, scale: u32) -> Raster<'_> {
-        let scale = i128::from(scale);
+    fn new<'a>(source: &'a Source, recipe: &Recipe) -> Raster<'a> {
+        let scale = i128::from(recipe.scale);
         let centres: Vec<At> = source
             .cells
             .iter()
@@ -152,11 +190,8 @@ impl Raster<'_> {
                 [cell.centre.x, cell.centre.y].map(|c| i128::from(c.hundredths()) * 2 * scale)
             })
             .collect();
-        let metres = source
-            .cells
-            .iter()
-            .map(|cell| i128::from(cell_metres(cell.height, source.height_exponent).hundredths()))
-            .collect();
+        let metres = metres(source);
+        let reliefs = reliefs(source, &metres);
         // A triangle for each vertex with three cells, unless they lie on a line, each turned
         // the same way, so that a point inside has no negative weight.
         let triangles: Vec<[usize; 3]> = source
@@ -194,21 +229,44 @@ impl Raster<'_> {
                 }
             }
         }
+        let detail = recipe.detail;
         Raster {
             source,
             centres,
             metres,
+            reliefs,
             triangles,
+            detail,
+            seed: recipe.seed,
+            wavelength: i128::from(detail.wavelength.hundredths()) * 2 * scale,
             grid,
             cells_in,
             triangles_in,
         }
     }
 
-    /// The tile whose centre is at `at`.
+    /// The tile whose centre is at `at`: its height interpolated, or the nearest cell's, with
+    /// strength × relief × noise added, rounded once.
     fn tile(&self, at: At) -> Tile {
         let (nearest, _) = self.nearest(at);
-        let elevation = self.interpolated(at).unwrap_or(self.metres[nearest]);
+        let weights = self
+            .weights(at)
+            .unwrap_or([(1, nearest), (0, nearest), (0, nearest)]);
+        let sum = |of: &[i128]| -> i128 { weights.iter().map(|&(w, cell)| w * of[cell]).sum() };
+        let area: i128 = weights.iter().map(|&(w, _)| w).sum();
+        // The octaves' total weight, and the noise's fixed point, and hundredths to a share.
+        let total = (1i128 << self.detail.octaves) - 1;
+        let unit = 100 * (1i128 << noise::POINT) * total;
+        let noise = noise::octaves(self.seed, self.detail.octaves, at, self.wavelength);
+        let strength = i128::from(self.detail.strength.hundredths());
+        // About 4 × 10³⁶ at most, for cells 1000 pixels apart at a scale of 8192, where
+        // Azgaar's are tens apart; past i128, a crash rather than a wrapped height (P-30).
+        let fits = "a height and its detail fit in i128";
+        let base = sum(&self.metres).checked_mul(unit).expect(fits);
+        let detail = (strength * sum(&self.reliefs))
+            .checked_mul(noise)
+            .expect(fits);
+        let elevation = div_round(base.checked_add(detail).expect(fits), area * unit);
         let cell = &self.source.cells[nearest];
         let (terrain, water, biome) = match self.source.features[cell.feature as usize] {
             Feature::Ocean => (Terrain::DeepWater, None, Biome::Marine),
@@ -226,24 +284,19 @@ impl Raster<'_> {
         }
     }
 
-    /// The height at `at`, weighted across the first triangle it falls in by its barycentric
-    /// coordinates and rounded once; none outside every triangle.
-    fn interpolated(&self, at: At) -> Option<i128> {
+    /// The cells of the first triangle `at` falls in, each with its barycentric weight, twice
+    /// the area of the triangle `at` makes with the other two; none outside every triangle.
+    fn weights(&self, at: At) -> Option<[(i128, usize); 3]> {
         self.triangles_in[self.grid.index(self.grid.bucket(at))]
             .iter()
             .find_map(|&i| {
                 let [a, b, c] = self.triangles[i];
                 let [pa, pb, pc] = [a, b, c].map(|cell| self.centres[cell]);
                 let weights = [cross(at, pb, pc), cross(at, pc, pa), cross(at, pa, pb)];
-                if weights.iter().any(|&w| w < 0) {
-                    return None;
+                match weights.iter().any(|&w| w < 0) {
+                    true => None,
+                    false => Some([(weights[0], a), (weights[1], b), (weights[2], c)]),
                 }
-                let weighted: i128 = weights
-                    .iter()
-                    .zip([a, b, c])
-                    .map(|(w, cell)| w * self.metres[cell])
-                    .sum();
-                Some(div_round(weighted, weights.iter().sum()))
             })
     }
 
@@ -403,6 +456,24 @@ mod tests {
         }
     }
 
+    /// The whole of a 40 × 40 source at a tile a pixel.
+    fn whole() -> Recipe {
+        Recipe {
+            source: String::new(),
+            region: Region {
+                x: 0,
+                y: 0,
+                size: Size {
+                    width: 40,
+                    height: 40,
+                },
+            },
+            scale: 1,
+            seed: 0,
+            detail: Detail::default(),
+        }
+    }
+
     #[test]
     fn the_search_stops_once_no_further_ring_could_hold_a_nearer_cell() {
         // 16 cells over 8001 units each way: buckets of 2000, 5 × 5. From (100, 100), cell 0
@@ -410,7 +481,7 @@ mod tests {
         let mut centres = vec![[4100, 100]];
         centres.extend([[8000, 8000]; 15]);
         let source = source(&centres);
-        let raster = Raster::new(&source, 1);
+        let raster = Raster::new(&source, &whole());
         assert_eq!((raster.grid.side, raster.grid.across), (2000, 5));
         assert_eq!(raster.nearest([100, 100]), (0, 4));
         // At a cell's centre, the next ring settles it.
@@ -421,7 +492,7 @@ mod tests {
     fn the_search_ends_when_it_has_covered_the_grid() {
         // 9 cells at the top left, buckets of 2667, 3 × 3: from the far corner, all three rings.
         let source = source(&[[0, 0]; 9]);
-        let raster = Raster::new(&source, 1);
+        let raster = Raster::new(&source, &whole());
         assert_eq!(raster.grid.cover([2, 2]), 2);
         assert_eq!(raster.grid.cover([1, 0]), 2);
         assert_eq!(raster.grid.cover([1, 1]), 1);

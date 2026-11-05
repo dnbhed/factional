@@ -4,7 +4,7 @@ expression: transcript
 input_file: scenarios/maps.scenario
 ---
 > world info crates/content/tests/fixtures/maps/hand-made.map
-hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; 9333 bytes
-recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7
+hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; 9394 bytes
+recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; detail 0.25 of the relief, 8.00 pixels, 4 octaves
 > assert world info content/sample/factions.toml == error: this isn't a Factional map
-> assert world info == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>]
+> assert world info == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>]

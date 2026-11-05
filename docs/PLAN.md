@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3 → W4 → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W4 → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -130,6 +130,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W1b — the map file (P-133): `factional-content` writes and reads `world/<name>.map` exactly: a TOML header (format, version, recipe, the tiles' length and fingerprint) ended by a zero byte, then postcard, each chunk's layers and the overrides compressed by zstd at level 3, chosen over `lz4_flex` by measuring a rough raster of Menayland, elevation as differences; foreign files, other versions, bad headers and recipes, and cut or changed tiles refused with why, and what only a faulty writer makes named by chunk or tile; a committed map that must keep reading; the recipe's seed a `u32`; `world info <file>` and `factional world info <file>`; done 2026-11-04 (#99)
 - W2a — reading Azgaar's map (P-134): `factional-content` reads a Full JSON export into `factional-worldgen`'s `Source` (name, version, size; cells' centres, heights, features, neighbours and corners; vertices' positions and cells, the edge as none; oceans, lakes with their surface, islands); versions 1.154.x; what isn't JSON, isn't Azgaar's, is another version or isn't Full refused whole, then every problem named at once by key path and every reference checked; decimals rounded once from their shortest form; `world source <file>` and `factional world source <file>`; hand-made fixtures, the user's Menayland read only locally; split from W2b, both at the user's choice; done 2026-11-04 (#100)
 - W2b — rasterising Azgaar's terrain (P-135): `factional-worldgen` rasterises a `Source` region at a scale; each cell's metres by Azgaar's own formula, its exponent the map's `settings.heightExponent`, 1.50 to 2.20, a fractional power worked in integers by square roots in fixed point; each tile's height interpolated at its centre across the triangle of cell centres it falls in, exactly and rounded once, the nearest cell's outside them; ocean, lake and land from the nearest cell's feature, ties to the first; a bucket grid to find both; a region off the source or a source without cells refused; `world import <export> <map> [--region] [--scale] [--seed]` and `factional world import`, the counts checked by a separate script; Menayland whole at a tile a pixel in about a second, locally; done 2026-11-04 (#101)
+- W3a — detail (P-136): W3 split in four, at the user's choice; seeded integer gradient noise in octaves on a lattice in source pixels, its strength a share of each cell's local relief, interpolated, added to the height and rounded once with it; the recipe's detail (strength 0.25, wavelength 8.00 pixels, 4 octaves) checked wherever a recipe makes a map; the map file version 2, version 1 refused; `world import --detail --wavelength --octaves`, the detail in `world info`; heights checked against a separate Python reference; a region the same as the whole map, a property test; Menayland whole with detail in about a second, locally; done 2026-11-05 (#102)
 
 ---
 
@@ -151,9 +152,17 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3 · Polishing the terrain — P3 · Next
+### W3b · Coasts — P3 · Next
 
-Detail from seeded integer noise, following the source's roughness; elevation levels with ledges and cliffs; coasts smoothed; rivers widened from their discharge and carved, lakes at their surface height.
+Land and sea decided by the detailed height against sea level and a lake's surface, within its feature, rather than by the nearest cell, so coasts follow the ground instead of the cells' borders; smoothed.
+
+### W3c · Levels — P3 · Outline
+
+Elevation quantised into levels, their spacing an option; ledges and cliffs where one level meets the next, for drawing in 2D.
+
+### W3d · Rivers and lakes — P3 · Outline
+
+Azgaar's rivers read (their cells, discharge and width), widened on tiles from their discharge and carved continuously from source to mouth; lakes at their surface height.
 
 ### W4 · Climate and biomes — P3 · Outline
 
