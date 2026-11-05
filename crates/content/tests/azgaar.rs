@@ -5,8 +5,8 @@
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Feature, Point, Recipe, Region, Size, Source, SourceCell, SourceVertex, Terrain,
-    Water, rasterise,
+    Coast, Detail, Drop, Feature, Levels, Point, Recipe, Region, Size, Source, SourceCell,
+    SourceVertex, Terrain, TilePos, Water, rasterise,
 };
 use serde_json::{Value, json};
 
@@ -342,6 +342,7 @@ fn the_users_menayland_export_rasterises_whole() {
         seed: 0,
         detail: Detail::default(),
         coast: Coast::default(),
+        levels: Levels::default(),
     };
     let map = rasterise(&source, recipe).expect("Menayland rasterises");
     let mut counts = [0; 4];
@@ -359,4 +360,29 @@ fn the_users_menayland_export_rasterises_whole() {
     }
     // Deep sea, shallow sea, lake and land.
     assert_eq!(counts, [106_308, 658_922, 10_422, 401_818]);
+    let size = map.size();
+    let mut land = [0; 16];
+    let mut drops = [0; 2];
+    for at in (0..size.height).flat_map(|y| (0..size.width).map(move |x| TilePos { x, y })) {
+        let tile = map.tile(at).expect("on the map");
+        if !tile.is_water() {
+            land[usize::from(tile.level)] += 1;
+        }
+        let sides = map.drops(at).expect("on the map");
+        for drop in [sides.north, sides.west, sides.east, sides.south]
+            .into_iter()
+            .flatten()
+        {
+            drops[usize::from(drop == Drop::Cliff)] += 1;
+        }
+    }
+    // Land at each level, then ledges and cliffs, from a second script.
+    assert_eq!(
+        land,
+        [
+            247_321, 48_182, 33_482, 16_285, 13_329, 9_595, 5_561, 5_429, 5_223, 5_393, 3_963,
+            3_285, 1_919, 1_459, 764, 628
+        ]
+    );
+    assert_eq!(drops, [22_167, 58]);
 }

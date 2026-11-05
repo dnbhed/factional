@@ -8,15 +8,15 @@ use std::fmt;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, CHUNK, ChunkPos, Coast, Detail, MapError, Override, Plant, PlantKind, Recipe, Region,
-    Size, Terrain, Tile, TilePos, Water, WorldMap,
+    Biome, CHUNK, ChunkPos, Coast, Detail, Levels, MapError, Override, Plant, PlantKind, Recipe,
+    Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 3;
+pub const MAP_VERSION: u32 = 4;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -119,6 +119,7 @@ struct HeaderRecipe {
     seed: u32,
     detail: HeaderDetail,
     coast: HeaderCoast,
+    levels: HeaderLevels,
 }
 
 #[derive(Deserialize)]
@@ -133,6 +134,13 @@ struct HeaderDetail {
 #[serde(deny_unknown_fields)]
 struct HeaderCoast {
     shallows: Fixed,
+    specks: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeaderLevels {
+    spacing: Fixed,
     specks: u32,
 }
 
@@ -180,6 +188,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for Packed<'a> {
 #[derive(Serialize, Deserialize)]
 struct Layers {
     elevation: Vec<i64>,
+    level: Vec<u8>,
     terrain: Vec<u8>,
     water: Vec<FileWater>,
     biome: Vec<u8>,
@@ -207,6 +216,7 @@ struct FileOverride {
     x: u32,
     y: u32,
     elevation: Option<i64>,
+    level: Option<u8>,
     terrain: Option<u8>,
     water: Option<FileWater>,
     biome: Option<u8>,
@@ -303,6 +313,7 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
                         difference
                     })
                     .collect(),
+                level: tiles.iter().map(|tile| tile.level).collect(),
                 terrain: tiles
                     .iter()
                     .map(|tile| code(&TERRAINS, tile.terrain))
@@ -321,6 +332,7 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
             x: at.x,
             y: at.y,
             elevation: edit.elevation.map(Fixed::hundredths),
+            level: edit.level,
             terrain: edit.terrain.map(|terrain| code(&TERRAINS, terrain)),
             water: edit.water.map(file_water),
             biome: edit.biome.map(|biome| code(&BIOMES, biome)),
@@ -349,6 +361,7 @@ fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
          seed = {}\n\
          detail = {{ strength = {}, wavelength = {}, octaves = {} }}\n\
          coast = {{ shallows = {}, specks = {} }}\n\
+         levels = {{ spacing = {}, specks = {} }}\n\
          \n\
          [tiles]\n\
          bytes = {}\n\
@@ -365,6 +378,8 @@ fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
         recipe.detail.octaves,
         recipe.coast.shallows,
         recipe.coast.specks,
+        recipe.levels.spacing,
+        recipe.levels.specks,
         tiles.len(),
         quoted(&fingerprint_of(&tiles)),
     );
@@ -413,6 +428,10 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
         coast: Coast {
             shallows: header.recipe.coast.shallows,
             specks: header.recipe.coast.specks,
+        },
+        levels: Levels {
+            spacing: header.recipe.levels.spacing,
+            specks: header.recipe.levels.specks,
         },
     };
     let size = recipe.size().map_err(MapFileError::Recipe)?;
@@ -470,6 +489,7 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
         last = Some(at);
         let edit = Override {
             elevation: written.elevation.map(Fixed::from_hundredths),
+            level: written.level,
             terrain: written
                 .terrain
                 .map(|terrain| decode(&TERRAINS, terrain, "terrain", &whose))
@@ -507,6 +527,7 @@ fn chunk_tiles(packed: &[u8], at: ChunkPos, count: usize) -> Result<Vec<Tile>, M
     let layers: Layers = unpack(packed, &whose)?;
     let lengths = [
         ("elevation", layers.elevation.len()),
+        ("level", layers.level.len()),
         ("terrain", layers.terrain.len()),
         ("water", layers.water.len()),
         ("biome", layers.biome.len()),
@@ -523,6 +544,7 @@ fn chunk_tiles(packed: &[u8], at: ChunkPos, count: usize) -> Result<Vec<Tile>, M
             elevation = elevation.wrapping_add(layers.elevation[i]);
             Ok(Tile {
                 elevation: Fixed::from_hundredths(elevation),
+                level: layers.level[i],
                 terrain: decode(&TERRAINS, layers.terrain[i], "terrain", &whose)?,
                 water: water_of(layers.water[i]),
                 biome: decode(&BIOMES, layers.biome[i], "biome", &whose)?,
@@ -552,6 +574,7 @@ mod tests {
             seed: 7,
             detail: Detail::default(),
             coast: Coast::default(),
+            levels: Levels::default(),
         }
     }
 
@@ -559,6 +582,7 @@ mod tests {
     fn layers(count: usize) -> Layers {
         Layers {
             elevation: vec![0; count],
+            level: vec![0; count],
             terrain: vec![3; count],
             water: vec![FileWater::None; count],
             biome: vec![4; count],
@@ -572,6 +596,7 @@ mod tests {
             x,
             y,
             elevation: None,
+            level: None,
             terrain: Some(2),
             water: None,
             biome: None,
@@ -593,12 +618,16 @@ mod tests {
 
     #[test]
     fn crafted_layers_read_as_their_tiles() {
-        let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
-        let overrides: Vec<FileOverride> = vec![sand(0, 1), sand(69, 1)];
+        let mut second = layers(12);
+        second.level[5] = 7;
+        let chunks = [layers(128), second].map(|layers| pack(&postcard_of(&layers)));
+        let mut overrides: Vec<FileOverride> = vec![sand(0, 1), sand(69, 1)];
+        overrides[1].level = Some(3);
         let file = file_of(&recipe(), &chunks, &pack(&postcard_of(&overrides)));
         let map = read_map(&file).expect("the map reads");
         let grass = Tile {
             elevation: Fixed::ZERO,
+            level: 7,
             terrain: Terrain::Grass,
             water: None,
             biome: Biome::Grassland,
@@ -606,6 +635,7 @@ mod tests {
         };
         assert_eq!(map.tile(TilePos { x: 69, y: 0 }), Some(grass));
         let sand = Tile {
+            level: 3,
             terrain: Terrain::Sand,
             ..grass
         };
@@ -677,11 +707,18 @@ mod tests {
             damage(layers(128), short, vec![]),
             says("chunk (1, 0)'s water has 11 tiles, not 12")
         );
-        for (layer, cut) in [("elevation", 0), ("terrain", 1), ("biome", 3), ("plant", 4)] {
+        for (layer, cut) in [
+            ("elevation", 0),
+            ("level", 2),
+            ("terrain", 1),
+            ("biome", 3),
+            ("plant", 4),
+        ] {
             let mut short = layers(128);
             match cut {
                 0 => drop(short.elevation.pop()),
                 1 => drop(short.terrain.pop()),
+                2 => drop(short.level.pop()),
                 3 => drop(short.biome.pop()),
                 _ => drop(short.plant.pop()),
             }

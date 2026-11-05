@@ -83,7 +83,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "world import <export> <map> [options]",
-        "rasterise an Azgaar Full JSON export into a map file; options --region <x>,<y>,<width>,<height>, --scale <n>, --seed <n>, --detail <strength>, --wavelength <pixels>, --octaves <n>, --shallows <metres>, --specks <tiles>; the whole map at 1 tile a pixel, seed 0, detail 0.25 of the relief over 8 pixels in 4 octaves, shallows to 10 metres and specks under 4 tiles unless told",
+        "rasterise an Azgaar Full JSON export into a map file; options --region <x>,<y>,<width>,<height>, --scale <n>, --seed <n>, --detail <strength>, --wavelength <pixels>, --octaves <n>, --shallows <metres>, --specks <tiles>, --levels <points>, --level-specks <tiles>; the whole map at 1 tile a pixel, seed 0, detail 0.25 of the relief over 8 pixels in 4 octaves, shallows to 10 metres, specks under 4 tiles, and a level every 5 of Azgaar's heights with specks under 4 tiles unless told",
     ),
     ("quests", "list the loaded world's quests and questlines"),
     (
@@ -347,7 +347,7 @@ pub struct Session {
 pub(crate) const WORLD_FORM: &str = "world needs the form: world info <file>, world source <file>, \
      or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
      [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
-     [--shallows <metres>] [--specks <tiles>]";
+     [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>]";
 
 /// What works on content directories, refused by a session handed its world (G2b); `quests`
 /// only with a directory named.
@@ -3216,7 +3216,8 @@ mod tests {
                 "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
                  recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
                  detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
-                 shallows to 10.00 metres, specks under 4 tiles"
+                 shallows to 10.00 metres, specks under 4 tiles; \
+                 levels every 5.00 of Azgaar's heights, specks under 4 tiles"
             ))
         );
     }
@@ -3291,7 +3292,8 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; {bytes} bytes"
+                 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; \
+                 levels 0 to 8, 440 ledges and 32 cliffs; {bytes} bytes"
             ))
         );
         let recipe = factional_worldgen::Recipe {
@@ -3308,6 +3310,7 @@ mod tests {
             seed: 0,
             detail: factional_worldgen::Detail::default(),
             coast: factional_worldgen::Coast::default(),
+            levels: factional_worldgen::Levels::default(),
         };
         let source = factional_content::read_azgaar(RASTER).expect("it reads");
         assert_eq!(Ok(map), factional_worldgen::rasterise(&source, recipe));
@@ -3325,7 +3328,8 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 166 ocean, 58 lake and 1376 land; heights -187.80 to 1734.65 m; {bytes} bytes"
+                 166 ocean, 58 lake and 1376 land; heights -187.80 to 1734.65 m; \
+                 levels 0 to 7, 426 ledges and 5 cliffs; {bytes} bytes"
             ))
         );
         let recipe = map.recipe();
@@ -3355,7 +3359,8 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 299 ocean, 181 lake and 1120 land; heights -381.73 to 2241.02 m; {bytes} bytes"
+                 299 ocean, 181 lake and 1120 land; heights -381.73 to 2241.02 m; \
+                 levels 0 to 9, 604 ledges and 63 cliffs; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3372,7 +3377,8 @@ mod tests {
                 "rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; {bytes} bytes\n\
                  recipe: source {}, source pixels (0, 0) to (39, 39), 1 tile a source pixel, \
                  seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; \
-                 shallows to 10.00 metres, specks under 4 tiles",
+                 shallows to 10.00 metres, specks under 4 tiles; \
+                 levels every 5.00 of Azgaar's heights, specks under 4 tiles",
                 factional_content::fingerprint_of(RASTER.as_bytes())
             ))
         );
@@ -3401,7 +3407,8 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; {bytes} bytes"
+                 294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; \
+                 levels 0 to 9, 593 ledges and 56 cliffs; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3414,7 +3421,8 @@ mod tests {
         let info = session.execute("world info coast.map");
         assert!(
             matches!(&info, Ok(Outcome::Output(text))
-                if text.ends_with("; shallows to 25.00 metres, specks under 0 tiles")),
+                if text.ends_with("; shallows to 25.00 metres, specks under 0 tiles; \
+                    levels every 5.00 of Azgaar's heights, specks under 4 tiles")),
             "{info:?}"
         );
         assert_eq!(
@@ -3424,6 +3432,48 @@ mod tests {
         assert_eq!(
             session.execute("world import raster.json coast.map --shallows 1000.01"),
             command_error("the coast's shallows must be 0.00 to 1000.00 metres, not 1000.01")
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_import_takes_the_levels_spacing_and_specks() {
+        let dir = import_dir("levels");
+        let mut session = Session::new(&dir);
+        let said =
+            session.execute("world import raster.json levels.map --levels 10 --level-specks 0");
+        let (bytes, map) = imported(&dir, "levels.map");
+        // The counts were worked out by a separate script.
+        assert_eq!(
+            said,
+            output(&format!(
+                "imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, \
+                 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; \
+                 levels 0 to 4, 312 ledges and 20 cliffs; {bytes} bytes"
+            ))
+        );
+        assert_eq!(
+            map.recipe().levels,
+            factional_worldgen::Levels {
+                spacing: Fixed::from_hundredths(10_00),
+                specks: 0,
+            }
+        );
+        let info = session.execute("world info levels.map");
+        assert!(
+            matches!(&info, Ok(Outcome::Output(text))
+                if text.ends_with("; levels every 10.00 of Azgaar's heights, specks under 0 tiles")),
+            "{info:?}"
+        );
+        assert_eq!(
+            session.execute("world import raster.json levels.map --levels 0.5"),
+            command_error(
+                "the levels' spacing must be 1.00 to 80.00 of Azgaar's heights, not 0.50"
+            )
+        );
+        assert_eq!(
+            session.execute("world import raster.json levels.map --level-specks 4097"),
+            command_error("the levels' specks must be 0 to 4096 tiles, not 4097")
         );
         std::fs::remove_dir_all(&dir).expect("removed");
     }
@@ -3484,7 +3534,7 @@ mod tests {
             refused("--size 4"),
             command_error(
                 "world import has no option --size; it takes --region, --scale, --seed, \
-                 --detail, --wavelength, --octaves, --shallows and --specks"
+                 --detail, --wavelength, --octaves, --shallows, --specks, --levels and --level-specks"
             )
         );
         assert_eq!(
@@ -3511,6 +3561,14 @@ mod tests {
             refused("--specks -1"),
             command_error("--specks needs a whole number, not -1")
         );
+        assert_eq!(
+            refused("--levels many"),
+            command_error("--levels needs a number, not many")
+        );
+        assert_eq!(
+            refused("--level-specks"),
+            command_error("--level-specks needs a whole number")
+        );
         assert_eq!(run("world import raster.json"), command_error(WORLD_FORM));
         assert_eq!(
             run("world import a.json b.map c.map"),
@@ -3526,7 +3584,7 @@ mod tests {
             "world needs the form: world info <file>, world source <file>, \
              or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
              [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
-             [--shallows <metres>] [--specks <tiles>]"
+             [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>]"
         );
         assert_eq!(run("world"), form);
         assert_eq!(run("world info"), form);

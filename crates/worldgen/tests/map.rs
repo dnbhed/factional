@@ -4,8 +4,8 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Area, Biome, CHUNK, ChunkPos, Coast, Detail, Override, Plant, PlantKind, Recipe, Region, Size,
-    Terrain, Tile, TilePos, Water, WorldMap,
+    Area, Biome, CHUNK, ChunkPos, Coast, Detail, Levels, Override, Plant, PlantKind, Recipe,
+    Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -58,6 +58,7 @@ fn recipe(width: u32, height: u32, scale: u32) -> Recipe {
         seed: 7,
         detail: Detail::default(),
         coast: Coast::default(),
+        levels: Levels::default(),
     }
 }
 
@@ -65,6 +66,7 @@ fn recipe(width: u32, height: u32, scale: u32) -> Recipe {
 fn made(pos: TilePos) -> Tile {
     Tile {
         elevation: Fixed::from_hundredths(i64::from(pos.x) * 1000 + i64::from(pos.y)),
+        level: ((pos.x * 5 + pos.y) % 17) as u8,
         terrain: TERRAINS[((pos.x + pos.y) % 9) as usize],
         water: match pos.x % 3 {
             0 => None,
@@ -210,6 +212,7 @@ fn an_override_shows_on_the_tile_and_leaves_what_was_generated() {
         map.tile(here),
         Some(Tile {
             elevation: Fixed::from_hundredths(-250),
+            level: generated.level,
             terrain: Terrain::Snow,
             water: None,
             biome: Biome::Glacier,

@@ -132,6 +132,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W2b — rasterising Azgaar's terrain (P-135): `factional-worldgen` rasterises a `Source` region at a scale; each cell's metres by Azgaar's own formula, its exponent the map's `settings.heightExponent`, 1.50 to 2.20, a fractional power worked in integers by square roots in fixed point; each tile's height interpolated at its centre across the triangle of cell centres it falls in, exactly and rounded once, the nearest cell's outside them; ocean, lake and land from the nearest cell's feature, ties to the first; a bucket grid to find both; a region off the source or a source without cells refused; `world import <export> <map> [--region] [--scale] [--seed]` and `factional world import`, the counts checked by a separate script; Menayland whole at a tile a pixel in about a second, locally; done 2026-11-04 (#101)
 - W3a — detail (P-136): W3 split in four, at the user's choice; seeded integer gradient noise in octaves on a lattice in source pixels, its strength a share of each cell's local relief, interpolated, added to the height and rounded once with it; the recipe's detail (strength 0.25, wavelength 8.00 pixels, 4 octaves) checked wherever a recipe makes a map; the map file version 2, version 1 refused; `world import --detail --wavelength --octaves`, the detail in `world info`; heights checked against a separate Python reference; a region the same as the whole map, a property test; Menayland whole with detail in about a second, locally; done 2026-11-05 (#102)
 - W3b — coasts (P-137): land and water by each tile's detailed height against the water near it, the nearest water cell among its nearest cell and that cell's neighbours, the sea at 0 m and a lake at its surface in metres by Azgaar's formula with a decimal height; sea shallower than the shallows (10.00 m) shallow; specks of land and water under 4 tiles, away from the map's edge, turned to the other, water first; heights unchanged; the recipe's coast checked wherever a recipe makes a map; the map file version 3, version 2 refused; `world import --shallows --specks`, the coast in `world info`, ocean counting both depths; a lake's surface outside 0 to 100 a problem, a broken window; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#103)
+- W3c — levels (P-138): each level starting at the metres of 20 + k × the spacing (5.00) on Azgaar's scale, a land tile's level how many start at or below it, water level 0, stored as a layer of its own; plateaus and pits of land under 4 tiles, away from the map's edge, taking the nearest level around them, all judged by the levels as made; `WorldMap::drops` a ledge for one level down to a land neighbour and a cliff for more, overrides applied; the recipe's levels checked wherever a recipe makes a map; the map file version 4, version 3 refused; `world import --levels --level-specks` saying its levels, ledges and cliffs, the levels in `world info`; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#104)
 
 ---
 
@@ -153,11 +154,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3c · Levels — P3 · Next
-
-Elevation quantised into levels, their spacing an option; ledges and cliffs where one level meets the next, for drawing in 2D.
-
-### W3d · Rivers and lakes — P3 · Outline
+### W3d · Rivers and lakes — P3 · Next
 
 Azgaar's rivers read (their cells, discharge and width), widened on tiles from their discharge and carved continuously from source to mouth; lakes at their surface height.
 

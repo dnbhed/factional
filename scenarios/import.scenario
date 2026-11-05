@@ -1,5 +1,5 @@
-# Rasterising Azgaar's terrain (W2b) with detail (W3a) and coasts (W3b): a hand-made export of
-# five cells imported into a map file, then read back. The tile counts and heights were worked
+# Rasterising Azgaar's terrain (W2b) with detail (W3a), coasts (W3b) and levels (W3c): a
+# hand-made export of five cells imported into a map file, then read back. The tile counts and heights were worked
 # out by a separate script.
 
 # The whole map at 1 tile a pixel, with the default detail and coast: 357 ocean, 174 lake and
@@ -11,7 +11,7 @@ world info target/raster.map
 
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 30,30,20,20 == error: the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 10,10 == error: --region needs four whole numbers, <x>,<y>,<width>,<height>, not 10,10
-assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>]
+assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>]
 
 # Rougher detail, and another seed, in the recipe: heights -381.73 to 2241.02 m, and the
 # recipe's detail in what `world info` says. The lengths are in the snapshot.
@@ -25,3 +25,11 @@ assert world import crates/content/tests/fixtures/azgaar/raster.json target/roug
 world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2 --shallows 25 --specks 0
 world info target/coast.map
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --specks 4097 == error: the coast's specks must be 0 to 4096 tiles, not 4097
+
+# Levels every 10 of Azgaar's heights, with no plateaus or pits cleaned: levels 0 to 4, 357
+# ocean, 174 lake and 1069 land as with the defaults. The recipe's levels are in what
+# `world info` says.
+world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --levels 10 --level-specks 0
+world info target/levels.map
+assert world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --levels 0.5 == error: the levels' spacing must be 1.00 to 80.00 of Azgaar's heights, not 0.50
+assert world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --level-specks 4097 == error: the levels' specks must be 0 to 4096 tiles, not 4097

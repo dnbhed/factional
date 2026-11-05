@@ -6,7 +6,9 @@ use std::path::Path;
 
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, write_map};
 use factional_core::Fixed;
-use factional_worldgen::{Coast, Detail, Feature, Recipe, Region, Size, Terrain, Water, rasterise};
+use factional_worldgen::{
+    Coast, Detail, Drop, Feature, Levels, Recipe, Region, Size, Terrain, TilePos, Water, rasterise,
+};
 
 use crate::check::count;
 use crate::session::WORLD_FORM;
@@ -28,7 +30,8 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
     Ok(format!(
         "{name}: {} × {} tiles in {} × {} chunks, {}; {} bytes\n\
          recipe: {source}, source pixels ({}, {}) to ({}, {}), {} a source pixel, seed {}; \
-         detail {} of the relief, {} pixels, {}; shallows to {} metres, specks under {}",
+         detail {} of the relief, {} pixels, {}; shallows to {} metres, specks under {}; \
+         levels every {} of Azgaar's heights, specks under {}",
         size.width,
         size.height,
         chunks.width,
@@ -46,6 +49,8 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         count(recipe.detail.octaves as usize, "octave"),
         recipe.coast.shallows,
         count(recipe.coast.specks as usize, "tile"),
+        recipe.levels.spacing,
+        count(recipe.levels.specks as usize, "tile"),
     ))
 }
 
@@ -78,7 +83,8 @@ pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
 }
 
 /// What `world import` is told: the export to read, the map file to write, and the recipe's
-/// region as typed (the whole source if none), its scale, its seed, its detail and its coast.
+/// region as typed (the whole source if none), its scale, its seed, its detail, its coast and
+/// its levels.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import<'a> {
     pub export: &'a str,
@@ -88,6 +94,7 @@ pub struct Import<'a> {
     pub seed: u32,
     pub detail: Detail,
     pub coast: Coast,
+    pub levels: Levels,
 }
 
 impl<'a> Import<'a> {
@@ -96,7 +103,8 @@ impl<'a> Import<'a> {
         let mut words = args.split_whitespace();
         let mut files = Vec::new();
         let (mut region, mut scale, mut seed) = (None, 1, 0);
-        let (mut detail, mut coast) = (Detail::default(), Coast::default());
+        let (mut detail, mut coast, mut levels) =
+            (Detail::default(), Coast::default(), Levels::default());
         while let Some(word) = words.next() {
             match word {
                 "--region" => {
@@ -109,10 +117,13 @@ impl<'a> Import<'a> {
                 "--octaves" => detail.octaves = whole(word, words.next())?,
                 "--shallows" => coast.shallows = number(word, words.next())?,
                 "--specks" => coast.specks = whole(word, words.next())?,
+                "--levels" => levels.spacing = number(word, words.next())?,
+                "--level-specks" => levels.specks = whole(word, words.next())?,
                 option if option.starts_with("--") => {
                     return Err(format!(
                         "world import has no option {option}; it takes --region, --scale, --seed, \
-                         --detail, --wavelength, --octaves, --shallows and --specks"
+                         --detail, --wavelength, --octaves, --shallows, --specks, --levels and \
+                         --level-specks"
                     ));
                 }
                 file => files.push(file),
@@ -127,6 +138,7 @@ impl<'a> Import<'a> {
                 seed,
                 detail,
                 coast,
+                levels,
             }),
             _ => Err(WORLD_FORM.to_owned()),
         }
@@ -165,7 +177,8 @@ fn region(text: &str) -> Result<Region, String> {
 
 /// What `world import` does, reading from and writing to `base`: rasterises the export with
 /// the recipe it's told, writes the map file, and says what it made: its size and chunks, its
-/// ocean (deep and shallow), lake and land tiles, its lowest and highest heights, and its length. Nothing is
+/// ocean (deep and shallow), lake and land tiles, its lowest and highest heights, its levels,
+/// ledges and cliffs, and its length. Nothing is
 /// written if the export doesn't read or the recipe can't make a map of it.
 pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
     let chosen = import.region.map(region).transpose()?;
@@ -184,6 +197,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         seed: import.seed,
         detail: import.detail,
         coast: import.coast,
+        levels: import.levels,
     };
     let map = rasterise(&source, recipe).map_err(|error| error.to_string())?;
     let bytes = write_map(&map);
@@ -210,10 +224,23 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         .filter(|tile| tile.water == Some(Water::Lake))
         .count();
     let heights = tiles.iter().map(|tile| tile.elevation);
+    let levels = tiles.iter().map(|tile| tile.level);
     let (size, chunks) = (map.size(), map.chunk_count());
+    let mut drops = [0, 0];
+    for y in 0..size.height {
+        for x in 0..size.width {
+            let sides = map.drops(TilePos { x, y }).expect("on the map");
+            for drop in [sides.north, sides.west, sides.east, sides.south]
+                .into_iter()
+                .flatten()
+            {
+                drops[usize::from(drop == Drop::Cliff)] += 1;
+            }
+        }
+    }
     Ok(format!(
         "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake and {} land; \
-         heights {} to {} m; {} bytes",
+         heights {} to {} m; levels {} to {}, {} and {}; {} bytes",
         source.name,
         file_name(import.map),
         size.width,
@@ -223,6 +250,10 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         tiles.len() - ocean - lake,
         heights.clone().min().expect("a map has tiles"),
         heights.max().expect("a map has tiles"),
+        levels.clone().min().expect("a map has tiles"),
+        levels.max().expect("a map has tiles"),
+        count(drops[0], "ledge"),
+        count(drops[1], "cliff"),
         bytes.len(),
     ))
 }

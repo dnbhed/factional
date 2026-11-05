@@ -5,8 +5,8 @@
 use factional_content::{MAP_VERSION, MapFileError, fingerprint_of, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Override, Plant, PlantKind, Recipe, Region, Size, Terrain, Tile, TilePos,
-    Water, WorldMap,
+    Biome, Coast, Detail, Levels, Override, Plant, PlantKind, Recipe, Region, Size, Terrain, Tile,
+    TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -62,15 +62,17 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
         seed: 7,
         detail: Detail::default(),
         coast: Coast::default(),
+        levels: Levels::default(),
     }
 }
 
-/// A tile with every layer in use somewhere: elevations above and below zero, each terrain
-/// and biome, rivers and lakes, and each kind of plant at varied offsets.
+/// A tile with every layer in use somewhere: elevations above and below zero, levels from 0
+/// to 20, each terrain and biome, rivers and lakes, and each kind of plant at varied offsets.
 fn varied(pos: TilePos) -> Tile {
     let (x, y) = (pos.x, pos.y);
     Tile {
         elevation: Fixed::from_hundredths((i64::from(x) * 37 - i64::from(y) * 101) * 3),
+        level: ((x / 4 + y / 3) % 21) as u8,
         terrain: TERRAINS[((x + y) % 9) as usize],
         water: match (x + y) % 7 {
             0 => Some(Water::River { flow: x * 10 + y }),
@@ -98,6 +100,7 @@ fn hand_made() -> WorldMap {
             at(0, 0),
             Override {
                 elevation: Some(Fixed::from_hundredths(-250_00)),
+                level: Some(255),
                 terrain: Some(Terrain::Ice),
                 ..Override::default()
             },
@@ -170,7 +173,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 3
+version = 4
 
 [recipe]
 source = ""
@@ -179,6 +182,7 @@ scale = 2
 seed = 7
 detail = {{ strength = 0.25, wavelength = 8.00, octaves = 4 }}
 coast = {{ shallows = 10.00, specks = 4 }}
+levels = {{ spacing = 5.00, specks = 4 }}
 
 [tiles]
 bytes = {}
@@ -188,7 +192,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 3);
+    assert_eq!(MAP_VERSION, 4);
 }
 
 #[test]
@@ -242,15 +246,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [2, 4] {
+    for found in [3, 5] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 3",
+            "version = 4",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 3")
+            format!("this map is version {found}, but this build reads version 4")
         );
     }
 }
@@ -333,6 +337,44 @@ fn a_coast_outside_its_ranges_is_refused_with_why() {
 }
 
 #[test]
+fn the_recipes_levels_are_kept() {
+    let mut recipe = recipe(0, 0, 3, 2, 1);
+    recipe.levels = Levels {
+        spacing: Fixed::from_hundredths(80_00),
+        specks: 0,
+    };
+    let map = WorldMap::new(recipe, varied).expect("the recipe makes a map");
+    let bytes = write_map(&map);
+    let (header, _) = split(&bytes);
+    assert!(
+        header.contains("levels = { spacing = 80.00, specks = 0 }\n"),
+        "{header}"
+    );
+    assert_eq!(read_map(&bytes), Ok(map));
+}
+
+#[test]
+fn levels_outside_their_ranges_are_refused_with_why() {
+    let bytes = with_header(&write_map(&hand_made()), "spacing = 5.00", "spacing = 0.99");
+    assert_eq!(
+        refusal(&bytes),
+        "this map's recipe can't make a map: the levels' spacing must be 1.00 to 80.00 of Azgaar's heights, not 0.99"
+    );
+    let bytes = with_header(
+        &write_map(&hand_made()),
+        "spacing = 5.00, specks = 4",
+        "spacing = 5.00, specks = 4097",
+    );
+    assert_eq!(
+        refusal(&bytes),
+        "this map's recipe can't make a map: the levels' specks must be 0 to 4096 tiles, not 4097"
+    );
+    let bytes = with_header(&write_map(&hand_made()), "spacing = 5.00, ", "");
+    let refused = refusal(&bytes);
+    assert!(refused.contains("spacing"), "{refused}");
+}
+
+#[test]
 fn a_header_with_a_misspelt_key_is_refused_naming_it() {
     let bytes = with_header(&write_map(&hand_made()), "scale = 2", "scael = 2");
     let refused = refusal(&bytes);
@@ -408,6 +450,7 @@ fn any_tile(seed: u64, pos: TilePos) -> Tile {
     };
     Tile {
         elevation: Fixed::from_hundredths(next(u64::MAX) as i64),
+        level: next(256) as u8,
         terrain: TERRAINS[next(9) as usize],
         water: match next(3) {
             0 => None,
@@ -442,6 +485,7 @@ proptest! {
             let tile = any_tile(bits, pos);
             let edit = Override {
                 elevation: (bits & 1 != 0).then_some(tile.elevation),
+                level: (bits & 32 != 0).then_some(tile.level),
                 terrain: (bits & 2 != 0).then_some(tile.terrain),
                 water: (bits & 4 != 0).then_some(tile.water),
                 biome: (bits & 8 != 0).then_some(tile.biome),
