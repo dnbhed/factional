@@ -4,7 +4,7 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Feature, MapError, Point, Recipe, Region, Size, Source, SourceCell,
+    Coast, Detail, Feature, Levels, MapError, Point, Recipe, Region, Size, Source, SourceCell,
     SourceVertex, TilePos, WorldMap, cell_reliefs, rasterise,
 };
 use proptest::prelude::*;
@@ -91,6 +91,7 @@ fn recipe(region: [u32; 4], scale: u32, seed: u32, detail: Detail) -> Recipe {
         seed,
         detail,
         coast: Coast::default(),
+        levels: Levels::default(),
     }
 }
 

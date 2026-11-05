@@ -14,7 +14,7 @@ use factional_cli::{
 };
 use factional_content::{SCHEMA_FILES, schema_text};
 use factional_core::Fixed;
-use factional_worldgen::{Coast, Detail};
+use factional_worldgen::{Coast, Detail, Levels};
 
 #[derive(Parser)]
 #[command(
@@ -107,6 +107,13 @@ enum WorldCommand {
         /// The fewest tiles a group of land or water keeps, away from the map's edge: 0 to 4096
         #[arg(long, default_value_t = Coast::default().specks)]
         specks: u32,
+        /// How far apart levels are on Azgaar's height scale of 0 to 100: 1.00 to 80.00
+        #[arg(long, default_value_t = Levels::default().spacing)]
+        levels: Fixed,
+        /// The fewest tiles a plateau or pit keeps its level with, away from the map's edge: 0
+        /// to 4096
+        #[arg(long, default_value_t = Levels::default().specks)]
+        level_specks: u32,
     },
 }
 
@@ -168,6 +175,8 @@ fn main() -> ExitCode {
                 octaves,
                 shallows,
                 specks,
+                levels,
+                level_specks,
             } => world_import(
                 Path::new(""),
                 &Import {
@@ -182,6 +191,10 @@ fn main() -> ExitCode {
                         octaves,
                     },
                     coast: Coast { shallows, specks },
+                    levels: Levels {
+                        spacing: levels,
+                        specks: level_specks,
+                    },
                 },
             ),
         } {

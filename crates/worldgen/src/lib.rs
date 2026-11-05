@@ -7,6 +7,7 @@
 #![deny(clippy::float_arithmetic)]
 
 mod coast;
+mod levels;
 mod map;
 mod noise;
 mod raster;
@@ -14,11 +15,12 @@ mod source;
 mod tile;
 
 pub use map::{
-    Area, Chunk, ChunkPos, Coast, Detail, MAX_SIDE, MapError, Recipe, Region, Size, TilePos,
-    WorldMap,
+    Area, Chunk, ChunkPos, Coast, Detail, Drop, Drops, Levels, MAX_SIDE, MapError, Recipe, Region,
+    Size, TilePos, WorldMap,
 };
 pub use raster::{
-    HEIGHT_EXPONENTS, RasterError, cell_metres, cell_reliefs, height_metres, rasterise,
+    HEIGHT_EXPONENTS, RasterError, cell_metres, cell_reliefs, height_metres, level_heights,
+    rasterise,
 };
 pub use source::{Feature, Point, Source, SourceCell, SourceVertex};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};

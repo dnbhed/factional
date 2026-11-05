@@ -4,4 +4,4 @@
 world source crates/content/tests/fixtures/azgaar/tiny.json
 
 assert world source crates/content/tests/fixtures/maps/hand-made.map == error: cannot read crates/content/tests/fixtures/maps/hand-made.map: stream did not contain valid UTF-8
-assert world source == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>]
+assert world source == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>]

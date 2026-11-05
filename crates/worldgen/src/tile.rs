@@ -1,5 +1,5 @@
-//! A tile's layers (P-119): elevation, terrain, water, biome and plant; and an override of any
-//! of them.
+//! A tile's layers (P-119): elevation, its level, terrain, water, biome and plant; and an
+//! override of any of them.
 
 use factional_core::Fixed;
 
@@ -58,11 +58,12 @@ pub struct Plant {
     pub offset: [u8; 2],
 }
 
-/// One tile, every layer: its elevation in metres, kept fine for 3D (D-50); its terrain; its
-/// water; its biome; and its plant.
+/// One tile, every layer: its elevation in metres, kept fine for 3D (D-50); its level, as 2D
+/// draws it (W3c), 0 for water; its terrain; its water; its biome; and its plant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tile {
     pub elevation: Fixed,
+    pub level: u8,
     pub terrain: Terrain,
     pub water: Option<Water>,
     pub biome: Biome,
@@ -74,10 +75,19 @@ pub struct Tile {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Override {
     pub elevation: Option<Fixed>,
+    pub level: Option<u8>,
     pub terrain: Option<Terrain>,
     pub water: Option<Option<Water>>,
     pub biome: Option<Biome>,
     pub plant: Option<Option<Plant>>,
+}
+
+impl Tile {
+    /// Whether it's under water, deep or shallow: as terrain has it, so an override of the
+    /// terrain moves it.
+    pub fn is_water(&self) -> bool {
+        matches!(self.terrain, Terrain::DeepWater | Terrain::ShallowWater)
+    }
 }
 
 impl Override {
@@ -90,6 +100,7 @@ impl Override {
     pub fn and(self, later: Override) -> Override {
         Override {
             elevation: later.elevation.or(self.elevation),
+            level: later.level.or(self.level),
             terrain: later.terrain.or(self.terrain),
             water: later.water.or(self.water),
             biome: later.biome.or(self.biome),
@@ -101,6 +112,7 @@ impl Override {
     pub fn apply(&self, tile: Tile) -> Tile {
         Tile {
             elevation: self.elevation.unwrap_or(tile.elevation),
+            level: self.level.unwrap_or(tile.level),
             terrain: self.terrain.unwrap_or(tile.terrain),
             water: self.water.unwrap_or(tile.water),
             biome: self.biome.unwrap_or(tile.biome),

@@ -5,8 +5,8 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Feature, HEIGHT_EXPONENTS, Point, RasterError, Recipe, Region, Size,
-    Source, SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
+    Biome, Coast, Detail, Feature, HEIGHT_EXPONENTS, Levels, Point, RasterError, Recipe, Region,
+    Size, Source, SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
 };
 use proptest::prelude::*;
 
@@ -93,6 +93,7 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
             ..Detail::default()
         },
         coast: Coast::default(),
+        levels: Levels::default(),
     }
 }
 

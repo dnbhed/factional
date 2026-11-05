@@ -25,6 +25,7 @@ pub(crate) fn tile(elevation: Fixed, water: Option<Body>, shallows: Fixed) -> Ti
     };
     Tile {
         elevation,
+        level: 0,
         terrain,
         water,
         biome,

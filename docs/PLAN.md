@@ -153,9 +153,24 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3c · Levels — P3 · Next
+### W3c · Levels — P3 · In progress
 
-Elevation quantised into levels, their spacing an option; ledges and cliffs where one level meets the next, for drawing in 2D.
+Elevation quantised into levels for drawing in 2D, stored as a layer of their own, with plateaus and pits too small to keep cleaned; ledges and cliffs where one level drops to the next. Elevation stays fine for 3D (D-50). At the user's choice: levels spaced evenly on Azgaar's own height scale, stored with specks cleaned, and a drop of one level a ledge and more a cliff.
+
+**Acceptance.** Every count and level below comes from `levels_ref.py`, a separate Python script written from these rules, never from the code; "the fixture" is W3b's.
+
+- **Where levels start.** Level k starts at the metres of 20 + k × the spacing on Azgaar's scale, by Azgaar's formula, for each k up to 100: at a spacing of 5.00 and an exponent of 2.00, at 49.00, 144.00, 289.00 and so on to 6724.00 m, 16 of them; at 2.50, 32; at 80.00, one.
+- **A land tile's level** is how many of those starts are at or below its height; water's is 0. Seed 7, the defaults: (20, 15) at 159.63 m is level 2, (25, 25) at 882.14 is 5, (30, 30) at 1844.35 is 8, and (15, 15) at 19.44 is 0. No detail: (30, 30) at 1764.00, exactly where level 8 starts, is 8.
+- **Plateaus and pits cleaned.** A 4-connected group of land at one level, of fewer tiles than the level specks (default 4) and not touching the map's edge, whose land neighbours are all lower (a plateau) or all higher (a pit), takes the nearest level around it: the highest of them, or the lowest. A group with land both above and below it is kept, so a staircase of ledges stays; water is no neighbour, so a group with only water around it is kept. Every group is judged by the levels as made, before any is cleaned.
+  - Unit tests on drawn grids for each of those, a group of exactly the specks kept, and two specks side by side judged by each other's first levels.
+  - Strength 1.00, wavelength 3.00, 3 octaves, spacing 2.50: (20, 15), land at −119.55 m in a hollow, is level 0 with level specks 0 and 2 with 4; (15, 15) at 15.67, 0 and 3.
+- **Ledges and cliffs.** A land tile drops to each land neighbour lower than it, north, west, east and south: by one level a ledge, by more a cliff; to water, off the map or level ground, nothing. Unit tests on a hand-made map, overrides of a level included.
+- **The whole fixture, seed 7:** at the defaults, levels 0 to 8, 422 ledges and 26 cliffs, and land at each level 74, 129, 90, 147, 254, 49, 36, 196 and 81; with level specks 0, 456 ledges and 26 cliffs; at a spacing of 10.00, levels 0 to 4, 281 ledges and 11 cliffs. Strength 1.00, wavelength 3.00, 3 octaves, spacing 2.50: 634 ledges and 726 cliffs, levels to 18; with level specks 0, 637 and 1026, to 19.
+- **A region is the whole map's tiles,** levels included, away from its edges by twice the coast's specks and the level specks: a property test.
+- **The recipe's levels** are `spacing` 1.00 to 80.00 of Azgaar's heights and `specks` 0 to 4096 tiles, checked wherever a recipe makes a map: "the levels' spacing must be 1.00 to 80.00 of Azgaar's heights, not 0.99"; "the levels' specks must be 0 to 4096 tiles, not 4097".
+- **The map file is version 4:** `levels = { spacing = 5.00, specks = 4 }` in its header's recipe, a level layer in each chunk and a level in an override, each read back exactly; a chunk whose level layer has too few tiles named; version 3 refused, naming both.
+- **`world import --levels <points> --level-specks <tiles>`,** and `factional world import`, saying the levels, ledges and cliffs it made; `world info` adds the levels to the recipe line. The fixture whole with seed 0: levels 0 to 8, 440 ledges and 32 cliffs; pixels (10, 10) to (29, 29) at scale 2, seed 7: 0 to 7, 426 and 5; seed 3, strength 0.50, wavelength 4.00, 2 octaves: 0 to 9, 604 and 63.
+- **Menayland, locally:** its ledges and cliffs by a second script and the code agree.
 
 ### W3d · Rivers and lakes — P3 · Outline
 

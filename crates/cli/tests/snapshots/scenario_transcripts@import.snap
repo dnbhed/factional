@@ -4,22 +4,29 @@ expression: transcript
 input_file: scenarios/import.scenario
 ---
 > world import crates/content/tests/fixtures/azgaar/raster.json target/raster.map
-imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; 4046 bytes
+imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; levels 0 to 8, 440 ledges and 32 cliffs; 4439 bytes
 > world info target/raster.map
-raster.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 4046 bytes
-recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles
+raster.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 4439 bytes
+recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 30,30,20,20 == error: the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 10,10 == error: --region needs four whole numbers, <x>,<y>,<width>,<height>, not 10,10
-> assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>]
+> assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>]
 > world import crates/content/tests/fixtures/azgaar/raster.json target/rough.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2
-imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, 299 ocean, 181 lake and 1120 land; heights -381.73 to 2241.02 m; 4642 bytes
+imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, 299 ocean, 181 lake and 1120 land; heights -381.73 to 2241.02 m; levels 0 to 9, 604 ledges and 63 cliffs; 5176 bytes
 > world info target/rough.map
-rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 4642 bytes
-recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 10.00 metres, specks under 4 tiles
+rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 5176 bytes
+recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/rough.map --octaves 9 == error: the detail needs 1 to 8 octaves, not 9
 > world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2 --shallows 25 --specks 0
-imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, 294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; 4691 bytes
+imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, 294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; levels 0 to 9, 593 ledges and 56 cliffs; 5216 bytes
 > world info target/coast.map
-coast.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 4691 bytes
-recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 25.00 metres, specks under 0 tiles
+coast.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 5216 bytes
+recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 25.00 metres, specks under 0 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --specks 4097 == error: the coast's specks must be 0 to 4096 tiles, not 4097
+> world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --levels 10 --level-specks 0
+imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; levels 0 to 4, 312 ledges and 20 cliffs; 4289 bytes
+> world info target/levels.map
+levels.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 4289 bytes
+recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 10.00 of Azgaar's heights, specks under 0 tiles
+> assert world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --levels 0.5 == error: the levels' spacing must be 1.00 to 80.00 of Azgaar's heights, not 0.50
+> assert world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --level-specks 4097 == error: the levels' specks must be 0 to 4096 tiles, not 4097

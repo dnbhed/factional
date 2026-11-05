@@ -8,9 +8,11 @@ use std::fmt;
 use factional_core::{Fixed, div_round};
 
 use crate::coast::{self, Body};
+use crate::levels;
 use crate::map::{Detail, MapError, Recipe, Region, Size, TilePos, WorldMap};
 use crate::noise;
 use crate::source::{Feature, Source};
+use crate::tile::Tile;
 
 /// The lowest and highest height exponents Azgaar allows (`settings.heightExponent`).
 pub const HEIGHT_EXPONENTS: [Fixed; 2] =
@@ -21,6 +23,9 @@ const SEA_LEVEL: i128 = 20_00;
 
 /// The highest height on Azgaar's scale, in hundredths.
 const HIGHEST: i128 = 100_00;
+
+/// The most levels there can be: one a hundredth above sea level, the closest they're spaced.
+const MOST_LEVELS: i128 = 80_00;
 
 /// How many binary places of the exponent's fraction are taken; the rest moves a height by
 /// far less than a centimetre.
@@ -53,6 +58,21 @@ pub fn height_metres(height: Fixed, exponent: Fixed) -> Fixed {
         }
     };
     Fixed::from_hundredths(i64::try_from(hundredths).expect("Azgaar's heights fit"))
+}
+
+/// The height in metres at which each level above 0 starts (W3c, P-138): level k at 20 + k ×
+/// `spacing` on Azgaar's scale, for each k that reaches no higher than its top, by
+/// `height_metres`. A spacing is held to at least a hundredth.
+pub fn level_heights(spacing: Fixed, exponent: Fixed) -> Vec<Fixed> {
+    let step = i128::from(spacing.hundredths()).max(1);
+    (1..=MOST_LEVELS)
+        .map(|k| SEA_LEVEL + k * step)
+        .take_while(|&height| height <= HIGHEST)
+        .map(|height| {
+            let height = Fixed::from_hundredths(i64::try_from(height).expect("on Azgaar's scale"));
+            height_metres(height, exponent)
+        })
+        .collect()
 }
 
 /// `base` hundredths to the power `exponent` hundredths, in hundredths, rounded once. The
@@ -172,11 +192,27 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
         .unzip();
     let width = size.width as usize;
     coast::remove_specks(width, &mut waters, recipe.coast.specks as usize);
+    // Each land tile's level, then the plateaus and pits; water has none.
+    let starts = level_heights(recipe.levels.spacing, source.height_exponent);
+    let mut levels: Vec<Option<u8>> = elevations
+        .iter()
+        .zip(&waters)
+        .map(|(&elevation, water)| {
+            let level = starts.partition_point(|&start| start <= elevation);
+            water
+                .is_none()
+                .then(|| u8::try_from(level).expect("at most 80 levels"))
+        })
+        .collect();
+    levels::clean(width, &mut levels, recipe.levels.specks as usize);
     let shallows = recipe.coast.shallows;
     WorldMap::new(recipe, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
         let water = waters[i].map(|cell| raster.bodies[cell as usize].expect("a water cell"));
-        coast::tile(elevations[i], water, shallows)
+        Tile {
+            level: levels[i].unwrap_or(0),
+            ..coast::tile(elevations[i], water, shallows)
+        }
     })
     .map_err(RasterError::Map)
 }
@@ -515,6 +551,7 @@ mod tests {
             seed: 0,
             detail: Detail::default(),
             coast: crate::map::Coast::default(),
+            levels: crate::map::Levels::default(),
         }
     }
 

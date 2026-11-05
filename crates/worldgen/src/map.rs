@@ -29,6 +29,10 @@ const SHALLOWS: [Fixed; 2] = [Fixed::ZERO, Fixed::from_hundredths(1000_00)];
 /// The most tiles a speck may have: a chunk's.
 const SPECKS: u32 = CHUNK * CHUNK;
 
+/// The narrowest and widest spacing of levels, on Azgaar's height scale: from sea level at 20
+/// to its top at 100 is one level at most.
+const SPACINGS: [Fixed; 2] = [Fixed::ONE, Fixed::from_hundredths(80_00)];
+
 /// A width and a height, in tiles or source pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
@@ -79,7 +83,7 @@ pub struct Region {
 }
 
 /// How a map was made (P-119): from which source, which of its layers, which region at what
-/// scale in tiles a source pixel, with which seed, with what detail and what coast.
+/// scale in tiles a source pixel, with which seed, with what detail, coast and levels.
 /// Generation's other options join it as they land.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recipe {
@@ -90,6 +94,7 @@ pub struct Recipe {
     pub seed: u32,
     pub detail: Detail,
     pub coast: Coast,
+    pub levels: Levels,
 }
 
 /// The detail added to the source's heights (W3a, P-136): seeded gradient noise, `strength`
@@ -132,6 +137,26 @@ impl Default for Coast {
     }
 }
 
+/// How elevation is drawn in 2D as levels (W3c, P-138): one every `spacing` points of
+/// Azgaar's height scale above sea level, and plateaus and pits of fewer than `specks` tiles,
+/// away from the map's edge, taking the nearest level around them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Levels {
+    pub spacing: Fixed,
+    pub specks: u32,
+}
+
+impl Default for Levels {
+    /// A level every 5 points, 16 from sea level to the top, and specks of fewer than 4 tiles
+    /// (DESIGN.md §21).
+    fn default() -> Levels {
+        Levels {
+            spacing: Fixed::from_hundredths(5_00),
+            specks: 4,
+        }
+    }
+}
+
 impl Recipe {
     /// The size of the map it makes, in tiles, or why it can't make one.
     pub fn size(&self) -> Result<Size, MapError> {
@@ -159,6 +184,13 @@ impl Recipe {
         if coast.specks > SPECKS {
             return Err(MapError::CoastSpecks(coast.specks));
         }
+        let levels = self.levels;
+        if !(SPACINGS[0] <= levels.spacing && levels.spacing <= SPACINGS[1]) {
+            return Err(MapError::LevelSpacing(levels.spacing));
+        }
+        if levels.specks > SPECKS {
+            return Err(MapError::LevelSpecks(levels.specks));
+        }
         let side = |pixels: u32| u64::from(pixels) * u64::from(self.scale);
         let (width, height) = (side(region.width), side(region.height));
         match (u32::try_from(width), u32::try_from(height)) {
@@ -182,6 +214,8 @@ pub enum MapError {
     DetailOctaves(u32),
     CoastShallows(Fixed),
     CoastSpecks(u32),
+    LevelSpacing(Fixed),
+    LevelSpecks(u32),
     OffTheMap { at: TilePos, size: Size },
     OtherSize { recipe: Size, map: Size },
 }
@@ -220,6 +254,15 @@ impl fmt::Display for MapError {
                 f,
                 "the coast's specks must be 0 to {SPECKS} tiles, not {specks}"
             ),
+            MapError::LevelSpacing(spacing) => write!(
+                f,
+                "the levels' spacing must be {} to {} of Azgaar's heights, not {spacing}",
+                SPACINGS[0], SPACINGS[1]
+            ),
+            MapError::LevelSpecks(specks) => write!(
+                f,
+                "the levels' specks must be 0 to {SPECKS} tiles, not {specks}"
+            ),
             MapError::OffTheMap { at, size } => write!(
                 f,
                 "tile ({}, {}) is off the map, which is {} × {} tiles",
@@ -234,11 +277,29 @@ impl fmt::Display for MapError {
     }
 }
 
+/// Where a land tile meets a lower land neighbour (W3c, P-138): one level lower, a ledge,
+/// which a game may let a walker jump down; more, a cliff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Drop {
+    Ledge,
+    Cliff,
+}
+
+/// A tile's drop on each side, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Drops {
+    pub north: Option<Drop>,
+    pub west: Option<Drop>,
+    pub east: Option<Drop>,
+    pub south: Option<Drop>,
+}
+
 /// Up to 64 × 64 tiles of the map, each layer row by row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chunk {
     size: Size,
     elevation: Vec<Fixed>,
+    level: Vec<u8>,
     terrain: Vec<Terrain>,
     water: Vec<Option<Water>>,
     biome: Vec<Biome>,
@@ -259,6 +320,7 @@ impl Chunk {
         let i = (y * self.size.width + x) as usize;
         Some(Tile {
             elevation: self.elevation[i],
+            level: self.level[i],
             terrain: self.terrain[i],
             water: self.water[i],
             biome: self.biome[i],
@@ -271,6 +333,7 @@ impl Chunk {
         Chunk {
             size,
             elevation: Vec::new(),
+            level: Vec::new(),
             terrain: Vec::new(),
             water: Vec::new(),
             biome: Vec::new(),
@@ -281,6 +344,7 @@ impl Chunk {
     /// `tile` added after the last.
     fn push(&mut self, tile: Tile) {
         self.elevation.push(tile.elevation);
+        self.level.push(tile.level);
         self.terrain.push(tile.terrain);
         self.water.push(tile.water);
         self.biome.push(tile.biome);
@@ -383,6 +447,28 @@ impl WorldMap {
         Some(match self.overrides.get(&at) {
             Some(edit) => edit.apply(generated),
             None => generated,
+        })
+    }
+
+    /// Where the tile at `at` drops to a lower neighbour, on each side, its override and theirs
+    /// applied; if it's on the map.
+    pub fn drops(&self, at: TilePos) -> Option<Drops> {
+        let here = self.tile(at)?;
+        let drop = |x: Option<u32>, y: Option<u32>| {
+            let there = self.tile(TilePos { x: x?, y: y? })?;
+            match here.level.checked_sub(there.level) {
+                _ if here.is_water() || there.is_water() => None,
+                Some(1) => Some(Drop::Ledge),
+                Some(2..) => Some(Drop::Cliff),
+                _ => None,
+            }
+        };
+        let (x, y) = (Some(at.x), Some(at.y));
+        Some(Drops {
+            north: drop(x, at.y.checked_sub(1)),
+            west: drop(at.x.checked_sub(1), y),
+            east: drop(at.x.checked_add(1), y),
+            south: drop(x, at.y.checked_add(1)),
         })
     }
 

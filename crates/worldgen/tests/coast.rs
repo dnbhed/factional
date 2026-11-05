@@ -4,8 +4,8 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Feature, MapError, Point, Recipe, Region, Size, Source, SourceCell,
-    SourceVertex, Terrain, Tile, TilePos, Water, WorldMap, height_metres, rasterise,
+    Biome, Coast, Detail, Feature, Levels, MapError, Point, Recipe, Region, Size, Source,
+    SourceCell, SourceVertex, Terrain, Tile, TilePos, Water, WorldMap, height_metres, rasterise,
 };
 use proptest::prelude::*;
 
@@ -106,6 +106,7 @@ fn recipe(region: [u32; 4], scale: u32, seed: u32, detail: Detail, coast: Coast)
         seed,
         detail,
         coast,
+        levels: Levels::default(),
     }
 }
 
@@ -332,8 +333,13 @@ proptest! {
     ) {
         let (width, height) = (width.min(40 - x), height.min(40 - y));
         let options = (Detail::default(), coast(10_00, specks));
-        let part = map(recipe([x, y, width, height], scale, seed, options.0, options.1));
-        let whole = map(recipe(WHOLE, scale, seed, options.0, options.1));
+        // No level specks, so that each tile's level is its own height's (tested in levels.rs).
+        let flat = |mut recipe: Recipe| {
+            recipe.levels.specks = 0;
+            map(recipe)
+        };
+        let part = flat(recipe([x, y, width, height], scale, seed, options.0, options.1));
+        let whole = flat(recipe(WHOLE, scale, seed, options.0, options.1));
         let margin = 2 * specks;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
