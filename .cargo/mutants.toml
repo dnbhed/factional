@@ -1,8 +1,0 @@
-# Mutants that can't change what the code does, each with why; anything else that survives is
-# a missing assertion (CLAUDE.md, the gates).
-exclude_re = [
-    # The nearest-cell search stops once its best is nearer than `ring × side`. Every point lies
-    # strictly inside its bucket, so a cell further out is strictly further than that: stopping
-    # at equality as well finds the same cell (P-135).
-    "raster\\.rs:.*: replace < with <= in Raster<'_>::nearest",
-]

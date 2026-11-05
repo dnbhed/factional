@@ -207,7 +207,7 @@ impl Raster<'_> {
 
     /// The tile whose centre is at `at`.
     fn tile(&self, at: At) -> Tile {
-        let nearest = self.nearest(at);
+        let (nearest, _) = self.nearest(at);
         let elevation = self.interpolated(at).unwrap_or(self.metres[nearest]);
         let cell = &self.source.cells[nearest];
         let (terrain, water, biome) = match self.source.features[cell.feature as usize] {
@@ -247,27 +247,31 @@ impl Raster<'_> {
             })
     }
 
-    /// The cell whose centre is nearest `at`, the first if several are as near: the buckets
-    /// searched ring by ring outward until none further out could hold a nearer one.
-    fn nearest(&self, at: At) -> usize {
-        let [bx, by] = self.grid.bucket(at);
+    /// The cell whose centre is nearest `at`, the first if several are as near, and how many
+    /// rings of buckets were searched for it: ring by ring outward, until none further out could
+    /// hold a nearer one or the whole grid has been searched.
+    fn nearest(&self, at: At) -> (usize, u32) {
+        let centre = self.grid.bucket(at);
         let mut best: Option<(i128, usize)> = None;
-        for ring in 0.. {
-            for [x, y] in self.grid.ring([bx, by], ring) {
-                for &i in &self.cells_in[self.grid.index([x, y])] {
+        let last = self.grid.cover(centre);
+        for ring in 0..=last {
+            for bucket in self.grid.ring(centre, ring) {
+                for &i in &self.cells_in[self.grid.index(bucket)] {
                     let [dx, dy] = [0, 1].map(|axis| self.centres[i][axis] - at[axis]);
                     let candidate = (dx * dx + dy * dy, i);
                     best = Some(best.map_or(candidate, |best| best.min(candidate)));
                 }
             }
+            // A cell further out is further than this, since `at` lies inside its bucket.
             let reach = i128::from(ring) * self.grid.side;
             if let Some((distance, i)) = best
                 && distance < reach * reach
             {
-                return i;
+                return (i, ring + 1);
             }
         }
-        unreachable!("the rings reach past the grid, which holds a cell")
+        let (_, i) = best.expect("the grid holds a cell");
+        (i, last + 1)
     }
 }
 
@@ -322,6 +326,12 @@ impl Grid {
         y * self.across + x
     }
 
+    /// How many rings out from `centre` reach the grid's furthest bucket.
+    fn cover(&self, [cx, cy]: [usize; 2]) -> u32 {
+        let furthest = [cx, self.across - 1 - cx, cy, self.down - 1 - cy];
+        u32::try_from(furthest.into_iter().max().expect("four")).expect("a ring fits")
+    }
+
     /// The buckets `ring` steps out from `centre`, on the grid.
     fn ring(&self, [cx, cy]: [usize; 2], ring: u32) -> impl Iterator<Item = [usize; 2]> {
         let r = ring as usize;
@@ -361,6 +371,61 @@ mod tests {
         );
         assert_eq!(grid.bucket([-1000, 12000]), [0, 1]);
         assert_eq!(grid.bucket([8000, 0]), [1, 0]);
+    }
+
+    /// A source of 40 × 40 pixels with cells at `centres`, in units of 1/200 of a pixel.
+    fn source(centres: &[At]) -> Source {
+        use crate::source::{Point, SourceCell};
+        let point = |units: i128| Fixed::from_hundredths(i64::try_from(units / 2).expect("fits"));
+        Source {
+            name: "Search".to_owned(),
+            version: "1.154.0".to_owned(),
+            size: Size {
+                width: 40,
+                height: 40,
+            },
+            height_exponent: Fixed::from_hundredths(2_00),
+            cells: centres
+                .iter()
+                .map(|&[x, y]| SourceCell {
+                    centre: Point {
+                        x: point(x),
+                        y: point(y),
+                    },
+                    height: 30,
+                    feature: 0,
+                    neighbours: Vec::new(),
+                    corners: Vec::new(),
+                })
+                .collect(),
+            vertices: Vec::new(),
+            features: vec![Feature::Island],
+        }
+    }
+
+    #[test]
+    fn the_search_stops_once_no_further_ring_could_hold_a_nearer_cell() {
+        // 16 cells over 8001 units each way: buckets of 2000, 5 × 5. From (100, 100), cell 0
+        // is in ring 2, exactly 4000 away, so ring 3 is searched too, and then no more.
+        let mut centres = vec![[4100, 100]];
+        centres.extend([[8000, 8000]; 15]);
+        let source = source(&centres);
+        let raster = Raster::new(&source, 1);
+        assert_eq!((raster.grid.side, raster.grid.across), (2000, 5));
+        assert_eq!(raster.nearest([100, 100]), (0, 4));
+        // At a cell's centre, the next ring settles it.
+        assert_eq!(raster.nearest([8000, 8000]), (1, 2));
+    }
+
+    #[test]
+    fn the_search_ends_when_it_has_covered_the_grid() {
+        // 9 cells at the top left, buckets of 2667, 3 × 3: from the far corner, all three rings.
+        let source = source(&[[0, 0]; 9]);
+        let raster = Raster::new(&source, 1);
+        assert_eq!(raster.grid.cover([2, 2]), 2);
+        assert_eq!(raster.grid.cover([1, 0]), 2);
+        assert_eq!(raster.grid.cover([1, 1]), 1);
+        assert_eq!(raster.nearest([8000, 8000]), (0, 3));
     }
 
     #[test]
