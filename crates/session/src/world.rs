@@ -65,7 +65,7 @@ pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
     let features = |kind: fn(&Feature) -> bool| source.features.iter().filter(|f| kind(f)).count();
     Ok(format!(
         "{name}: {}, from Azgaar {}, {} × {} pixels\n\
-         {}, {}; {}, {} and {}; fingerprint {}",
+         {}, {}; {}, {} and {}; {}; fingerprint {}",
         source.name,
         source.version,
         source.size.width,
@@ -78,6 +78,7 @@ pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
         count(features(|f| *f == Feature::Ocean), "ocean"),
         count(features(|f| matches!(f, Feature::Lake { .. })), "lake"),
         count(features(|f| *f == Feature::Island), "island"),
+        count(source.rivers.len(), "river"),
         fingerprint_of(text.as_bytes()),
     ))
 }
@@ -223,6 +224,10 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         .iter()
         .filter(|tile| tile.water == Some(Water::Lake))
         .count();
+    let river = tiles
+        .iter()
+        .filter(|tile| matches!(tile.water, Some(Water::River { .. })))
+        .count();
     let heights = tiles.iter().map(|tile| tile.elevation);
     let levels = tiles.iter().map(|tile| tile.level);
     let (size, chunks) = (map.size(), map.chunk_count());
@@ -239,7 +244,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         }
     }
     Ok(format!(
-        "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake and {} land; \
+        "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake, {river} river and {} land; \
          heights {} to {} m; levels {} to {}, {} and {}; {} bytes",
         source.name,
         file_name(import.map),
@@ -247,7 +252,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         size.height,
         chunks.width,
         chunks.height,
-        tiles.len() - ocean - lake,
+        tiles.len() - ocean - lake - river,
         heights.clone().min().expect("a map has tiles"),
         heights.max().expect("a map has tiles"),
         levels.clone().min().expect("a map has tiles"),

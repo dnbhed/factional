@@ -24,6 +24,7 @@ fn cell(x: i64, y: i64, height: u8, feature: u32, neighbours: &[u32]) -> SourceC
         feature,
         neighbours: neighbours.to_vec(),
         corners: Vec::new(),
+        flux: 0,
     }
 }
 
@@ -70,6 +71,7 @@ fn raster() -> Source {
             },
             Feature::Island,
         ],
+        rivers: Vec::new(),
     }
 }
 

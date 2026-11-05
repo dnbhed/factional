@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W4 → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4 → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -133,6 +133,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W3a — detail (P-136): W3 split in four, at the user's choice; seeded integer gradient noise in octaves on a lattice in source pixels, its strength a share of each cell's local relief, interpolated, added to the height and rounded once with it; the recipe's detail (strength 0.25, wavelength 8.00 pixels, 4 octaves) checked wherever a recipe makes a map; the map file version 2, version 1 refused; `world import --detail --wavelength --octaves`, the detail in `world info`; heights checked against a separate Python reference; a region the same as the whole map, a property test; Menayland whole with detail in about a second, locally; done 2026-11-05 (#102)
 - W3b — coasts (P-137): land and water by each tile's detailed height against the water near it, the nearest water cell among its nearest cell and that cell's neighbours, the sea at 0 m and a lake at its surface in metres by Azgaar's formula with a decimal height; sea shallower than the shallows (10.00 m) shallow; specks of land and water under 4 tiles, away from the map's edge, turned to the other, water first; heights unchanged; the recipe's coast checked wherever a recipe makes a map; the map file version 3, version 2 refused; `world import --shallows --specks`, the coast in `world info`, ocean counting both depths; a lake's surface outside 0 to 100 a problem, a broken window; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#103)
 - W3c — levels (P-138): each level starting at the metres of 20 + k × the spacing (5.00) on Azgaar's scale, a land tile's level how many start at or below it, water level 0, stored as a layer of its own; plateaus and pits of land under 4 tiles, away from the map's edge, taking the nearest level around them, all judged by the levels as made; `WorldMap::drops` a ledge for one level down to a land neighbour and a cliff for more, overrides applied; the recipe's levels checked wherever a recipe makes a map; the map file version 4, version 3 refused; `world import --levels --level-specks` saying its levels, ledges and cliffs, the levels in `world info`; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#104)
+- W3d — rivers drawn (P-139): W3 split again, drawing then carving (W3e); `pack.rivers` and each cell's flux read and checked, an export without rivers not Full; each river along a uniform Catmull-Rom curve through its cells' centres, −1 the nearest point of the map's edge, a piece a tile its chord spans; Azgaar's drawn half-width at each cell from its width factor, source width and the flux so far, never under a tile, a tile river if its centre is within it or its square is touched; river tiles shallow water with their flow, made before the levels; `world source` counts rivers, `world import` river tiles; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#105)
 
 ---
 
@@ -154,9 +155,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3d · Rivers and lakes — P3 · Next
+### W3e · Carving rivers and lakes — P3 · Next
 
-Azgaar's rivers read (their cells, discharge and width), widened on tiles from their discharge and carved continuously from source to mouth; lakes at their surface height.
+River beds carved to fall continuously from source to mouth, and lakes carved to their surface height, so the levels and cliffs follow the water.
 
 ### W4 · Climate and biomes — P3 · Outline
 

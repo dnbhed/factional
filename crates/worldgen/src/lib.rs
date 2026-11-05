@@ -11,6 +11,7 @@ mod levels;
 mod map;
 mod noise;
 mod raster;
+mod rivers;
 mod source;
 mod tile;
 
@@ -22,7 +23,7 @@ pub use raster::{
     HEIGHT_EXPONENTS, RasterError, cell_metres, cell_reliefs, height_metres, level_heights,
     rasterise,
 };
-pub use source::{Feature, Point, Source, SourceCell, SourceVertex};
+pub use source::{Feature, Point, Source, SourceCell, SourceRiver, SourceVertex};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 
 /// How many tiles a chunk has each way.

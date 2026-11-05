@@ -3239,7 +3239,7 @@ mod tests {
             repo().execute(&format!("world source {file}")),
             output(&format!(
                 "tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels\n\
-                 4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; fingerprint {}",
+                 4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; fingerprint {}",
                 factional_content::fingerprint_of(&text)
             ))
         );
@@ -3292,7 +3292,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; \
+                 357 ocean, 174 lake, 0 river and 1069 land; heights -176.70 to 1922.19 m; \
                  levels 0 to 8, 440 ledges and 32 cliffs; {bytes} bytes"
             ))
         );
@@ -3328,7 +3328,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 166 ocean, 58 lake and 1376 land; heights -187.80 to 1734.65 m; \
+                 166 ocean, 58 lake, 0 river and 1376 land; heights -187.80 to 1734.65 m; \
                  levels 0 to 7, 426 ledges and 5 cliffs; {bytes} bytes"
             ))
         );
@@ -3359,7 +3359,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 299 ocean, 181 lake and 1120 land; heights -381.73 to 2241.02 m; \
+                 299 ocean, 181 lake, 0 river and 1120 land; heights -381.73 to 2241.02 m; \
                  levels 0 to 9, 604 ledges and 63 cliffs; {bytes} bytes"
             ))
         );
@@ -3407,7 +3407,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; \
+                 294 ocean, 183 lake, 0 river and 1123 land; heights -381.73 to 2241.02 m; \
                  levels 0 to 9, 593 ledges and 56 cliffs; {bytes} bytes"
             ))
         );
@@ -3448,7 +3448,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; \
+                 357 ocean, 174 lake, 0 river and 1069 land; heights -176.70 to 1922.19 m; \
                  levels 0 to 4, 312 ledges and 20 cliffs; {bytes} bytes"
             ))
         );
@@ -3495,6 +3495,38 @@ mod tests {
         );
         std::fs::remove_dir_all(&dir).expect("removed");
     }
+
+    #[test]
+    fn world_import_draws_the_rivers() {
+        let dir = import_dir("rivers");
+        std::fs::write(dir.join("rivers.json"), RIVERS).expect("written");
+        let mut session = Session::new(&dir);
+        let said = session.execute("world import rivers.json rivers.map");
+        let (bytes, _) = imported(&dir, "rivers.map");
+        // The tile counts were worked out by a separate script.
+        assert_eq!(
+            said,
+            output(&format!(
+                "imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, \
+                 357 ocean, 174 lake, 77 river and 992 land; heights -176.70 to 1922.19 m; \
+                 levels 0 to 8, 380 ledges and 32 cliffs; {bytes} bytes"
+            ))
+        );
+        let said = session
+            .execute("world import rivers.json part.map --region 10,10,20,20 --scale 2 --seed 7");
+        let (bytes, _) = imported(&dir, "part.map");
+        assert_eq!(
+            said,
+            output(&format!(
+                "imported Rivers into part.map: 40 × 40 tiles in 1 × 1 chunks, \
+                 166 ocean, 58 lake, 141 river and 1235 land; heights -187.80 to 1734.65 m; \
+                 levels 0 to 7, 341 ledges and 5 cliffs; {bytes} bytes"
+            ))
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    const RIVERS: &str = include_str!("../../content/tests/fixtures/azgaar/rivers.json");
 
     #[test]
     fn world_import_lists_the_exports_problems_like_world_source() {
