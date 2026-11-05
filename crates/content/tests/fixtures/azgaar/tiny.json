@@ -25,14 +25,17 @@
       { "i": 4, "p": [20, 30], "v": [0, 1, 5], "c": [2, 3, 7] },
       { "i": 5, "p": [-9.597192276750592, 0.125], "v": [2, 4, 3], "c": [3, 8, 9] }
     ],
+    "rivers": [
+      { "i": 1, "source": 3, "mouth": 1, "discharge": 12, "length": 101.66, "width": 0.01, "widthFactor": 1.2, "sourceWidth": 0.05, "parent": 1, "cells": [3, 1, 0], "basin": 1, "name": "Brook", "type": "Brook" },
+      { "i": 2, "source": 3, "mouth": 3, "discharge": 3, "length": 7.5, "width": 0.01, "widthFactor": 0.836, "sourceWidth": 0.125, "parent": 2, "cells": [3, -1], "basin": 2, "name": "Spill", "type": "Brook" }
+    ],
     "features": [
       0,
       { "i": 1, "type": "ocean", "land": false, "border": true, "cells": 1, "height": 0, "subtype": "ocean", "name": "Calm" },
       { "i": 2, "type": "lake", "land": false, "border": false, "cells": 1, "height": 19.9, "subtype": "freshwater", "name": "Still" },
       { "i": 3, "type": "island", "land": true, "border": true, "cells": 2, "height": 0, "subtype": "continent", "name": "Tiny" }
     ],
-    "burgs": [0],
-    "rivers": []
+    "burgs": [0]
   },
   "grid": { "cells": [] }
 }

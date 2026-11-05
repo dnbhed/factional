@@ -334,7 +334,7 @@ fn world_source_summarises_an_azgaar_export_and_exits_zero() {
         text(&output.stdout),
         format!(
             "tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels\n\
-             4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; fingerprint {}\n",
+             4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; fingerprint {}\n",
             factional_content::fingerprint_of(&export)
         )
     );
@@ -372,7 +372,7 @@ fn world_import_writes_a_map_file_and_exits_zero() {
         text(&output.stdout),
         format!(
             "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-             166 ocean, 58 lake and 1376 land; heights -187.80 to 1734.65 m; \
+             166 ocean, 58 lake, 0 river and 1376 land; heights -187.80 to 1734.65 m; \
              levels 0 to 7, 426 ledges and 5 cliffs; {bytes} bytes\n"
         )
     );
@@ -413,7 +413,7 @@ fn world_import_takes_the_detail_and_the_coast() {
         text(&output.stdout),
         format!(
             "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
-             294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; \
+             294 ocean, 183 lake, 0 river and 1123 land; heights -381.73 to 2241.02 m; \
              levels 0 to 4, 532 ledges and 19 cliffs; {bytes} bytes\n"
         )
     );

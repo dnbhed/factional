@@ -6,7 +6,7 @@ use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
     Coast, Detail, Drop, Feature, Levels, Point, Recipe, Region, Size, Source, SourceCell,
-    SourceVertex, Terrain, TilePos, Water, rasterise,
+    SourceRiver, SourceVertex, Terrain, TilePos, Water, rasterise,
 };
 use serde_json::{Value, json};
 
@@ -25,6 +25,7 @@ fn cell(
     feature: u32,
     neighbours: &[u32],
     corners: &[u32],
+    flux: u32,
 ) -> SourceCell {
     SourceCell {
         centre,
@@ -32,6 +33,7 @@ fn cell(
         feature,
         neighbours: neighbours.to_vec(),
         corners: corners.to_vec(),
+        flux,
     }
 }
 
@@ -59,7 +61,7 @@ fn refusal(text: &str) -> String {
 }
 
 #[test]
-fn a_full_export_reads_as_its_cells_vertices_and_features() {
+fn a_full_export_reads_as_its_cells_vertices_features_and_rivers() {
     let expected = Source {
         name: "Tiny".to_owned(),
         version: "1.154.0".to_owned(),
@@ -69,10 +71,10 @@ fn a_full_export_reads_as_its_cells_vertices_and_features() {
         },
         height_exponent: Fixed::from_hundredths(2_00),
         cells: vec![
-            cell(point(10_00, 7_50), 10, 0, &[1, 2], &[0, 1, 3]),
-            cell(point(30_00, 7_50), 40, 2, &[0, 3], &[0, 2, 3]),
-            cell(point(10_00, 22_50), 19, 1, &[0, 3], &[0, 1, 4]),
-            cell(point(111_67, 22_50), 60, 2, &[1, 2], &[0, 2, 4, 5]),
+            cell(point(10_00, 7_50), 10, 0, &[1, 2], &[0, 1, 3], 0),
+            cell(point(30_00, 7_50), 40, 2, &[0, 3], &[0, 2, 3], 12),
+            cell(point(10_00, 22_50), 19, 1, &[0, 3], &[0, 1, 4], 0),
+            cell(point(111_67, 22_50), 60, 2, &[1, 2], &[0, 2, 4, 5], 3),
         ],
         vertices: vec![
             vertex(point(20_00, 15_00), [Some(0), Some(1), Some(3)]),
@@ -88,6 +90,21 @@ fn a_full_export_reads_as_its_cells_vertices_and_features() {
                 surface: Fixed::from_hundredths(19_90),
             },
             Feature::Island,
+        ],
+        // Spill's -1 is off the map; its widths round once to hundredths.
+        rivers: vec![
+            SourceRiver {
+                cells: vec![3, 1, 0],
+                off_map: false,
+                width_factor: Fixed::from_hundredths(1_20),
+                source_width: Fixed::from_hundredths(5),
+            },
+            SourceRiver {
+                cells: vec![3],
+                off_map: true,
+                width_factor: Fixed::from_hundredths(84),
+                source_width: Fixed::from_hundredths(13),
+            },
         ],
     };
     assert_eq!(read_azgaar(TINY), Ok(expected));
@@ -146,6 +163,98 @@ fn missing_and_misshapen_values_are_named() {
             "pack.cells[3].c: expected whole numbers, not -2",
             "pack.vertices[4].c: expected three cells",
             "pack.vertices[5].p: expected two numbers, an x and a y",
+        ]
+    );
+}
+
+#[test]
+fn a_rivers_cells_must_exist_with_off_the_map_only_last() {
+    let text = tiny_with(|json| {
+        let rivers = &mut json["pack"]["rivers"];
+        rivers[0]["cells"] = json!([3, 9, 0]);
+        rivers[1]["cells"] = json!([3, -1, 0]);
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.rivers[0].cells: cell 9 doesn't exist; there are 4 cells",
+            "pack.rivers[1].cells: -1, off the map, can only end a river",
+        ]
+    );
+    for (cells, said) in [(json!([3]), "1"), (json!([-1]), "1"), (json!([]), "0")] {
+        let text = tiny_with(|json| json["pack"]["rivers"][0]["cells"] = cells);
+        assert_eq!(
+            problems(&text),
+            [format!(
+                "pack.rivers[0].cells: a river needs at least two cells, -1 included, not {said}"
+            )]
+        );
+    }
+    for cells in [json!([3, -2]), json!("many"), json!([3, 1.5])] {
+        let said = cells.to_string();
+        let text = tiny_with(|json| json["pack"]["rivers"][0]["cells"] = cells);
+        let found = problems(&text);
+        assert_eq!(found.len(), 1, "{said}: {found:?}");
+        assert!(
+            found[0].starts_with(
+                "pack.rivers[0].cells: expected cells, whole numbers or -1 at the end, not "
+            ),
+            "{said}: {found:?}"
+        );
+    }
+}
+
+#[test]
+fn a_rivers_widths_are_0_to_10_pixels() {
+    for (key, value, said) in [
+        ("widthFactor", json!(10.01), "10.01"),
+        ("sourceWidth", json!(-0.01), "-0.01"),
+    ] {
+        let text = tiny_with(|json| json["pack"]["rivers"][1][key] = value);
+        assert_eq!(
+            problems(&text),
+            [format!(
+                "pack.rivers[1].{key}: {said} is outside 0.00 to 10.00"
+            )]
+        );
+    }
+    for edge in [json!(0), json!(10)] {
+        let text = tiny_with(|json| {
+            json["pack"]["rivers"][1]["widthFactor"] = edge.clone();
+            json["pack"]["rivers"][1]["sourceWidth"] = edge;
+        });
+        assert!(read_azgaar(&text).is_ok());
+    }
+    let text = tiny_with(|json| {
+        let river = json["pack"]["rivers"][0].as_object_mut().expect("a river");
+        river.remove("widthFactor");
+        river.remove("cells");
+        json["pack"]["rivers"][1]["sourceWidth"] = json!("wide");
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.rivers[0]: missing cells",
+            "pack.rivers[0]: missing widthFactor",
+            "pack.rivers[1].sourceWidth: expected a number, not \"wide\"",
+        ]
+    );
+}
+
+#[test]
+fn a_cells_flux_is_a_whole_number() {
+    let text = tiny_with(|json| {
+        let cells = &mut json["pack"]["cells"];
+        cells[0]["fl"] = json!(-1);
+        cells[1]["fl"] = json!(4_294_967_296_u64);
+        cells[2].as_object_mut().expect("a cell").remove("fl");
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.cells[0].fl: expected a whole number, not -1",
+            "pack.cells[1].fl: 4294967296 is more flux than Factional reads, 4294967295",
+            "pack.cells[2]: missing fl",
         ]
     );
 }
@@ -268,7 +377,7 @@ fn another_version_is_refused_naming_both() {
 
 #[test]
 fn an_export_that_isnt_full_is_refused_naming_what_it_lacks() {
-    for lacking in ["cells", "vertices", "features"] {
+    for lacking in ["cells", "vertices", "features", "rivers"] {
         let text = tiny_with(|json| {
             json["pack"].as_object_mut().expect("pack").remove(lacking);
         });
@@ -345,7 +454,7 @@ fn the_users_menayland_export_rasterises_whole() {
         levels: Levels::default(),
     };
     let map = rasterise(&source, recipe).expect("Menayland rasterises");
-    let mut counts = [0; 4];
+    let mut counts = [0; 5];
     for (_, chunk) in map.chunks() {
         let size = chunk.size();
         for (x, y) in (0..size.height).flat_map(|y| (0..size.width).map(move |x| (x, y))) {
@@ -353,20 +462,26 @@ fn the_users_menayland_export_rasterises_whole() {
             counts[match (tile.terrain, tile.water) {
                 (Terrain::DeepWater, _) => 0,
                 (_, Some(Water::Lake)) => 2,
+                (_, Some(Water::River { .. })) => 4,
                 (Terrain::ShallowWater, _) => 1,
                 _ => 3,
             }] += 1;
         }
     }
-    // Deep sea, shallow sea, lake and land.
-    assert_eq!(counts, [106_308, 658_922, 10_422, 401_818]);
+    // Deep sea, shallow sea, lake, land and river: W3b's land less its rivers.
+    assert_eq!(counts, [106_308, 658_922, 10_422, 388_397, 13_421]);
     let size = map.size();
     let mut land = [0; 16];
     let mut drops = [0; 2];
+    let mut rivers = [0; 2];
     for at in (0..size.height).flat_map(|y| (0..size.width).map(move |x| TilePos { x, y })) {
         let tile = map.tile(at).expect("on the map");
         if !tile.is_water() {
             land[usize::from(tile.level)] += 1;
+        }
+        if let Some(Water::River { flow }) = tile.water {
+            rivers[0] += 1;
+            rivers[1] += u64::from(flow);
         }
         let sides = map.drops(at).expect("on the map");
         for drop in [sides.north, sides.west, sides.east, sides.south]
@@ -376,13 +491,15 @@ fn the_users_menayland_export_rasterises_whole() {
             drops[usize::from(drop == Drop::Cliff)] += 1;
         }
     }
-    // Land at each level, then ledges and cliffs, from a second script.
+    // River tiles and their flows summed, land at each level, then ledges and cliffs, from a
+    // second script.
+    assert_eq!(rivers, [13_421, 2_341_803]);
     assert_eq!(
         land,
         [
-            247_321, 48_182, 33_482, 16_285, 13_329, 9_595, 5_561, 5_429, 5_223, 5_393, 3_963,
+            237_269, 46_643, 32_427, 15_948, 13_109, 9_477, 5_502, 5_392, 5_219, 5_393, 3_963,
             3_285, 1_919, 1_459, 764, 628
         ]
     );
-    assert_eq!(drops, [22_167, 58]);
+    assert_eq!(drops, [21_359, 58]);
 }

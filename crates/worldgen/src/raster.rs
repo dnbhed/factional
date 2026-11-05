@@ -11,8 +11,9 @@ use crate::coast::{self, Body};
 use crate::levels;
 use crate::map::{Detail, MapError, Recipe, Region, Size, TilePos, WorldMap};
 use crate::noise;
+use crate::rivers::{self, At, Piece};
 use crate::source::{Feature, Source};
-use crate::tile::Tile;
+use crate::tile::{Biome, Terrain, Tile, Water};
 
 /// The lowest and highest height exponents Azgaar allows (`settings.heightExponent`).
 pub const HEIGHT_EXPONENTS: [Fixed; 2] =
@@ -78,7 +79,7 @@ pub fn level_heights(spacing: Fixed, exponent: Fixed) -> Vec<Fixed> {
 /// `base` hundredths to the power `exponent` hundredths, in hundredths, rounded once. The
 /// whole part is multiplied out; the fraction, taken bit by bit, multiplies in `base`'s square
 /// root, its fourth root and so on, each worked by integer square roots in fixed point.
-fn power(base: u128, exponent: i64) -> i128 {
+pub(crate) fn power(base: u128, exponent: i64) -> i128 {
     let one = 1u128 << POINT;
     let mut fraction = exponent % 100;
     let mut root = (base << POINT) / 100;
@@ -192,15 +193,18 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
         .unzip();
     let width = size.width as usize;
     coast::remove_specks(width, &mut waters, recipe.coast.specks as usize);
-    // Each land tile's level, then the plateaus and pits; water has none.
+    // The rivers, on the land; then each land tile's level, then the plateaus and pits;
+    // water, rivers included, has none.
+    let land: Vec<bool> = waters.iter().map(Option::is_none).collect();
+    let flows = rivers::paint(width, origin, &land, &raster.rivers(scale));
     let starts = level_heights(recipe.levels.spacing, source.height_exponent);
     let mut levels: Vec<Option<u8>> = elevations
         .iter()
         .zip(&waters)
-        .map(|(&elevation, water)| {
+        .zip(&flows)
+        .map(|((&elevation, water), flow)| {
             let level = starts.partition_point(|&start| start <= elevation);
-            water
-                .is_none()
+            (water.is_none() && flow.is_none())
                 .then(|| u8::try_from(level).expect("at most 80 levels"))
         })
         .collect();
@@ -209,17 +213,23 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
     WorldMap::new(recipe, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
         let water = waters[i].map(|cell| raster.bodies[cell as usize].expect("a water cell"));
+        let tile = coast::tile(elevations[i], water, shallows);
+        let tile = match flows[i] {
+            Some(flow) => Tile {
+                terrain: Terrain::ShallowWater,
+                water: Some(Water::River { flow }),
+                biome: Biome::Marine,
+                ..tile
+            },
+            None => tile,
+        };
         Tile {
             level: levels[i].unwrap_or(0),
-            ..coast::tile(elevations[i], water, shallows)
+            ..tile
         }
     })
     .map_err(RasterError::Map)
 }
-
-/// A point in units of 1 / (200 × scale) of a source pixel, so that every tile's centre and
-/// every cell's centre, to the hundredth, is a whole number of them.
-type At = [i128; 2];
 
 /// The source made ready to rasterise: its cells' centres, metres, reliefs and water, its
 /// triangles, a grid of buckets to find them in, and the detail to add, its wavelength in
@@ -318,6 +328,22 @@ impl Raster<'_> {
             cells_in,
             triangles_in,
         }
+    }
+
+    /// The pieces of every river's line, at `scale` tiles a pixel.
+    fn rivers(&self, scale: i128) -> Vec<Piece> {
+        let size = self.source.size;
+        let corner = [size.width, size.height].map(|side| i128::from(side) * 200 * scale);
+        self.source
+            .rivers
+            .iter()
+            .flat_map(|river| {
+                let running = rivers::running_fluxes(river, &self.source.cells);
+                let half_widths = rivers::half_widths(river, &running);
+                let anchors = rivers::anchors(river, &self.centres, corner);
+                rivers::pieces(&anchors, &half_widths, &running, scale)
+            })
+            .collect()
     }
 
     /// The ground whose centre is at `at`: its height interpolated, or the nearest cell's, with
@@ -528,10 +554,12 @@ mod tests {
                     feature: 0,
                     neighbours: Vec::new(),
                     corners: Vec::new(),
+                    flux: 0,
                 })
                 .collect(),
             vertices: Vec::new(),
             features: vec![Feature::Island],
+            rivers: Vec::new(),
         }
     }
 

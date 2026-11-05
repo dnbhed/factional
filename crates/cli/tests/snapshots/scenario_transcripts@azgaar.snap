@@ -5,6 +5,6 @@ input_file: scenarios/azgaar.scenario
 ---
 > world source crates/content/tests/fixtures/azgaar/tiny.json
 tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels
-4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; fingerprint fnv1a64:0f98771b9ef031f6
+4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; fingerprint fnv1a64:b6d76f1b34f8833e
 > assert world source crates/content/tests/fixtures/maps/hand-made.map == error: cannot read crates/content/tests/fixtures/maps/hand-made.map: stream did not contain valid UTF-8
 > assert world source == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>]

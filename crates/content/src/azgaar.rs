@@ -1,5 +1,6 @@
 //! Reading Azgaar's map (W2a, P-119, P-134): a Full JSON export read into a `Source`. Its
-//! version is checked first; then every cell, vertex and feature is read, every problem in
+//! version is checked first; then every cell, vertex, feature and river (W3d, P-139) is read,
+//! every problem in
 //! them reported at once by key path, and every reference kept checked to resolve. Numbers
 //! with decimals are rounded once, as they're read, to hundredths, half away from zero.
 
@@ -7,7 +8,7 @@ use std::fmt;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Feature, HEIGHT_EXPONENTS, Point, Size, Source, SourceCell, SourceVertex,
+    Feature, HEIGHT_EXPONENTS, Point, Size, Source, SourceCell, SourceRiver, SourceVertex,
 };
 use serde_json::Value;
 
@@ -15,7 +16,10 @@ use serde_json::Value;
 const READS: (u64, u64) = (1, 154);
 
 /// The lists a Full export has and the others lack, in the order they're checked.
-const FULL: [&str; 3] = ["cells", "vertices", "features"];
+const FULL: [&str; 4] = ["cells", "vertices", "features", "rivers"];
+
+/// The widths of a river Factional reads, in pixels: its width factor and its source width.
+const RIVER_WIDTHS: [Fixed; 2] = [Fixed::ZERO, Fixed::from_hundredths(10_00)];
 
 /// One problem in an export, at its key path.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +44,8 @@ pub enum AzgaarError {
     Version(String),
     /// A Minimal or Cells export, or anything else without one of the Full export's lists.
     NotFull(&'static str),
-    /// Every problem in the export's cells, vertices and features, in the order they're read.
+    /// Every problem in the export's cells, vertices, features and rivers, in the order they're
+    /// read.
     Problems(Vec<AzgaarProblem>),
 }
 
@@ -85,8 +90,8 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         json.pointer(&format!("/pack/{list}"))
             .ok_or(AzgaarError::NotFull(list))
     });
-    let [cells, vertices, features] = match lists {
-        [Ok(cells), Ok(vertices), Ok(features)] => [cells, vertices, features],
+    let [cells, vertices, features, rivers] = match lists {
+        [Ok(cells), Ok(vertices), Ok(features), Ok(rivers)] => [cells, vertices, features, rivers],
         _ => {
             return Err(lists
                 .into_iter()
@@ -114,6 +119,7 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
     let cells = reader.list(cells, "pack.cells");
     let vertices = reader.list(vertices, "pack.vertices");
     let features = reader.list(features, "pack.features");
+    let rivers = reader.list(rivers, "pack.rivers");
     let counts = Counts {
         cells: cells.len(),
         vertices: vertices.len(),
@@ -136,6 +142,11 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         .skip(1)
         .map(|(i, feature)| reader.feature(feature, &format!("pack.features[{i}]")))
         .collect();
+    let rivers: Vec<Option<SourceRiver>> = rivers
+        .iter()
+        .enumerate()
+        .map(|(i, river)| reader.river(river, &format!("pack.rivers[{i}]"), &counts))
+        .collect();
     if !reader.problems.is_empty() {
         return Err(AzgaarError::Problems(reader.problems));
     }
@@ -156,6 +167,10 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         features: features
             .into_iter()
             .map(|feature| feature.expect(every))
+            .collect(),
+        rivers: rivers
+            .into_iter()
+            .map(|river| river.expect(every))
             .collect(),
     })
 }
@@ -322,12 +337,22 @@ impl Reader {
             .and_then(|c| self.references(c, &at("c"), ("neighbour", counts.cells, "cells")));
         let corners = field(self, "v")
             .and_then(|v| self.references(v, &at("v"), ("corner", counts.vertices, "vertices")));
+        let flux = field(self, "fl")
+            .and_then(|fl| self.whole(fl, &at("fl")))
+            .and_then(|fl| match u32::try_from(fl) {
+                Ok(fl) => Some(fl),
+                Err(_) => self.problem(
+                    &at("fl"),
+                    format!("{fl} is more flux than Factional reads, {}", u32::MAX),
+                ),
+            });
         Some(SourceCell {
             centre: centre?,
             height: height?,
             feature: feature?,
             neighbours: neighbours?,
             corners: corners?,
+            flux: flux?,
         })
     }
 
@@ -348,6 +373,83 @@ impl Reader {
             at: point?,
             cells: cells?,
         })
+    }
+
+    fn river(&mut self, river: &Value, path: &str, counts: &Counts) -> Option<SourceRiver> {
+        let at = |key: &str| format!("{path}.{key}");
+        let cells = self
+            .field(river, path, "cells")
+            .and_then(|cells| self.river_cells(cells, &at("cells"), counts));
+        let width = |reader: &mut Reader, key: &str| {
+            let width = reader
+                .field(river, path, key)
+                .and_then(|width| reader.decimal(width, &at(key)))?;
+            let [lowest, highest] = RIVER_WIDTHS;
+            match lowest <= width && width <= highest {
+                true => Some(width),
+                false => reader.problem(
+                    &at(key),
+                    format!("{width} is outside {lowest} to {highest}"),
+                ),
+            }
+        };
+        let width_factor = width(self, "widthFactor");
+        let source_width = width(self, "sourceWidth");
+        let (cells, off_map) = cells?;
+        Some(SourceRiver {
+            cells,
+            off_map,
+            width_factor: width_factor?,
+            source_width: source_width?,
+        })
+    }
+
+    /// A river's cells from its source, `value`, each one of the export's, the last perhaps
+    /// -1, past the map's edge; and whether it is.
+    fn river_cells(
+        &mut self,
+        value: &Value,
+        path: &str,
+        counts: &Counts,
+    ) -> Option<(Vec<u32>, bool)> {
+        let numbers: Option<Vec<i64>> = value.as_array().and_then(|items| {
+            items
+                .iter()
+                .map(|item| item.as_i64().filter(|&number| number >= -1))
+                .collect()
+        });
+        let Some(numbers) = numbers else {
+            return self.problem(
+                path,
+                format!("expected cells, whole numbers or -1 at the end, not {value}"),
+            );
+        };
+        let (off_map, cells) = match numbers.split_last() {
+            Some((-1, cells)) => (true, cells),
+            _ => (false, &numbers[..]),
+        };
+        if cells.contains(&-1) {
+            return self.problem(path, "-1, off the map, can only end a river".to_owned());
+        }
+        if numbers.len() < 2 {
+            return self.problem(
+                path,
+                format!(
+                    "a river needs at least two cells, -1 included, not {}",
+                    numbers.len()
+                ),
+            );
+        }
+        match cells.iter().find(|&&cell| cell >= counts.cells as i64) {
+            Some(cell) => self.problem(
+                path,
+                format!(
+                    "cell {cell} doesn't exist; there are {} cells",
+                    counts.cells
+                ),
+            ),
+            None => Some((cells.iter().map(|&cell| cell as u32).collect(), off_map)),
+        }
     }
 
     fn feature(&mut self, feature: &Value, path: &str) -> Option<Feature> {

@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W4 → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4 → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -154,9 +154,60 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3d · Rivers and lakes — P3 · Next
+### W3d · Rivers — P3 · In progress
 
-Azgaar's rivers read (their cells, discharge and width), widened on tiles from their discharge and carved continuously from source to mouth; lakes at their surface height.
+Azgaar's rivers read and drawn on the tiles, along a smooth curve, as wide as Azgaar draws them and never narrower than a tile. Carving their beds and the lakes is W3e. At the user's choice: W3 split again, drawing (W3d) then carving (W3e); a smooth curve through the river's cells; Azgaar's own drawn width.
+
+**Acceptance.** Every count below comes from `rivers_ref.py`, a separate Python script written from these rules, never from the code. `rivers.json` is W3b's five-cell fixture with each cell's flux and three rivers: Ford from cell 3 by cell 4 into the lake (cell 2), Beck from cell 1 joining it at cell 4, and Rill from cell 1 off the map's edge.
+
+- **Reading.**
+  - `pack.rivers` is read: each river's cells, from source to where it ends, the last perhaps −1, off the map; its `widthFactor` and `sourceWidth`.
+  - Each cell's `fl`, its flux, is read too.
+  - Problems are named at their key path:
+    - a cell that doesn't exist;
+    - −1 anywhere but last;
+    - fewer than two cells;
+    - a width outside 0.00 to 10.00;
+    - a flux that isn't a whole number.
+  - An export without `pack.rivers` isn't a Full export.
+  - `world source` says how many rivers there are: "3 rivers".
+- **Where a river runs.**
+  - Its anchors are its cells' centres. A −1 is the point on the map's edge nearest the cell before it, taking the top, the bottom, the left and the right in that order on a tie: Rill ends at (40.00, 10.50).
+  - Its line is a uniform Catmull-Rom curve through its anchors, the first and last doubled. Each stretch is cut into as many pieces as whole tiles its chord spans along its longer axis, at least one, and each point is rounded once to the raster's units.
+  - Unit tests: the curve passes through every anchor, and lies on the line when the anchors do.
+- **How wide.**
+  - Azgaar's half-width at anchor j: the source width at the first; then widthFactor × ((j + P[j]) / 200 + min(F^0.7 / 500, 1)) + sourceWidth. Here P is 1, 1, 2, 3, 5, 8, 13, 21, 34 and then 34, and F is the largest flux of the river's cells so far, −1 taking the cell before's.
+  - In source pixels times the scale, interpolated between anchors and rounded once. Each piece takes the larger of its ends.
+  - By hand:
+    - Ford: 0.05, 0.552824 and 0.564824 pixels;
+    - Beck: 0.04 and 0.45902;
+    - Rill: 0.04 and 0.07646.
+- **Which tiles.**
+  - A land tile is river if its centre lies within a piece's half-width, or the piece touches its square, so even the thinnest river is joined edge to edge.
+  - Its flow is the largest flux at the start of any stretch over it.
+  - Rivers come after the coasts and before the levels, so a river tile is water: level 0, no drops.
+  - Unit tests on drawn grids:
+    - a line along a row of centres;
+    - a line along the border between two rows, which takes both;
+    - a diagonal, joined edge to edge;
+    - a wide line;
+    - the larger flow where two cross.
+- **The fixture whole, seed 7:**
+  - 78 river tiles: 19 of flow 20, 39 of 40 and 20 of 2000;
+  - 358 ocean, 186 lake and 978 land;
+  - levels 0 to 8, with 331 ledges and 26 cliffs.
+  - (30, 10) and (39, 10) are flow 40; (17, 21), (20, 20), (13, 27) and (11, 29) are 2000; (25, 25) is land.
+- **At scale 4,** pixels (10, 10) to (29, 29), seed 7: 501 river tiles, 135 of flow 20, 125 of 40 and 241 of 2000.
+- **A region is the whole map's tiles,** rivers included, away from its edges by twice the coast's specks and the level specks: a property test.
+- **`world import`** counts river tiles, "X ocean, Y lake, Z river and W land":
+  - `rivers.json` whole at seed 0: 357 ocean, 174 lake, 77 river and 992 land; levels 0 to 8, 380 ledges and 32 cliffs;
+  - pixels (10, 10) to (29, 29) at scale 2, seed 7: 166 ocean, 58 lake, 141 river and 1235 land; levels 0 to 7, 341 ledges and 5 cliffs.
+- **The map file** keeps rivers in the water layer it already has, so it stays at version 4.
+- **Menayland, locally:** its river tiles and their flows, by a second script and by the code, agree.
+
+### W3e · Carving rivers and lakes — P3 · Outline
+
+River beds carved to fall continuously from source to mouth, and lakes carved to their surface height, so the levels and cliffs follow the water.
 
 ### W4 · Climate and biomes — P3 · Outline
 

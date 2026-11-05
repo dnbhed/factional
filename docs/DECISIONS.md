@@ -1076,6 +1076,32 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Checked by a separate script:** the starts were worked by hand and the counts by a Python reference from these rules, never taken from this code, and the code agreed on its first run.
   - *Why:* P-119's levels, so the 2D map can draw height as terraces with ledges and cliffs, while the fine elevation stays for 3D (D-50).
 
+- **P-139 · Rivers drawn** (made in W3d, 2026-11-05; P-119, P-134, P-137, P-138).
+  - **W3 split again,** at the user's choice: W3d draws the rivers on the tiles, and W3e carves river beds and lakes into the ground, so each is reviewable in one sitting.
+  - **What's read:**
+    - each river's cells, its `widthFactor` and its `sourceWidth`;
+    - each cell's `fl`, its flux.
+  - **Checks on what's read:**
+    - Its cells must exist, with −1 only last and at least two in all.
+    - Its widths must be 0.00 to 10.00 pixels, past anything Azgaar makes.
+    - A flux must be a whole number.
+    - An export without `pack.rivers` isn't a Full export.
+  - **Not kept:** the river's discharge, length, mouth, parent and name, which W6's suggestions can read when they need them.
+  - **Where a river ends:** Azgaar ends a river at the water it flows into or the river it joins, the cell after its mouth. −1 is past the map's edge, taken as Azgaar does, the nearest point of the edge, top, bottom, left and right on a tie.
+  - **A smooth curve,** at the user's choice: a uniform Catmull-Rom curve through the cells' centres, the ends doubled, worked exactly in the raster's units and rounded once a point. Azgaar draws with an alpha of 0.1, nearly uniform, through points it meanders between cells. Ours runs through the cells alone, so it doesn't depend on Azgaar's meandering code.
+  - **A piece a tile:** each stretch is cut into as many pieces as whole tiles its chord spans along its longer axis, so the line is drawn finely enough at any scale, with nothing irrational to work out.
+  - **Azgaar's drawn width,** at the user's choice:
+    - Azgaar's `width` is a figure in km for display, not what it draws, so we use its drawing formula: widthFactor × ((j + P[j]) / 200 + min(F^0.7 / 500, 1)) + sourceWidth, either side of the line.
+    - Azgaar counts j in its meander points; we count it in cells, so a river widens a little more slowly along its length.
+    - F^0.7 is worked by the same integer power as Azgaar's heights.
+    - Menayland's widest river, Ayderenka, is about 3 pixels across at its widest, so 3 tiles at a tile a pixel.
+  - **Never under a tile:** a tile is river if its centre lies within the half-width or the line touches its square, so a thin river is joined edge to edge, never only corner to corner. Where rivers meet or overlap, a tile takes the larger flow.
+  - **Rivers before levels:** a river tile is water when the levels are made: level 0, no drops, not a neighbour in cleaning. It is `ShallowWater` with `Water::River { flow }`, its flow the largest flux at the start of a stretch over it; its ground keeps its height until W3e carves it.
+  - **No new options, and no new version:** the widths are the source's, so the recipe and the map file's header are unchanged. The water layer already holds a river's flow, so the file stays at version 4.
+  - **`world source` counts rivers;** `world import` counts river tiles, "X ocean, Y lake, Z river and W land".
+  - **Checked by a separate script:** the counts were worked by a Python reference from these rules, never taken from this code, and the code agreed on its first run; Menayland's river tiles, whole, by a second script. The widths at each cell were worked by hand.
+  - *Why:* P-119's rivers, drawn as Azgaar draws them so the map the designer made reads the same in Factional, while staying exact and independent of Azgaar's drawing code.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).
