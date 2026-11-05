@@ -83,7 +83,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "world import <export> <map> [options]",
-        "rasterise an Azgaar Full JSON export into a map file; options --region <x>,<y>,<width>,<height>, --scale <n>, --seed <n>, --detail <strength>, --wavelength <pixels>, --octaves <n>; the whole map at 1 tile a pixel, seed 0, and detail 0.25 of the relief over 8 pixels in 4 octaves unless told",
+        "rasterise an Azgaar Full JSON export into a map file; options --region <x>,<y>,<width>,<height>, --scale <n>, --seed <n>, --detail <strength>, --wavelength <pixels>, --octaves <n>, --shallows <metres>, --specks <tiles>; the whole map at 1 tile a pixel, seed 0, detail 0.25 of the relief over 8 pixels in 4 octaves, shallows to 10 metres and specks under 4 tiles unless told",
     ),
     ("quests", "list the loaded world's quests and questlines"),
     (
@@ -346,7 +346,8 @@ pub struct Session {
 /// How `world` is used.
 pub(crate) const WORLD_FORM: &str = "world needs the form: world info <file>, world source <file>, \
      or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
-     [--detail <strength>] [--wavelength <pixels>] [--octaves <n>]";
+     [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
+     [--shallows <metres>] [--specks <tiles>]";
 
 /// What works on content directories, refused by a session handed its world (G2b); `quests`
 /// only with a directory named.
@@ -3214,7 +3215,8 @@ mod tests {
             output(&format!(
                 "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
                  recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
-                 detail 0.25 of the relief, 8.00 pixels, 4 octaves"
+                 detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
+                 shallows to 10.00 metres, specks under 4 tiles"
             ))
         );
     }
@@ -3289,7 +3291,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 386 ocean, 354 lake and 860 land; heights -176.70 to 1922.19 m; {bytes} bytes"
+                 357 ocean, 174 lake and 1069 land; heights -176.70 to 1922.19 m; {bytes} bytes"
             ))
         );
         let recipe = factional_worldgen::Recipe {
@@ -3305,6 +3307,7 @@ mod tests {
             scale: 1,
             seed: 0,
             detail: factional_worldgen::Detail::default(),
+            coast: factional_worldgen::Coast::default(),
         };
         let source = factional_content::read_azgaar(RASTER).expect("it reads");
         assert_eq!(Ok(map), factional_worldgen::rasterise(&source, recipe));
@@ -3322,7 +3325,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 251 ocean, 209 lake and 1140 land; heights -187.80 to 1734.65 m; {bytes} bytes"
+                 166 ocean, 58 lake and 1376 land; heights -187.80 to 1734.65 m; {bytes} bytes"
             ))
         );
         let recipe = map.recipe();
@@ -3352,7 +3355,7 @@ mod tests {
             said,
             output(&format!(
                 "imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 386 ocean, 354 lake and 860 land; heights -381.73 to 2241.02 m; {bytes} bytes"
+                 299 ocean, 181 lake and 1120 land; heights -381.73 to 2241.02 m; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3368,7 +3371,8 @@ mod tests {
             output(&format!(
                 "rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; {bytes} bytes\n\
                  recipe: source {}, source pixels (0, 0) to (39, 39), 1 tile a source pixel, \
-                 seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves",
+                 seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; \
+                 shallows to 10.00 metres, specks under 4 tiles",
                 factional_content::fingerprint_of(RASTER.as_bytes())
             ))
         );
@@ -3379,6 +3383,47 @@ mod tests {
         assert_eq!(
             session.execute("world import raster.json rough.map --detail 1.5"),
             command_error("the detail's strength must be 0.00 to 1.00, not 1.50")
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_import_takes_the_coasts_shallows_and_specks() {
+        let dir = import_dir("coast");
+        let mut session = Session::new(&dir);
+        let said = session.execute(
+            "world import raster.json coast.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2 \
+             --shallows 25 --specks 0",
+        );
+        let (bytes, map) = imported(&dir, "coast.map");
+        // The counts were worked out by a separate script.
+        assert_eq!(
+            said,
+            output(&format!(
+                "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
+                 294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; {bytes} bytes"
+            ))
+        );
+        assert_eq!(
+            map.recipe().coast,
+            factional_worldgen::Coast {
+                shallows: Fixed::from_hundredths(25_00),
+                specks: 0,
+            }
+        );
+        let info = session.execute("world info coast.map");
+        assert!(
+            matches!(&info, Ok(Outcome::Output(text))
+                if text.ends_with("; shallows to 25.00 metres, specks under 0 tiles")),
+            "{info:?}"
+        );
+        assert_eq!(
+            session.execute("world import raster.json coast.map --specks 4097"),
+            command_error("the coast's specks must be 0 to 4096 tiles, not 4097")
+        );
+        assert_eq!(
+            session.execute("world import raster.json coast.map --shallows 1000.01"),
+            command_error("the coast's shallows must be 0.00 to 1000.00 metres, not 1000.01")
         );
         std::fs::remove_dir_all(&dir).expect("removed");
     }
@@ -3439,7 +3484,7 @@ mod tests {
             refused("--size 4"),
             command_error(
                 "world import has no option --size; it takes --region, --scale, --seed, \
-                 --detail, --wavelength and --octaves"
+                 --detail, --wavelength, --octaves, --shallows and --specks"
             )
         );
         assert_eq!(
@@ -3458,6 +3503,14 @@ mod tests {
             refused("--octaves four"),
             command_error("--octaves needs a whole number, not four")
         );
+        assert_eq!(
+            refused("--shallows deep"),
+            command_error("--shallows needs a number, not deep")
+        );
+        assert_eq!(
+            refused("--specks -1"),
+            command_error("--specks needs a whole number, not -1")
+        );
         assert_eq!(run("world import raster.json"), command_error(WORLD_FORM));
         assert_eq!(
             run("world import a.json b.map c.map"),
@@ -3472,7 +3525,8 @@ mod tests {
             WORLD_FORM,
             "world needs the form: world info <file>, world source <file>, \
              or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
-             [--detail <strength>] [--wavelength <pixels>] [--octaves <n>]"
+             [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
+             [--shallows <metres>] [--specks <tiles>]"
         );
         assert_eq!(run("world"), form);
         assert_eq!(run("world info"), form);

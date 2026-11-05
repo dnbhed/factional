@@ -8,15 +8,15 @@ use std::fmt;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, CHUNK, ChunkPos, Detail, MapError, Override, Plant, PlantKind, Recipe, Region, Size,
-    Terrain, Tile, TilePos, Water, WorldMap,
+    Biome, CHUNK, ChunkPos, Coast, Detail, MapError, Override, Plant, PlantKind, Recipe, Region,
+    Size, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 2;
+pub const MAP_VERSION: u32 = 3;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -118,6 +118,7 @@ struct HeaderRecipe {
     scale: u32,
     seed: u32,
     detail: HeaderDetail,
+    coast: HeaderCoast,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +127,13 @@ struct HeaderDetail {
     strength: Fixed,
     wavelength: Fixed,
     octaves: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeaderCoast {
+    shallows: Fixed,
+    specks: u32,
 }
 
 #[derive(Deserialize)]
@@ -340,6 +348,7 @@ fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
          scale = {}\n\
          seed = {}\n\
          detail = {{ strength = {}, wavelength = {}, octaves = {} }}\n\
+         coast = {{ shallows = {}, specks = {} }}\n\
          \n\
          [tiles]\n\
          bytes = {}\n\
@@ -354,6 +363,8 @@ fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
         recipe.detail.strength,
         recipe.detail.wavelength,
         recipe.detail.octaves,
+        recipe.coast.shallows,
+        recipe.coast.specks,
         tiles.len(),
         quoted(&fingerprint_of(&tiles)),
     );
@@ -398,6 +409,10 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
             strength: header.recipe.detail.strength,
             wavelength: header.recipe.detail.wavelength,
             octaves: header.recipe.detail.octaves,
+        },
+        coast: Coast {
+            shallows: header.recipe.coast.shallows,
+            specks: header.recipe.coast.specks,
         },
     };
     let size = recipe.size().map_err(MapFileError::Recipe)?;
@@ -536,6 +551,7 @@ mod tests {
             scale: 1,
             seed: 7,
             detail: Detail::default(),
+            coast: Coast::default(),
         }
     }
 

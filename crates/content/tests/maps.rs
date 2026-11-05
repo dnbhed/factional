@@ -5,8 +5,8 @@
 use factional_content::{MAP_VERSION, MapFileError, fingerprint_of, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Detail, Override, Plant, PlantKind, Recipe, Region, Size, Terrain, Tile, TilePos, Water,
-    WorldMap,
+    Biome, Coast, Detail, Override, Plant, PlantKind, Recipe, Region, Size, Terrain, Tile, TilePos,
+    Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -61,6 +61,7 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
         scale,
         seed: 7,
         detail: Detail::default(),
+        coast: Coast::default(),
     }
 }
 
@@ -169,7 +170,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 2
+version = 3
 
 [recipe]
 source = ""
@@ -177,6 +178,7 @@ region = {{ x = 3, y = 4, width = 35, height = 33 }}
 scale = 2
 seed = 7
 detail = {{ strength = 0.25, wavelength = 8.00, octaves = 4 }}
+coast = {{ shallows = 10.00, specks = 4 }}
 
 [tiles]
 bytes = {}
@@ -186,7 +188,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 2);
+    assert_eq!(MAP_VERSION, 3);
 }
 
 #[test]
@@ -240,15 +242,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [1, 3] {
+    for found in [2, 4] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 2",
+            "version = 3",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 2")
+            format!("this map is version {found}, but this build reads version 3")
         );
     }
 }
@@ -290,6 +292,44 @@ fn detail_outside_its_ranges_is_refused_with_why() {
     let bytes = with_header(&write_map(&hand_made()), "strength = 0.25, ", "");
     let refused = refusal(&bytes);
     assert!(refused.contains("strength"), "{refused}");
+}
+
+#[test]
+fn the_recipes_coast_is_kept() {
+    let mut recipe = recipe(0, 0, 3, 2, 1);
+    recipe.coast = Coast {
+        shallows: Fixed::from_hundredths(1000_00),
+        specks: 4096,
+    };
+    let map = WorldMap::new(recipe, varied).expect("the recipe makes a map");
+    let bytes = write_map(&map);
+    let (header, _) = split(&bytes);
+    assert!(
+        header.contains("coast = { shallows = 1000.00, specks = 4096 }\n"),
+        "{header}"
+    );
+    assert_eq!(read_map(&bytes), Ok(map));
+}
+
+#[test]
+fn a_coast_outside_its_ranges_is_refused_with_why() {
+    let bytes = with_header(&write_map(&hand_made()), "specks = 4", "specks = 4097");
+    assert_eq!(
+        refusal(&bytes),
+        "this map's recipe can't make a map: the coast's specks must be 0 to 4096 tiles, not 4097"
+    );
+    let bytes = with_header(
+        &write_map(&hand_made()),
+        "shallows = 10.00",
+        "shallows = -1",
+    );
+    assert_eq!(
+        refusal(&bytes),
+        "this map's recipe can't make a map: the coast's shallows must be 0.00 to 1000.00 metres, not -1.00"
+    );
+    let bytes = with_header(&write_map(&hand_made()), "shallows = 10.00, ", "");
+    let refused = refusal(&bytes);
+    assert!(refused.contains("shallows"), "{refused}");
 }
 
 #[test]

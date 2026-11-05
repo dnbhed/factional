@@ -1,12 +1,12 @@
 //! Rasterising a source (W2b, P-135): a region at a scale made into tiles, each tile's height
 //! interpolated across the triangle of cell centres it falls in, in metres by Azgaar's own
-//! formula; land, sea and lake from the nearest cell's feature. Every expected value here is
-//! worked by hand from the formulas in DESIGN.md §21.
+//! formula; and the sea, a lake or land under it (W3b's rules, tested in `coast.rs`). Every
+//! expected value here is worked by hand from the formulas in DESIGN.md §21.
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Detail, Feature, HEIGHT_EXPONENTS, Point, RasterError, Recipe, Region, Size, Source,
-    SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
+    Biome, Coast, Detail, Feature, HEIGHT_EXPONENTS, Point, RasterError, Recipe, Region, Size,
+    Source, SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
 };
 use proptest::prelude::*;
 
@@ -92,6 +92,7 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
             strength: Fixed::ZERO,
             ..Detail::default()
         },
+        coast: Coast::default(),
     }
 }
 
@@ -193,7 +194,7 @@ fn a_region_at_a_scale_is_rasterised_at_its_tiles_centres() {
 }
 
 #[test]
-fn land_sea_and_lake_come_from_the_nearest_cells_feature() {
+fn sea_lake_and_land_have_their_layers() {
     let map = rasterise(&raster(2_00), whole()).expect("a map");
     let at = |x, y| map.tile(TilePos { x, y }).expect("on the map");
     let sea = at(0, 0);
@@ -220,13 +221,13 @@ fn land_sea_and_lake_come_from_the_nearest_cells_feature() {
 
 #[test]
 fn a_tie_for_nearest_goes_to_the_first_cell() {
-    // (20.5, 10.5) is 10 pixels from A, B and E alike: A's ocean wins.
+    // (5.5, 20.5) is outside every triangle, and as far from A as from C: A's height and its
+    // ocean win, deep sea at −50.00 m, where C's would be lake at −2.63.
     let map = rasterise(&raster(2_00), whole()).expect("a map");
+    let tile = map.tile(TilePos { x: 5, y: 20 }).expect("on the map");
     assert_eq!(
-        map.tile(TilePos { x: 20, y: 10 })
-            .expect("on the map")
-            .terrain,
-        Terrain::DeepWater
+        (tile.terrain, tile.water, tile.elevation),
+        (Terrain::DeepWater, None, hundredths(-50_00))
     );
 }
 

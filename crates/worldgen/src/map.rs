@@ -22,6 +22,13 @@ const SHORTEST: Fixed = Fixed::ONE;
 /// The fewest and most octaves of detail.
 const OCTAVES: [u32; 2] = [1, 8];
 
+/// The shallowest and deepest the sea's shallows may reach, in metres: none, and past any sea
+/// Azgaar makes.
+const SHALLOWS: [Fixed; 2] = [Fixed::ZERO, Fixed::from_hundredths(1000_00)];
+
+/// The most tiles a speck may have: a chunk's.
+const SPECKS: u32 = CHUNK * CHUNK;
+
 /// A width and a height, in tiles or source pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
@@ -72,8 +79,8 @@ pub struct Region {
 }
 
 /// How a map was made (P-119): from which source, which of its layers, which region at what
-/// scale in tiles a source pixel, with which seed, and with what detail. Generation's other
-/// options join it as they land.
+/// scale in tiles a source pixel, with which seed, with what detail and what coast.
+/// Generation's other options join it as they land.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recipe {
     /// The source's fingerprint; empty for a hand-made map.
@@ -82,6 +89,7 @@ pub struct Recipe {
     pub scale: u32,
     pub seed: u32,
     pub detail: Detail,
+    pub coast: Coast,
 }
 
 /// The detail added to the source's heights (W3a, P-136): seeded gradient noise, `strength`
@@ -101,6 +109,25 @@ impl Default for Detail {
             strength: Fixed::from_hundredths(25),
             wavelength: Fixed::from_hundredths(8_00),
             octaves: 4,
+        }
+    }
+}
+
+/// How coasts are drawn (W3b, P-137): sea less deep than `shallows` metres is shallow, and a
+/// group of land or water of fewer than `specks` tiles, away from the map's edge, becomes the
+/// other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Coast {
+    pub shallows: Fixed,
+    pub specks: u32,
+}
+
+impl Default for Coast {
+    /// Shallows to 10 metres, and specks of fewer than 4 tiles (DESIGN.md §21).
+    fn default() -> Coast {
+        Coast {
+            shallows: Fixed::from_hundredths(10_00),
+            specks: 4,
         }
     }
 }
@@ -125,6 +152,13 @@ impl Recipe {
         if !(OCTAVES[0]..=OCTAVES[1]).contains(&detail.octaves) {
             return Err(MapError::DetailOctaves(detail.octaves));
         }
+        let coast = self.coast;
+        if !(SHALLOWS[0] <= coast.shallows && coast.shallows <= SHALLOWS[1]) {
+            return Err(MapError::CoastShallows(coast.shallows));
+        }
+        if coast.specks > SPECKS {
+            return Err(MapError::CoastSpecks(coast.specks));
+        }
         let side = |pixels: u32| u64::from(pixels) * u64::from(self.scale);
         let (width, height) = (side(region.width), side(region.height));
         match (u32::try_from(width), u32::try_from(height)) {
@@ -146,6 +180,8 @@ pub enum MapError {
     DetailStrength(Fixed),
     DetailWavelength(Fixed),
     DetailOctaves(u32),
+    CoastShallows(Fixed),
+    CoastSpecks(u32),
     OffTheMap { at: TilePos, size: Size },
     OtherSize { recipe: Size, map: Size },
 }
@@ -174,6 +210,15 @@ impl fmt::Display for MapError {
                 f,
                 "the detail needs {} to {} octaves, not {octaves}",
                 OCTAVES[0], OCTAVES[1]
+            ),
+            MapError::CoastShallows(shallows) => write!(
+                f,
+                "the coast's shallows must be {} to {} metres, not {shallows}",
+                SHALLOWS[0], SHALLOWS[1]
+            ),
+            MapError::CoastSpecks(specks) => write!(
+                f,
+                "the coast's specks must be 0 to {SPECKS} tiles, not {specks}"
             ),
             MapError::OffTheMap { at, size } => write!(
                 f,

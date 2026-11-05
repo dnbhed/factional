@@ -1,8 +1,9 @@
-# Rasterising Azgaar's terrain (W2b) with detail (W3a): a hand-made export of five cells
-# imported into a map file, then read back. The tile counts and heights were worked out by a
-# separate script.
+# Rasterising Azgaar's terrain (W2b) with detail (W3a) and coasts (W3b): a hand-made export of
+# five cells imported into a map file, then read back. The tile counts and heights were worked
+# out by a separate script.
 
-# The whole map at 1 tile a pixel, with the default detail; its length is in the snapshot.
+# The whole map at 1 tile a pixel, with the default detail and coast: 357 ocean, 174 lake and
+# 1069 land. Its length is in the snapshot.
 world import crates/content/tests/fixtures/azgaar/raster.json target/raster.map
 
 # What it wrote: the recipe names the export's fingerprint.
@@ -10,10 +11,17 @@ world info target/raster.map
 
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 30,30,20,20 == error: the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 10,10 == error: --region needs four whole numbers, <x>,<y>,<width>,<height>, not 10,10
-assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>]
+assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>]
 
 # Rougher detail, and another seed, in the recipe: heights -381.73 to 2241.02 m, and the
 # recipe's detail in what `world info` says. The lengths are in the snapshot.
 world import crates/content/tests/fixtures/azgaar/raster.json target/rough.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2
 world info target/rough.map
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/rough.map --octaves 9 == error: the detail needs 1 to 8 octaves, not 9
+
+# The coast: shallows to 25 metres, and no specks removed; the sea's depth moves no tile
+# between ocean and land, but specks do: 299 ocean, 181 lake and 1120 land above, and here
+# 294, 183 and 1123. The recipe's coast is in what `world info` says.
+world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2 --shallows 25 --specks 0
+world info target/coast.map
+assert world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --specks 4097 == error: the coast's specks must be 0 to 4096 tiles, not 4097
