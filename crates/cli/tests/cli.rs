@@ -307,7 +307,8 @@ fn world_info_summarises_a_map_file_and_exits_zero() {
         format!(
             "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
              recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
-             detail 0.25 of the relief, 8.00 pixels, 4 octaves\n"
+             detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
+             shallows to 10.00 metres, specks under 4 tiles\n"
         )
     );
     assert_eq!(text(&output.stderr), "");
@@ -370,8 +371,50 @@ fn world_import_writes_a_map_file_and_exits_zero() {
         text(&output.stdout),
         format!(
             "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-             251 ocean, 209 lake and 1140 land; heights -187.80 to 1734.65 m; {bytes} bytes\n"
+             166 ocean, 58 lake and 1376 land; heights -187.80 to 1734.65 m; {bytes} bytes\n"
         )
+    );
+    std::fs::remove_dir_all(&dir).expect("removed");
+}
+
+#[test]
+fn world_import_takes_the_detail_and_the_coast() {
+    let dir = std::env::temp_dir().join(format!("factional-w3b-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    let map = dir.join("coast.map");
+    let output = factional_in_repo(&[
+        "world",
+        "import",
+        "crates/content/tests/fixtures/azgaar/raster.json",
+        map.to_str().expect("a UTF-8 path"),
+        "--seed",
+        "3",
+        "--detail",
+        "0.5",
+        "--wavelength",
+        "4",
+        "--octaves",
+        "2",
+        "--shallows",
+        "25",
+        "--specks",
+        "0",
+    ]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    let bytes = std::fs::metadata(&map).expect("the map is written").len();
+    // The tile counts were worked out by a separate script.
+    assert_eq!(
+        text(&output.stdout),
+        format!(
+            "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
+             294 ocean, 183 lake and 1123 land; heights -381.73 to 2241.02 m; {bytes} bytes\n"
+        )
+    );
+    let info = factional_in_repo(&["world", "info", map.to_str().expect("a UTF-8 path")]);
+    let said = text(&info.stdout);
+    assert!(
+        said.ends_with("; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 25.00 metres, specks under 0 tiles\n"),
+        "{said}"
     );
     std::fs::remove_dir_all(&dir).expect("removed");
 }

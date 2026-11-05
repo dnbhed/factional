@@ -5,8 +5,8 @@
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Detail, Feature, Point, Recipe, Region, Size, Source, SourceCell, SourceVertex, Terrain, Water,
-    rasterise,
+    Coast, Detail, Feature, Point, Recipe, Region, Size, Source, SourceCell, SourceVertex, Terrain,
+    Water, rasterise,
 };
 use serde_json::{Value, json};
 
@@ -169,6 +169,27 @@ fn a_feature_factional_doesnt_read_or_a_lake_without_its_surface_is_named() {
 }
 
 #[test]
+fn a_lakes_surface_outside_azgaars_heights_is_named() {
+    for (surface, said) in [(json!(100.01), "100.01"), (json!(-0.01), "-0.01")] {
+        let text = tiny_with(|json| json["pack"]["features"][2]["height"] = surface);
+        assert_eq!(
+            problems(&text),
+            [format!(
+                "pack.features[2].height: {said} is outside 0.00 to 100.00, Azgaar's heights"
+            )]
+        );
+    }
+    for surface in [json!(0), json!(100), json!(19.9)] {
+        assert!(
+            read_azgaar(&tiny_with(
+                |json| json["pack"]["features"][2]["height"] = surface
+            ))
+            .is_ok()
+        );
+    }
+}
+
+#[test]
 fn the_height_exponent_is_read_to_the_hundredth() {
     let text = tiny_with(|json| json["settings"]["heightExponent"] = json!(1.785));
     let source = read_azgaar(&text).expect("it reads");
@@ -320,19 +341,22 @@ fn the_users_menayland_export_rasterises_whole() {
         scale: 1,
         seed: 0,
         detail: Detail::default(),
+        coast: Coast::default(),
     };
     let map = rasterise(&source, recipe).expect("Menayland rasterises");
-    let mut counts = [0; 3];
+    let mut counts = [0; 4];
     for (_, chunk) in map.chunks() {
         let size = chunk.size();
         for (x, y) in (0..size.height).flat_map(|y| (0..size.width).map(move |x| (x, y))) {
             let tile = chunk.tile(x, y).expect("in the chunk");
             counts[match (tile.terrain, tile.water) {
                 (Terrain::DeepWater, _) => 0,
-                (_, Some(Water::Lake)) => 1,
-                _ => 2,
+                (_, Some(Water::Lake)) => 2,
+                (Terrain::ShallowWater, _) => 1,
+                _ => 3,
             }] += 1;
         }
     }
-    assert_eq!(counts, [772_521, 8_931, 396_018]);
+    // Deep sea, shallow sea, lake and land.
+    assert_eq!(counts, [106_308, 658_922, 10_422, 401_818]);
 }

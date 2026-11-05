@@ -356,9 +356,19 @@ impl Reader {
             Some("ocean") => Some(Feature::Ocean),
             Some("island") => Some(Feature::Island),
             Some("lake") => match feature.get("height") {
-                Some(height) => self
-                    .decimal(height, &format!("{path}.height"))
-                    .map(|surface| Feature::Lake { surface }),
+                Some(height) => {
+                    let at = format!("{path}.height");
+                    let [lowest, highest] = [0, 100_00].map(Fixed::from_hundredths);
+                    match self.decimal(height, &at)? {
+                        surface if lowest <= surface && surface <= highest => {
+                            Some(Feature::Lake { surface })
+                        }
+                        surface => self.problem(
+                            &at,
+                            format!("{surface} is outside {lowest} to {highest}, Azgaar's heights"),
+                        ),
+                    }
+                }
                 None => self.problem(path, "missing height, a lake's surface".to_owned()),
             },
             _ => self.problem(

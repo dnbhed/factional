@@ -14,7 +14,7 @@ use factional_cli::{
 };
 use factional_content::{SCHEMA_FILES, schema_text};
 use factional_core::Fixed;
-use factional_worldgen::Detail;
+use factional_worldgen::{Coast, Detail};
 
 #[derive(Parser)]
 #[command(
@@ -101,6 +101,12 @@ enum WorldCommand {
         /// The detail's octaves, each half the wavelength and strength of the one before: 1 to 8
         #[arg(long, default_value_t = Detail::default().octaves)]
         octaves: u32,
+        /// How deep the sea's shallows reach, in metres: 0.00 to 1000.00
+        #[arg(long, default_value_t = Coast::default().shallows)]
+        shallows: Fixed,
+        /// The fewest tiles a group of land or water keeps, away from the map's edge: 0 to 4096
+        #[arg(long, default_value_t = Coast::default().specks)]
+        specks: u32,
     },
 }
 
@@ -160,6 +166,8 @@ fn main() -> ExitCode {
                 detail,
                 wavelength,
                 octaves,
+                shallows,
+                specks,
             } => world_import(
                 Path::new(""),
                 &Import {
@@ -173,6 +181,7 @@ fn main() -> ExitCode {
                         wavelength,
                         octaves,
                     },
+                    coast: Coast { shallows, specks },
                 },
             ),
         } {

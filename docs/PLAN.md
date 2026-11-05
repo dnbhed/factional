@@ -152,9 +152,27 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3b · Coasts — P3 · Next
+### W3b · Coasts — P3 · In progress
 
-Land and sea decided by the detailed height against sea level and a lake's surface, within its feature, rather than by the nearest cell, so coasts follow the ground instead of the cells' borders; smoothed.
+Land and water decided by each tile's detailed height against the water near it, rather than by the nearest cell's feature, so that coasts follow the ground instead of the cells' borders; the sea's shallows by depth; specks of land and water too small to keep removed. At the user's choice: the nearest water nearby, specks removed, shallows by depth.
+
+**Acceptance.** Every count and height below comes from `coast_ref.py`, a separate Python script written from these rules, never from the code. "The fixture" is W3a's five cells on 40 × 40 pixels, A an ocean at 10, C a lake at 19 with its surface at 19.50, and B, D, E an island; "no detail" is a strength of 0.00.
+
+- **A lake's surface in metres,** by Azgaar's formula with the height a decimal: 19.90 is −0.25 m, 20.90 is 8.41, 21.90 is 15.21 and 23.90 is 34.81 at an exponent of 2.00; 21.90 is 7.70 at 1.50; the fixture's 19.50 is −1.28. A whole height gives what a cell at it gives.
+- **Which water.** A tile's water is the water cell nearest its centre among its nearest cell and that cell's neighbours, ties to the first cell: an ocean's surface is 0 m, a lake's its own. The tile is under it if its height is below that surface, and land otherwise; with no water cell among them it is land.
+  - No detail: (13, 13), nearest A, is land at 8.20 m, above the sea; (10, 30), nearest C, is lake at −2.63, below C's −1.28.
+  - No detail: (11, 20) is nearest E, an island; A and C are equally near, so its water is A's, and at −9.28 m it is shallow sea, not lake.
+  - Seed 7, the default detail: (12, 21), nearest E, is lake at −3.99, C nearer than A; (12, 20) is deep sea at −16.01; (10, 30) is land at 82.93, above C's surface.
+- **Shallows by depth.** Sea less deep than the shallows (default 10.00 m) is `ShallowWater`, deeper `DeepWater`, both `Marine` with no water layer; a lake is `ShallowWater`, `Lake`, `Marine`; land is `Grass`, `Grassland`. No detail: (12, 12) at −11.20 is deep at the default shallows and at 11.20, and shallow at 11.21.
+- **Specks.** A 4-connected group of land, or of water, of fewer tiles than the specks (default 4) becomes the other, unless it touches the map's edge: water first, to land; then land, which takes the water above its first tile, the first tile bordering it row by row, each tile then classed by its own depth. Heights never change.
+  - Unit tests on drawn grids: a speck touching each edge in turn is kept; a group of exactly the specks is kept; tiles touching only at a corner are apart; and a ring of 8 land tiles round a single lake tile in the sea, at specks 10, becomes all sea, which removing land first would not give, while at specks 9 the ring and its middle stay land.
+  - Strength 1.00, wavelength 3.00, 3 octaves, seed 7: with specks 0, 262 deep, 12 shallow, 163 lake and 1163 land; with 4, 251, 23, 161 and 1165.
+- **The whole fixture,** seed 7, the defaults: 346 deep, 12 shallow, 186 lake and 1056 land; seed 0: 348, 9, 174 and 1069; no detail: 342, 6, 302 and 950, and at shallows 12.00, 340 and 8. Pixels (10, 10) to (29, 29) at scale 2, seed 7: 150, 16, 58 and 1376.
+- **A region is the whole map's tiles** away from its edges, by twice the specks, at every scale and seed, heights everywhere: a property test.
+- **The recipe's coast** is `shallows` 0.00 to 1000.00 m and `specks` 0 to 4096 tiles (a chunk's), checked wherever a recipe makes a map: "the coast's shallows must be 0.00 to 1000.00 metres, not 1000.01"; "the coast's specks must be 0 to 4096 tiles, not 4097".
+- **The map file is version 3,** with `coast = { shallows = 10.00, specks = 4 }` in its header's recipe; version 2 is refused, naming both.
+- **`world import --shallows <metres> --specks <tiles>`,** and `factional world import`; ocean counts both depths of sea. `world info` adds the coast to the recipe line. The fixture whole with seed 3, strength 0.50, wavelength 4.00 and 2 octaves: 299 ocean, 181 lake and 1120 land; with shallows 25.00 and specks 0, 294, 183 and 1123.
+- **Menayland, locally:** its counts by the same script and the code agree.
 
 ### W3c · Levels — P3 · Outline
 

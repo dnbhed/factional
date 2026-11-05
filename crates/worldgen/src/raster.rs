@@ -1,23 +1,26 @@
 //! Rasterising a source (W2b, P-135): a region of it at a scale made into tiles. Each tile's
 //! height is interpolated at its centre across the triangle of cell centres it falls in, in
 //! metres by Azgaar's own formula, rounded once; outside every triangle it takes the nearest
-//! cell's. Land, sea and lake come from the nearest cell's feature.
+//! cell's. Whether it lies under the sea, a lake or neither is W3b's, in `coast.rs`.
 
 use std::fmt;
 
 use factional_core::{Fixed, div_round};
 
+use crate::coast::{self, Body};
 use crate::map::{Detail, MapError, Recipe, Region, Size, TilePos, WorldMap};
 use crate::noise;
 use crate::source::{Feature, Source};
-use crate::tile::{Biome, Terrain, Tile, Water};
 
 /// The lowest and highest height exponents Azgaar allows (`settings.heightExponent`).
 pub const HEIGHT_EXPONENTS: [Fixed; 2] =
     [Fixed::from_hundredths(1_50), Fixed::from_hundredths(2_20)];
 
-/// Sea level on Azgaar's height scale of 0 to 100.
-const SEA_LEVEL: u8 = 20;
+/// Sea level on Azgaar's height scale of 0 to 100, in hundredths.
+const SEA_LEVEL: i128 = 20_00;
+
+/// The highest height on Azgaar's scale, in hundredths.
+const HIGHEST: i128 = 100_00;
 
 /// How many binary places of the exponent's fraction are taken; the rest moves a height by
 /// far less than a centimetre.
@@ -26,19 +29,25 @@ const FRACTION_BITS: u32 = 40;
 /// Binary places in the fixed point the power is worked in.
 const POINT: u32 = 48;
 
-/// The height in metres of a cell at `height` on Azgaar's scale, as Azgaar has it:
-/// (h − 18)^exponent at sea level and above, ((h − 20) / h) × 50 below it, and −990 at 0.
-/// The exponent is held to the range Azgaar allows. A fractional power is worked in integers,
-/// the same on every machine, and rounded once.
+/// The height in metres of a cell at `height` on Azgaar's scale, as `height_metres` has it.
 pub fn cell_metres(height: u8, exponent: Fixed) -> Fixed {
-    let h = i128::from(height);
-    let hundredths = match height {
-        0 => -990_00,
-        1..SEA_LEVEL => div_round(50_00 * (h - i128::from(SEA_LEVEL)), h),
+    height_metres(Fixed::from_hundredths(i64::from(height) * 100), exponent)
+}
+
+/// The height in metres of `height` on Azgaar's scale of 0 to 100, to the hundredth (a lake's
+/// surface, say), as Azgaar has it: (h − 18)^exponent at sea level and above, ((h − 20) / h) ×
+/// 50 below it, and −990 at 0. The height is held to that scale, and the exponent to the range
+/// Azgaar allows. A fractional power is worked in integers, the same on every machine, and
+/// rounded once.
+pub fn height_metres(height: Fixed, exponent: Fixed) -> Fixed {
+    let h = i128::from(height.hundredths()).min(HIGHEST);
+    let hundredths = match h {
+        ..=0 => -990_00,
+        _ if h < SEA_LEVEL => div_round(50_00 * (h - SEA_LEVEL), h),
         _ => {
             let [lowest, highest] = HEIGHT_EXPONENTS.map(Fixed::hundredths);
             power(
-                u128::from(height - 18),
+                u128::try_from(h - 18_00).expect("above sea level"),
                 exponent.hundredths().clamp(lowest, highest),
             )
         }
@@ -46,15 +55,17 @@ pub fn cell_metres(height: u8, exponent: Fixed) -> Fixed {
     Fixed::from_hundredths(i64::try_from(hundredths).expect("Azgaar's heights fit"))
 }
 
-/// `base` to the power `exponent` hundredths, in hundredths, rounded once. The whole part is
-/// multiplied out; the fraction, taken bit by bit, multiplies in `base`'s square root, its
-/// fourth root and so on, each worked by integer square roots in fixed point.
+/// `base` hundredths to the power `exponent` hundredths, in hundredths, rounded once. The
+/// whole part is multiplied out; the fraction, taken bit by bit, multiplies in `base`'s square
+/// root, its fourth root and so on, each worked by integer square roots in fixed point.
 fn power(base: u128, exponent: i64) -> i128 {
     let one = 1u128 << POINT;
-    let whole = u32::try_from(exponent / 100).expect("a held exponent");
     let mut fraction = exponent % 100;
-    let mut root = base << POINT;
-    let mut value = base.pow(whole) << POINT;
+    let mut root = (base << POINT) / 100;
+    let mut value = one;
+    for _ in 0..exponent / 100 {
+        value = (value * root) >> POINT;
+    }
     for _ in 0..FRACTION_BITS {
         root = (root << POINT).isqrt();
         fraction *= 2;
@@ -135,7 +146,7 @@ impl std::error::Error for RasterError {}
 /// The map `recipe` makes of `source`: its region at its scale, each tile from the cells
 /// around its centre. `source` is as `factional-content` reads it, every reference resolving.
 pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterError> {
-    recipe.size().map_err(RasterError::Map)?;
+    let size = recipe.size().map_err(RasterError::Map)?;
     let region = recipe.region;
     let past =
         |from: u32, pixels: u32, side: u32| u64::from(from) + u64::from(pixels) > u64::from(side);
@@ -153,9 +164,19 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
     let raster = Raster::new(source, &recipe);
     let scale = i128::from(recipe.scale);
     let origin = [region.x, region.y].map(|from| i128::from(from) * 200 * scale);
+    let centre = |from: i128, tile: u32| from + (2 * i128::from(tile) + 1) * 100;
+    // Every tile's height and the water cell it lies under, row by row; then the specks.
+    let (elevations, mut waters): (Vec<Fixed>, Vec<Option<u32>>) = (0..size.height)
+        .flat_map(|y| (0..size.width).map(move |x| (x, y)))
+        .map(|(x, y)| raster.ground([centre(origin[0], x), centre(origin[1], y)]))
+        .unzip();
+    let width = size.width as usize;
+    coast::remove_specks(width, &mut waters, recipe.coast.specks as usize);
+    let shallows = recipe.coast.shallows;
     WorldMap::new(recipe, |at: TilePos| {
-        let centre = |from: i128, tile: u32| from + (2 * i128::from(tile) + 1) * 100;
-        raster.tile([centre(origin[0], at.x), centre(origin[1], at.y)])
+        let i = at.y as usize * width + at.x as usize;
+        let water = waters[i].map(|cell| raster.bodies[cell as usize].expect("a water cell"));
+        coast::tile(elevations[i], water, shallows)
     })
     .map_err(RasterError::Map)
 }
@@ -164,13 +185,15 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
 /// every cell's centre, to the hundredth, is a whole number of them.
 type At = [i128; 2];
 
-/// The source made ready to rasterise: its cells' centres, metres and reliefs, its triangles,
-/// a grid of buckets to find them in, and the detail to add, its wavelength in units.
+/// The source made ready to rasterise: its cells' centres, metres, reliefs and water, its
+/// triangles, a grid of buckets to find them in, and the detail to add, its wavelength in
+/// units.
 struct Raster<'a> {
     source: &'a Source,
     centres: Vec<At>,
     metres: Vec<i128>,
     reliefs: Vec<i128>,
+    bodies: Vec<Option<Body>>,
     triangles: Vec<[usize; 3]>,
     detail: Detail,
     seed: u32,
@@ -192,6 +215,21 @@ impl Raster<'_> {
             .collect();
         let metres = metres(source);
         let reliefs = reliefs(source, &metres);
+        let bodies = source
+            .cells
+            .iter()
+            .map(|cell| match source.features[cell.feature as usize] {
+                Feature::Ocean => Some(Body {
+                    surface: Fixed::ZERO,
+                    lake: false,
+                }),
+                Feature::Lake { surface } => Some(Body {
+                    surface: height_metres(surface, source.height_exponent),
+                    lake: true,
+                }),
+                Feature::Island => None,
+            })
+            .collect();
         // A triangle for each vertex with three cells, unless they lie on a line, each turned
         // the same way, so that a point inside has no negative weight.
         let triangles: Vec<[usize; 3]> = source
@@ -235,6 +273,7 @@ impl Raster<'_> {
             centres,
             metres,
             reliefs,
+            bodies,
             triangles,
             detail,
             seed: recipe.seed,
@@ -245,9 +284,11 @@ impl Raster<'_> {
         }
     }
 
-    /// The tile whose centre is at `at`: its height interpolated, or the nearest cell's, with
-    /// strength × relief × noise added, rounded once.
-    fn tile(&self, at: At) -> Tile {
+    /// The ground whose centre is at `at`: its height interpolated, or the nearest cell's, with
+    /// strength × relief × noise added, rounded once; and the water cell it lies under, if any.
+    /// That is the water cell nearest `at` among the nearest cell and its neighbours, the first
+    /// if several are as near, if `at` lies below its surface.
+    fn ground(&self, at: At) -> (Fixed, Option<u32>) {
         let (nearest, _) = self.nearest(at);
         let weights = self
             .weights(at)
@@ -267,21 +308,24 @@ impl Raster<'_> {
             .checked_mul(noise)
             .expect(fits);
         let elevation = div_round(base.checked_add(detail).expect(fits), area * unit);
-        let cell = &self.source.cells[nearest];
-        let (terrain, water, biome) = match self.source.features[cell.feature as usize] {
-            Feature::Ocean => (Terrain::DeepWater, None, Biome::Marine),
-            Feature::Lake { .. } => (Terrain::ShallowWater, Some(Water::Lake), Biome::Marine),
-            Feature::Island => (Terrain::Grass, None, Biome::Grassland),
-        };
-        Tile {
-            elevation: Fixed::from_hundredths(
-                i64::try_from(elevation).expect("between the cells' heights"),
-            ),
-            terrain,
-            water,
-            biome,
-            plant: None,
-        }
+        let elevation =
+            Fixed::from_hundredths(i64::try_from(elevation).expect("between the cells' heights"));
+        let around = &self.source.cells[nearest].neighbours;
+        let water = std::iter::once(nearest)
+            .chain(around.iter().map(|&cell| cell as usize))
+            .filter_map(|cell| {
+                self.bodies[cell].map(|body| ((self.distance(cell, at), cell), body))
+            })
+            .min_by_key(|&(key, _)| key)
+            .filter(|(_, body)| elevation < body.surface)
+            .map(|((_, cell), _)| u32::try_from(cell).expect("a source's cells fit"));
+        (elevation, water)
+    }
+
+    /// The square of the distance from cell `i`'s centre to `at`.
+    fn distance(&self, i: usize, at: At) -> i128 {
+        let [dx, dy] = [0, 1].map(|axis| self.centres[i][axis] - at[axis]);
+        dx * dx + dy * dy
     }
 
     /// The cells of the first triangle `at` falls in, each with its barycentric weight, twice
@@ -310,8 +354,7 @@ impl Raster<'_> {
         for ring in 0..=last {
             for bucket in self.grid.ring(centre, ring) {
                 for &i in &self.cells_in[self.grid.index(bucket)] {
-                    let [dx, dy] = [0, 1].map(|axis| self.centres[i][axis] - at[axis]);
-                    let candidate = (dx * dx + dy * dy, i);
+                    let candidate = (self.distance(i, at), i);
                     best = Some(best.map_or(candidate, |best| best.min(candidate)));
                 }
             }
@@ -471,6 +514,7 @@ mod tests {
             scale: 1,
             seed: 0,
             detail: Detail::default(),
+            coast: crate::map::Coast::default(),
         }
     }
 
