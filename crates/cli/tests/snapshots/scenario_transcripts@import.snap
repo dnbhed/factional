@@ -1,0 +1,13 @@
+---
+source: crates/cli/tests/scenarios.rs
+expression: transcript
+input_file: scenarios/import.scenario
+---
+> world import crates/content/tests/fixtures/azgaar/raster.json target/raster.map
+imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, 386 ocean, 354 lake and 860 land; heights -50.00 to 1764.00 m; 815 bytes
+> world info target/raster.map
+raster.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; 815 bytes
+recipe: source fnv1a64:bdb2047d2fea3e94, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0
+> assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 30,30,20,20 == error: the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels
+> assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 10,10 == error: --region needs four whole numbers, <x>,<y>,<width>,<height>, not 10,10
+> assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>]

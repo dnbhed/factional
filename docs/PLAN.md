@@ -129,6 +129,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W1a — the map in memory (P-132): `factional-worldgen`, on core only, with no I/O and no floats; a map's size from its recipe's region and scale, at most 8192 tiles a side, a recipe that can't make one refused with why; its tiles generated once each, row by row, into 64 × 64 chunks, each layer an array (elevation, terrain, water, biome, plant); overrides per tile and layer, kept apart, added to, cleared by setting nothing, refused off the map; reset in an area; regenerating to the same size keeping them; a property test; W1 split into W1a and W1b, suggestions left to W6, at the user's choice; done 2026-11-04 (#98)
 - W1b — the map file (P-133): `factional-content` writes and reads `world/<name>.map` exactly: a TOML header (format, version, recipe, the tiles' length and fingerprint) ended by a zero byte, then postcard, each chunk's layers and the overrides compressed by zstd at level 3, chosen over `lz4_flex` by measuring a rough raster of Menayland, elevation as differences; foreign files, other versions, bad headers and recipes, and cut or changed tiles refused with why, and what only a faulty writer makes named by chunk or tile; a committed map that must keep reading; the recipe's seed a `u32`; `world info <file>` and `factional world info <file>`; done 2026-11-04 (#99)
 - W2a — reading Azgaar's map (P-134): `factional-content` reads a Full JSON export into `factional-worldgen`'s `Source` (name, version, size; cells' centres, heights, features, neighbours and corners; vertices' positions and cells, the edge as none; oceans, lakes with their surface, islands); versions 1.154.x; what isn't JSON, isn't Azgaar's, is another version or isn't Full refused whole, then every problem named at once by key path and every reference checked; decimals rounded once from their shortest form; `world source <file>` and `factional world source <file>`; hand-made fixtures, the user's Menayland read only locally; split from W2b, both at the user's choice; done 2026-11-04 (#100)
+- W2b — rasterising Azgaar's terrain (P-135): `factional-worldgen` rasterises a `Source` region at a scale; each cell's metres by Azgaar's own formula, its exponent the map's `settings.heightExponent`, 1.50 to 2.20, a fractional power worked in integers by square roots in fixed point; each tile's height interpolated at its centre across the triangle of cell centres it falls in, exactly and rounded once, the nearest cell's outside them; ocean, lake and land from the nearest cell's feature, ties to the first; a bucket grid to find both; a region off the source or a source without cells refused; `world import <export> <map> [--region] [--scale] [--seed]` and `factional world import`, the counts checked by a separate script; Menayland whole at a tile a pixel in about a second, locally; done 2026-11-04 (#101)
 
 ---
 
@@ -150,11 +151,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W2b · Rasterising Azgaar's terrain — P3 · Next
-
-A region at a scale (D-53) rasterised to tiles: each tile's height interpolated across the cell centres around it, over the triangles Azgaar's vertices give, in metres; land, sea and lake from the features; `factional world import` writing a map file (P-119).
-
-### W3 · Polishing the terrain — P3 · Outline
+### W3 · Polishing the terrain — P3 · Next
 
 Detail from seeded integer noise, following the source's roughness; elevation levels with ledges and cliffs; coasts smoothed; rivers widened from their discharge and carved, lakes at their surface height.
 
@@ -180,7 +177,7 @@ In the builder: a file opened and summarised, layers chosen with what they need,
 
 ### W9 · Editing the map — P3 · Outline
 
-Brushes for terrain, elevation, water and foliage in G9's world editor, saved as overrides that survive regenerating; reset to generated in an area; undo.
+Brushes for terrain, elevation, water and foliage in G9's world editor, saved as overrides that survive regenerating; reset to generated in an area; undo. Importing over a map then keeps its overrides, where `world import` now replaces the file (P-135).
 
 ### W10 · Places in the engine — P3 · Outline
 

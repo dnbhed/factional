@@ -21,6 +21,7 @@ keys <dir> <file> [<path>]                                                      
 graph <dir> <questline|quest>                                                                   a questline's steps, quests and edges, or a quest's stages and choices, with every problem and warning at the node it's about
 world info <file>                                                                               what a world map file holds: its size, chunks and overrides, and the recipe it was made from
 world source <file>                                                                             what an Azgaar Full JSON export holds: its cells, vertices and features, or every problem in it
+world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>]      rasterise an Azgaar Full JSON export into a map file: the whole map at 1 tile a pixel and seed 0 unless told
 quests                                                                                          list the loaded world's quests and questlines
 can-start <character> <quest>                                                                   whether the character can start the quest now, and every reason not
 start <character> <quest>                                                                       start a quest whose gate and step allow it

@@ -6,7 +6,9 @@
 use std::fmt;
 
 use factional_core::Fixed;
-use factional_worldgen::{Feature, Point, Size, Source, SourceCell, SourceVertex};
+use factional_worldgen::{
+    Feature, HEIGHT_EXPONENTS, Point, Size, Source, SourceCell, SourceVertex,
+};
 use serde_json::Value;
 
 /// The generator's versions this build reads: its major and minor version, any patch.
@@ -108,6 +110,7 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
             })
     };
     let (width, height) = (side("width"), side("height"));
+    let exponent = reader.height_exponent(&json);
     let cells = reader.list(cells, "pack.cells");
     let vertices = reader.list(vertices, "pack.vertices");
     let features = reader.list(features, "pack.features");
@@ -144,6 +147,7 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
             width: width.expect(every),
             height: height.expect(every),
         },
+        height_exponent: exponent.expect(every),
         cells: cells.into_iter().map(|cell| cell.expect(every)).collect(),
         vertices: vertices
             .into_iter()
@@ -254,6 +258,24 @@ impl Reader {
         match value.as_number().and_then(hundredths) {
             Some(hundredths) => Some(Fixed::from_hundredths(hundredths)),
             None => self.problem(path, format!("expected a number, not {value}")),
+        }
+    }
+
+    /// The exponent the export's heights are raised to in metres, `settings.heightExponent`,
+    /// within the range Azgaar allows.
+    fn height_exponent(&mut self, json: &Value) -> Option<Fixed> {
+        let path = "settings.heightExponent";
+        let Some(value) = json.pointer("/settings/heightExponent") else {
+            return self.problem("settings", "missing heightExponent".to_owned());
+        };
+        let exponent = self.decimal(value, path)?;
+        let [lowest, highest] = HEIGHT_EXPONENTS;
+        match lowest <= exponent && exponent <= highest {
+            true => Some(exponent),
+            false => self.problem(
+                path,
+                format!("{exponent} is outside {lowest} to {highest}, as Azgaar allows"),
+            ),
         }
     }
 

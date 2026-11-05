@@ -1,7 +1,7 @@
 //! The `factional` binary: `factional repl` for an interactive session, `factional run
 //! <script>` to replay a scenario (DECISIONS.md P-27), and for designers, `factional validate
-//! <dir>`, `factional schema [<file>]`, and `factional world info <file>` and `factional world source
-//! <file>`.
+//! <dir>`, `factional schema [<file>]`, and `factional world info <file>`, `factional world source
+//! <file>` and `factional world import <export> <map>`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,9 @@ use std::process::ExitCode;
 
 use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
-use factional_cli::{compare, run_repl, run_script, validate, world_info, world_source};
+use factional_cli::{
+    Import, compare, run_repl, run_script, validate, world_import, world_info, world_source,
+};
 use factional_content::{SCHEMA_FILES, schema_text};
 
 #[derive(Parser)]
@@ -73,6 +75,22 @@ enum WorldCommand {
         /// The export, such as "Menayland Full.json"
         file: String,
     },
+    /// Rasterise an Azgaar Full JSON export into a map file: the whole map at 1 tile a pixel and seed 0 unless told
+    Import {
+        /// The export, such as "Menayland Full.json"
+        export: String,
+        /// The map file to write, such as world/menayland.map
+        map: String,
+        /// The source pixels to take, as <x>,<y>,<width>,<height>; the whole map if not given
+        #[arg(long)]
+        region: Option<String>,
+        /// How many tiles a source pixel makes each way
+        #[arg(long, default_value_t = 1)]
+        scale: u32,
+        /// The seed for generation
+        #[arg(long, default_value_t = 0)]
+        seed: u32,
+    },
 }
 
 fn main() -> ExitCode {
@@ -122,6 +140,22 @@ fn main() -> ExitCode {
         Command::World { command } => match match command {
             WorldCommand::Info { file } => world_info(Path::new(""), &file),
             WorldCommand::Source { file } => world_source(Path::new(""), &file),
+            WorldCommand::Import {
+                export,
+                map,
+                region,
+                scale,
+                seed,
+            } => world_import(
+                Path::new(""),
+                &Import {
+                    export: &export,
+                    map: &map,
+                    region: region.as_deref(),
+                    scale,
+                    seed,
+                },
+            ),
         } {
             Ok(info) => {
                 println!("{info}");

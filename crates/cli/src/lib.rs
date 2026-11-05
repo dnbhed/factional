@@ -6,7 +6,8 @@ mod repl;
 mod script;
 
 pub use factional_session::{
-    Outcome, ScriptError, Session, compare, help_text, validate, world_info, world_source,
+    Import, Outcome, ScriptError, Session, compare, help_text, validate, world_import, world_info,
+    world_source,
 };
 pub use repl::run_repl;
 pub use script::{RunFailure, run_script};
