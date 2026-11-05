@@ -5,7 +5,7 @@
 use factional_content::{MAP_VERSION, MapFileError, fingerprint_of, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Override, Plant, PlantKind, Recipe, Region, Size, Terrain, Tile, TilePos, Water,
+    Biome, Detail, Override, Plant, PlantKind, Recipe, Region, Size, Terrain, Tile, TilePos, Water,
     WorldMap,
 };
 use proptest::prelude::*;
@@ -60,6 +60,7 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
         },
         scale,
         seed: 7,
+        detail: Detail::default(),
     }
 }
 
@@ -168,13 +169,14 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 1
+version = 2
 
 [recipe]
 source = ""
 region = {{ x = 3, y = 4, width = 35, height = 33 }}
 scale = 2
 seed = 7
+detail = {{ strength = 0.25, wavelength = 8.00, octaves = 4 }}
 
 [tiles]
 bytes = {}
@@ -184,7 +186,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 1);
+    assert_eq!(MAP_VERSION, 2);
 }
 
 #[test]
@@ -238,11 +240,56 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    let bytes = with_header(&write_map(&hand_made()), "version = 1", "version = 2");
+    for found in [1, 3] {
+        let bytes = with_header(
+            &write_map(&hand_made()),
+            "version = 2",
+            &format!("version = {found}"),
+        );
+        assert_eq!(
+            refusal(&bytes),
+            format!("this map is version {found}, but this build reads version 2")
+        );
+    }
+}
+
+#[test]
+fn the_recipes_detail_is_kept() {
+    let mut recipe = recipe(0, 0, 3, 2, 1);
+    recipe.detail = Detail {
+        strength: Fixed::ONE,
+        wavelength: Fixed::from_hundredths(12_34),
+        octaves: 8,
+    };
+    let map = WorldMap::new(recipe, varied).expect("the recipe makes a map");
+    let bytes = write_map(&map);
+    let (header, _) = split(&bytes);
+    assert!(
+        header.contains("detail = { strength = 1.00, wavelength = 12.34, octaves = 8 }\n"),
+        "{header}"
+    );
+    assert_eq!(read_map(&bytes), Ok(map));
+}
+
+#[test]
+fn detail_outside_its_ranges_is_refused_with_why() {
+    let bytes = with_header(&write_map(&hand_made()), "octaves = 4", "octaves = 9");
     assert_eq!(
         refusal(&bytes),
-        "this map is version 2, but this build reads version 1"
+        "this map's recipe can't make a map: the detail needs 1 to 8 octaves, not 9"
     );
+    let bytes = with_header(
+        &write_map(&hand_made()),
+        "strength = 0.25",
+        "strength = 1.5",
+    );
+    assert_eq!(
+        refusal(&bytes),
+        "this map's recipe can't make a map: the detail's strength must be 0.00 to 1.00, not 1.50"
+    );
+    let bytes = with_header(&write_map(&hand_made()), "strength = 0.25, ", "");
+    let refused = refusal(&bytes);
+    assert!(refused.contains("strength"), "{refused}");
 }
 
 #[test]

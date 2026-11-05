@@ -306,7 +306,8 @@ fn world_info_summarises_a_map_file_and_exits_zero() {
         text(&output.stdout),
         format!(
             "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
-             recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7\n"
+             recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
+             detail 0.25 of the relief, 8.00 pixels, 4 octaves\n"
         )
     );
     assert_eq!(text(&output.stderr), "");
@@ -369,7 +370,7 @@ fn world_import_writes_a_map_file_and_exits_zero() {
         text(&output.stdout),
         format!(
             "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-             251 ocean, 209 lake and 1140 land; heights -50.00 to 1642.50 m; {bytes} bytes\n"
+             251 ocean, 209 lake and 1140 land; heights -187.80 to 1734.65 m; {bytes} bytes\n"
         )
     );
     std::fs::remove_dir_all(&dir).expect("removed");

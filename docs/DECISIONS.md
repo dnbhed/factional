@@ -1041,6 +1041,18 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Checked by hand and by a separate script:** the expected heights are worked from the formulas, and the tile counts of the fixture and of Menayland (772,521 ocean, 8,931 lake and 396,018 land) by a separate Python search, never pasted from the code.
   - *Why:* P-119's rasteriser, exact as generation must be, giving the smooth heights W3 polishes.
 
+- **P-136 · Detail** (made in W3a, 2026-11-05; P-119, P-135).
+  - **W3 split in four,** at the user's choice: detail (W3a), coasts (W3b), levels and cliffs (W3c), rivers and lakes (W3d).
+  - **Strength follows the local relief,** at the user's choice: each cell's steepest difference in metres to a neighbour, from Azgaar's own neighbour lists, interpolated at a tile like its height. A tile gains strength × relief × noise: steep ground gets rough, plains and seabed stay gentle wherever they are.
+  - **Gradient noise in octaves,** at the user's choice: Perlin's, with gradients of the four diagonals and the four axes, which keep it within −1 to 1; faded by 6t⁵ − 15t⁴ + 10t³; each octave twice the frequency and half the weight of the one before, summed and divided by the total weight. Halving each octave is the definition of the octaves, not an option.
+  - **Exact:** worked in fixed point with 24 binary places, each lattice point's gradient from a SplitMix64 hash of the seed, the octave and the point. The height and its detail are one fraction, over the triangle's area, the octaves' total weight and the fixed point, rounded once half away from zero. Its numerator is about 4 × 10³⁶ at most for cells 1,000 pixels apart at a scale of 8192, where Azgaar's are tens of pixels apart; past i128 it panics rather than wraps (P-30).
+  - **On a lattice in source pixels,** not tiles: a region shows the same tiles as the whole map at the same scale, and a property test guards it; a higher scale shows the same shapes, finer.
+  - **The options are the recipe's,** with their defaults defined once in `Detail::default()` and listed in DESIGN.md §21: a strength of 0.25, 0.00 to 1.00; a wavelength of 8.00 source pixels, at least 1.00; 4 octaves, 1 to 8. The ranges are checked wherever a recipe makes a map, so `world import` and a map file's header refuse alike. They aren't content knobs: a map isn't content, so they have no schema, no sample and no row in §12, as P-119 has it.
+  - **The map file is version 2,** at the user's choice: its recipe gains `detail = { strength, wavelength, octaves }`, and a version-1 file is refused, naming both. The committed map was written again; its tiles are byte for byte as before.
+  - **`world import` takes `--detail`, `--wavelength` and `--octaves`;** `world info` adds the detail to its recipe line. The help shows `world import <export> <map> [options]`, the options in its description, so the long form doesn't widen every line of the help.
+  - **Checked by a separate script:** the expected heights (159.63 at tile (20, 15) with seed 7, where W2b gave 180.50) and the whole fixture's sum, lowest and highest were worked by a Python reference written from the spec, never taken from this code; it agreed to the hundredth.
+  - *Why:* P-119's detail, exact and seeded as generation must be, so a seed means one map everywhere.
+
 ## Open
 
 None right now. A new question gets the next free number, starting at O-13 (O-9 to O-12 were the builder's, settled in G0 as D-44 to D-47).

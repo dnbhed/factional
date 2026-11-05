@@ -1290,7 +1290,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "factional-content",
+ "factional-core",
  "factional-session",
+ "factional-worldgen",
  "insta",
  "jsonschema",
  "rustyline",

@@ -13,6 +13,15 @@ use crate::tile::{Biome, Override, Plant, Terrain, Tile, Water};
 /// The most tiles a map may have each way.
 pub const MAX_SIDE: u32 = 8192;
 
+/// The detail's strengths, lowest and highest, as a share of the relief.
+const STRENGTHS: [Fixed; 2] = [Fixed::ZERO, Fixed::ONE];
+
+/// The detail's shortest longest wavelength, in source pixels.
+const SHORTEST: Fixed = Fixed::ONE;
+
+/// The fewest and most octaves of detail.
+const OCTAVES: [u32; 2] = [1, 8];
+
 /// A width and a height, in tiles or source pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Size {
@@ -63,8 +72,8 @@ pub struct Region {
 }
 
 /// How a map was made (P-119): from which source, which of its layers, which region at what
-/// scale in tiles a source pixel, and with which seed. Generation's options join it as they
-/// land.
+/// scale in tiles a source pixel, with which seed, and with what detail. Generation's other
+/// options join it as they land.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recipe {
     /// The source's fingerprint; empty for a hand-made map.
@@ -72,6 +81,28 @@ pub struct Recipe {
     pub region: Region,
     pub scale: u32,
     pub seed: u32,
+    pub detail: Detail,
+}
+
+/// The detail added to the source's heights (W3a, P-136): seeded gradient noise, `strength`
+/// times the local relief at most, its longest `wavelength` in source pixels, in `octaves`,
+/// each half the wavelength and half the strength of the one before.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Detail {
+    pub strength: Fixed,
+    pub wavelength: Fixed,
+    pub octaves: u32,
+}
+
+impl Default for Detail {
+    /// A quarter of the relief, over 8 source pixels, in 4 octaves (DESIGN.md §21).
+    fn default() -> Detail {
+        Detail {
+            strength: Fixed::from_hundredths(25),
+            wavelength: Fixed::from_hundredths(8_00),
+            octaves: 4,
+        }
+    }
 }
 
 impl Recipe {
@@ -83,6 +114,16 @@ impl Recipe {
         let region = self.region.size;
         if region.width == 0 || region.height == 0 {
             return Err(MapError::EmptyRegion);
+        }
+        let detail = self.detail;
+        if !(STRENGTHS[0] <= detail.strength && detail.strength <= STRENGTHS[1]) {
+            return Err(MapError::DetailStrength(detail.strength));
+        }
+        if detail.wavelength < SHORTEST {
+            return Err(MapError::DetailWavelength(detail.wavelength));
+        }
+        if !(OCTAVES[0]..=OCTAVES[1]).contains(&detail.octaves) {
+            return Err(MapError::DetailOctaves(detail.octaves));
         }
         let side = |pixels: u32| u64::from(pixels) * u64::from(self.scale);
         let (width, height) = (side(region.width), side(region.height));
@@ -102,6 +143,9 @@ pub enum MapError {
     ScaleZero,
     EmptyRegion,
     TooLarge { width: u64, height: u64 },
+    DetailStrength(Fixed),
+    DetailWavelength(Fixed),
+    DetailOctaves(u32),
     OffTheMap { at: TilePos, size: Size },
     OtherSize { recipe: Size, map: Size },
 }
@@ -116,6 +160,20 @@ impl fmt::Display for MapError {
             MapError::TooLarge { width, height } => write!(
                 f,
                 "the map would be {width} × {height} tiles; at most {MAX_SIDE} a side"
+            ),
+            MapError::DetailStrength(strength) => write!(
+                f,
+                "the detail's strength must be {} to {}, not {strength}",
+                STRENGTHS[0], STRENGTHS[1]
+            ),
+            MapError::DetailWavelength(wavelength) => write!(
+                f,
+                "the detail's wavelength must be at least {SHORTEST} source pixel, not {wavelength}"
+            ),
+            MapError::DetailOctaves(octaves) => write!(
+                f,
+                "the detail needs {} to {} octaves, not {octaves}",
+                OCTAVES[0], OCTAVES[1]
             ),
             MapError::OffTheMap { at, size } => write!(
                 f,

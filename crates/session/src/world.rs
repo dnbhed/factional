@@ -5,7 +5,8 @@
 use std::path::Path;
 
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, write_map};
-use factional_worldgen::{Feature, Recipe, Region, Size, Terrain, Water, rasterise};
+use factional_core::Fixed;
+use factional_worldgen::{Detail, Feature, Recipe, Region, Size, Terrain, Water, rasterise};
 
 use crate::check::count;
 use crate::session::WORLD_FORM;
@@ -26,7 +27,8 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
     };
     Ok(format!(
         "{name}: {} × {} tiles in {} × {} chunks, {}; {} bytes\n\
-         recipe: {source}, source pixels ({}, {}) to ({}, {}), {} a source pixel, seed {}",
+         recipe: {source}, source pixels ({}, {}) to ({}, {}), {} a source pixel, seed {}; \
+         detail {} of the relief, {} pixels, {}",
         size.width,
         size.height,
         chunks.width,
@@ -39,6 +41,9 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         region.y + region.size.height - 1,
         count(recipe.scale as usize, "tile"),
         recipe.seed,
+        recipe.detail.strength,
+        recipe.detail.wavelength,
+        count(recipe.detail.octaves as usize, "octave"),
     ))
 }
 
@@ -71,7 +76,7 @@ pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
 }
 
 /// What `world import` is told: the export to read, the map file to write, and the recipe's
-/// region as typed (the whole source if none), its scale and its seed.
+/// region as typed (the whole source if none), its scale, its seed and its detail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Import<'a> {
     pub export: &'a str,
@@ -79,6 +84,7 @@ pub struct Import<'a> {
     pub region: Option<&'a str>,
     pub scale: u32,
     pub seed: u32,
+    pub detail: Detail,
 }
 
 impl<'a> Import<'a> {
@@ -86,7 +92,7 @@ impl<'a> Import<'a> {
     pub(crate) fn parse(args: &'a str) -> Result<Import<'a>, String> {
         let mut words = args.split_whitespace();
         let mut files = Vec::new();
-        let (mut region, mut scale, mut seed) = (None, 1, 0);
+        let (mut region, mut scale, mut seed, mut detail) = (None, 1, 0, Detail::default());
         while let Some(word) = words.next() {
             match word {
                 "--region" => {
@@ -94,9 +100,13 @@ impl<'a> Import<'a> {
                 }
                 "--scale" => scale = whole(word, words.next())?,
                 "--seed" => seed = whole(word, words.next())?,
+                "--detail" => detail.strength = number(word, words.next())?,
+                "--wavelength" => detail.wavelength = number(word, words.next())?,
+                "--octaves" => detail.octaves = whole(word, words.next())?,
                 option if option.starts_with("--") => {
                     return Err(format!(
-                        "world import has no option {option}; it takes --region, --scale and --seed"
+                        "world import has no option {option}; it takes --region, --scale, --seed, \
+                         --detail, --wavelength and --octaves"
                     ));
                 }
                 file => files.push(file),
@@ -109,6 +119,7 @@ impl<'a> Import<'a> {
                 region,
                 scale,
                 seed,
+                detail,
             }),
             _ => Err(WORLD_FORM.to_owned()),
         }
@@ -121,6 +132,13 @@ const REGION_FORM: &str = "--region needs four whole numbers, <x>,<y>,<width>,<h
 /// The whole number `value` given to `option`.
 fn whole(option: &str, value: Option<&str>) -> Result<u32, String> {
     let needs = format!("{option} needs a whole number");
+    let value = value.ok_or_else(|| needs.clone())?;
+    value.parse().map_err(|_| format!("{needs}, not {value}"))
+}
+
+/// The number `value` given to `option`, to the hundredth.
+fn number(option: &str, value: Option<&str>) -> Result<Fixed, String> {
+    let needs = format!("{option} needs a number");
     let value = value.ok_or_else(|| needs.clone())?;
     value.parse().map_err(|_| format!("{needs}, not {value}"))
 }
@@ -157,6 +175,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         }),
         scale: import.scale,
         seed: import.seed,
+        detail: import.detail,
     };
     let map = rasterise(&source, recipe).map_err(|error| error.to_string())?;
     let bytes = write_map(&map);

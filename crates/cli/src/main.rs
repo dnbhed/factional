@@ -13,6 +13,8 @@ use factional_cli::{
     Import, compare, run_repl, run_script, validate, world_import, world_info, world_source,
 };
 use factional_content::{SCHEMA_FILES, schema_text};
+use factional_core::Fixed;
+use factional_worldgen::Detail;
 
 #[derive(Parser)]
 #[command(
@@ -90,6 +92,15 @@ enum WorldCommand {
         /// The seed for generation
         #[arg(long, default_value_t = 0)]
         seed: u32,
+        /// The detail's strength, as a share of the local relief: 0.00 to 1.00
+        #[arg(long, default_value_t = Detail::default().strength)]
+        detail: Fixed,
+        /// The detail's longest wavelength, in source pixels: at least 1.00
+        #[arg(long, default_value_t = Detail::default().wavelength)]
+        wavelength: Fixed,
+        /// The detail's octaves, each half the wavelength and strength of the one before: 1 to 8
+        #[arg(long, default_value_t = Detail::default().octaves)]
+        octaves: u32,
     },
 }
 
@@ -146,6 +157,9 @@ fn main() -> ExitCode {
                 region,
                 scale,
                 seed,
+                detail,
+                wavelength,
+                octaves,
             } => world_import(
                 Path::new(""),
                 &Import {
@@ -154,6 +168,11 @@ fn main() -> ExitCode {
                     region: region.as_deref(),
                     scale,
                     seed,
+                    detail: Detail {
+                        strength: detail,
+                        wavelength,
+                        octaves,
+                    },
                 },
             ),
         } {
