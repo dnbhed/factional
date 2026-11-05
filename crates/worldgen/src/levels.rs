@@ -1,6 +1,8 @@
 //! Levels (W3c, P-138): elevation quantised for drawing in 2D, with plateaus and pits too
 //! small to keep taking the nearest level around them.
 
+use std::cmp::Ordering;
+
 /// `levels`, `width` a row, each a land tile's level or none for water, with every plateau and
 /// pit cleaned: each 4-connected group of land at one level, of fewer than `specks` tiles and
 /// not touching the edge, whose land neighbours are all lower takes the highest of them, and
@@ -17,16 +19,21 @@ pub(crate) fn clean(width: usize, levels: &mut [Option<u8>], specks: usize) {
         if group.len() >= specks || group.iter().any(|&i| edge(i)) {
             continue;
         }
+        let Some(level) = levels[group[0]] else {
+            continue;
+        };
         // Its land neighbours: any at its own level would be in the group.
-        let level = levels[group[0]];
         let around: Vec<u8> = group
             .iter()
             .flat_map(|&i| [i - width, i - 1, i + 1, i + width])
-            .filter_map(|j| levels[j].filter(|&l| Some(l) != level))
+            .filter_map(|j| levels[j].filter(|&l| l != level))
             .collect();
-        let nearest = match (around.iter().min(), around.iter().max()) {
-            (_, Some(&highest)) if Some(highest) < level => highest,
-            (Some(&lowest), _) if Some(lowest) > level => lowest,
+        let (Some(&lowest), Some(&highest)) = (around.iter().min(), around.iter().max()) else {
+            continue;
+        };
+        let nearest = match (lowest.cmp(&level), highest.cmp(&level)) {
+            (_, Ordering::Less) => highest,
+            (Ordering::Greater, _) => lowest,
             _ => continue,
         };
         cleaned.extend(group.into_iter().map(|i| (i, nearest)));
