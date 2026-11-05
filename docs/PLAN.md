@@ -133,6 +133,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W3a — detail (P-136): W3 split in four, at the user's choice; seeded integer gradient noise in octaves on a lattice in source pixels, its strength a share of each cell's local relief, interpolated, added to the height and rounded once with it; the recipe's detail (strength 0.25, wavelength 8.00 pixels, 4 octaves) checked wherever a recipe makes a map; the map file version 2, version 1 refused; `world import --detail --wavelength --octaves`, the detail in `world info`; heights checked against a separate Python reference; a region the same as the whole map, a property test; Menayland whole with detail in about a second, locally; done 2026-11-05 (#102)
 - W3b — coasts (P-137): land and water by each tile's detailed height against the water near it, the nearest water cell among its nearest cell and that cell's neighbours, the sea at 0 m and a lake at its surface in metres by Azgaar's formula with a decimal height; sea shallower than the shallows (10.00 m) shallow; specks of land and water under 4 tiles, away from the map's edge, turned to the other, water first; heights unchanged; the recipe's coast checked wherever a recipe makes a map; the map file version 3, version 2 refused; `world import --shallows --specks`, the coast in `world info`, ocean counting both depths; a lake's surface outside 0 to 100 a problem, a broken window; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#103)
 - W3c — levels (P-138): each level starting at the metres of 20 + k × the spacing (5.00) on Azgaar's scale, a land tile's level how many start at or below it, water level 0, stored as a layer of its own; plateaus and pits of land under 4 tiles, away from the map's edge, taking the nearest level around them, all judged by the levels as made; `WorldMap::drops` a ledge for one level down to a land neighbour and a cliff for more, overrides applied; the recipe's levels checked wherever a recipe makes a map; the map file version 4, version 3 refused; `world import --levels --level-specks` saying its levels, ledges and cliffs, the levels in `world info`; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#104)
+- W3d — rivers drawn (P-139): W3 split again, drawing then carving (W3e); `pack.rivers` and each cell's flux read and checked, an export without rivers not Full; each river along a uniform Catmull-Rom curve through its cells' centres, −1 the nearest point of the map's edge, a piece a tile its chord spans; Azgaar's drawn half-width at each cell from its width factor, source width and the flux so far, never under a tile, a tile river if its centre is within it or its square is touched; river tiles shallow water with their flow, made before the levels; `world source` counts rivers, `world import` river tiles; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#105)
 
 ---
 
@@ -154,58 +155,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3d · Rivers — P3 · In progress
-
-Azgaar's rivers read and drawn on the tiles, along a smooth curve, as wide as Azgaar draws them and never narrower than a tile. Carving their beds and the lakes is W3e. At the user's choice: W3 split again, drawing (W3d) then carving (W3e); a smooth curve through the river's cells; Azgaar's own drawn width.
-
-**Acceptance.** Every count below comes from `rivers_ref.py`, a separate Python script written from these rules, never from the code. `rivers.json` is W3b's five-cell fixture with each cell's flux and three rivers: Ford from cell 3 by cell 4 into the lake (cell 2), Beck from cell 1 joining it at cell 4, and Rill from cell 1 off the map's edge.
-
-- **Reading.**
-  - `pack.rivers` is read: each river's cells, from source to where it ends, the last perhaps −1, off the map; its `widthFactor` and `sourceWidth`.
-  - Each cell's `fl`, its flux, is read too.
-  - Problems are named at their key path:
-    - a cell that doesn't exist;
-    - −1 anywhere but last;
-    - fewer than two cells;
-    - a width outside 0.00 to 10.00;
-    - a flux that isn't a whole number.
-  - An export without `pack.rivers` isn't a Full export.
-  - `world source` says how many rivers there are: "3 rivers".
-- **Where a river runs.**
-  - Its anchors are its cells' centres. A −1 is the point on the map's edge nearest the cell before it, taking the top, the bottom, the left and the right in that order on a tie: Rill ends at (40.00, 10.50).
-  - Its line is a uniform Catmull-Rom curve through its anchors, the first and last doubled. Each stretch is cut into as many pieces as whole tiles its chord spans along its longer axis, at least one, and each point is rounded once to the raster's units.
-  - Unit tests: the curve passes through every anchor, and lies on the line when the anchors do.
-- **How wide.**
-  - Azgaar's half-width at anchor j: the source width at the first; then widthFactor × ((j + P[j]) / 200 + min(F^0.7 / 500, 1)) + sourceWidth. Here P is 1, 1, 2, 3, 5, 8, 13, 21, 34 and then 34, and F is the largest flux of the river's cells so far, −1 taking the cell before's.
-  - In source pixels times the scale, interpolated between anchors and rounded once. Each piece takes the larger of its ends.
-  - By hand:
-    - Ford: 0.05, 0.552824 and 0.564824 pixels;
-    - Beck: 0.04 and 0.45902;
-    - Rill: 0.04 and 0.07646.
-- **Which tiles.**
-  - A land tile is river if its centre lies within a piece's half-width, or the piece touches its square, so even the thinnest river is joined edge to edge.
-  - Its flow is the largest flux at the start of any stretch over it.
-  - Rivers come after the coasts and before the levels, so a river tile is water: level 0, no drops.
-  - Unit tests on drawn grids:
-    - a line along a row of centres;
-    - a line along the border between two rows, which takes both;
-    - a diagonal, joined edge to edge;
-    - a wide line;
-    - the larger flow where two cross.
-- **The fixture whole, seed 7:**
-  - 78 river tiles: 19 of flow 20, 39 of 40 and 20 of 2000;
-  - 358 ocean, 186 lake and 978 land;
-  - levels 0 to 8, with 331 ledges and 26 cliffs.
-  - (30, 10) and (39, 10) are flow 40; (17, 21), (20, 20), (13, 27) and (11, 29) are 2000; (25, 25) is land.
-- **At scale 4,** pixels (10, 10) to (29, 29), seed 7: 501 river tiles, 135 of flow 20, 125 of 40 and 241 of 2000.
-- **A region is the whole map's tiles,** rivers included, away from its edges by twice the coast's specks and the level specks: a property test.
-- **`world import`** counts river tiles, "X ocean, Y lake, Z river and W land":
-  - `rivers.json` whole at seed 0: 357 ocean, 174 lake, 77 river and 992 land; levels 0 to 8, 380 ledges and 32 cliffs;
-  - pixels (10, 10) to (29, 29) at scale 2, seed 7: 166 ocean, 58 lake, 141 river and 1235 land; levels 0 to 7, 341 ledges and 5 cliffs.
-- **The map file** keeps rivers in the water layer it already has, so it stays at version 4.
-- **Menayland, locally:** its river tiles and their flows, by a second script and by the code, agree.
-
-### W3e · Carving rivers and lakes — P3 · Outline
+### W3e · Carving rivers and lakes — P3 · Next
 
 River beds carved to fall continuously from source to mouth, and lakes carved to their surface height, so the levels and cliffs follow the water.
 
