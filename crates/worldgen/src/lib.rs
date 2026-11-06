@@ -27,8 +27,9 @@ pub use raster::{
     rasterise,
 };
 pub use source::{
-    Buildings, Feature, Point, RouteKind, SettlementKind, Source, SourceCell, SourceMarker,
-    SourceRiver, SourceRoute, SourceSettlement, SourceVertex,
+    Buildings, Extent, Feature, Point, ReligionKind, RouteKind, SettlementKind, Source, SourceCell,
+    SourceCulture, SourceMarker, SourceReligion, SourceRiver, SourceRoute, SourceSettlement,
+    SourceState, SourceVertex, Stance, StateForm,
 };
 pub use suggestions::{Placed, PointOfInterest, Route, Settlement, Suggestions};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};

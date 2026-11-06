@@ -395,7 +395,7 @@ fn world_source_summarises_an_azgaar_export_and_exits_zero() {
         text(&output.stdout),
         format!(
             "tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels\n\
-             4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; 2 settlements, 2 routes and 2 points of interest; fingerprint {}\n",
+             4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; 2 settlements, 2 routes and 2 points of interest; 2 cultures, 3 religions and 2 states; fingerprint {}\n",
             factional_content::fingerprint_of(&export)
         )
     );

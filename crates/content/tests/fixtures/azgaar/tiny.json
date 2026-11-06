@@ -12,10 +12,10 @@
   "settings": { "heightExponent": 2, "populationRate": 1000, "urbanization": 1 },
   "pack": {
     "cells": [
-      { "i": 0, "v": [0, 1, 3], "c": [1, 2], "p": [10, 7.5], "g": 0, "h": 10, "area": 300, "f": 1, "t": -1, "fl": 0, "r": 0, "biome": 0 },
-      { "i": 1, "v": [0, 2, 3], "c": [0, 3], "p": [30.004, 7.5], "g": 1, "h": 40, "area": 300, "f": 3, "t": 1, "fl": 12, "r": 0, "biome": 4 },
-      { "i": 2, "v": [0, 1, 4], "c": [0, 3], "p": [10, 22.5], "g": 2, "h": 19, "area": 300, "f": 2, "t": -1, "fl": 0, "r": 0, "biome": 0 },
-      { "i": 3, "v": [0, 2, 4, 5], "c": [1, 2], "p": [111.666, 22.5], "g": 3, "h": 60, "area": 300, "f": 3, "t": 2, "fl": 3, "r": 0, "biome": 6 }
+      { "i": 0, "v": [0, 1, 3], "c": [1, 2], "p": [10, 7.5], "g": 0, "h": 10, "area": 300, "f": 1, "t": -1, "fl": 0, "r": 0, "biome": 0, "pop": 0, "culture": 0, "religion": 0, "state": 0 },
+      { "i": 1, "v": [0, 2, 3], "c": [0, 3], "p": [30.004, 7.5], "g": 1, "h": 40, "area": 300, "f": 3, "t": 1, "fl": 12, "r": 0, "biome": 4, "pop": 12.5, "culture": 1, "religion": 1, "state": 1 },
+      { "i": 2, "v": [0, 1, 4], "c": [0, 3], "p": [10, 22.5], "g": 2, "h": 19, "area": 300, "f": 2, "t": -1, "fl": 0, "r": 0, "biome": 0, "pop": 0, "culture": 0, "religion": 0, "state": 0 },
+      { "i": 3, "v": [0, 2, 4, 5], "c": [1, 2], "p": [111.666, 22.5], "g": 3, "h": 60, "area": 300, "f": 3, "t": 2, "fl": 3, "r": 0, "biome": 6, "pop": 3.3333335, "culture": 2, "religion": 2, "state": 2 }
     ],
     "vertices": [
       { "i": 0, "p": [20, 15], "v": [1, 2, 3], "c": [0, 1, 3] },
@@ -37,8 +37,8 @@
     ],
     "burgs": [
       0,
-      { "cell": 1, "x": 30.25, "y": 7.75, "i": 1, "state": 0, "culture": 1, "name": "Highmoor", "feature": 3, "capital": 1, "population": 2.345, "type": "Generic", "citadel": 1, "walls": 1, "shanty": 0, "temple": 1, "group": "town", "market": 1, "plaza": 0 },
-      { "cell": 3, "x": 21.5, "y": 20.25, "i": 2, "state": 0, "culture": 1, "name": "Lakeside", "feature": 3, "capital": 0, "port": 2, "population": 0.857, "type": "Lake", "citadel": 0, "walls": 0, "shanty": 0, "temple": 0, "group": "village", "market": 0, "plaza": 1 },
+      { "cell": 1, "x": 30.25, "y": 7.75, "i": 1, "state": 1, "culture": 1, "name": "Highmoor", "feature": 3, "capital": 1, "population": 2.345, "type": "Generic", "citadel": 1, "walls": 1, "shanty": 0, "temple": 1, "group": "town", "market": 1, "plaza": 0 },
+      { "cell": 3, "x": 21.5, "y": 20.25, "i": 2, "state": 2, "culture": 2, "name": "Lakeside", "feature": 3, "capital": 0, "port": 2, "population": 0.857, "type": "Lake", "citadel": 0, "walls": 0, "shanty": 0, "temple": 0, "group": "village", "market": 0, "plaza": 1 },
       { "i": 3, "name": "Gone", "removed": true }
     ],
     "routes": [
@@ -48,6 +48,24 @@
     "markers": [
       { "icon": "glyph-1f30b", "type": "volcanoes", "dx": 52, "px": 13, "x": 33.3, "y": 9.4, "cell": 1, "i": 0, "name": "Ash Peak", "note": "Dormant volcano." },
       { "icon": "glyph-1f3f0", "type": "ruins", "x": 20, "y": 21, "cell": 3, "i": 2, "name": "Old Keep", "note": "" }
+    ],
+    "cultures": [
+      { "name": "Wildlands", "i": 0, "base": 1, "origins": [null], "shield": "round", "type": "Generic" },
+      { "name": "Highfolk", "base": 34, "shield": "hessen", "center": 1, "i": 1, "color": "#fdb462", "type": "Highland", "expansionism": 1, "origins": [0], "code": "Hi" },
+      { "name": "Lakers", "base": 16, "shield": "round", "center": 3, "i": 2, "color": "#dababf", "type": "Lake", "expansionism": 0.8, "origins": [0], "code": "La" },
+      { "name": "Vanished", "i": 3, "removed": true }
+    ],
+    "religions": [
+      { "name": "No religion", "i": 0, "origins": null },
+      { "name": "Old Ways", "type": "Folk", "form": "Shamanism", "culture": 1, "center": 1, "deity": "Ash, the Burning", "expansion": "culture", "expansionism": 0, "color": "#fdb462", "i": 1, "code": "OW", "origins": [0] },
+      { "name": "Lake Faith", "type": "Organized", "form": "Monotheism", "culture": 2, "center": 3, "deity": null, "expansion": "global", "expansionism": 1.2, "color": "#dababf", "i": 2, "code": "LF", "origins": [1] },
+      { "name": "Hidden Flame", "type": "Cult", "form": "Dark Cult", "culture": 0, "center": 1, "deity": "The Ember", "expansion": "global", "expansionism": 0.5, "color": "#666666", "i": 3, "code": "HF", "origins": [1] }
+    ],
+    "states": [
+      { "i": 0, "name": "Neutrals", "urban": 0, "rural": 0, "burgs": 0, "area": 0, "cells": 2, "neighbors": [1, 2], "diplomacy": [["Highmoor and Lakeside fell out"]], "provinces": [] },
+      { "i": 1, "name": "Highmoor", "expansionism": 1, "capital": 1, "type": "Highland", "center": 1, "culture": 1, "color": "#fdb462", "form": "Monarchy", "formName": "Kingdom", "fullName": "Kingdom of Highmoor", "neighbors": [2], "diplomacy": ["x", "x", "Rival", "x"], "provinces": [] },
+      { "i": 2, "name": "Lakeside", "expansionism": 1, "capital": 2, "type": "Lake", "center": 3, "culture": 2, "color": "#dababf", "form": "Republic", "formName": "Republic", "fullName": "Lakeside Republic", "neighbors": [1], "diplomacy": ["x", "Suspicion", "x", "x"], "provinces": [] },
+      { "i": 3, "name": "Fallen", "removed": true }
     ]
   },
   "grid": {

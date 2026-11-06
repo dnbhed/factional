@@ -31,6 +31,9 @@ fn cell(x: i64, y: i64, height: u8, feature: u32, neighbours: &[u32]) -> SourceC
         },
         temperature: 0,
         precipitation: 0,
+        culture: None,
+        religion: None,
+        state: None,
     }
 }
 
@@ -81,6 +84,9 @@ fn raster() -> Source {
         settlements: Vec::new(),
         routes: Vec::new(),
         markers: Vec::new(),
+        cultures: Vec::new(),
+        religions: Vec::new(),
+        states: Vec::new(),
     }
 }
 

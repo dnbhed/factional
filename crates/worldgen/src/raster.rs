@@ -676,6 +676,9 @@ mod tests {
                     biome: Biome::Grassland,
                     temperature: 0,
                     precipitation: 0,
+                    culture: None,
+                    religion: None,
+                    state: None,
                 })
                 .collect(),
             vertices: Vec::new(),
@@ -684,6 +687,9 @@ mod tests {
             settlements: Vec::new(),
             routes: Vec::new(),
             markers: Vec::new(),
+            cultures: Vec::new(),
+            religions: Vec::new(),
+            states: Vec::new(),
         }
     }
 

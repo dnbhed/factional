@@ -1,16 +1,18 @@
 //! Reading Azgaar's map (W2a, P-119, P-134): a Full JSON export read into a `Source`. Its
 //! version is checked first; then every cell, vertex, feature and river (W3d, P-139) is read,
 //! and every grid cell's climate (W4a, P-141), every problem in them reported at once by key
-//! path, and every reference kept checked to resolve. Numbers
-//! with decimals are rounded once, as they're read, to hundredths, half away from zero.
+//! path, and every reference kept checked to resolve; settlements, routes and points of
+//! interest (W6a, P-144); and cultures, religions and states (W6d, P-147). Numbers with
+//! decimals are rounded once, as they're read, to hundredths, half away from zero, unless said.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use factional_core::{Fixed, div_round};
 use factional_worldgen::{
-    Biome, Buildings, Feature, HEIGHT_EXPONENTS, Point, RouteKind, SettlementKind, Size, Source,
-    SourceCell, SourceMarker, SourceRiver, SourceRoute, SourceSettlement, SourceVertex,
+    Biome, Buildings, Extent, Feature, HEIGHT_EXPONENTS, Point, ReligionKind, RouteKind,
+    SettlementKind, Size, Source, SourceCell, SourceCulture, SourceMarker, SourceReligion,
+    SourceRiver, SourceRoute, SourceSettlement, SourceState, SourceVertex, Stance, StateForm,
 };
 use serde_json::Value;
 
@@ -18,7 +20,7 @@ use serde_json::Value;
 const READS: (u64, u64) = (1, 154);
 
 /// The lists a Full export has and the others lack, in the order they're checked.
-const FULL: [&str; 8] = [
+const FULL: [&str; 11] = [
     "pack.cells",
     "pack.vertices",
     "pack.features",
@@ -26,6 +28,9 @@ const FULL: [&str; 8] = [
     "pack.burgs",
     "pack.routes",
     "pack.markers",
+    "pack.cultures",
+    "pack.religions",
+    "pack.states",
     "grid.cells",
 ];
 
@@ -38,6 +43,36 @@ const SETTLEMENT_KINDS: [(&str, SettlementKind); 7] = [
     ("River", SettlementKind::River),
     ("Nomadic", SettlementKind::Nomadic),
     ("Hunting", SettlementKind::Hunting),
+];
+
+/// Azgaar's religion types, by the name it gives each.
+const RELIGION_KINDS: [(&str, ReligionKind); 4] = [
+    ("Folk", ReligionKind::Folk),
+    ("Organized", ReligionKind::Organized),
+    ("Cult", ReligionKind::Cult),
+    ("Heresy", ReligionKind::Heresy),
+];
+
+/// Azgaar's forms of state, by the name it gives each.
+const STATE_FORMS: [(&str, StateForm); 5] = [
+    ("Monarchy", StateForm::Monarchy),
+    ("Republic", StateForm::Republic),
+    ("Union", StateForm::Union),
+    ("Theocracy", StateForm::Theocracy),
+    ("Anarchy", StateForm::Anarchy),
+];
+
+/// Azgaar's diplomatic stances, by the name it gives each.
+const STANCES: [(&str, Stance); 9] = [
+    ("Ally", Stance::Ally),
+    ("Friendly", Stance::Friendly),
+    ("Neutral", Stance::Neutral),
+    ("Suspicion", Stance::Suspicion),
+    ("Enemy", Stance::Enemy),
+    ("Unknown", Stance::Unknown),
+    ("Rival", Stance::Rival),
+    ("Vassal", Stance::Vassal),
+    ("Suzerain", Stance::Suzerain),
 ];
 
 /// Azgaar's route groups, by the name it gives each.
@@ -148,6 +183,9 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         burgs,
         routes,
         markers,
+        cultures,
+        religions,
+        states,
         grid,
     ] = match lists {
         [
@@ -158,9 +196,13 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
             Ok(burgs),
             Ok(routes),
             Ok(markers),
+            Ok(cultures),
+            Ok(religions),
+            Ok(states),
             Ok(grid),
         ] => [
-            cells, vertices, features, rivers, burgs, routes, markers, grid,
+            cells, vertices, features, rivers, burgs, routes, markers, cultures, religions, states,
+            grid,
         ],
         _ => {
             return Err(lists
@@ -192,14 +234,20 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
     let features = reader.list(features, "pack.features");
     let rivers = reader.list(rivers, "pack.rivers");
     let grid = reader.list(grid, "grid.cells");
+    let cultures = reader.list(cultures, "pack.cultures");
+    let religions = reader.list(religions, "pack.religions");
+    let states = reader.list(states, "pack.states");
     let counts = Counts {
         cells: cells.len(),
         grid: grid.len(),
         vertices: vertices.len(),
         // Azgaar's `features[0]` is a placeholder, so feature 1 is the first.
         features: features.len().saturating_sub(1),
+        cultures: Peoples::of(cultures, "culture", "cultures"),
+        religions: Peoples::of(religions, "religion", "religions"),
+        states: Peoples::of(states, "state", "states"),
     };
-    let cells: Vec<Option<(SourceCell, usize)>> = cells
+    let cells: Vec<Option<(SourceCell, usize, i64)>> = cells
         .iter()
         .enumerate()
         .map(|(i, cell)| reader.cell(cell, &format!("pack.cells[{i}]"), &counts))
@@ -271,10 +319,55 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
             .enumerate()
             .map(|(i, m)| (i, m.as_ref().map(|m| m.id))),
     );
+    // Cultures[0], religions[0] and states[0] are Azgaar's placeholders, and a removed one is
+    // gone; each one's extent is worked out once everything is read.
+    let cultures: Vec<Option<SourceCulture>> = kept(cultures)
+        .into_iter()
+        .map(|(i, culture)| reader.culture(culture, &format!("pack.cultures[{i}]"), i))
+        .collect();
+    let religions: Vec<Option<SourceReligion>> = kept(religions)
+        .into_iter()
+        .map(|(i, religion)| reader.religion(religion, &format!("pack.religions[{i}]"), i, &counts))
+        .collect();
+    let settled: BTreeSet<u64> = kept(burgs)
+        .into_iter()
+        .filter_map(|(_, burg)| burg.get("i").and_then(Value::as_u64))
+        .collect();
+    let states: Vec<Option<SourceState>> = kept(states)
+        .into_iter()
+        .map(|(i, state)| reader.state(state, &format!("pack.states[{i}]"), i, &counts, &settled))
+        .collect();
     if !reader.problems.is_empty() {
         return Err(AzgaarError::Problems(reader.problems));
     }
     let every = "with no problems, everything was read";
+    let (per_point, urbanization) = rate.expect(every);
+    // A people's extent: the cells naming it, and its people: those cells' population in
+    // millionths times the rate, and the population in thousandths of the settlements on them
+    // times the rate and urbanization in hundredths, summed exactly and rounded once.
+    let extent = |id: u32, of: fn(&SourceCell) -> Option<u32>| {
+        let ours = |cell: usize| {
+            let (cell, _, _) = cells[cell].as_ref().expect(every);
+            of(cell) == Some(id)
+        };
+        let ours_cells: Vec<usize> = (0..cells.len()).filter(|&cell| ours(cell)).collect();
+        let rural: i128 = (ours_cells.iter())
+            .map(|&cell| i128::from(cells[cell].as_ref().expect(every).2))
+            .sum();
+        let urban: i128 = (settlements.iter())
+            .map(|(_, settlement)| settlement.as_ref().expect(every))
+            .filter(|(settlement, _)| ours(settlement.cell as usize))
+            .map(|&(_, thousandths)| i128::from(thousandths))
+            .sum();
+        let people = div_round(
+            (rural * 100 + urban * 1000 * i128::from(urbanization)) * i128::from(per_point),
+            100_000_000,
+        );
+        Extent {
+            cells: u32::try_from(ours_cells.len()).expect("fewer cells than u32 holds"),
+            people: u64::try_from(people).expect("0 or more"),
+        }
+    };
     Ok(Source {
         name: name.expect(every),
         version: version.to_owned(),
@@ -285,9 +378,9 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         height_exponent: exponent.expect(every),
         // Each cell with the climate of its grid cell.
         cells: cells
-            .into_iter()
+            .iter()
             .map(|cell| {
-                let (cell, grid) = cell.expect(every);
+                let (cell, grid, _) = cell.clone().expect(every);
                 let (temperature, precipitation) = climates[grid].expect(every);
                 SourceCell {
                     temperature,
@@ -311,7 +404,8 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         // Each settlement's people: its population in thousandths, times the rate, times
         // urbanization in hundredths, rounded once.
         settlements: settlements
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|(_, settlement)| {
                 let (settlement, thousandths) = settlement.expect(every);
                 let (rate, urbanization) = rate.expect(every);
@@ -333,7 +427,39 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
             .into_iter()
             .map(|marker| marker.expect(every))
             .collect(),
+        cultures: cultures
+            .into_iter()
+            .map(|culture| culture.expect(every))
+            .map(|culture| SourceCulture {
+                extent: extent(culture.id, |cell| cell.culture),
+                ..culture
+            })
+            .collect(),
+        religions: religions
+            .into_iter()
+            .map(|religion| religion.expect(every))
+            .map(|religion| SourceReligion {
+                extent: extent(religion.id, |cell| cell.religion),
+                ..religion
+            })
+            .collect(),
+        states: states
+            .into_iter()
+            .map(|state| state.expect(every))
+            .map(|state| SourceState {
+                extent: extent(state.id, |cell| cell.state),
+                ..state
+            })
+            .collect(),
     })
+}
+
+/// The items of a list of Azgaar's but its placeholder at 0 and removed ones, each with its
+/// place in the list.
+fn kept(items: &[Value]) -> Vec<(usize, &Value)> {
+    (items.iter().enumerate().skip(1))
+        .filter(|(_, item)| item.get("removed") != Some(&Value::Bool(true)))
+        .collect()
 }
 
 /// Whether this build reads exports from the generator's `version`.
@@ -345,12 +471,48 @@ fn reads(version: &str) -> bool {
     )
 }
 
-/// How many cells, vertices and features the export has, so references can be checked.
+/// How many cells, vertices and features the export has, and its cultures, religions and
+/// states, so references can be checked.
 struct Counts {
     cells: usize,
     grid: usize,
     vertices: usize,
     features: usize,
+    cultures: Peoples,
+    religions: Peoples,
+    states: Peoples,
+}
+
+/// One of the export's lists of peoples, so a reference to one can be checked: what one's
+/// called, how many there are, and which are removed.
+struct Peoples {
+    noun: &'static str,
+    plural: &'static str,
+    count: usize,
+    removed: BTreeSet<u64>,
+}
+
+impl Peoples {
+    fn of(items: &[Value], noun: &'static str, plural: &'static str) -> Peoples {
+        Peoples {
+            noun,
+            plural,
+            count: items.len(),
+            removed: (items.iter().enumerate())
+                .filter(|(_, item)| item.get("removed") == Some(&Value::Bool(true)))
+                .map(|(i, _)| i as u64)
+                .collect(),
+        }
+    }
+}
+
+/// "a", "a or b", "a, b or c".
+fn or_list(names: &[&str]) -> String {
+    match names.split_last() {
+        None => String::new(),
+        Some((only, [])) => (*only).to_owned(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+    }
 }
 
 /// Reads values, keeping every problem it finds.
@@ -739,6 +901,194 @@ impl Reader {
         })
     }
 
+    /// `object`'s reference at `key` to one of `peoples`: none for 0, Azgaar's placeholder, or
+    /// one that exists and isn't removed.
+    fn link(
+        &mut self,
+        object: &Value,
+        path: &str,
+        key: &str,
+        peoples: &Peoples,
+    ) -> Option<Option<u32>> {
+        let at = format!("{path}.{key}");
+        let value = self.field(object, path, key)?;
+        let Peoples {
+            noun,
+            plural,
+            count,
+            ..
+        } = *peoples;
+        match self.whole(value, &at)? {
+            0 => Some(None),
+            id if id >= count as u64 => self.problem(
+                &at,
+                format!("{noun} {id} doesn't exist; there are {count} {plural}"),
+            ),
+            id if peoples.removed.contains(&id) => {
+                self.problem(&at, format!("{noun} {id} is removed"))
+            }
+            id => Some(Some(id as u32)),
+        }
+    }
+
+    /// `object`'s `key`, one of the `names` Azgaar gives a `what`.
+    fn one_of<T: Copy>(
+        &mut self,
+        object: &Value,
+        path: &str,
+        key: &str,
+        names: (&str, &[(&str, T)]),
+    ) -> Option<T> {
+        let value = self.field(object, path, key)?;
+        self.named_as(value, &format!("{path}.{key}"), names)
+    }
+
+    /// `value`, one of the `names` Azgaar gives a `what`.
+    fn named_as<T: Copy>(
+        &mut self,
+        value: &Value,
+        path: &str,
+        (what, names): (&str, &[(&str, T)]),
+    ) -> Option<T> {
+        match names.iter().find(|(name, _)| value.as_str() == Some(name)) {
+            Some(&(_, known)) => Some(known),
+            None => {
+                let all: Vec<&str> = names.iter().map(|(name, _)| *name).collect();
+                self.problem(
+                    path,
+                    format!("{value} isn't a {what} Factional reads: {}", or_list(&all)),
+                )
+            }
+        }
+    }
+
+    /// A people's id, `object`'s `i`, which is its place in its list.
+    fn placed_id(&mut self, object: &Value, path: &str, place: usize) -> Option<u32> {
+        match self.id(object, path)? {
+            id if id as usize == place => Some(id),
+            id => self.problem(
+                &format!("{path}.i"),
+                format!("expected {place}, its place in the list, not {id}"),
+            ),
+        }
+    }
+
+    /// `object`'s `key`, its text, required.
+    fn named(&mut self, object: &Value, path: &str, key: &str) -> Option<String> {
+        let value = self.field(object, path, key)?;
+        self.text(value, &format!("{path}.{key}"))
+    }
+
+    /// The culture `culture` at `place`, its extent yet to come.
+    fn culture(&mut self, culture: &Value, path: &str, place: usize) -> Option<SourceCulture> {
+        let id = self.placed_id(culture, path, place);
+        let name = self.named(culture, path, "name");
+        let kind = self.one_of(culture, path, "type", ("culture type", &SETTLEMENT_KINDS));
+        Some(SourceCulture {
+            id: id?,
+            name: name?,
+            kind: kind?,
+            extent: Extent::default(),
+        })
+    }
+
+    /// The religion `religion` at `place`, its extent yet to come.
+    fn religion(
+        &mut self,
+        religion: &Value,
+        path: &str,
+        place: usize,
+        counts: &Counts,
+    ) -> Option<SourceReligion> {
+        let id = self.placed_id(religion, path, place);
+        let name = self.named(religion, path, "name");
+        let kind = self.one_of(religion, path, "type", ("religion type", &RELIGION_KINDS));
+        let form = self.named(religion, path, "form");
+        // A deity that's missing, null or empty is none.
+        let deity = match religion.get("deity") {
+            None | Some(Value::Null) => Some(None),
+            Some(_) => self.optional_text(religion, path, "deity"),
+        };
+        let culture = self.link(religion, path, "culture", &counts.cultures);
+        Some(SourceReligion {
+            id: id?,
+            name: name?,
+            kind: kind?,
+            form: form?,
+            deity: deity?,
+            culture: culture?,
+            extent: Extent::default(),
+        })
+    }
+
+    /// The state `state` at `place`, its extent yet to come; its capital one of the
+    /// settlements `settled`, by id.
+    fn state(
+        &mut self,
+        state: &Value,
+        path: &str,
+        place: usize,
+        counts: &Counts,
+        settled: &BTreeSet<u64>,
+    ) -> Option<SourceState> {
+        let at = |key: &str| format!("{path}.{key}");
+        let id = self.placed_id(state, path, place);
+        let name = self.named(state, path, "name");
+        let full_name = self.named(state, path, "fullName");
+        let form = self.one_of(state, path, "form", ("state form", &STATE_FORMS));
+        let culture = self.link(state, path, "culture", &counts.cultures);
+        let capital = self
+            .field(state, path, "capital")
+            .and_then(|capital| self.whole(capital, &at("capital")))
+            .and_then(|capital| match capital {
+                0 => Some(None),
+                capital if settled.contains(&capital) => Some(Some(capital as u32)),
+                capital => self.problem(
+                    &at("capital"),
+                    format!("settlement {capital} isn't one of the settlements read"),
+                ),
+            });
+        // Its stance toward each other state read; toward itself, the placeholder and a
+        // removed state, Azgaar's "x", it isn't read.
+        let states = &counts.states;
+        let stances = self.field(state, path, "diplomacy").and_then(|diplomacy| {
+            let Some(entries) = diplomacy.as_array() else {
+                return self.problem(&at("diplomacy"), "expected a list".to_owned());
+            };
+            if entries.len() != states.count {
+                return self.problem(
+                    &at("diplomacy"),
+                    format!(
+                        "expected an entry for each of the {} states, not {}",
+                        states.count,
+                        entries.len()
+                    ),
+                );
+            }
+            let others = (1..states.count)
+                .filter(|&other| other != place && !states.removed.contains(&(other as u64)));
+            others
+                .map(|other| {
+                    let here = format!("{path}.diplomacy[{other}]");
+                    let stance = self.named_as(&entries[other], &here, ("stance", &STANCES));
+                    stance.map(|stance| (other as u32, stance))
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+        });
+        Some(SourceState {
+            id: id?,
+            name: name?,
+            full_name: full_name?,
+            form: form?,
+            culture: culture?,
+            capital: capital?,
+            stances: stances?,
+            extent: Extent::default(),
+        })
+    }
+
     /// The point `value`, an x and a y.
     fn point(&mut self, value: &Value, path: &str) -> Option<Point> {
         let numbers: Option<Vec<i64>> =
@@ -756,8 +1106,14 @@ impl Reader {
         }
     }
 
-    /// The cell `cell`, its climate yet to come from its grid cell, and that grid cell.
-    fn cell(&mut self, cell: &Value, path: &str, counts: &Counts) -> Option<(SourceCell, usize)> {
+    /// The cell `cell`, its climate yet to come from its grid cell, that grid cell, and its
+    /// population in millionths of a point.
+    fn cell(
+        &mut self,
+        cell: &Value,
+        path: &str,
+        counts: &Counts,
+    ) -> Option<(SourceCell, usize, i64)> {
         let field = |reader: &mut Reader, key: &str| reader.field(cell, path, key);
         let at = |key: &str| format!("{path}.{key}");
         let centre = field(self, "p").and_then(|p| self.point(p, &at("p")));
@@ -817,6 +1173,15 @@ impl Reader {
                     ),
                 ),
             });
+        let pop =
+            field(self, "pop").and_then(|pop| match pop.as_number().and_then(|n| scaled(n, 6)) {
+                Some(millionths) if millionths >= 0 => Some(millionths),
+                Some(_) => self.problem(&at("pop"), format!("expected 0 or more, not {pop}")),
+                None => self.problem(&at("pop"), format!("expected a number, not {pop}")),
+            });
+        let culture = self.link(cell, path, "culture", &counts.cultures);
+        let religion = self.link(cell, path, "religion", &counts.religions);
+        let state = self.link(cell, path, "state", &counts.states);
         Some((
             SourceCell {
                 centre: centre?,
@@ -828,8 +1193,12 @@ impl Reader {
                 biome: biome?,
                 temperature: 0,
                 precipitation: 0,
+                culture: culture?,
+                religion: religion?,
+                state: state?,
             },
             grid?,
+            pop?,
         ))
     }
 

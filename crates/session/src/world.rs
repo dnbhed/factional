@@ -265,7 +265,7 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
 
 /// What `world source <file>` says of the Azgaar export in `file`, read from `base`: its name,
 /// version and size, its cells, vertices and features, its rivers, its settlements, routes and
-/// points of interest, and its fingerprint; or why it can't
+/// points of interest, its cultures, religions and states, and its fingerprint; or why it can't
 /// be read, each problem on a line.
 pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
     let text = std::fs::read_to_string(base.join(file))
@@ -275,7 +275,7 @@ pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
     let features = |kind: fn(&Feature) -> bool| source.features.iter().filter(|f| kind(f)).count();
     Ok(format!(
         "{name}: {}, from Azgaar {}, {} × {} pixels\n\
-         {}, {}; {}, {} and {}; {}; {}, {} and {}; fingerprint {}",
+         {}, {}; {}, {} and {}; {}; {}, {} and {}; {}, {} and {}; fingerprint {}",
         source.name,
         source.version,
         source.size.width,
@@ -295,6 +295,9 @@ pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
             1 => "1 point of interest".to_owned(),
             n => format!("{n} points of interest"),
         },
+        count(source.cultures.len(), "culture"),
+        count(source.religions.len(), "religion"),
+        count(source.states.len(), "state"),
         fingerprint_of(text.as_bytes()),
     ))
 }

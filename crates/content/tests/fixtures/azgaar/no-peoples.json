@@ -1,0 +1,61 @@
+{
+  "info": {
+    "version": "1.154.0",
+    "description": "Azgaar's Fantasy Map Generator output: azgaar.github.io/Fantasy-map-generator",
+    "exportedAt": "2026-11-04T20:00:00.000Z",
+    "mapName": "Tiny, before W6d",
+    "width": 40,
+    "height": 30,
+    "seed": "123456789",
+    "mapId": 1
+  },
+  "settings": { "heightExponent": 2, "populationRate": 1000, "urbanization": 1 },
+  "pack": {
+    "cells": [
+      { "i": 0, "v": [0, 1, 3], "c": [1, 2], "p": [10, 7.5], "g": 0, "h": 10, "area": 300, "f": 1, "t": -1, "fl": 0, "r": 0, "biome": 0, "pop": 0, "culture": 0, "religion": 0, "state": 0 },
+      { "i": 1, "v": [0, 2, 3], "c": [0, 3], "p": [30.004, 7.5], "g": 1, "h": 40, "area": 300, "f": 3, "t": 1, "fl": 12, "r": 0, "biome": 4, "pop": 12.5, "culture": 1, "religion": 1, "state": 1 },
+      { "i": 2, "v": [0, 1, 4], "c": [0, 3], "p": [10, 22.5], "g": 2, "h": 19, "area": 300, "f": 2, "t": -1, "fl": 0, "r": 0, "biome": 0, "pop": 0, "culture": 0, "religion": 0, "state": 0 },
+      { "i": 3, "v": [0, 2, 4, 5], "c": [1, 2], "p": [111.666, 22.5], "g": 3, "h": 60, "area": 300, "f": 3, "t": 2, "fl": 3, "r": 0, "biome": 6, "pop": 3.3333335, "culture": 2, "religion": 2, "state": 2 }
+    ],
+    "vertices": [
+      { "i": 0, "p": [20, 15], "v": [1, 2, 3], "c": [0, 1, 3] },
+      { "i": 1, "p": [0, 15], "v": [0, 3, 4], "c": [0, 2, 4] },
+      { "i": 2, "p": [40, 15], "v": [0, 3, 5], "c": [1, 3, 5] },
+      { "i": 3, "p": [20, 0], "v": [0, 1, 2], "c": [0, 1, 6] },
+      { "i": 4, "p": [20, 30], "v": [0, 1, 5], "c": [2, 3, 7] },
+      { "i": 5, "p": [-9.597192276750592, 0.125], "v": [2, 4, 3], "c": [3, 8, 9] }
+    ],
+    "rivers": [
+      { "i": 1, "source": 3, "mouth": 1, "discharge": 12, "length": 101.66, "width": 0.01, "widthFactor": 1.2, "sourceWidth": 0.05, "parent": 1, "cells": [3, 1, 0], "basin": 1, "name": "Brook", "type": "Brook" },
+      { "i": 2, "source": 3, "mouth": 3, "discharge": 3, "length": 7.5, "width": 0.01, "widthFactor": 0.836, "sourceWidth": 0.125, "parent": 2, "cells": [3, -1], "basin": 2, "name": "Spill", "type": "Brook" }
+    ],
+    "features": [
+      0,
+      { "i": 1, "type": "ocean", "land": false, "border": true, "cells": 1, "height": 0, "subtype": "ocean", "name": "Calm" },
+      { "i": 2, "type": "lake", "land": false, "border": false, "cells": 1, "height": 19.9, "subtype": "freshwater", "name": "Still" },
+      { "i": 3, "type": "island", "land": true, "border": true, "cells": 2, "height": 0, "subtype": "continent", "name": "Tiny" }
+    ],
+    "burgs": [
+      0,
+      { "cell": 1, "x": 30.25, "y": 7.75, "i": 1, "state": 1, "culture": 1, "name": "Highmoor", "feature": 3, "capital": 1, "population": 2.345, "type": "Generic", "citadel": 1, "walls": 1, "shanty": 0, "temple": 1, "group": "town", "market": 1, "plaza": 0 },
+      { "cell": 3, "x": 21.5, "y": 20.25, "i": 2, "state": 2, "culture": 2, "name": "Lakeside", "feature": 3, "capital": 0, "port": 2, "population": 0.857, "type": "Lake", "citadel": 0, "walls": 0, "shanty": 0, "temple": 0, "group": "village", "market": 0, "plaza": 1 },
+      { "i": 3, "name": "Gone", "removed": true }
+    ],
+    "routes": [
+      { "i": 0, "group": "roads", "name": "High road", "feature": 3, "points": [[30.25, 7.75, 1], [25.5, 15, 3], [21.5, 20.25, 3]] },
+      { "i": 1, "group": "searoutes", "feature": 2, "points": [[21.5, 20.25, 3], [12, 22.5, 2]] }
+    ],
+    "markers": [
+      { "icon": "glyph-1f30b", "type": "volcanoes", "dx": 52, "px": 13, "x": 33.3, "y": 9.4, "cell": 1, "i": 0, "name": "Ash Peak", "note": "Dormant volcano." },
+      { "icon": "glyph-1f3f0", "type": "ruins", "x": 20, "y": 21, "cell": 3, "i": 2, "name": "Old Keep", "note": "" }
+    ]
+  },
+  "grid": {
+    "cells": [
+      { "i": 0, "temp": 12, "prec": 25 },
+      { "i": 1, "temp": 9, "prec": 14 },
+      { "i": 2, "temp": 11, "prec": 28 },
+      { "i": 3, "temp": -2, "prec": 10 }
+    ]
+  }
+}

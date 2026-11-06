@@ -5,9 +5,10 @@
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Buildings, Coast, Detail, Drop, Feature, Foliage, Levels, Point, Recipe, Region,
-    RouteKind, SettlementKind, Size, Source, SourceCell, SourceMarker, SourceRiver, SourceRoute,
-    SourceSettlement, SourceVertex, Terrain, TilePos, Water, rasterise,
+    Biome, Buildings, Coast, Detail, Drop, Extent, Feature, Foliage, Levels, Point, Recipe, Region,
+    ReligionKind, RouteKind, SettlementKind, Size, Source, SourceCell, SourceCulture, SourceMarker,
+    SourceReligion, SourceRiver, SourceRoute, SourceSettlement, SourceState, SourceVertex, Stance,
+    StateForm, Terrain, TilePos, Water, rasterise,
 };
 use serde_json::{Value, json};
 
@@ -39,7 +40,24 @@ fn cell(
         biome,
         temperature,
         precipitation,
+        culture: None,
+        religion: None,
+        state: None,
     }
+}
+
+/// `cell` belonging to the culture, religion and state `id`.
+fn of(id: u32, cell: SourceCell) -> SourceCell {
+    SourceCell {
+        culture: Some(id),
+        religion: Some(id),
+        state: Some(id),
+        ..cell
+    }
+}
+
+fn extent(cells: u32, people: u64) -> Extent {
+    Extent { cells, people }
 }
 
 fn vertex(at: Point, cells: [Option<u32>; 3]) -> SourceVertex {
@@ -87,14 +105,17 @@ fn a_full_export_reads_as_its_cells_vertices_features_and_rivers() {
                 0,
                 (Biome::Marine, 12, 2500),
             ),
-            cell(
-                point(30_00, 7_50),
-                40,
-                2,
-                &[0, 3],
-                &[0, 2, 3],
-                12,
-                (Biome::Grassland, 9, 1400),
+            of(
+                1,
+                cell(
+                    point(30_00, 7_50),
+                    40,
+                    2,
+                    &[0, 3],
+                    &[0, 2, 3],
+                    12,
+                    (Biome::Grassland, 9, 1400),
+                ),
             ),
             cell(
                 point(10_00, 22_50),
@@ -105,14 +126,17 @@ fn a_full_export_reads_as_its_cells_vertices_features_and_rivers() {
                 0,
                 (Biome::Marine, 11, 2800),
             ),
-            cell(
-                point(111_67, 22_50),
-                60,
+            of(
                 2,
-                &[1, 2],
-                &[0, 2, 4, 5],
-                3,
-                (Biome::TemperateDeciduousForest, -2, 1000),
+                cell(
+                    point(111_67, 22_50),
+                    60,
+                    2,
+                    &[1, 2],
+                    &[0, 2, 4, 5],
+                    3,
+                    (Biome::TemperateDeciduousForest, -2, 1000),
+                ),
             ),
         ],
         vertices: vec![
@@ -213,6 +237,79 @@ fn a_full_export_reads_as_its_cells_vertices_features_and_rivers() {
                 note: None,
                 at: point(20_00, 21_00),
                 cell: 3,
+            },
+        ],
+        // W6d: Wildlands, No religion and Neutrals are placeholders, and Vanished and Fallen
+        // are removed. Each one's people, worked by hand: Highfolk's cell has 12.5 points, at
+        // 1000 people a point, and Highmoor 2345 people, so 14,845; Lakers' cell has 3.3333335
+        // points, 3.333334 to millionths, and Lakeside 857, so 4190.334, rounded once to 4190.
+        cultures: vec![
+            SourceCulture {
+                id: 1,
+                name: "Highfolk".to_owned(),
+                kind: SettlementKind::Highland,
+                extent: extent(1, 14_845),
+            },
+            SourceCulture {
+                id: 2,
+                name: "Lakers".to_owned(),
+                kind: SettlementKind::Lake,
+                extent: extent(1, 4190),
+            },
+        ],
+        // Lake Faith's deity is null, and Hidden Flame's culture 0, so they have none; Hidden
+        // Flame is on no cell.
+        religions: vec![
+            SourceReligion {
+                id: 1,
+                name: "Old Ways".to_owned(),
+                kind: ReligionKind::Folk,
+                form: "Shamanism".to_owned(),
+                deity: Some("Ash, the Burning".to_owned()),
+                culture: Some(1),
+                extent: extent(1, 14_845),
+            },
+            SourceReligion {
+                id: 2,
+                name: "Lake Faith".to_owned(),
+                kind: ReligionKind::Organized,
+                form: "Monotheism".to_owned(),
+                deity: None,
+                culture: Some(2),
+                extent: extent(1, 4190),
+            },
+            SourceReligion {
+                id: 3,
+                name: "Hidden Flame".to_owned(),
+                kind: ReligionKind::Cult,
+                form: "Dark Cult".to_owned(),
+                deity: Some("The Ember".to_owned()),
+                culture: None,
+                extent: extent(0, 0),
+            },
+        ],
+        // Each state's stance toward the other; toward itself, Neutrals and Fallen, Azgaar's
+        // "x", isn't read.
+        states: vec![
+            SourceState {
+                id: 1,
+                name: "Highmoor".to_owned(),
+                full_name: "Kingdom of Highmoor".to_owned(),
+                form: StateForm::Monarchy,
+                culture: Some(1),
+                capital: Some(1),
+                stances: vec![(2, Stance::Rival)],
+                extent: extent(1, 14_845),
+            },
+            SourceState {
+                id: 2,
+                name: "Lakeside".to_owned(),
+                full_name: "Lakeside Republic".to_owned(),
+                form: StateForm::Republic,
+                culture: Some(2),
+                capital: Some(2),
+                stances: vec![(1, Stance::Suspicion)],
+                extent: extent(1, 4190),
             },
         ],
     };
@@ -737,6 +834,8 @@ fn a_points_cell_must_exist_and_its_name_and_note_may_be_missing() {
 fn each_lists_ids_are_unique() {
     let text = tiny_with(|json| {
         json["pack"]["burgs"][2]["i"] = json!(1);
+        // Lakeside's state names it by its id, now 1.
+        json["pack"]["states"][2]["capital"] = json!(1);
         json["pack"]["routes"][1]["i"] = json!(0);
         json["pack"]["markers"][1]["i"] = json!(0);
     });
@@ -800,6 +899,9 @@ fn an_export_that_isnt_full_is_refused_naming_what_it_lacks() {
         ("pack", "burgs"),
         ("pack", "routes"),
         ("pack", "markers"),
+        ("pack", "cultures"),
+        ("pack", "religions"),
+        ("pack", "states"),
         ("grid", "cells"),
     ] {
         let text = tiny_with(|json| {
@@ -812,6 +914,273 @@ fn an_export_that_isnt_full_is_refused_naming_what_it_lacks() {
             )
         );
     }
+}
+
+/// Each culture's, religion's and state's people, in order.
+fn peoples_people(text: &str) -> [Vec<u64>; 3] {
+    let source = read_azgaar(text).expect("it reads");
+    [
+        source.cultures.iter().map(|c| c.extent.people).collect(),
+        source.religions.iter().map(|r| r.extent.people).collect(),
+        source.states.iter().map(|s| s.extent.people).collect(),
+    ]
+}
+
+#[test]
+fn a_peoples_people_are_its_cells_and_settlements_summed_then_rounded_once() {
+    // At a person a point: Highfolk's cell has 0.4 and Highmoor 0.4, 0.8 together, so 1,
+    // where rounding each would give none; Lakers' 3.333334 and Lakeside's 0.857 are 4.
+    let text = tiny_with(|json| {
+        json["settings"]["populationRate"] = json!(1);
+        json["pack"]["cells"][1]["pop"] = json!(0.4);
+        json["pack"]["burgs"][1]["population"] = json!(0.4);
+    });
+    assert_eq!(
+        peoples_people(&text),
+        [vec![1, 4], vec![1, 4, 0], vec![1, 4]]
+    );
+    // At urbanization 0.5, settlements count half: 12,500 and 1172.5 are 13,672.5, so
+    // 13,673, half away from zero; 3333.334 and 428.5 are 3761.834, so 3762.
+    let text = tiny_with(|json| json["settings"]["urbanization"] = json!(0.5));
+    assert_eq!(
+        peoples_people(&text),
+        [
+            vec![13_673, 3762],
+            vec![13_673, 3762, 0],
+            vec![13_673, 3762]
+        ]
+    );
+    // A settlement counts where its cell is, whatever culture and state it names itself:
+    // Lakeside moved to Highfolk's cell makes 12,500, 2345 and 857 there, and leaves Lakers
+    // 3333.334, so 3333.
+    let text = tiny_with(|json| {
+        json["pack"]["burgs"][2]["cell"] = json!(1);
+        json["pack"]["burgs"][2]["culture"] = json!(2);
+        json["pack"]["burgs"][2]["state"] = json!(2);
+    });
+    assert_eq!(
+        peoples_people(&text),
+        [
+            vec![15_702, 3333],
+            vec![15_702, 3333, 0],
+            vec![15_702, 3333]
+        ]
+    );
+    // A people's cells are those naming it.
+    let text = tiny_with(|json| {
+        json["pack"]["cells"][3]["culture"] = json!(1);
+        json["pack"]["cells"][3]["religion"] = json!(3);
+        json["pack"]["cells"][3]["state"] = json!(0);
+    });
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(
+        source.cultures.iter().map(|c| c.extent).collect::<Vec<_>>(),
+        [extent(2, 19_035), extent(0, 0)]
+    );
+    assert_eq!(
+        source
+            .religions
+            .iter()
+            .map(|r| r.extent)
+            .collect::<Vec<_>>(),
+        [extent(1, 14_845), extent(0, 0), extent(1, 4190)]
+    );
+    assert_eq!(
+        source.states.iter().map(|s| s.extent).collect::<Vec<_>>(),
+        [extent(1, 14_845), extent(0, 0)]
+    );
+    assert_eq!(
+        (
+            source.cells[3].culture,
+            source.cells[3].religion,
+            source.cells[3].state
+        ),
+        (Some(1), Some(3), None)
+    );
+}
+
+#[test]
+fn a_peoples_links_are_none_or_one_read() {
+    let text = tiny_with(|json| {
+        let pack = &mut json["pack"];
+        pack["cells"][0]["state"] = json!(3);
+        pack["cells"][1]["culture"] = json!(3);
+        pack["cells"][3]["religion"] = json!(9);
+        pack["religions"][2]["culture"] = json!(3);
+        pack["states"][1]["capital"] = json!(3);
+        pack["states"][2]["culture"] = json!(7);
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.cells[0].state: state 3 is removed",
+            "pack.cells[1].culture: culture 3 is removed",
+            "pack.cells[3].religion: religion 9 doesn't exist; there are 4 religions",
+            "pack.religions[2].culture: culture 3 is removed",
+            "pack.states[1].capital: settlement 3 isn't one of the settlements read",
+            "pack.states[2].culture: culture 7 doesn't exist; there are 4 cultures",
+        ]
+    );
+    // 0 is none: the placeholder isn't a people, nor burgs[0] a settlement.
+    let text = tiny_with(|json| {
+        json["pack"]["religions"][1]["culture"] = json!(0);
+        json["pack"]["states"][2]["culture"] = json!(0);
+        json["pack"]["states"][2]["capital"] = json!(0);
+    });
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(source.religions[0].culture, None);
+    assert_eq!(
+        (source.states[1].culture, source.states[1].capital),
+        (None, None)
+    );
+    // A capital is a settlement by its id.
+    let text = tiny_with(|json| json["pack"]["states"][2]["capital"] = json!(1));
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(source.states[1].capital, Some(1));
+}
+
+#[test]
+fn kinds_forms_and_stances_are_azgaars() {
+    let text = tiny_with(|json| {
+        let pack = &mut json["pack"];
+        pack["cultures"][1]["type"] = json!("Elvish");
+        pack["religions"][1]["type"] = json!("Sect");
+        pack["states"][1]["form"] = json!("Empire");
+        pack["states"][1]["diplomacy"][2] = json!("Foe");
+        pack["states"][2]["diplomacy"] = json!(["x", "Ally"]);
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.cultures[1].type: \"Elvish\" isn't a culture type Factional reads: \
+             Generic, Naval, Lake, Highland, River, Nomadic or Hunting",
+            "pack.religions[1].type: \"Sect\" isn't a religion type Factional reads: \
+             Folk, Organized, Cult or Heresy",
+            "pack.states[1].form: \"Empire\" isn't a state form Factional reads: \
+             Monarchy, Republic, Union, Theocracy or Anarchy",
+            "pack.states[1].diplomacy[2]: \"Foe\" isn't a stance Factional reads: \
+             Ally, Friendly, Neutral, Suspicion, Enemy, Unknown, Rival, Vassal or Suzerain",
+            "pack.states[2].diplomacy: expected an entry for each of the 4 states, not 2",
+        ]
+    );
+    for (azgaar, kind) in [
+        ("Generic", SettlementKind::Generic),
+        ("Naval", SettlementKind::Naval),
+        ("Lake", SettlementKind::Lake),
+        ("Highland", SettlementKind::Highland),
+        ("River", SettlementKind::River),
+        ("Nomadic", SettlementKind::Nomadic),
+        ("Hunting", SettlementKind::Hunting),
+    ] {
+        let text = tiny_with(|json| json["pack"]["cultures"][2]["type"] = json!(azgaar));
+        assert_eq!(read_azgaar(&text).expect("it reads").cultures[1].kind, kind);
+    }
+    for (azgaar, kind) in [
+        ("Folk", ReligionKind::Folk),
+        ("Organized", ReligionKind::Organized),
+        ("Cult", ReligionKind::Cult),
+        ("Heresy", ReligionKind::Heresy),
+    ] {
+        let text = tiny_with(|json| json["pack"]["religions"][2]["type"] = json!(azgaar));
+        assert_eq!(
+            read_azgaar(&text).expect("it reads").religions[1].kind,
+            kind
+        );
+    }
+    for (azgaar, form) in [
+        ("Monarchy", StateForm::Monarchy),
+        ("Republic", StateForm::Republic),
+        ("Union", StateForm::Union),
+        ("Theocracy", StateForm::Theocracy),
+        ("Anarchy", StateForm::Anarchy),
+    ] {
+        let text = tiny_with(|json| json["pack"]["states"][2]["form"] = json!(azgaar));
+        assert_eq!(read_azgaar(&text).expect("it reads").states[1].form, form);
+    }
+    for (azgaar, stance) in [
+        ("Ally", Stance::Ally),
+        ("Friendly", Stance::Friendly),
+        ("Neutral", Stance::Neutral),
+        ("Suspicion", Stance::Suspicion),
+        ("Enemy", Stance::Enemy),
+        ("Unknown", Stance::Unknown),
+        ("Rival", Stance::Rival),
+        ("Vassal", Stance::Vassal),
+        ("Suzerain", Stance::Suzerain),
+    ] {
+        let text = tiny_with(|json| json["pack"]["states"][2]["diplomacy"][1] = json!(azgaar));
+        assert_eq!(
+            read_azgaar(&text).expect("it reads").states[1].stances,
+            [(1, stance)]
+        );
+    }
+    // Toward itself, the placeholder and a removed state, anything is ignored.
+    let text = tiny_with(|json| {
+        json["pack"]["states"][1]["diplomacy"] = json!([7, null, "Rival", "Foe"]);
+    });
+    assert_eq!(
+        read_azgaar(&text).expect("it reads").states[0].stances,
+        [(2, Stance::Rival)]
+    );
+}
+
+#[test]
+fn missing_and_misshapen_peoples_values_are_named() {
+    let text = tiny_with(|json| {
+        let pack = &mut json["pack"];
+        pack["cells"][1]["pop"] = json!(-1);
+        pack["cells"][3]
+            .as_object_mut()
+            .expect("a cell")
+            .remove("culture");
+        pack["cultures"][1]
+            .as_object_mut()
+            .expect("a culture")
+            .remove("name");
+        pack["cultures"][2]["i"] = json!(5);
+        pack["religions"][1]["form"] = json!(7);
+        pack["religions"][3]["deity"] = json!(7);
+        pack["states"][1]
+            .as_object_mut()
+            .expect("a state")
+            .remove("fullName");
+        pack["states"][2]["diplomacy"] = json!("x");
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.cells[1].pop: expected 0 or more, not -1",
+            "pack.cells[3]: missing culture",
+            "pack.cultures[1]: missing name",
+            "pack.cultures[2].i: expected 2, its place in the list, not 5",
+            "pack.religions[1].form: expected text, not 7",
+            "pack.religions[3].deity: expected text, not 7",
+            "pack.states[1]: missing fullName",
+            "pack.states[2].diplomacy: expected a list",
+        ]
+    );
+    // A deity that's missing or empty is none, as is null; a removed people is skipped
+    // however it looks.
+    let text = tiny_with(|json| {
+        let pack = &mut json["pack"];
+        pack["religions"][1]
+            .as_object_mut()
+            .expect("a religion")
+            .remove("deity");
+        pack["religions"][3]["deity"] = json!("");
+        pack["cultures"][3] = json!({ "i": 9, "removed": true, "type": 4 });
+        pack["states"][3] = json!({ "removed": true });
+    });
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(
+        source
+            .religions
+            .iter()
+            .map(|r| r.deity.clone())
+            .collect::<Vec<_>>(),
+        [None, None, None]
+    );
+    assert_eq!((source.cultures.len(), source.states.len()), (2, 2));
 }
 
 #[test]
@@ -883,6 +1252,47 @@ fn the_users_menayland_export_reads() {
     assert_eq!(
         source.markers.iter().filter(|m| m.note.is_some()).count(),
         47
+    );
+    // W6d's peoples, each one's cells and people by a separate script; no states but the
+    // placeholder.
+    let figures = |extents: Vec<Extent>| -> Vec<(u32, u64)> {
+        extents.iter().map(|e| (e.cells, e.people)).collect()
+    };
+    assert_eq!(
+        figures(source.cultures.iter().map(|c| c.extent).collect()),
+        [
+            (723, 9_037_161),
+            (165, 1_201_599),
+            (41, 150_185),
+            (2789, 34_076_144)
+        ]
+    );
+    assert_eq!(
+        figures(source.religions.iter().map(|r| r.extent).collect()),
+        [
+            (723, 9_037_161),
+            (165, 1_201_599),
+            (41, 150_185),
+            (2388, 29_039_832),
+            (165, 2_481_158),
+            (236, 2_555_154)
+        ]
+    );
+    assert_eq!(source.states.len(), 0);
+    assert_eq!(
+        source
+            .religions
+            .iter()
+            .map(|r| (r.kind, r.culture, r.deity.is_some()))
+            .collect::<Vec<_>>(),
+        [
+            (ReligionKind::Folk, Some(1), true),
+            (ReligionKind::Folk, Some(2), true),
+            (ReligionKind::Folk, Some(3), false),
+            (ReligionKind::Folk, Some(4), true),
+            (ReligionKind::Organized, Some(4), false),
+            (ReligionKind::Organized, Some(4), true),
+        ]
     );
 }
 

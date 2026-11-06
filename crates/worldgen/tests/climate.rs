@@ -38,6 +38,9 @@ fn cell(
         biome,
         temperature,
         precipitation,
+        culture: None,
+        religion: None,
+        state: None,
     }
 }
 
@@ -101,6 +104,9 @@ fn raster() -> Source {
         settlements: Vec::new(),
         routes: Vec::new(),
         markers: Vec::new(),
+        cultures: Vec::new(),
+        religions: Vec::new(),
+        states: Vec::new(),
     }
 }
 

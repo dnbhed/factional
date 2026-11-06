@@ -16,7 +16,8 @@ pub struct Point {
 /// has it), the feature it's in, its neighbouring cells and the vertices at its corners,
 /// each by its place in the source's lists, and its flux, the water flowing through it in
 /// Azgaar's cubic metres a second; its biome, and the climate of its grid cell, its yearly
-/// temperature in whole °C and precipitation in mm.
+/// temperature in whole °C and precipitation in mm; and the culture, religion and state it
+/// belongs to, by id, if any (W6d).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceCell {
     pub centre: Point,
@@ -28,6 +29,9 @@ pub struct SourceCell {
     pub biome: Biome,
     pub temperature: i8,
     pub precipitation: u16,
+    pub culture: Option<u32>,
+    pub religion: Option<u32>,
+    pub state: Option<u32>,
 }
 
 /// One of the source's vertices: where it is, and the three cells that meet there, `None`
@@ -74,7 +78,7 @@ pub struct SourceSettlement {
     pub buildings: Buildings,
 }
 
-/// A settlement's type, as Azgaar has it.
+/// A settlement's type, as Azgaar has it; a culture's too, the same seven (W6d).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SettlementKind {
     Generic,
@@ -127,9 +131,88 @@ pub struct SourceMarker {
     pub cell: u32,
 }
 
+/// How far a culture, religion or state reaches (W6d, P-147): the cells naming it, and its
+/// people, its cells' and its settlements' as Azgaar counts them, rounded once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Extent {
+    pub cells: u32,
+    pub people: u64,
+}
+
+/// One of the source's cultures (W6d, P-147): its id, name and type, and its extent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceCulture {
+    pub id: u32,
+    pub name: String,
+    pub kind: SettlementKind,
+    pub extent: Extent,
+}
+
+/// One of the source's religions (W6d, P-147): its id, name and type, its form as Azgaar words
+/// it, its deity if it has one, the culture it belongs to if any, and its extent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceReligion {
+    pub id: u32,
+    pub name: String,
+    pub kind: ReligionKind,
+    pub form: String,
+    pub deity: Option<String>,
+    pub culture: Option<u32>,
+    pub extent: Extent,
+}
+
+/// A religion's type, as Azgaar has it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ReligionKind {
+    Folk,
+    Organized,
+    Cult,
+    Heresy,
+}
+
+/// One of the source's states (W6d, P-147): its id, name and full name, its form, its culture
+/// and capital settlement if any, its stance toward each other state by that state's id, in
+/// order, and its extent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceState {
+    pub id: u32,
+    pub name: String,
+    pub full_name: String,
+    pub form: StateForm,
+    pub culture: Option<u32>,
+    pub capital: Option<u32>,
+    pub stances: Vec<(u32, Stance)>,
+    pub extent: Extent,
+}
+
+/// A state's form of government, as Azgaar has it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StateForm {
+    Monarchy,
+    Republic,
+    Union,
+    Theocracy,
+    Anarchy,
+}
+
+/// A state's stance toward another, Azgaar's diplomacy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Stance {
+    Ally,
+    Friendly,
+    Neutral,
+    Suspicion,
+    Enemy,
+    Unknown,
+    Rival,
+    Vassal,
+    Suzerain,
+}
+
 /// A source map: its name, the generator's version that made it, its size in pixels, the
 /// exponent its heights are raised to in metres, and its cells, vertices, features and
-/// rivers; and its settlements, routes and points of interest.
+/// rivers; its settlements, routes and points of interest; and its cultures, religions and
+/// states.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Source {
     pub name: String,
@@ -143,4 +226,7 @@ pub struct Source {
     pub settlements: Vec<SourceSettlement>,
     pub routes: Vec<SourceRoute>,
     pub markers: Vec<SourceMarker>,
+    pub cultures: Vec<SourceCulture>,
+    pub religions: Vec<SourceReligion>,
+    pub states: Vec<SourceState>,
 }
