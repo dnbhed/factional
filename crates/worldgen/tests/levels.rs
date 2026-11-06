@@ -1,5 +1,6 @@
 //! Levels (W3c, P-138): elevation quantised for drawing in 2D, plateaus and pits cleaned, and
-//! ledges and cliffs where a level drops to the next. The expected levels and counts were
+//! ledges and cliffs where a level drops to the next; water at the level of its surface (W3e,
+//! P-140). The expected levels and counts were
 //! worked by a separate script from the rules in DESIGN.md §21, never by this code.
 
 use factional_core::Fixed;
@@ -219,12 +220,13 @@ fn a_land_tiles_level_is_how_many_levels_start_at_or_below_it() {
 }
 
 #[test]
-fn water_is_level_zero() {
+fn water_stands_at_the_level_of_its_surface() {
     let detailed = whole(7, Detail::default(), Levels::default());
     let water: Vec<Tile> = tiles(&detailed)
         .into_iter()
         .filter(Tile::is_water)
         .collect();
+    // The sea's surface at 0 m and the lake's at −1.28 m both lie below level 1's start.
     assert!(water.iter().all(|t| t.level == 0));
     // Deep sea at −28.97, and a lake.
     assert_eq!(at(&detailed, 13, 13), (hundredths(-28_97), 0));
@@ -245,8 +247,8 @@ fn plateaus_and_pits_under_the_specks_take_the_nearest_level_around_them() {
     assert_eq!(at(&cleaned, 20, 15), (hundredths(-119_55), 2));
     assert_eq!(at(&kept, 15, 15), (hundredths(15_67), 0));
     assert_eq!(at(&cleaned, 15, 15), (hundredths(15_67), 3));
-    assert_eq!((drops(&kept), highest(&kept)), ([637, 1026], 19));
-    assert_eq!((drops(&cleaned), highest(&cleaned)), ([634, 726], 18));
+    assert_eq!((drops(&kept), highest(&kept)), ([705, 1356], 19));
+    assert_eq!((drops(&cleaned), highest(&cleaned)), ([686, 1115], 18));
     // Heights never change.
     let heights =
         |map: &WorldMap| -> Vec<Fixed> { tiles(map).iter().map(|t| t.elevation).collect() };
@@ -260,15 +262,16 @@ fn the_whole_map_matches_the_separate_script() {
         land_at_each_level(&defaults),
         [74, 129, 90, 147, 254, 49, 36, 196, 81]
     );
-    assert_eq!(drops(&defaults), [422, 26]);
+    // Water drops too, by the level of its surface.
+    assert_eq!(drops(&defaults), [454, 52]);
     assert_eq!(
         drops(&whole(7, Detail::default(), levels(5_00, 0))),
-        [456, 26]
+        [473, 52]
     );
     let wide = whole(7, Detail::default(), levels(10_00, 4));
-    assert_eq!((drops(&wide), highest(&wide)), ([281, 11], 4));
+    assert_eq!((drops(&wide), highest(&wide)), ([294, 24], 4));
     let seed = whole(0, Detail::default(), Levels::default());
-    assert_eq!((drops(&seed), highest(&seed)), ([440, 32], 8));
+    assert_eq!((drops(&seed), highest(&seed)), ([490, 48], 8));
     let region = map(recipe(
         [10, 10, 20, 20],
         2,
@@ -276,7 +279,7 @@ fn the_whole_map_matches_the_separate_script() {
         Detail::default(),
         Levels::default(),
     ));
-    assert_eq!((drops(&region), highest(&region)), ([426, 5], 7));
+    assert_eq!((drops(&region), highest(&region)), ([435, 14], 7));
 }
 
 /// A 3 × 3 map of grass, each tile at the level `levels` draws for it, a row a string, and `~`
@@ -313,10 +316,15 @@ fn sides(map: &WorldMap, x: u32, y: u32) -> [Option<Drop>; 4] {
 #[test]
 fn a_tile_drops_by_a_ledge_one_level_down_and_a_cliff_further() {
     let map = drawn(["121", "033", "1~1"]);
-    // North 2 a ledge, west 0 a cliff, east level, south water.
+    // North 2 a ledge, west 0 a cliff, east level, south water at 0 a cliff.
     assert_eq!(
         sides(&map, 1, 1),
-        [Some(Drop::Ledge), Some(Drop::Cliff), None, None]
+        [
+            Some(Drop::Ledge),
+            Some(Drop::Cliff),
+            None,
+            Some(Drop::Cliff)
+        ]
     );
     // A higher neighbour is its drop, not this tile's; off the map, nothing.
     assert_eq!(
@@ -324,24 +332,34 @@ fn a_tile_drops_by_a_ledge_one_level_down_and_a_cliff_further() {
         [None, Some(Drop::Ledge), Some(Drop::Ledge), None]
     );
     assert_eq!(sides(&map, 0, 0), [None, None, None, Some(Drop::Ledge)]);
-    assert_eq!(sides(&map, 0, 2), [Some(Drop::Ledge), None, None, None]);
-    assert_eq!(sides(&map, 2, 2), [None; 4]);
+    assert_eq!(
+        sides(&map, 0, 2),
+        [Some(Drop::Ledge), None, Some(Drop::Ledge), None]
+    );
+    assert_eq!(sides(&map, 2, 2), [None, Some(Drop::Ledge), None, None]);
     assert_eq!(map.drops(TilePos { x: 3, y: 0 }), None);
 }
 
 #[test]
-fn water_drops_nowhere() {
-    let mut map = drawn(["111", "1~1", "111"]);
-    map.edit(
-        TilePos { x: 1, y: 1 },
-        Override {
-            level: Some(5),
-            ..Override::default()
-        },
-    )
-    .expect("on the map");
-    assert_eq!(sides(&map, 1, 1), [None; 4]);
-    assert_eq!(sides(&map, 1, 0), [None; 4]);
+fn water_drops_and_is_dropped_to_by_its_level_as_land_is() {
+    let mut map = drawn(["111", "1~~", "111"]);
+    // Land at 1 drops to water at 0.
+    assert_eq!(sides(&map, 1, 0), [None, None, None, Some(Drop::Ledge)]);
+    let mut level = |level: u8| {
+        map.edit(
+            TilePos { x: 1, y: 1 },
+            Override {
+                level: Some(level),
+                ..Override::default()
+            },
+        )
+        .expect("on the map");
+        sides(&map, 1, 1)
+    };
+    // Water at 3 drops to the land at 1 around it and to the water at 0 beside it.
+    assert_eq!(level(3), [Some(Drop::Cliff); 4]);
+    // Water at 1 drops to water only.
+    assert_eq!(level(1), [None, None, Some(Drop::Ledge), None]);
 }
 
 #[test]
@@ -365,15 +383,17 @@ fn drops_follow_the_overrides() {
             Some(Drop::Cliff)
         ]
     );
+    // Water by its level, as land.
     map.edit(
         TilePos { x: 0, y: 1 },
         Override {
             terrain: Some(Terrain::DeepWater),
+            level: Some(2),
             ..Override::default()
         },
     )
     .expect("on the map");
-    assert_eq!(sides(&map, 1, 1)[1], None);
+    assert_eq!(sides(&map, 1, 1)[1], Some(Drop::Ledge));
 }
 
 #[test]

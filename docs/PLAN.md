@@ -134,6 +134,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W3b — coasts (P-137): land and water by each tile's detailed height against the water near it, the nearest water cell among its nearest cell and that cell's neighbours, the sea at 0 m and a lake at its surface in metres by Azgaar's formula with a decimal height; sea shallower than the shallows (10.00 m) shallow; specks of land and water under 4 tiles, away from the map's edge, turned to the other, water first; heights unchanged; the recipe's coast checked wherever a recipe makes a map; the map file version 3, version 2 refused; `world import --shallows --specks`, the coast in `world info`, ocean counting both depths; a lake's surface outside 0 to 100 a problem, a broken window; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#103)
 - W3c — levels (P-138): each level starting at the metres of 20 + k × the spacing (5.00) on Azgaar's scale, a land tile's level how many start at or below it, water level 0, stored as a layer of its own; plateaus and pits of land under 4 tiles, away from the map's edge, taking the nearest level around them, all judged by the levels as made; `WorldMap::drops` a ledge for one level down to a land neighbour and a cliff for more, overrides applied; the recipe's levels checked wherever a recipe makes a map; the map file version 4, version 3 refused; `world import --levels --level-specks` saying its levels, ledges and cliffs, the levels in `world info`; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#104)
 - W3d — rivers drawn (P-139): W3 split again, drawing then carving (W3e); `pack.rivers` and each cell's flux read and checked, an export without rivers not Full; each river along a uniform Catmull-Rom curve through its cells' centres, −1 the nearest point of the map's edge, a piece a tile its chord spans; Azgaar's drawn half-width at each cell from its width factor, source width and the flux so far, never under a tile, a tile river if its centre is within it or its square is touched; river tiles shallow water with their flow, made before the levels; `world source` counts rivers, `world import` river tiles; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#105)
+- W3e — river beds carved and water at its surface's level (P-140): each river's bed, from source to mouth, the lowest ground along its line so far, never below the surface of the water it ends in; river tiles lowered to it, never raised, the banks untouched; the sea at level 0, a lake at its surface's, a river at its bed's; drops wherever a tile meets a lower neighbour, land or water; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-06 (#106)
 
 ---
 
@@ -155,11 +156,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W3e · Carving rivers and lakes — P3 · Next
-
-River beds carved to fall continuously from source to mouth, and lakes carved to their surface height, so the levels and cliffs follow the water.
-
-### W4 · Climate and biomes — P3 · Outline
+### W4 · Climate and biomes — P3 · Next
 
 Each tile's temperature, precipitation and biome from the source, and its terrain from those.
 

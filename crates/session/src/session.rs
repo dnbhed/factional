@@ -3293,7 +3293,7 @@ mod tests {
             output(&format!(
                 "imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land; heights -176.70 to 1922.19 m; \
-                 levels 0 to 8, 440 ledges and 32 cliffs; {bytes} bytes"
+                 levels 0 to 8, 490 ledges and 48 cliffs; {bytes} bytes"
             ))
         );
         let recipe = factional_worldgen::Recipe {
@@ -3329,7 +3329,7 @@ mod tests {
             output(&format!(
                 "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
                  166 ocean, 58 lake, 0 river and 1376 land; heights -187.80 to 1734.65 m; \
-                 levels 0 to 7, 426 ledges and 5 cliffs; {bytes} bytes"
+                 levels 0 to 7, 435 ledges and 14 cliffs; {bytes} bytes"
             ))
         );
         let recipe = map.recipe();
@@ -3360,7 +3360,7 @@ mod tests {
             output(&format!(
                 "imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, \
                  299 ocean, 181 lake, 0 river and 1120 land; heights -381.73 to 2241.02 m; \
-                 levels 0 to 9, 604 ledges and 63 cliffs; {bytes} bytes"
+                 levels 0 to 9, 756 ledges and 170 cliffs; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3408,7 +3408,7 @@ mod tests {
             output(&format!(
                 "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
                  294 ocean, 183 lake, 0 river and 1123 land; heights -381.73 to 2241.02 m; \
-                 levels 0 to 9, 593 ledges and 56 cliffs; {bytes} bytes"
+                 levels 0 to 9, 757 ledges and 175 cliffs; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3449,7 +3449,7 @@ mod tests {
             output(&format!(
                 "imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land; heights -176.70 to 1922.19 m; \
-                 levels 0 to 4, 312 ledges and 20 cliffs; {bytes} bytes"
+                 levels 0 to 4, 324 ledges and 24 cliffs; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3509,7 +3509,7 @@ mod tests {
             output(&format!(
                 "imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 77 river and 992 land; heights -176.70 to 1922.19 m; \
-                 levels 0 to 8, 380 ledges and 32 cliffs; {bytes} bytes"
+                 levels 0 to 8, 494 ledges and 56 cliffs; {bytes} bytes"
             ))
         );
         let said = session
@@ -3519,8 +3519,8 @@ mod tests {
             said,
             output(&format!(
                 "imported Rivers into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-                 166 ocean, 58 lake, 141 river and 1235 land; heights -187.80 to 1734.65 m; \
-                 levels 0 to 7, 341 ledges and 5 cliffs; {bytes} bytes"
+                 166 ocean, 58 lake, 141 river and 1235 land; heights -187.80 to 1694.00 m; \
+                 levels 0 to 7, 468 ledges and 14 cliffs; {bytes} bytes"
             ))
         );
         std::fs::remove_dir_all(&dir).expect("removed");

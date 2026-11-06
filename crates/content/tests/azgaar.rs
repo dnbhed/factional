@@ -474,10 +474,22 @@ fn the_users_menayland_export_rasterises_whole() {
     let mut land = [0; 16];
     let mut drops = [0; 2];
     let mut rivers = [0; 2];
+    let mut heights = 0i64;
+    let mut water = std::collections::BTreeMap::new();
     for at in (0..size.height).flat_map(|y| (0..size.width).map(move |x| TilePos { x, y })) {
         let tile = map.tile(at).expect("on the map");
-        if !tile.is_water() {
-            land[usize::from(tile.level)] += 1;
+        heights += tile.elevation.hundredths();
+        let kind = match (tile.terrain, tile.water) {
+            (_, Some(Water::Lake)) => "lake",
+            (_, Some(Water::River { .. })) => "river",
+            (Terrain::DeepWater | Terrain::ShallowWater, None) => "sea",
+            _ => {
+                land[usize::from(tile.level)] += 1;
+                "land"
+            }
+        };
+        if kind != "land" {
+            *water.entry((kind, tile.level)).or_insert(0) += 1;
         }
         if let Some(Water::River { flow }) = tile.water {
             rivers[0] += 1;
@@ -491,9 +503,27 @@ fn the_users_menayland_export_rasterises_whole() {
             drops[usize::from(drop == Drop::Cliff)] += 1;
         }
     }
-    // River tiles and their flows summed, land at each level, then ledges and cliffs, from a
-    // second script.
+    // River tiles and their flows summed, every tile's height summed, in hundredths, with
+    // 12,483 river tiles lowered by up to 178.36 m; water at each level, land at each level,
+    // then ledges and cliffs, from a second script.
     assert_eq!(rivers, [13_421, 2_341_803]);
+    assert_eq!(heights, 11_675_324_837);
+    assert_eq!(
+        water,
+        std::collections::BTreeMap::from([
+            (("lake", 0), 10_422),
+            (("river", 0), 10_153),
+            (("river", 1), 1_535),
+            (("river", 2), 977),
+            (("river", 3), 313),
+            (("river", 4), 272),
+            (("river", 5), 73),
+            (("river", 6), 74),
+            (("river", 7), 22),
+            (("river", 8), 2),
+            (("sea", 0), 765_230),
+        ])
+    );
     assert_eq!(
         land,
         [
@@ -501,5 +531,5 @@ fn the_users_menayland_export_rasterises_whole() {
             3_285, 1_919, 1_459, 764, 628
         ]
     );
-    assert_eq!(drops, [21_359, 58]);
+    assert_eq!(drops, [22_777, 58]);
 }

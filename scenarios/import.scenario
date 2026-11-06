@@ -35,9 +35,10 @@ assert world import crates/content/tests/fixtures/azgaar/raster.json target/leve
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --level-specks 4097 == error: the levels' specks must be 0 to 4096 tiles, not 4097
 
 # Rivers: the same five cells with three rivers, Ford into the lake, Beck joining it and Rill off
-# the map's edge. 77 of the 1069 land tiles are river; the levels are made without them.
+# the map's edge. 77 of the 1069 land tiles are river, their beds carved never to rise from source
+# to mouth; water stands at the level of its surface, and drops as land does.
 world source crates/content/tests/fixtures/azgaar/rivers.json
-assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land; heights -176.70 to 1922.19 m; levels 0 to 8, 380 ledges and 32 cliffs; 4587 bytes
+assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land; heights -176.70 to 1922.19 m; levels 0 to 8, 494 ledges and 56 cliffs; 4528 bytes
 
 # A region at scale 2: the rivers twice as wide, 141 river tiles.
 world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers-part.map --region 10,10,20,20 --scale 2 --seed 7
