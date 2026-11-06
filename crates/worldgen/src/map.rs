@@ -8,7 +8,7 @@ use std::fmt;
 use factional_core::Fixed;
 
 use crate::CHUNK;
-use crate::tile::{Biome, Override, Plant, Terrain, Tile, Water};
+use crate::tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 
 /// The most tiles a map may have each way.
 pub const MAX_SIDE: u32 = 8192;
@@ -32,6 +32,12 @@ const SPECKS: u32 = CHUNK * CHUNK;
 /// The narrowest and widest spacing of levels, on Azgaar's height scale: from sea level at 20
 /// to its top at 100 is one level at most.
 const SPACINGS: [Fixed; 2] = [Fixed::ONE, Fixed::from_hundredths(80_00)];
+
+/// The foliage's lowest and highest scale.
+const FOLIAGE_SCALES: [Fixed; 2] = [Fixed::ZERO, Fixed::from_hundredths(10_00)];
+
+/// The narrowest and widest spacing of plants, in tiles.
+const PLANT_SPACINGS: [Fixed; 2] = [Fixed::ZERO, Fixed::from_hundredths(8_00)];
 
 /// A width and a height, in tiles or source pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,7 +89,7 @@ pub struct Region {
 }
 
 /// How a map was made (P-119): from which source, which of its layers, which region at what
-/// scale in tiles a source pixel, with which seed, with what detail, coast and levels.
+/// scale in tiles a source pixel, with which seed, with what detail, coast, levels and foliage.
 /// Generation's other options join it as they land.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recipe {
@@ -95,6 +101,7 @@ pub struct Recipe {
     pub detail: Detail,
     pub coast: Coast,
     pub levels: Levels,
+    pub foliage: Foliage,
 }
 
 /// The detail added to the source's heights (W3a, P-136): seeded gradient noise, `strength`
@@ -157,6 +164,78 @@ impl Default for Levels {
     }
 }
 
+/// The plants scattered over the land (W5, P-143): each biome's chances of a tree, a shrub and
+/// grass on a tile, all times `scale`, and how far apart each kind stands, in tiles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Foliage {
+    pub scale: Fixed,
+    pub spacing: PerKind,
+    /// Each biome's, in Azgaar's order (`Biome::ALL`).
+    pub chances: [PerKind; 13],
+}
+
+/// A number for each kind of plant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PerKind {
+    pub tree: Fixed,
+    pub shrub: Fixed,
+    pub grass: Fixed,
+}
+
+impl PerKind {
+    /// In hundredths: tree, shrub and grass.
+    const fn of(tree: i64, shrub: i64, grass: i64) -> PerKind {
+        PerKind {
+            tree: Fixed::from_hundredths(tree),
+            shrub: Fixed::from_hundredths(shrub),
+            grass: Fixed::from_hundredths(grass),
+        }
+    }
+
+    /// Its number for `kind`.
+    pub fn of_kind(&self, kind: PlantKind) -> Fixed {
+        match kind {
+            PlantKind::Tree => self.tree,
+            PlantKind::Shrub => self.shrub,
+            PlantKind::Grass => self.grass,
+        }
+    }
+}
+
+impl Foliage {
+    /// `biome`'s chances.
+    pub fn chances_in(&self, biome: Biome) -> PerKind {
+        self.chances[biome as usize]
+    }
+}
+
+impl Default for Foliage {
+    /// The chances by biome, at scale 1.00; trees 2 tiles apart, shrubs 1.5 and grass 1
+    /// (DESIGN.md §21).
+    fn default() -> Foliage {
+        let none = PerKind::of(0, 0, 0);
+        Foliage {
+            scale: Fixed::ONE,
+            spacing: PerKind::of(2_00, 1_50, 1_00),
+            chances: [
+                none,
+                PerKind::of(0, 5, 2),
+                PerKind::of(0, 5, 5),
+                PerKind::of(5, 10, 40),
+                PerKind::of(2, 5, 50),
+                PerKind::of(40, 15, 10),
+                PerKind::of(45, 15, 10),
+                PerKind::of(60, 20, 5),
+                PerKind::of(55, 20, 5),
+                PerKind::of(45, 10, 5),
+                PerKind::of(0, 5, 15),
+                none,
+                PerKind::of(10, 15, 40),
+            ],
+        }
+    }
+}
+
 impl Recipe {
     /// The size of the map it makes, in tiles, or why it can't make one.
     pub fn size(&self) -> Result<Size, MapError> {
@@ -191,6 +270,30 @@ impl Recipe {
         if levels.specks > SPECKS {
             return Err(MapError::LevelSpecks(levels.specks));
         }
+        let foliage = self.foliage;
+        let within = |value: Fixed, [low, high]: [Fixed; 2]| low <= value && value <= high;
+        if !within(foliage.scale, FOLIAGE_SCALES) {
+            return Err(MapError::FoliageScale(foliage.scale));
+        }
+        for kind in PlantKind::ALL {
+            let spacing = foliage.spacing.of_kind(kind);
+            if !within(spacing, PLANT_SPACINGS) {
+                return Err(MapError::PlantSpacing(kind, spacing));
+            }
+        }
+        for biome in Biome::ALL {
+            let chances = foliage.chances_in(biome);
+            for kind in PlantKind::ALL {
+                let chance = chances.of_kind(kind);
+                if !within(chance, [Fixed::ZERO, Fixed::ONE]) {
+                    return Err(MapError::PlantChance(biome, kind, chance));
+                }
+            }
+            let total = chances.tree + chances.shrub + chances.grass;
+            if total > Fixed::ONE {
+                return Err(MapError::PlantChances(biome, total));
+            }
+        }
         let side = |pixels: u32| u64::from(pixels) * u64::from(self.scale);
         let (width, height) = (side(region.width), side(region.height));
         match (u32::try_from(width), u32::try_from(height)) {
@@ -216,6 +319,10 @@ pub enum MapError {
     CoastSpecks(u32),
     LevelSpacing(Fixed),
     LevelSpecks(u32),
+    FoliageScale(Fixed),
+    PlantSpacing(PlantKind, Fixed),
+    PlantChance(Biome, PlantKind, Fixed),
+    PlantChances(Biome, Fixed),
     OffTheMap { at: TilePos, size: Size },
     OtherSize { recipe: Size, map: Size },
 }
@@ -262,6 +369,33 @@ impl fmt::Display for MapError {
             MapError::LevelSpecks(specks) => write!(
                 f,
                 "the levels' specks must be 0 to {SPECKS} tiles, not {specks}"
+            ),
+            MapError::FoliageScale(scale) => write!(
+                f,
+                "the foliage's scale must be {} to {}, not {scale}",
+                FOLIAGE_SCALES[0], FOLIAGE_SCALES[1]
+            ),
+            MapError::PlantSpacing(kind, spacing) => write!(
+                f,
+                "the foliage's {} spacing must be {} to {} tiles, not {spacing}",
+                kind.name(),
+                PLANT_SPACINGS[0],
+                PLANT_SPACINGS[1]
+            ),
+            MapError::PlantChance(biome, kind, chance) => write!(
+                f,
+                "the foliage's chance of {} in {} must be 0.00 to 1.00, not {chance}",
+                match kind {
+                    PlantKind::Grass => "grass",
+                    PlantKind::Tree => "a tree",
+                    PlantKind::Shrub => "a shrub",
+                },
+                biome.name()
+            ),
+            MapError::PlantChances(biome, total) => write!(
+                f,
+                "the foliage's chances in {} must add up to 1.00 at most, not {total}",
+                biome.name()
             ),
             MapError::OffTheMap { at, size } => write!(
                 f,

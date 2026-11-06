@@ -5,8 +5,8 @@
 use factional_content::{MAP_VERSION, MapFileError, fingerprint_of, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Levels, Override, Plant, PlantKind, Recipe, Region, Size, Terrain, Tile,
-    TilePos, Water, WorldMap,
+    Biome, Coast, Detail, Foliage, Levels, Override, PerKind, Plant, PlantKind, Recipe, Region,
+    Size, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -63,6 +63,7 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
         detail: Detail::default(),
         coast: Coast::default(),
         levels: Levels::default(),
+        foliage: Foliage::default(),
     }
 }
 
@@ -177,7 +178,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 5
+version = 6
 
 [recipe]
 source = ""
@@ -188,6 +189,25 @@ detail = {{ strength = 0.25, wavelength = 8.00, octaves = 4 }}
 coast = {{ shallows = 10.00, specks = 4 }}
 levels = {{ spacing = 5.00, specks = 4 }}
 
+[recipe.foliage]
+scale = 1.00
+spacing = {{ tree = 2.00, shrub = 1.50, grass = 1.00 }}
+
+[recipe.foliage.chances]
+marine = {{ tree = 0.00, shrub = 0.00, grass = 0.00 }}
+hot_desert = {{ tree = 0.00, shrub = 0.05, grass = 0.02 }}
+cold_desert = {{ tree = 0.00, shrub = 0.05, grass = 0.05 }}
+savanna = {{ tree = 0.05, shrub = 0.10, grass = 0.40 }}
+grassland = {{ tree = 0.02, shrub = 0.05, grass = 0.50 }}
+tropical_seasonal_forest = {{ tree = 0.40, shrub = 0.15, grass = 0.10 }}
+temperate_deciduous_forest = {{ tree = 0.45, shrub = 0.15, grass = 0.10 }}
+tropical_rainforest = {{ tree = 0.60, shrub = 0.20, grass = 0.05 }}
+temperate_rainforest = {{ tree = 0.55, shrub = 0.20, grass = 0.05 }}
+taiga = {{ tree = 0.45, shrub = 0.10, grass = 0.05 }}
+tundra = {{ tree = 0.00, shrub = 0.05, grass = 0.15 }}
+glacier = {{ tree = 0.00, shrub = 0.00, grass = 0.00 }}
+wetland = {{ tree = 0.10, shrub = 0.15, grass = 0.40 }}
+
 [tiles]
 bytes = {}
 fingerprint = "{}"
@@ -196,7 +216,36 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 5);
+    assert_eq!(MAP_VERSION, 6);
+}
+
+#[test]
+fn the_foliage_is_kept_every_biome_and_kind_its_own() {
+    let mut recipe = recipe(0, 0, 3, 2, 1);
+    let foliage = &mut recipe.foliage;
+    foliage.scale = Fixed::from_hundredths(2_50);
+    foliage.spacing = PerKind {
+        tree: Fixed::from_hundredths(3_00),
+        shrub: Fixed::from_hundredths(2_25),
+        grass: Fixed::from_hundredths(75),
+    };
+    // Every biome's chances differ from every other's, and each kind's from the others'.
+    for (i, chances) in foliage.chances.iter_mut().enumerate() {
+        let i = i as i64;
+        *chances = PerKind {
+            tree: Fixed::from_hundredths(i),
+            shrub: Fixed::from_hundredths(20 + i),
+            grass: Fixed::from_hundredths(40 + i),
+        };
+    }
+    let map = WorldMap::new(recipe, varied).expect("the recipe makes a map");
+    let bytes = write_map(&map);
+    let (header, _) = split(&bytes);
+    assert!(
+        header.contains("scale = 2.50\nspacing = { tree = 3.00, shrub = 2.25, grass = 0.75 }\n")
+    );
+    assert!(header.contains("\ntaiga = { tree = 0.09, shrub = 0.29, grass = 0.49 }\n"));
+    assert_eq!(read_map(&bytes), Ok(map));
 }
 
 #[test]
@@ -250,15 +299,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [4, 6] {
+    for found in [5, 7] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 5",
+            "version = 6",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 5")
+            format!("this map is version {found}, but this build reads version 6")
         );
     }
 }

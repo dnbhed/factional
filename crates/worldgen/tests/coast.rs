@@ -4,7 +4,7 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Feature, Levels, MapError, Point, Recipe, Region, Size, Source,
+    Biome, Coast, Detail, Feature, Foliage, Levels, MapError, Point, Recipe, Region, Size, Source,
     SourceCell, SourceVertex, Terrain, Tile, TilePos, Water, WorldMap, height_metres, rasterise,
 };
 use proptest::prelude::*;
@@ -116,6 +116,7 @@ fn recipe(region: [u32; 4], scale: u32, seed: u32, detail: Detail, coast: Coast)
         detail,
         coast,
         levels: Levels::default(),
+        foliage: Foliage::default(),
     }
 }
 
@@ -152,7 +153,8 @@ fn kind(tile: Tile) -> (Kind, Fixed) {
         (Terrain::Grass | Terrain::Sand | Terrain::Rock, None, Biome::Grassland) => Kind::Land,
         layers => panic!("no kind of tile has the layers {layers:?}"),
     };
-    assert_eq!(tile.plant, None);
+    // Plants stand on land alone (W5).
+    assert!(kind == Kind::Land || tile.plant.is_none(), "{tile:?}");
     (kind, tile.elevation)
 }
 
@@ -350,8 +352,9 @@ proptest! {
         };
         let part = flat(recipe([x, y, width, height], scale, seed, options.0, options.1));
         let whole = flat(recipe(WHOLE, scale, seed, options.0, options.1));
-        // A tile's terrain looks at its neighbours (W4b), so a tile further in.
-        let margin = 2 * specks + 1;
+        // A tile's terrain looks at its neighbours (W4b), so a tile further in; and a plant at
+        // the candidates as far as the widest spacing reaches, 2 tiles (W5).
+        let margin = 2 * specks + 1 + 2;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {

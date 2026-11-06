@@ -7,8 +7,8 @@ use std::path::Path;
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Drop, Feature, Levels, Recipe, Region, Size, Terrain, Tile, TilePos, Water,
-    rasterise,
+    Coast, Detail, Drop, Feature, Foliage, Levels, PlantKind, Recipe, Region, Size, Terrain, Tile,
+    TilePos, Water, rasterise,
 };
 
 use crate::check::count;
@@ -32,7 +32,8 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         "{name}: {} × {} tiles in {} × {} chunks, {}; {} bytes\n\
          recipe: {source}, source pixels ({}, {}) to ({}, {}), {} a source pixel, seed {}; \
          detail {} of the relief, {} pixels, {}; shallows to {} metres, specks under {}; \
-         levels every {} of Azgaar's heights, specks under {}",
+         levels every {} of Azgaar's heights, specks under {}; \
+         foliage at scale {}, trees {}, shrubs {} and grass {} tiles apart",
         size.width,
         size.height,
         chunks.width,
@@ -52,6 +53,10 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         count(recipe.coast.specks as usize, "tile"),
         recipe.levels.spacing,
         count(recipe.levels.specks as usize, "tile"),
+        recipe.foliage.scale,
+        recipe.foliage.spacing.tree,
+        recipe.foliage.spacing.shrub,
+        recipe.foliage.spacing.grass,
     ))
 }
 
@@ -97,6 +102,7 @@ pub struct Import<'a> {
     pub detail: Detail,
     pub coast: Coast,
     pub levels: Levels,
+    pub foliage: Foliage,
 }
 
 impl<'a> Import<'a> {
@@ -107,6 +113,7 @@ impl<'a> Import<'a> {
         let (mut region, mut scale, mut seed) = (None, 1, 0);
         let (mut detail, mut coast, mut levels) =
             (Detail::default(), Coast::default(), Levels::default());
+        let mut foliage = Foliage::default();
         while let Some(word) = words.next() {
             match word {
                 "--region" => {
@@ -121,11 +128,16 @@ impl<'a> Import<'a> {
                 "--specks" => coast.specks = whole(word, words.next())?,
                 "--levels" => levels.spacing = number(word, words.next())?,
                 "--level-specks" => levels.specks = whole(word, words.next())?,
+                "--foliage" => foliage.scale = number(word, words.next())?,
+                "--tree-spacing" => foliage.spacing.tree = number(word, words.next())?,
+                "--shrub-spacing" => foliage.spacing.shrub = number(word, words.next())?,
+                "--grass-spacing" => foliage.spacing.grass = number(word, words.next())?,
                 option if option.starts_with("--") => {
                     return Err(format!(
                         "world import has no option {option}; it takes --region, --scale, --seed, \
-                         --detail, --wavelength, --octaves, --shallows, --specks, --levels and \
-                         --level-specks"
+                         --detail, --wavelength, --octaves, --shallows, --specks, --levels, \
+                         --level-specks, --foliage, --tree-spacing, --shrub-spacing and \
+                         --grass-spacing"
                     ));
                 }
                 file => files.push(file),
@@ -141,6 +153,7 @@ impl<'a> Import<'a> {
                 detail,
                 coast,
                 levels,
+                foliage,
             }),
             _ => Err(WORLD_FORM.to_owned()),
         }
@@ -200,6 +213,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         detail: import.detail,
         coast: import.coast,
         levels: import.levels,
+        foliage: import.foliage,
     };
     let map = rasterise(&source, recipe).map_err(|error| error.to_string())?;
     let bytes = write_map(&map);
@@ -230,6 +244,12 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         .filter(|tile| matches!(tile.water, Some(Water::River { .. })))
         .count();
     let terrains = land_terrains(&tiles);
+    let plants = PlantKind::ALL.map(|kind| {
+        tiles
+            .iter()
+            .filter(|tile| tile.plant.is_some_and(|plant| plant.kind == kind))
+            .count()
+    });
     let heights = tiles.iter().map(|tile| tile.elevation);
     let temperatures = tiles.iter().map(|tile| tile.temperature);
     let precipitation = tiles.iter().map(|tile| tile.precipitation);
@@ -251,7 +271,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
     Ok(format!(
         "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake, {river} river and {} land{terrains}; \
          heights {} to {} m; temperatures {} to {} °C; precipitation {} to {} mm; {}; \
-         levels {} to {}, {} and {}; {} bytes",
+         levels {} to {}, {} and {}; {} ({}, {} and {} grass); {} bytes",
         source.name,
         file_name(import.map),
         size.width,
@@ -270,6 +290,10 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         levels.max().expect("a map has tiles"),
         count(drops[0], "ledge"),
         count(drops[1], "cliff"),
+        count(plants.iter().sum(), "plant"),
+        count(plants[0], "tree"),
+        count(plants[1], "shrub"),
+        plants[2],
         bytes.len(),
     ))
 }

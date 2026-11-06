@@ -8,15 +8,15 @@ use std::fmt;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, CHUNK, ChunkPos, Coast, Detail, Levels, MapError, Override, Plant, PlantKind, Recipe,
-    Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
+    Biome, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, MapError, Override, PerKind, Plant,
+    PlantKind, Recipe, Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 5;
+pub const MAP_VERSION: u32 = 6;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -120,6 +120,73 @@ struct HeaderRecipe {
     detail: HeaderDetail,
     coast: HeaderCoast,
     levels: HeaderLevels,
+    foliage: HeaderFoliage,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeaderFoliage {
+    scale: Fixed,
+    spacing: HeaderKinds,
+    chances: HeaderChances,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeaderKinds {
+    tree: Fixed,
+    shrub: Fixed,
+    grass: Fixed,
+}
+
+impl HeaderKinds {
+    fn kinds(&self) -> PerKind {
+        PerKind {
+            tree: self.tree,
+            shrub: self.shrub,
+            grass: self.grass,
+        }
+    }
+}
+
+/// Each biome's chances, by the biome's name in snake case, in Azgaar's order.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeaderChances {
+    marine: HeaderKinds,
+    hot_desert: HeaderKinds,
+    cold_desert: HeaderKinds,
+    savanna: HeaderKinds,
+    grassland: HeaderKinds,
+    tropical_seasonal_forest: HeaderKinds,
+    temperate_deciduous_forest: HeaderKinds,
+    tropical_rainforest: HeaderKinds,
+    temperate_rainforest: HeaderKinds,
+    taiga: HeaderKinds,
+    tundra: HeaderKinds,
+    glacier: HeaderKinds,
+    wetland: HeaderKinds,
+}
+
+impl HeaderChances {
+    fn chances(&self) -> [PerKind; 13] {
+        [
+            &self.marine,
+            &self.hot_desert,
+            &self.cold_desert,
+            &self.savanna,
+            &self.grassland,
+            &self.tropical_seasonal_forest,
+            &self.temperate_deciduous_forest,
+            &self.tropical_rainforest,
+            &self.temperate_rainforest,
+            &self.taiga,
+            &self.tundra,
+            &self.glacier,
+            &self.wetland,
+        ]
+        .map(HeaderKinds::kinds)
+    }
 }
 
 #[derive(Deserialize)]
@@ -371,6 +438,13 @@ fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
          coast = {{ shallows = {}, specks = {} }}\n\
          levels = {{ spacing = {}, specks = {} }}\n\
          \n\
+         [recipe.foliage]\n\
+         scale = {}\n\
+         spacing = {}\n\
+         \n\
+         [recipe.foliage.chances]\n\
+         {}\
+         \n\
          [tiles]\n\
          bytes = {}\n\
          fingerprint = {}\n",
@@ -388,6 +462,16 @@ fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
         recipe.coast.specks,
         recipe.levels.spacing,
         recipe.levels.specks,
+        recipe.foliage.scale,
+        kinds(recipe.foliage.spacing),
+        Biome::ALL
+            .iter()
+            .map(|&biome| format!(
+                "{} = {}\n",
+                biome.name().replace(' ', "_"),
+                kinds(recipe.foliage.chances_in(biome))
+            ))
+            .collect::<String>(),
         tiles.len(),
         quoted(&fingerprint_of(&tiles)),
     );
@@ -395,6 +479,14 @@ fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
     file.push(0);
     file.extend_from_slice(&tiles);
     file
+}
+
+/// A number for each kind of plant, as an inline table.
+fn kinds(kinds: PerKind) -> String {
+    format!(
+        "{{ tree = {}, shrub = {}, grass = {} }}",
+        kinds.tree, kinds.shrub, kinds.grass
+    )
 }
 
 /// The map in `bytes`, exactly as it was written, or why it can't be read: a wrong file, a
@@ -440,6 +532,11 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
         levels: Levels {
             spacing: header.recipe.levels.spacing,
             specks: header.recipe.levels.specks,
+        },
+        foliage: Foliage {
+            scale: header.recipe.foliage.scale,
+            spacing: header.recipe.foliage.spacing.kinds(),
+            chances: header.recipe.foliage.chances.chances(),
         },
     };
     let size = recipe.size().map_err(MapFileError::Recipe)?;
@@ -589,6 +686,7 @@ mod tests {
             detail: Detail::default(),
             coast: Coast::default(),
             levels: Levels::default(),
+            foliage: Foliage::default(),
         }
     }
 

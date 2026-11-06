@@ -5,9 +5,9 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Drop, Drops, Feature, Levels, MapError, Override, Point, Recipe, Region,
-    Size, Source, SourceCell, SourceVertex, Terrain, Tile, TilePos, WorldMap, level_heights,
-    rasterise,
+    Biome, Coast, Detail, Drop, Drops, Feature, Foliage, Levels, MapError, Override, Point, Recipe,
+    Region, Size, Source, SourceCell, SourceVertex, Terrain, Tile, TilePos, WorldMap,
+    level_heights, rasterise,
 };
 use proptest::prelude::*;
 
@@ -118,6 +118,7 @@ fn recipe(region: [u32; 4], scale: u32, seed: u32, detail: Detail, levels: Level
         detail,
         coast: Coast::default(),
         levels,
+        foliage: Foliage::default(),
     }
 }
 
@@ -451,8 +452,9 @@ proptest! {
         let options = levels(spacing, specks);
         let part = map(recipe([x, y, width, height], scale, seed, Detail::default(), options));
         let whole = map(recipe(WHOLE, scale, seed, Detail::default(), options));
-        // A tile's terrain looks at its neighbours (W4b), so a tile further in.
-        let margin = 2 * Coast::default().specks + specks + 1;
+        // A tile's terrain looks at its neighbours (W4b), so a tile further in; and a plant at
+        // the candidates as far as the widest spacing reaches, 2 tiles (W5).
+        let margin = 2 * Coast::default().specks + specks + 1 + 2;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {

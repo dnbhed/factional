@@ -309,7 +309,7 @@ fn world_info_summarises_a_map_file_and_exits_zero() {
              recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
              detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
              shallows to 10.00 metres, specks under 4 tiles; \
-             levels every 5.00 of Azgaar's heights, specks under 4 tiles\n"
+             levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart\n"
         )
     );
     assert_eq!(text(&output.stderr), "");
@@ -374,7 +374,7 @@ fn world_import_writes_a_map_file_and_exits_zero() {
             "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
              166 ocean, 58 lake, 0 river and 1376 land (34 sand, 204 grass, 1125 forest floor and 13 rock); heights -187.80 to 1734.65 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-             levels 0 to 7, 435 ledges and 14 cliffs; {bytes} bytes\n"
+             levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); {bytes} bytes\n"
         )
     );
     std::fs::remove_dir_all(&dir).expect("removed");
@@ -416,7 +416,7 @@ fn world_import_takes_the_detail_and_the_coast() {
             "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
              294 ocean, 183 lake, 0 river and 1123 land (112 sand, 346 grass, 642 forest floor and 23 rock); heights -381.73 to 2241.02 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-             levels 0 to 4, 588 ledges and 24 cliffs; {bytes} bytes\n"
+             levels 0 to 4, 588 ledges and 24 cliffs; 173 plants (58 trees, 28 shrubs and 87 grass); {bytes} bytes\n"
         )
     );
     let info = factional_in_repo(&["world", "info", map.to_str().expect("a UTF-8 path")]);
@@ -424,7 +424,44 @@ fn world_import_takes_the_detail_and_the_coast() {
     assert!(
         said.ends_with(
             "; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 25.00 metres, \
-             specks under 0 tiles; levels every 10.00 of Azgaar's heights, specks under 0 tiles\n"
+             specks under 0 tiles; levels every 10.00 of Azgaar's heights, specks under 0 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart\n"
+        ),
+        "{said}"
+    );
+    std::fs::remove_dir_all(&dir).expect("removed");
+}
+
+#[test]
+fn world_import_takes_the_foliages_scale_and_spacings() {
+    let dir = std::env::temp_dir().join(format!("factional-w5-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    let map = dir.join("foliage.map");
+    let output = factional_in_repo(&[
+        "world",
+        "import",
+        "crates/content/tests/fixtures/azgaar/raster.json",
+        map.to_str().expect("a UTF-8 path"),
+        "--foliage",
+        "2",
+        "--tree-spacing",
+        "1",
+        "--shrub-spacing",
+        "1",
+        "--grass-spacing",
+        "0.5",
+    ]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    let said = text(&output.stdout);
+    // The plants were worked out by a separate script.
+    assert!(
+        said.contains("; 520 plants (272 trees, 37 shrubs and 211 grass); "),
+        "{said}"
+    );
+    let info = factional_in_repo(&["world", "info", map.to_str().expect("a UTF-8 path")]);
+    let said = text(&info.stdout);
+    assert!(
+        said.ends_with(
+            "; foliage at scale 2.00, trees 1.00, shrubs 1.00 and grass 0.50 tiles apart\n"
         ),
         "{said}"
     );

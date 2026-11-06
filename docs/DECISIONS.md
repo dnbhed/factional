@@ -1153,6 +1153,26 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`world import`** says how many land tiles take each terrain, in the order of Factional's terrains, those with none left out: "… and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); …".
   - **Checked by a separate script:** every count was worked by `terrain_ref.py`, written from these rules apart from the code, and the code agreed on its first run. Menayland's were checked by a second script: 6,925 tiles of sand, 254 of rock and 20,152 of ice among its 388,397 of land.
   - *Why:* the biome is the designer's, as they made it in Azgaar, and the beaches and cliffs come from the map's own shape, so the terrain reads as the map does without any new knob.
+- **P-143 · Foliage: a local Poisson-disc scatter, by biome and by kind** (made in W5, 2026-11-06; P-119, P-136, P-141, P-142).
+  - **Local Poisson-disc,** at the user's choice:
+    - Each tile hashes its place on the whole map with the seed, as the detail noise does, from a first part (2³²) no octave can have. The low 32 bits give a roll in ten-thousandths, the next two bytes the plant's offset in 256ths, and the hash mixed again a priority.
+    - A candidate stands unless another candidate too close to it outranks it.
+    - Each plant is decided from the tiles around it alone, so a region has the whole map's plants away from its edges, and the rule is exact on every machine.
+    - Bridson's algorithm would pack plants more fully, but its result depends on the order and on the region's bounds. Because a fallen candidate still blocks those it outranks, this rule is sparser; the chances and scale make up for it.
+  - **Ties** go to the earlier tile in reading order. 64-bit priorities practically never tie, but the rule must decide every case.
+  - **One spacing per kind,** at the user's choice: trees 2.00 tiles, shrubs 1.50 and grass 1.00. Between two kinds, the larger applies. The distance is compared exactly: squared, in 256ths, against the spacing in hundredths.
+  - **A table of chances by biome,** at the user's choice: each biome's chance of a tree, a shrub and grass on a tile, each 0.00 to 1.00 and together 1.00 at most.
+    - The CLI sets one overall scale, `--foliage`, 0.00 to 10.00, and each kind's spacing, 0.00 to 8.00. The table is set in the map file's recipe, and later in the wizard (W8).
+    - Each chance times the scale is added in turn, tree, shrub, grass, capped at certainty, so a large scale crowds out grass before shrubs.
+  - **The defaults are my own,** for you to tune: forests mostly trees, grassland and savanna mostly grass, deserts and tundra sparse, wetland mixed, Marine land and glaciers bare. They're listed in DESIGN §21.
+  - **Water, rock and ice are bare,** at the user's choice. Beaches, snow, marsh and desert sand take their biome's chances.
+  - **The map file is version 6:**
+    - It adds `[recipe.foliage]`, with the scale and spacings, and `[recipe.foliage.chances]`, with a line for each biome in snake case.
+    - Version 5 is refused, and the hand-made map was written again.
+  - **`world import`** says its plants after the levels: "166 plants (51 trees, 24 shrubs and 91 grass)". **`world info`** says the scale and spacings: "foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart".
+  - **Region properties:** a region matches the whole map a further 2 tiles in, the largest default spacing rounded up.
+  - **Checked by a separate script:** every count was worked by `foliage_ref.py`, written from these rules apart from the code. The code agreed on its first run. Menayland's were checked by a second script.
+  - *Why:* plants that never crowd, decided locally, keep a region exactly the whole map's, and the biome table is the designer's to tune.
 
 ## Open
 

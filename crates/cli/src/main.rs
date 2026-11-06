@@ -14,7 +14,7 @@ use factional_cli::{
 };
 use factional_content::{SCHEMA_FILES, schema_text};
 use factional_core::Fixed;
-use factional_worldgen::{Coast, Detail, Levels};
+use factional_worldgen::{Coast, Detail, Foliage, Levels, PerKind};
 
 #[derive(Parser)]
 #[command(
@@ -114,6 +114,19 @@ enum WorldCommand {
         /// to 4096
         #[arg(long, default_value_t = Levels::default().specks)]
         level_specks: u32,
+        /// How much foliage: each biome's chances of a plant on a tile, times this: 0.00 to
+        /// 10.00
+        #[arg(long, default_value_t = Foliage::default().scale)]
+        foliage: Fixed,
+        /// How far apart trees stand, in tiles: 0.00 to 8.00
+        #[arg(long, default_value_t = Foliage::default().spacing.tree)]
+        tree_spacing: Fixed,
+        /// How far apart shrubs stand, in tiles: 0.00 to 8.00
+        #[arg(long, default_value_t = Foliage::default().spacing.shrub)]
+        shrub_spacing: Fixed,
+        /// How far apart grass stands, in tiles: 0.00 to 8.00
+        #[arg(long, default_value_t = Foliage::default().spacing.grass)]
+        grass_spacing: Fixed,
     },
 }
 
@@ -177,6 +190,10 @@ fn main() -> ExitCode {
                 specks,
                 levels,
                 level_specks,
+                foliage,
+                tree_spacing,
+                shrub_spacing,
+                grass_spacing,
             } => world_import(
                 Path::new(""),
                 &Import {
@@ -194,6 +211,15 @@ fn main() -> ExitCode {
                     levels: Levels {
                         spacing: levels,
                         specks: level_specks,
+                    },
+                    foliage: Foliage {
+                        scale: foliage,
+                        spacing: PerKind {
+                            tree: tree_spacing,
+                            shrub: shrub_spacing,
+                            grass: grass_spacing,
+                        },
+                        ..Foliage::default()
                     },
                 },
             ),
