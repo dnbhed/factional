@@ -10,8 +10,8 @@ use std::process::ExitCode;
 use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
 use factional_cli::{
-    Import, compare, run_repl, run_script, validate, world_import, world_info, world_source,
-    world_suggestions,
+    Import, compare, run_repl, run_script, validate, world_dismiss, world_import, world_info,
+    world_restore, world_source, world_suggestions,
 };
 use factional_content::{SCHEMA_FILES, schema_text};
 use factional_core::Fixed;
@@ -82,6 +82,22 @@ enum WorldCommand {
     Suggestions {
         /// The map file, such as world/menayland.map
         map: String,
+    },
+    /// Set aside suggestions on a map, each by its id; a route's own id sets aside every stretch of it
+    Dismiss {
+        /// The map file, such as world/menayland.map
+        map: String,
+        /// The suggestions to dismiss, such as settlement_12 route_40
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
+    /// Bring back dismissed suggestions on a map, each by the id it was dismissed by
+    Restore {
+        /// The map file, such as world/menayland.map
+        map: String,
+        /// The suggestions to restore, such as settlement_12 route_40
+        #[arg(required = true)]
+        ids: Vec<String>,
     },
     /// Rasterise an Azgaar Full JSON export into a map file: the whole map at 1 tile a pixel and seed 0 unless told
     Import {
@@ -184,6 +200,14 @@ fn main() -> ExitCode {
             WorldCommand::Info { file } => world_info(Path::new(""), &file),
             WorldCommand::Source { file } => world_source(Path::new(""), &file),
             WorldCommand::Suggestions { map } => world_suggestions(Path::new(""), &map),
+            WorldCommand::Dismiss { map, ids } => {
+                let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+                world_dismiss(Path::new(""), &map, &ids)
+            }
+            WorldCommand::Restore { map, ids } => {
+                let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+                world_restore(Path::new(""), &map, &ids)
+            }
             WorldCommand::Import {
                 export,
                 map,

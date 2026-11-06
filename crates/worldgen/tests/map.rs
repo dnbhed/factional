@@ -574,6 +574,218 @@ fn the_first_wrong_suggestion_is_named_settlements_then_routes_then_points() {
     );
 }
 
+/// Two settlements; route_0 whole, route_2 cut in two, and route_20 cut, its first stretch
+/// here; and a point of interest.
+fn to_dismiss() -> Suggestions {
+    let mut suggestions = suggestions();
+    let mut settlement_2 = suggestions.settlements[0].clone();
+    settlement_2.id = "settlement_2".to_owned();
+    suggestions.settlements.push(settlement_2);
+    suggestions.routes = ["route_0", "route_2_1", "route_2_2", "route_20_1"]
+        .into_iter()
+        .map(|id| Route {
+            id: id.to_owned(),
+            ..suggestions.routes[0].clone()
+        })
+        .collect();
+    suggestions.points[0].id = "poi_1".to_owned();
+    suggestions
+}
+
+fn dismissing() -> WorldMap {
+    let mut map = hundred_by_seventy();
+    map.suggest(to_dismiss()).expect("on the map");
+    map
+}
+
+fn ids(map: &WorldMap) -> Vec<&str> {
+    map.dismissed().iter().map(String::as_str).collect()
+}
+
+#[test]
+fn dismissing_marks_suggestions_and_restoring_unmarks_them() {
+    let mut map = dismissing();
+    assert_eq!(ids(&map), Vec::<&str>::new());
+    assert_eq!(map.dismiss(&["settlement_1", "poi_1"]), Ok(()));
+    assert_eq!(ids(&map), ["poi_1", "settlement_1"]);
+    assert_eq!(map.dismissed_by("settlement_1"), Some("settlement_1"));
+    assert_eq!(map.dismissed_by("poi_1"), Some("poi_1"));
+    assert_eq!(map.dismissed_by("settlement_2"), None);
+    assert_eq!(map.dismissed_by("route_0"), None);
+    assert_eq!(map.restore(&["poi_1"]), Ok(()));
+    assert_eq!(ids(&map), ["settlement_1"]);
+    assert_eq!(map.dismissed_by("poi_1"), None);
+    // The suggestions themselves are untouched.
+    assert_eq!(map.suggestions(), &to_dismiss());
+}
+
+#[test]
+fn a_routes_own_id_covers_its_stretches_and_a_stretchs_only_itself() {
+    let mut map = dismissing();
+    assert_eq!(map.dismiss(&["route_2"]), Ok(()));
+    assert_eq!(ids(&map), ["route_2"]);
+    assert_eq!(map.dismissed_by("route_2_1"), Some("route_2"));
+    assert_eq!(map.dismissed_by("route_2_2"), Some("route_2"));
+    // route_20's stretch isn't route_2's, and route_0 is another route.
+    assert_eq!(map.dismissed_by("route_20_1"), None);
+    assert_eq!(map.dismissed_by("route_0"), None);
+    assert_eq!(map.not_on_the_map(), Vec::<&str>::new());
+    assert_eq!(
+        map.dismiss(&["route_2_1"]).map_err(|e| e.to_string()),
+        Err("route_2_1 is already dismissed with route_2".to_owned())
+    );
+    assert_eq!(
+        map.restore(&["route_2_2"]).map_err(|e| e.to_string()),
+        Err("route_2_2 is dismissed with route_2; restore route_2".to_owned())
+    );
+    assert_eq!(map.restore(&["route_2"]), Ok(()));
+    assert_eq!(map.dismiss(&["route_2_1", "route_20"]), Ok(()));
+    assert_eq!(map.dismissed_by("route_2_1"), Some("route_2_1"));
+    assert_eq!(map.dismissed_by("route_2_2"), None);
+    assert_eq!(map.dismissed_by("route_20_1"), Some("route_20"));
+    // A route whose stretch is dismissed can still be dismissed whole.
+    assert_eq!(map.dismiss(&["route_2"]), Ok(()));
+    assert_eq!(ids(&map), ["route_2", "route_20", "route_2_1"]);
+    assert_eq!(map.dismissed_by("route_2_1"), Some("route_2_1"));
+    assert_eq!(map.dismissed_by("route_2_2"), Some("route_2"));
+    // A whole route is dismissed by its own id.
+    assert_eq!(map.dismiss(&["route_0"]), Ok(()));
+    assert_eq!(map.dismissed_by("route_0"), Some("route_0"));
+}
+
+#[test]
+fn dismissing_an_id_not_suggested_twice_or_again_is_refused_and_changes_nothing() {
+    let mut map = dismissing();
+    map.dismiss(&["poi_1"]).expect("suggested");
+    let before = map.clone();
+    let refused = |map: &mut WorldMap, ids: &[&str]| {
+        let why = map.dismiss(ids).expect_err("refused").to_string();
+        assert_eq!(map, &before, "nothing changed");
+        why
+    };
+    assert_eq!(
+        refused(&mut map, &["settlement_2", "settlement_7"]),
+        "there's no suggestion settlement_7 on the map; did you mean settlement_1?"
+    );
+    assert_eq!(
+        refused(&mut map, &["harbour"]),
+        "there's no suggestion harbour on the map"
+    );
+    // A route with no stretch on the map, and a stretch that isn't.
+    assert_eq!(
+        refused(&mut map, &["route_9"]),
+        "there's no suggestion route_9 on the map; did you mean route_0?"
+    );
+    assert_eq!(
+        refused(&mut map, &["route_2_3"]),
+        "there's no suggestion route_2_3 on the map; did you mean route_2_1?"
+    );
+    assert_eq!(
+        refused(&mut map, &["settlement_2", "poi_1"]),
+        "poi_1 is already dismissed"
+    );
+    assert_eq!(
+        refused(&mut map, &["settlement_2", "route_0", "settlement_2"]),
+        "settlement_2 is named twice"
+    );
+    assert_eq!(
+        refused(&mut map, &["route_2", "route_2_1"]),
+        "route_2_1 is already dismissed with route_2"
+    );
+}
+
+#[test]
+fn restoring_an_id_not_dismissed_is_refused_and_changes_nothing() {
+    let mut map = dismissing();
+    map.dismiss(&["poi_1", "route_2"]).expect("suggested");
+    let before = map.clone();
+    for (ids, why) in [
+        (
+            &["poi_1", "settlement_2"][..],
+            "settlement_2 isn't dismissed",
+        ),
+        (&["nowhere"][..], "nowhere isn't dismissed"),
+        (&["poi_1", "poi_1"][..], "poi_1 is named twice"),
+        (
+            &["route_2_1"][..],
+            "route_2_1 is dismissed with route_2; restore route_2",
+        ),
+    ] {
+        assert_eq!(map.restore(ids).expect_err("refused").to_string(), why);
+        assert_eq!(map, before, "nothing changed");
+    }
+    assert_eq!(map.restore(&["route_2", "poi_1"]), Ok(()));
+    assert_eq!(ids(&map), Vec::<&str>::new());
+}
+
+#[test]
+fn dismissals_are_kept_through_new_suggestions_and_regenerating() {
+    let mut map = dismissing();
+    map.dismiss(&["settlement_1", "route_2", "poi_1"])
+        .expect("suggested");
+    map.regenerate(recipe(10, 7, 10), made)
+        .expect("the same size");
+    assert_eq!(ids(&map), ["poi_1", "route_2", "settlement_1"]);
+    // New suggestions without settlement_1 or route_2: kept, but not on the map.
+    let mut fewer = to_dismiss();
+    fewer.settlements.remove(0);
+    fewer
+        .routes
+        .retain(|route| !route.id.starts_with("route_2_"));
+    map.suggest(fewer).expect("on the map");
+    assert_eq!(ids(&map), ["poi_1", "route_2", "settlement_1"]);
+    assert_eq!(map.not_on_the_map(), ["route_2", "settlement_1"]);
+    assert_eq!(map.dismissed_by("poi_1"), Some("poi_1"));
+    // One not on the map can still be restored.
+    assert_eq!(map.restore(&["settlement_1"]), Ok(()));
+    assert_eq!(map.not_on_the_map(), ["route_2"]);
+    // And when it comes back, the dismissal applies again.
+    map.suggest(to_dismiss()).expect("on the map");
+    assert_eq!(map.not_on_the_map(), Vec::<&str>::new());
+    assert_eq!(map.dismissed_by("route_2_2"), Some("route_2"));
+    assert_eq!(map.dismissed_by("settlement_1"), None);
+}
+
+#[test]
+fn only_route_digits_underscore_digits_is_a_stretch_its_route_covers() {
+    // Kept dismissals needn't be suggested, so a route named anything can be dismissed; only
+    // `route_<digits>_<digits>` is a stretch of it.
+    let mut map = dismissing();
+    let kept: std::collections::BTreeSet<String> =
+        ["route_2", "route_x", "route"].map(str::to_owned).into();
+    assert_eq!(map.keep_dismissed(kept), Ok(()));
+    assert_eq!(map.dismissed_by("route_2_1"), Some("route_2"));
+    assert_eq!(map.dismissed_by("route_2_x"), None);
+    assert_eq!(map.dismissed_by("route_x_1"), None);
+    assert_eq!(map.dismissed_by("route_2_"), None);
+    assert_eq!(map.dismissed_by("route__1"), None);
+    assert_eq!(map.dismissed_by("route_1"), None);
+    assert_eq!(
+        map.restore(&["route_x_1"]).map_err(|e| e.to_string()),
+        Err("route_x_1 isn't dismissed".to_owned())
+    );
+}
+
+#[test]
+fn kept_dismissals_need_valid_ids_but_not_suggestions() {
+    let mut map = dismissing();
+    let kept: std::collections::BTreeSet<String> =
+        ["route_7".to_owned(), "settlement_1".to_owned()].into();
+    assert_eq!(map.keep_dismissed(kept.clone()), Ok(()));
+    assert_eq!(map.dismissed(), &kept);
+    assert_eq!(map.not_on_the_map(), ["route_7"]);
+    let before = map.clone();
+    let wrong: std::collections::BTreeSet<String> =
+        ["poi_1".to_owned(), "Route-7".to_owned()].into();
+    assert_eq!(
+        map.keep_dismissed(wrong)
+            .expect_err("not an id")
+            .to_string(),
+        "the dismissal \"Route-7\" isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores"
+    );
+    assert_eq!(map, before);
+}
+
 proptest! {
     #[test]
     fn every_tile_reads_back_as_generated(

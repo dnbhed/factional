@@ -140,6 +140,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W5 — foliage (P-143): a local Poisson-disc scatter, each tile hashing its whole-map place with the seed into a roll, an offset and a priority; candidates on land but rock and ice by a per-biome table of tree, shrub and grass chances times a scale; a candidate standing unless a too-close one outranks it, each kind its own spacing, the larger applying; the recipe's foliage with its defaults and checks, the map file version 6, version 5 refused; `world import` taking `--foliage` and each kind's spacing and counting its plants, `world info` saying them; counts checked against a separate Python reference, Menayland's whole by a second; spacing and bare tiles a property test, the region properties 2 tiles further in; done 2026-11-06 (#109)
 - W6a — settlements, routes and points of interest read (P-144): a Full export has `pack.burgs`, `pack.routes` and `pack.markers` and the population settings; settlements but the placeholder and removed ones, with typed figures at the user's choice: id, name, point, cell, people (population to thousandths × rate × urbanization, rounded once, as Azgaar shows them), type, capital, port and five buildings; routes with their kind, name if any and at least two points; points of interest with Azgaar's type and icon, name and note if any; every cell, port feature, type, flag, figure and id checked at its key path; `world source` counts them; Menayland's 163, 162 and 47 agreeing with a second script; W6 split into W6a, W6b and W6c; done 2026-11-06 (#110)
 - W6b — suggestions on the map (P-145): settlements, routes and points of interest placed by tile and offset in 256ths, rounded once, at the user's choice; those outside the region dropped; routes clipped to the map exactly, each run inside a stretch of two different points or more; ids `settlement_<i>`, `route_<i>`, `route_<i>_<k>` and `poi_<i>`; `WorldMap::suggest` refusing an invalid or shared id, a place off the map or a short route; map file version 7; `world import` and `world info` counting them, `world suggestions <map>` listing them; raster.json and Menayland agreeing with a second script; W6b split into W6b and W6c, peoples to W6d; done 2026-11-06 (#111)
+- W6c — dismissing and restoring suggestions (P-146): `world dismiss <map> <id>…` and `world restore <map> <id>…`, one or more ids at the user's choice, all checked before anything is written; a route's own id covering its stretches, at the user's choice; refusals for an id not suggested (with a "did you mean"), already dismissed, not dismissed, dismissed only with its route, or named twice; dismissals kept as a set through regenerating and new suggestions, those not on the map too, at the user's choice; map file version 8; `world suggestions` marking the dismissed in place, at the user's choice, and listing those not on the map; it and `world info` counting them; done 2026-11-06 (#PR)
 
 ---
 
@@ -161,11 +162,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W6c · Dismissing and restoring suggestions — P3 · Next
-
-`world dismiss <map> <id>` and `world restore <map> <id>`; the dismissals kept in the map file apart from the suggestions, so regenerating keeps them, and one whose suggestion is gone kept too, at the user's choice; `world info` and `world suggestions` showing them.
-
-### W6d · Peoples as candidate factions — P3 · Outline
+### W6d · Peoples as candidate factions — P3 · Next
 
 Cultures and religions, and Azgaar's states where a map has real ones, read and kept as candidate factions with what the source says of them; nothing built from them (D-49).
 

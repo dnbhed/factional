@@ -1,7 +1,8 @@
 //! `world info <file>` (W1b): what a map file holds, read whole by `factional-content`;
 //! `world source <file>` (W2a): what an Azgaar export holds, or every problem in it; and
 //! `world import <export> <map>` (W2b): the export rasterised into a map file; and
-//! `world suggestions <map>` (W6b): the map's settlements, routes and points of interest.
+//! `world suggestions <map>` (W6b): the map's settlements, routes and points of interest; and
+//! `world dismiss <map> <id>…` and `world restore <map> <id>…` (W6c): suggestions set aside.
 
 use std::path::Path;
 
@@ -28,6 +29,83 @@ fn suggested(suggestions: &Suggestions) -> usize {
     suggestions.settlements.len() + suggestions.routes.len() + suggestions.points.len()
 }
 
+/// "a", "a and b", "a, b and c".
+fn and_list<S: AsRef<str>>(items: &[S]) -> String {
+    match items.split_last() {
+        None => String::new(),
+        Some((only, [])) => only.as_ref().to_owned(),
+        Some((last, rest)) => {
+            let rest: Vec<&str> = rest.iter().map(AsRef::as_ref).collect();
+            format!("{} and {}", rest.join(", "), last.as_ref())
+        }
+    }
+}
+
+/// The ids of every suggestion on `map`: settlements, then routes, then points of interest.
+fn suggestion_ids(map: &WorldMap) -> Vec<&str> {
+    let suggestions = map.suggestions();
+    (suggestions.settlements.iter().map(|s| s.id.as_str()))
+        .chain(suggestions.routes.iter().map(|r| r.id.as_str()))
+        .chain(suggestions.points.iter().map(|p| p.id.as_str()))
+        .collect()
+}
+
+/// How many of `map`'s suggestions are dismissed.
+fn dismissed_count(map: &WorldMap) -> usize {
+    (suggestion_ids(map).into_iter())
+        .filter(|id| map.dismissed_by(id).is_some())
+        .count()
+}
+
+/// " (3 dismissed; 1 dismissal not on the map)", each part only when it isn't none.
+fn dismissals(map: &WorldMap) -> String {
+    let (dismissed, stale) = (dismissed_count(map), map.not_on_the_map().len());
+    let parts: Vec<String> = [
+        (dismissed > 0).then(|| format!("{dismissed} dismissed")),
+        (stale > 0).then(|| format!("{} not on the map", count(stale, "dismissal"))),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    match parts.is_empty() {
+        true => String::new(),
+        false => format!(" ({})", parts.join("; ")),
+    }
+}
+
+/// What `world dismiss <map> <id>…` does: dismisses each of `ids` on the map in `file`, read
+/// from `base`, and writes it back; or why not, writing nothing.
+pub fn world_dismiss(base: &Path, file: &str, ids: &[&str]) -> Result<String, String> {
+    change_dismissals(base, file, ids, "dismissed", WorldMap::dismiss)
+}
+
+/// What `world restore <map> <id>…` does: restores each of `ids` on the map in `file`, read
+/// from `base`, and writes it back; or why not, writing nothing.
+pub fn world_restore(base: &Path, file: &str, ids: &[&str]) -> Result<String, String> {
+    change_dismissals(base, file, ids, "restored", WorldMap::restore)
+}
+
+/// The map in `file` changed by `change` with `ids` and written back, saying it was `done`.
+fn change_dismissals(
+    base: &Path,
+    file: &str,
+    ids: &[&str],
+    done: &str,
+    change: fn(&mut WorldMap, &[&str]) -> Result<(), factional_worldgen::MapError>,
+) -> Result<String, String> {
+    let (mut map, _) = map_in(base, file)?;
+    change(&mut map, ids).map_err(|error| error.to_string())?;
+    std::fs::write(base.join(file), write_map(&map))
+        .map_err(|error| format!("cannot write {file}: {error}"))?;
+    Ok(format!(
+        "{done} {} in {}; {} of its {} dismissed",
+        and_list(ids),
+        file_name(file),
+        dismissed_count(&map),
+        count(suggested(map.suggestions()), "suggestion")
+    ))
+}
+
 /// "3 settlements, 3 routes and 2 points of interest".
 fn places(suggestions: &Suggestions) -> String {
     format!(
@@ -52,7 +130,17 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
         Some(name) => format!("{id} {name}"),
         None => id.to_owned(),
     };
-    let mut lines = vec![format!("{}: {}", file_name(file), places(suggestions))];
+    let marked = |id: &str| match map.dismissed_by(id) {
+        None => String::new(),
+        Some(by) if by == id => " (dismissed)".to_owned(),
+        Some(by) => format!(" (dismissed with {by})"),
+    };
+    let mut lines = vec![format!(
+        "{}: {}{}",
+        file_name(file),
+        places(suggestions),
+        dismissals(&map)
+    )];
     for settlement in &suggestions.settlements {
         let mut figures = vec![settlement_kind(settlement.kind).to_owned()];
         figures.extend(settlement.capital.then(|| "capital".to_owned()));
@@ -70,21 +158,21 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
         .into_iter()
         .filter_map(|(built, name)| built.then_some(name))
         .collect();
-        let buildings = match buildings.split_last() {
-            None => String::new(),
-            Some((only, [])) => format!("; {only}"),
-            Some((last, rest)) => format!("; {} and {last}", rest.join(", ")),
+        let buildings = match buildings.is_empty() {
+            true => String::new(),
+            false => format!("; {}", and_list(&buildings)),
         };
         lines.push(format!(
-            "{}: {}{buildings}",
+            "{}: {}{buildings}{}",
             titled(&settlement.id, Some(&settlement.name)),
-            figures.join(", ")
+            figures.join(", "),
+            marked(&settlement.id)
         ));
     }
     for route in &suggestions.routes {
         let (first, last) = (route.points[0], route.points[route.points.len() - 1]);
         lines.push(format!(
-            "{}: {}, {} points, tile {} to {}",
+            "{}: {}, {} points, tile {} to {}{}",
             titled(&route.id, route.name.as_deref()),
             match route.kind {
                 RouteKind::Road => "road",
@@ -93,7 +181,8 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             },
             route.points.len(),
             tile(first),
-            tile(last)
+            tile(last),
+            marked(&route.id)
         ));
     }
     for point in &suggestions.points {
@@ -102,11 +191,16 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             .as_ref()
             .map_or(String::new(), |note| format!("; {note}"));
         lines.push(format!(
-            "{}: {}, at tile {}{note}",
+            "{}: {}, at tile {}{note}{}",
             titled(&point.id, point.name.as_deref()),
             point.kind,
-            tile(point.at)
+            tile(point.at),
+            marked(&point.id)
         ));
+    }
+    let stale = map.not_on_the_map();
+    if !stale.is_empty() {
+        lines.push(format!("dismissed, not on the map: {}", stale.join(", ")));
     }
     Ok(lines.join("\n"))
 }
@@ -137,7 +231,7 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         source => format!("source {source}"),
     };
     Ok(format!(
-        "{name}: {} × {} tiles in {} × {} chunks, {}, {}; {length} bytes\n\
+        "{name}: {} × {} tiles in {} × {} chunks, {}, {}{}; {length} bytes\n\
          recipe: {source}, source pixels ({}, {}) to ({}, {}), {} a source pixel, seed {}; \
          detail {} of the relief, {} pixels, {}; shallows to {} metres, specks under {}; \
          levels every {} of Azgaar's heights, specks under {}; \
@@ -148,6 +242,7 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         chunks.height,
         count(map.overrides().len(), "override"),
         count(suggested(map.suggestions()), "suggestion"),
+        dismissals(&map),
         region.x,
         region.y,
         region.x + region.size.width - 1,

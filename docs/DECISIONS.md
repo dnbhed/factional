@@ -1206,6 +1206,22 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
     - `world suggestions <map>` lists each on a line: settlements, routes, then points of interest, in the source's order, with each one's tile and what the source says of it.
   - **Checked by a separate script:** `suggest_ref.py`, written from these rules apart from the code. raster.json's places in two recipes, and Menayland's in three, agree with the code.
   - *Why:* places line up with tiles and plants however the map is cut. Routes reach the edge rather than stopping short. Ids survive regenerating, so W6c's dismissals can refer to them.
+- **P-146 · Dismissing suggestions: a kept set of ids, a route's own id covering its stretches** (made in W6c, 2026-11-06; D-49, P-145).
+  - **One or more ids,** at the user's choice: `world dismiss <map> <id> [<id>…]` and `world restore <map> <id> [<id>…]`. Every id is checked before anything changes, so a refusal names the first wrong one and writes nothing. Each command reads the map, changes it and writes it back, and says what it did with the ids in the order typed.
+  - **A route's own id covers its stretches,** at the user's choice: `route_2` dismisses `route_2_1`, `route_2_2`… wherever the map is cut. A stretch is an id of the form `route_<digits>_<digits>`, so `route_20_1` is `route_20`'s, never `route_2`'s. A stretch's own id dismisses only that stretch.
+  - **What's refused,** each id in turn, by me:
+    - Dismissing: an id named twice; one that isn't a suggestion on the map, nor a route with a stretch on it, with a "did you mean" among the suggestions' ids; one already dismissed, by itself or with its route, an earlier id in the same command included.
+    - Restoring: an id named twice; one not dismissed. A stretch dismissed only with its route says so: "route_2_1 is dismissed with route_2; restore route_2". A restore takes back exactly what was dismissed, never part of it.
+  - **Kept apart from the suggestions:** `WorldMap` keeps the dismissals as a set of ids. Regenerating and new suggestions keep them. One whose suggestion is gone is kept too, at the user's choice, and can be restored, and applies again if the suggestion comes back. `keep_dismissed` sets them as read, checking only that each is a valid id.
+  - **The map file is version 8:**
+    - The dismissals follow the suggestions in the body, in order, compressed.
+    - A dismissal that isn't a valid id is damaged, checked before the order; then dismissals out of order, or repeated, are damaged. Version 7 is refused.
+    - Every map grows 11 bytes for its empty dismissals. The hand-made map dismisses `poi_0`, and `route_7`, not on it, and grows from 11,866 to 11,891 bytes.
+  - **What's said:**
+    - `world suggestions` keeps each dismissed suggestion in its place, marked " (dismissed)" or " (dismissed with route_2)", at the user's choice. Dismissals not on the map are listed last: "dismissed, not on the map: route_7".
+    - Its heading and `world info`'s suggestion count add " (3 dismissed)", and "; 1 dismissal not on the map" when there are such, each only when it isn't none. The dismissed are the suggestions on the map now that a dismissal covers.
+  - **Not here:** `world import` still replaces the file, dismissals and all. Keeping what's in a map when importing over it is W9's.
+  - *Why:* a designer sets aside what they won't build without losing it, and one id dismisses a whole road however the region cuts it. Keeping a dismissal whose suggestion is gone means narrowing or moving the region and coming back doesn't bring back what was set aside.
 
 ## Open
 
