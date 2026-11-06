@@ -229,6 +229,9 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         .filter(|tile| matches!(tile.water, Some(Water::River { .. })))
         .count();
     let heights = tiles.iter().map(|tile| tile.elevation);
+    let temperatures = tiles.iter().map(|tile| tile.temperature);
+    let precipitation = tiles.iter().map(|tile| tile.precipitation);
+    let biomes: std::collections::BTreeSet<_> = tiles.iter().map(|tile| tile.biome).collect();
     let levels = tiles.iter().map(|tile| tile.level);
     let (size, chunks) = (map.size(), map.chunk_count());
     let mut drops = [0, 0];
@@ -245,7 +248,8 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
     }
     Ok(format!(
         "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake, {river} river and {} land; \
-         heights {} to {} m; levels {} to {}, {} and {}; {} bytes",
+         heights {} to {} m; temperatures {} to {} °C; precipitation {} to {} mm; {}; \
+         levels {} to {}, {} and {}; {} bytes",
         source.name,
         file_name(import.map),
         size.width,
@@ -255,6 +259,11 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         tiles.len() - ocean - lake - river,
         heights.clone().min().expect("a map has tiles"),
         heights.max().expect("a map has tiles"),
+        temperatures.clone().min().expect("a map has tiles"),
+        temperatures.max().expect("a map has tiles"),
+        precipitation.clone().min().expect("a map has tiles"),
+        precipitation.max().expect("a map has tiles"),
+        count(biomes.len(), "biome"),
         levels.clone().min().expect("a map has tiles"),
         levels.max().expect("a map has tiles"),
         count(drops[0], "ledge"),

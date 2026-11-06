@@ -37,5 +37,12 @@
     ],
     "burgs": [0]
   },
-  "grid": { "cells": [] }
+  "grid": {
+    "cells": [
+      { "i": 0, "temp": 12, "prec": 25 },
+      { "i": 1, "temp": 9, "prec": 14 },
+      { "i": 2, "temp": 11, "prec": 28 },
+      { "i": 3, "temp": -2, "prec": 10 }
+    ]
+  }
 }

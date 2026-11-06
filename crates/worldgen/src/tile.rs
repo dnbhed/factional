@@ -1,4 +1,4 @@
-//! A tile's layers (P-119): elevation, its level, terrain, water, biome and plant; and an
+//! A tile's layers (P-119): elevation, its level, terrain, water, biome, climate and plant; and an
 //! override of any of them.
 
 use factional_core::Fixed;
@@ -59,7 +59,8 @@ pub struct Plant {
 }
 
 /// One tile, every layer: its elevation in metres, kept fine for 3D (D-50); its level, as 2D
-/// draws it (W3c), 0 for water; its terrain; its water; its biome; and its plant.
+/// draws it (W3c), water's that of its surface (W3e); its terrain; its water; its biome; its
+/// yearly temperature in whole °C and precipitation in mm (W4a); and its plant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tile {
     pub elevation: Fixed,
@@ -67,6 +68,8 @@ pub struct Tile {
     pub terrain: Terrain,
     pub water: Option<Water>,
     pub biome: Biome,
+    pub temperature: i8,
+    pub precipitation: u16,
     pub plant: Option<Plant>,
 }
 
@@ -79,6 +82,8 @@ pub struct Override {
     pub terrain: Option<Terrain>,
     pub water: Option<Option<Water>>,
     pub biome: Option<Biome>,
+    pub temperature: Option<i8>,
+    pub precipitation: Option<u16>,
     pub plant: Option<Option<Plant>>,
 }
 
@@ -104,6 +109,8 @@ impl Override {
             terrain: later.terrain.or(self.terrain),
             water: later.water.or(self.water),
             biome: later.biome.or(self.biome),
+            temperature: later.temperature.or(self.temperature),
+            precipitation: later.precipitation.or(self.precipitation),
             plant: later.plant.or(self.plant),
         }
     }
@@ -116,6 +123,8 @@ impl Override {
             terrain: self.terrain.unwrap_or(tile.terrain),
             water: self.water.unwrap_or(tile.water),
             biome: self.biome.unwrap_or(tile.biome),
+            temperature: self.temperature.unwrap_or(tile.temperature),
+            precipitation: self.precipitation.unwrap_or(tile.precipitation),
             plant: self.plant.unwrap_or(tile.plant),
         }
     }

@@ -5,7 +5,7 @@
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Drop, Feature, Levels, Point, Recipe, Region, Size, Source, SourceCell,
+    Biome, Coast, Detail, Drop, Feature, Levels, Point, Recipe, Region, Size, Source, SourceCell,
     SourceRiver, SourceVertex, Terrain, TilePos, Water, rasterise,
 };
 use serde_json::{Value, json};
@@ -26,6 +26,7 @@ fn cell(
     neighbours: &[u32],
     corners: &[u32],
     flux: u32,
+    (biome, temperature, precipitation): (Biome, i8, u16),
 ) -> SourceCell {
     SourceCell {
         centre,
@@ -34,6 +35,9 @@ fn cell(
         neighbours: neighbours.to_vec(),
         corners: corners.to_vec(),
         flux,
+        biome,
+        temperature,
+        precipitation,
     }
 }
 
@@ -70,11 +74,45 @@ fn a_full_export_reads_as_its_cells_vertices_features_and_rivers() {
             height: 30,
         },
         height_exponent: Fixed::from_hundredths(2_00),
+        // Each cell's biome, and its grid cell's temperature and precipitation, Azgaar's
+        // figure in 100 mm, in mm.
         cells: vec![
-            cell(point(10_00, 7_50), 10, 0, &[1, 2], &[0, 1, 3], 0),
-            cell(point(30_00, 7_50), 40, 2, &[0, 3], &[0, 2, 3], 12),
-            cell(point(10_00, 22_50), 19, 1, &[0, 3], &[0, 1, 4], 0),
-            cell(point(111_67, 22_50), 60, 2, &[1, 2], &[0, 2, 4, 5], 3),
+            cell(
+                point(10_00, 7_50),
+                10,
+                0,
+                &[1, 2],
+                &[0, 1, 3],
+                0,
+                (Biome::Marine, 12, 2500),
+            ),
+            cell(
+                point(30_00, 7_50),
+                40,
+                2,
+                &[0, 3],
+                &[0, 2, 3],
+                12,
+                (Biome::Grassland, 9, 1400),
+            ),
+            cell(
+                point(10_00, 22_50),
+                19,
+                1,
+                &[0, 3],
+                &[0, 1, 4],
+                0,
+                (Biome::Marine, 11, 2800),
+            ),
+            cell(
+                point(111_67, 22_50),
+                60,
+                2,
+                &[1, 2],
+                &[0, 2, 4, 5],
+                3,
+                (Biome::TemperateDeciduousForest, -2, 1000),
+            ),
         ],
         vertices: vec![
             vertex(point(20_00, 15_00), [Some(0), Some(1), Some(3)]),
@@ -242,6 +280,112 @@ fn a_rivers_widths_are_0_to_10_pixels() {
 }
 
 #[test]
+fn a_cell_takes_the_climate_of_its_grid_cell() {
+    // Cells 0 and 2 swap grid cells; cell 3's grid cell is at the extremes.
+    let text = tiny_with(|json| {
+        let cells = &mut json["pack"]["cells"];
+        cells[0]["g"] = json!(2);
+        cells[2]["g"] = json!(0);
+        let grid = &mut json["grid"]["cells"];
+        grid[3]["temp"] = json!(-128);
+        grid[3]["prec"] = json!(255);
+        grid[1]["temp"] = json!(127);
+        grid[1]["prec"] = json!(0);
+    });
+    let source = read_azgaar(&text).expect("it reads");
+    let climate: Vec<(i8, u16)> = source
+        .cells
+        .iter()
+        .map(|cell| (cell.temperature, cell.precipitation))
+        .collect();
+    assert_eq!(climate, [(11, 2800), (127, 0), (12, 2500), (-128, 25_500)]);
+}
+
+#[test]
+fn a_cells_biome_is_one_of_azgaars_13() {
+    let text = tiny_with(|json| {
+        let cells = &mut json["pack"]["cells"];
+        cells[0]["biome"] = json!(13);
+        cells[1]["biome"] = json!("grass");
+        cells[2].as_object_mut().expect("a cell").remove("biome");
+        cells[3]["biome"] = json!(12);
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.cells[0].biome: biome 13 isn't one of Azgaar's 13, 0 to 12, which Factional reads",
+            "pack.cells[1].biome: expected a whole number, not \"grass\"",
+            "pack.cells[2]: missing biome",
+        ]
+    );
+    let biomes = |biome: u64| {
+        let text = tiny_with(|json| json["pack"]["cells"][1]["biome"] = json!(biome));
+        read_azgaar(&text).expect("it reads").cells[1].biome
+    };
+    let all: Vec<Biome> = (0..=12).map(biomes).collect();
+    assert_eq!(
+        all,
+        [
+            Biome::Marine,
+            Biome::HotDesert,
+            Biome::ColdDesert,
+            Biome::Savanna,
+            Biome::Grassland,
+            Biome::TropicalSeasonalForest,
+            Biome::TemperateDeciduousForest,
+            Biome::TropicalRainforest,
+            Biome::TemperateRainforest,
+            Biome::Taiga,
+            Biome::Tundra,
+            Biome::Glacier,
+            Biome::Wetland,
+        ]
+    );
+}
+
+#[test]
+fn a_cells_grid_cell_must_exist() {
+    let text = tiny_with(|json| {
+        let cells = &mut json["pack"]["cells"];
+        cells[0]["g"] = json!(4);
+        cells[1]["g"] = json!(-1);
+        cells[2].as_object_mut().expect("a cell").remove("g");
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.cells[0].g: grid cell 4 doesn't exist; there are 4 grid cells",
+            "pack.cells[1].g: expected a whole number, not -1",
+            "pack.cells[2]: missing g",
+        ]
+    );
+}
+
+#[test]
+fn a_grid_cells_temperature_and_precipitation_are_in_range() {
+    let text = tiny_with(|json| {
+        let grid = &mut json["grid"]["cells"];
+        grid[0]["temp"] = json!(128);
+        grid[0]["prec"] = json!(256);
+        grid[1]["temp"] = json!(-129);
+        grid[1]["prec"] = json!(-1);
+        grid[2]["temp"] = json!(1.5);
+        grid[3].as_object_mut().expect("a grid cell").remove("prec");
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "grid.cells[0].temp: 128 is outside -128 to 127 °C",
+            "grid.cells[0].prec: 256 is outside 0 to 255",
+            "grid.cells[1].temp: -129 is outside -128 to 127 °C",
+            "grid.cells[1].prec: expected a whole number, not -1",
+            "grid.cells[2].temp: expected a whole number, not 1.5",
+            "grid.cells[3]: missing prec",
+        ]
+    );
+}
+
+#[test]
 fn a_cells_flux_is_a_whole_number() {
     let text = tiny_with(|json| {
         let cells = &mut json["pack"]["cells"];
@@ -377,14 +521,20 @@ fn another_version_is_refused_naming_both() {
 
 #[test]
 fn an_export_that_isnt_full_is_refused_naming_what_it_lacks() {
-    for lacking in ["cells", "vertices", "features", "rivers"] {
+    for (list, lacking) in [
+        ("pack", "cells"),
+        ("pack", "vertices"),
+        ("pack", "features"),
+        ("pack", "rivers"),
+        ("grid", "cells"),
+    ] {
         let text = tiny_with(|json| {
-            json["pack"].as_object_mut().expect("pack").remove(lacking);
+            json[list].as_object_mut().expect("a list").remove(lacking);
         });
         assert_eq!(
             refusal(&text),
             format!(
-                "this isn't a Full export: it has no pack.{lacking}; export the Full JSON from Azgaar"
+                "this isn't a Full export: it has no {list}.{lacking}; export the Full JSON from Azgaar"
             )
         );
     }
@@ -475,10 +625,15 @@ fn the_users_menayland_export_rasterises_whole() {
     let mut drops = [0; 2];
     let mut rivers = [0; 2];
     let mut heights = 0i64;
+    let mut climate = [0i64; 2];
+    let mut biomes = std::collections::BTreeMap::new();
     let mut water = std::collections::BTreeMap::new();
     for at in (0..size.height).flat_map(|y| (0..size.width).map(move |x| TilePos { x, y })) {
         let tile = map.tile(at).expect("on the map");
         heights += tile.elevation.hundredths();
+        climate[0] += i64::from(tile.temperature);
+        climate[1] += i64::from(tile.precipitation);
+        *biomes.entry(tile.biome).or_insert(0) += 1;
         let kind = match (tile.terrain, tile.water) {
             (_, Some(Water::Lake)) => "lake",
             (_, Some(Water::River { .. })) => "river",
@@ -532,4 +687,21 @@ fn the_users_menayland_export_rasterises_whole() {
         ]
     );
     assert_eq!(drops, [22_777, 58]);
+    // Every tile's temperature and precipitation summed, and the tiles of each biome: the
+    // sea, lakes and rivers Marine.
+    assert_eq!(climate, [9_805_846, 1_259_209_700]);
+    assert_eq!(
+        biomes,
+        std::collections::BTreeMap::from([
+            (Biome::Marine, 789_073),
+            (Biome::ColdDesert, 239),
+            (Biome::Grassland, 55_503),
+            (Biome::TemperateDeciduousForest, 91_604),
+            (Biome::TemperateRainforest, 173_837),
+            (Biome::Taiga, 19_754),
+            (Biome::Tundra, 5_832),
+            (Biome::Glacier, 20_152),
+            (Biome::Wetland, 21_476),
+        ])
+    );
 }

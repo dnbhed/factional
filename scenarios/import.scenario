@@ -1,6 +1,7 @@
-# Rasterising Azgaar's terrain (W2b) with detail (W3a), coasts (W3b), levels (W3c) and rivers
-# (W3d): a hand-made export of five cells imported into a map file, then read back. The tile counts and heights were worked
-# out by a separate script.
+# Rasterising Azgaar's terrain (W2b) with detail (W3a), coasts (W3b), levels (W3c), rivers
+# (W3d and W3e), and climate and biomes (W4a): a hand-made export of five cells imported into a
+# map file, then read back. The tile counts, heights and climate were worked out by a separate
+# script: every import here is -3 to 14 °C, 800 to 3000 mm and 4 biomes, its five cells' own.
 
 # The whole map at 1 tile a pixel, with the default detail and coast: 357 ocean, 174 lake and
 # 1069 land. Its length is in the snapshot.
@@ -38,7 +39,7 @@ assert world import crates/content/tests/fixtures/azgaar/raster.json target/leve
 # the map's edge. 77 of the 1069 land tiles are river, their beds carved never to rise from source
 # to mouth; water stands at the level of its surface, and drops as land does.
 world source crates/content/tests/fixtures/azgaar/rivers.json
-assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land; heights -176.70 to 1922.19 m; levels 0 to 8, 494 ledges and 56 cliffs; 4528 bytes
+assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land; heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 494 ledges and 56 cliffs; 4853 bytes
 
 # A region at scale 2: the rivers twice as wide, 141 river tiles.
 world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers-part.map --region 10,10,20,20 --scale 2 --seed 7

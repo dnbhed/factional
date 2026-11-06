@@ -1,14 +1,14 @@
 //! Reading Azgaar's map (W2a, P-119, P-134): a Full JSON export read into a `Source`. Its
 //! version is checked first; then every cell, vertex, feature and river (W3d, P-139) is read,
-//! every problem in
-//! them reported at once by key path, and every reference kept checked to resolve. Numbers
+//! and every grid cell's climate (W4a, P-141), every problem in them reported at once by key
+//! path, and every reference kept checked to resolve. Numbers
 //! with decimals are rounded once, as they're read, to hundredths, half away from zero.
 
 use std::fmt;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Feature, HEIGHT_EXPONENTS, Point, Size, Source, SourceCell, SourceRiver, SourceVertex,
+    Biome, Feature, HEIGHT_EXPONENTS, Point, Size, Source, SourceCell, SourceRiver, SourceVertex,
 };
 use serde_json::Value;
 
@@ -16,7 +16,33 @@ use serde_json::Value;
 const READS: (u64, u64) = (1, 154);
 
 /// The lists a Full export has and the others lack, in the order they're checked.
-const FULL: [&str; 4] = ["cells", "vertices", "features", "rivers"];
+const FULL: [&str; 5] = [
+    "pack.cells",
+    "pack.vertices",
+    "pack.features",
+    "pack.rivers",
+    "grid.cells",
+];
+
+/// Azgaar's 13 biomes, each at its number.
+const BIOMES: [Biome; 13] = [
+    Biome::Marine,
+    Biome::HotDesert,
+    Biome::ColdDesert,
+    Biome::Savanna,
+    Biome::Grassland,
+    Biome::TropicalSeasonalForest,
+    Biome::TemperateDeciduousForest,
+    Biome::TropicalRainforest,
+    Biome::TemperateRainforest,
+    Biome::Taiga,
+    Biome::Tundra,
+    Biome::Glacier,
+    Biome::Wetland,
+];
+
+/// Azgaar's precipitation is in units of 100 mm.
+const MM_A_UNIT: u16 = 100;
 
 /// The widths of a river Factional reads, in pixels: its width factor and its source width.
 const RIVER_WIDTHS: [Fixed; 2] = [Fixed::ZERO, Fixed::from_hundredths(10_00)];
@@ -42,7 +68,8 @@ pub enum AzgaarError {
     NotAzgaar,
     /// Another version of the generator's, as the export names it.
     Version(String),
-    /// A Minimal or Cells export, or anything else without one of the Full export's lists.
+    /// A Minimal or Cells export, or anything else without one of the Full export's lists,
+    /// named by its path.
     NotFull(&'static str),
     /// Every problem in the export's cells, vertices, features and rivers, in the order they're
     /// read.
@@ -63,7 +90,7 @@ impl fmt::Display for AzgaarError {
             ),
             AzgaarError::NotFull(list) => write!(
                 f,
-                "this isn't a Full export: it has no pack.{list}; export the Full JSON from Azgaar"
+                "this isn't a Full export: it has no {list}; export the Full JSON from Azgaar"
             ),
             AzgaarError::Problems(problems) => {
                 let lines: Vec<String> = problems.iter().map(ToString::to_string).collect();
@@ -87,11 +114,13 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         return Err(AzgaarError::Version(version.to_owned()));
     }
     let lists = FULL.map(|list| {
-        json.pointer(&format!("/pack/{list}"))
+        json.pointer(&format!("/{}", list.replace('.', "/")))
             .ok_or(AzgaarError::NotFull(list))
     });
-    let [cells, vertices, features, rivers] = match lists {
-        [Ok(cells), Ok(vertices), Ok(features), Ok(rivers)] => [cells, vertices, features, rivers],
+    let [cells, vertices, features, rivers, grid] = match lists {
+        [Ok(cells), Ok(vertices), Ok(features), Ok(rivers), Ok(grid)] => {
+            [cells, vertices, features, rivers, grid]
+        }
         _ => {
             return Err(lists
                 .into_iter()
@@ -120,13 +149,15 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
     let vertices = reader.list(vertices, "pack.vertices");
     let features = reader.list(features, "pack.features");
     let rivers = reader.list(rivers, "pack.rivers");
+    let grid = reader.list(grid, "grid.cells");
     let counts = Counts {
         cells: cells.len(),
+        grid: grid.len(),
         vertices: vertices.len(),
         // Azgaar's `features[0]` is a placeholder, so feature 1 is the first.
         features: features.len().saturating_sub(1),
     };
-    let cells: Vec<Option<SourceCell>> = cells
+    let cells: Vec<Option<(SourceCell, usize)>> = cells
         .iter()
         .enumerate()
         .map(|(i, cell)| reader.cell(cell, &format!("pack.cells[{i}]"), &counts))
@@ -147,6 +178,11 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         .enumerate()
         .map(|(i, river)| reader.river(river, &format!("pack.rivers[{i}]"), &counts))
         .collect();
+    let climates: Vec<Option<(i8, u16)>> = grid
+        .iter()
+        .enumerate()
+        .map(|(i, climate)| reader.climate(climate, &format!("grid.cells[{i}]")))
+        .collect();
     if !reader.problems.is_empty() {
         return Err(AzgaarError::Problems(reader.problems));
     }
@@ -159,7 +195,19 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
             height: height.expect(every),
         },
         height_exponent: exponent.expect(every),
-        cells: cells.into_iter().map(|cell| cell.expect(every)).collect(),
+        // Each cell with the climate of its grid cell.
+        cells: cells
+            .into_iter()
+            .map(|cell| {
+                let (cell, grid) = cell.expect(every);
+                let (temperature, precipitation) = climates[grid].expect(every);
+                SourceCell {
+                    temperature,
+                    precipitation,
+                    ..cell
+                }
+            })
+            .collect(),
         vertices: vertices
             .into_iter()
             .map(|vertex| vertex.expect(every))
@@ -187,6 +235,7 @@ fn reads(version: &str) -> bool {
 /// How many cells, vertices and features the export has, so references can be checked.
 struct Counts {
     cells: usize,
+    grid: usize,
     vertices: usize,
     features: usize,
 }
@@ -230,6 +279,14 @@ impl Reader {
         match value.as_str() {
             Some(text) => Some(text.to_owned()),
             None => self.problem(path, format!("expected text, not {value}")),
+        }
+    }
+
+    /// The whole number `value`, which may be below zero.
+    fn integer(&mut self, value: &Value, path: &str) -> Option<i64> {
+        match value.as_i64() {
+            Some(integer) => Some(integer),
+            None => self.problem(path, format!("expected a whole number, not {value}")),
         }
     }
 
@@ -311,7 +368,8 @@ impl Reader {
         }
     }
 
-    fn cell(&mut self, cell: &Value, path: &str, counts: &Counts) -> Option<SourceCell> {
+    /// The cell `cell`, its climate yet to come from its grid cell, and that grid cell.
+    fn cell(&mut self, cell: &Value, path: &str, counts: &Counts) -> Option<(SourceCell, usize)> {
         let field = |reader: &mut Reader, key: &str| reader.field(cell, path, key);
         let at = |key: &str| format!("{path}.{key}");
         let centre = field(self, "p").and_then(|p| self.point(p, &at("p")));
@@ -346,14 +404,68 @@ impl Reader {
                     format!("{fl} is more flux than Factional reads, {}", u32::MAX),
                 ),
             });
-        Some(SourceCell {
-            centre: centre?,
-            height: height?,
-            feature: feature?,
-            neighbours: neighbours?,
-            corners: corners?,
-            flux: flux?,
-        })
+        let biome = field(self, "biome")
+            .and_then(|biome| self.whole(biome, &at("biome")))
+            .and_then(
+                |biome| match usize::try_from(biome).ok().and_then(|i| BIOMES.get(i)) {
+                    Some(&known) => Some(known),
+                    None => self.problem(
+                        &at("biome"),
+                        format!(
+                            "biome {biome} isn't one of Azgaar's 13, 0 to 12, which Factional reads"
+                        ),
+                    ),
+                },
+            );
+        let grid = field(self, "g")
+            .and_then(|g| self.whole(g, &at("g")))
+            .and_then(|g| match g < counts.grid as u64 {
+                true => Some(g as usize),
+                false => self.problem(
+                    &at("g"),
+                    format!(
+                        "grid cell {g} doesn't exist; there are {} grid cells",
+                        counts.grid
+                    ),
+                ),
+            });
+        Some((
+            SourceCell {
+                centre: centre?,
+                height: height?,
+                feature: feature?,
+                neighbours: neighbours?,
+                corners: corners?,
+                flux: flux?,
+                biome: biome?,
+                temperature: 0,
+                precipitation: 0,
+            },
+            grid?,
+        ))
+    }
+
+    /// A grid cell's climate: its temperature in whole °C, and its precipitation, Azgaar's
+    /// figure in units of 100 mm, in mm.
+    fn climate(&mut self, climate: &Value, path: &str) -> Option<(i8, u16)> {
+        let field = |reader: &mut Reader, key: &str| reader.field(climate, path, key);
+        let at = |key: &str| format!("{path}.{key}");
+        let temperature = field(self, "temp")
+            .and_then(|temp| self.integer(temp, &at("temp")))
+            .and_then(|temp| match i8::try_from(temp) {
+                Ok(temp) => Some(temp),
+                Err(_) => self.problem(
+                    &at("temp"),
+                    format!("{temp} is outside {} to {} °C", i8::MIN, i8::MAX),
+                ),
+            });
+        let precipitation = field(self, "prec")
+            .and_then(|prec| self.whole(prec, &at("prec")))
+            .and_then(|prec| match u8::try_from(prec) {
+                Ok(prec) => Some(u16::from(prec) * MM_A_UNIT),
+                Err(_) => self.problem(&at("prec"), format!("{prec} is outside 0 to 255")),
+            });
+        Some((temperature?, precipitation?))
     }
 
     fn vertex(&mut self, vertex: &Value, path: &str, counts: &Counts) -> Option<SourceVertex> {

@@ -74,6 +74,8 @@ fn made(pos: TilePos) -> Tile {
             _ => Some(Water::Lake),
         },
         biome: BIOMES[((pos.x * 3 + pos.y) % 13) as usize],
+        temperature: ((pos.x * 7 + pos.y) % 256) as u8 as i8,
+        precipitation: (pos.y * 10 + pos.x) as u16,
         plant: pos.y.is_multiple_of(2).then_some(Plant {
             kind: PlantKind::Shrub,
             offset: [(pos.x % 256) as u8, (pos.y % 256) as u8],
@@ -216,6 +218,8 @@ fn an_override_shows_on_the_tile_and_leaves_what_was_generated() {
             terrain: Terrain::Snow,
             water: None,
             biome: Biome::Glacier,
+            temperature: generated.temperature,
+            precipitation: generated.precipitation,
             plant: Some(Plant {
                 kind: PlantKind::Tree,
                 offset: [128, 64],

@@ -29,6 +29,13 @@ fn cell(centre: Point, height: u8, feature: u32) -> SourceCell {
         neighbours: Vec::new(),
         corners: Vec::new(),
         flux: 0,
+        // Azgaar's land cells have a land biome, its sea and lakes Marine.
+        biome: match height {
+            20.. => Biome::Grassland,
+            _ => Biome::Marine,
+        },
+        temperature: 0,
+        precipitation: 0,
     }
 }
 
