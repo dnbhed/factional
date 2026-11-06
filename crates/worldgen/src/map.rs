@@ -303,6 +303,8 @@ pub struct Chunk {
     terrain: Vec<Terrain>,
     water: Vec<Option<Water>>,
     biome: Vec<Biome>,
+    temperature: Vec<i8>,
+    precipitation: Vec<u16>,
     plant: Vec<Option<Plant>>,
 }
 
@@ -324,6 +326,8 @@ impl Chunk {
             terrain: self.terrain[i],
             water: self.water[i],
             biome: self.biome[i],
+            temperature: self.temperature[i],
+            precipitation: self.precipitation[i],
             plant: self.plant[i],
         })
     }
@@ -337,6 +341,8 @@ impl Chunk {
             terrain: Vec::new(),
             water: Vec::new(),
             biome: Vec::new(),
+            temperature: Vec::new(),
+            precipitation: Vec::new(),
             plant: Vec::new(),
         }
     }
@@ -348,6 +354,8 @@ impl Chunk {
         self.terrain.push(tile.terrain);
         self.water.push(tile.water);
         self.biome.push(tile.biome);
+        self.temperature.push(tile.temperature);
+        self.precipitation.push(tile.precipitation);
         self.plant.push(tile.plant);
     }
 }

@@ -3,7 +3,7 @@
 
 use factional_core::Fixed;
 
-use crate::Size;
+use crate::{Biome, Size};
 
 /// A point on the source map, in its pixels, to the hundredth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,7 +15,8 @@ pub struct Point {
 /// One of the source's cells: its centre, its height (0 to 100, sea level at 20, as Azgaar
 /// has it), the feature it's in, its neighbouring cells and the vertices at its corners,
 /// each by its place in the source's lists, and its flux, the water flowing through it in
-/// Azgaar's cubic metres a second.
+/// Azgaar's cubic metres a second; its biome, and the climate of its grid cell, its yearly
+/// temperature in whole °C and precipitation in mm.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceCell {
     pub centre: Point,
@@ -24,6 +25,9 @@ pub struct SourceCell {
     pub neighbours: Vec<u32>,
     pub corners: Vec<u32>,
     pub flux: u32,
+    pub biome: Biome,
+    pub temperature: i8,
+    pub precipitation: u16,
 }
 
 /// One of the source's vertices: where it is, and the three cells that meet there, `None`

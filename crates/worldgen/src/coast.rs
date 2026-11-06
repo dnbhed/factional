@@ -29,6 +29,8 @@ pub(crate) fn tile(elevation: Fixed, water: Option<Body>, shallows: Fixed) -> Ti
         terrain,
         water,
         biome,
+        temperature: 0,
+        precipitation: 0,
         plant: None,
     }
 }

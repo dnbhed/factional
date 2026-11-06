@@ -67,7 +67,8 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
 }
 
 /// A tile with every layer in use somewhere: elevations above and below zero, levels from 0
-/// to 20, each terrain and biome, rivers and lakes, and each kind of plant at varied offsets.
+/// to 20, each terrain and biome, temperatures from −30 to 29 °C and precipitation from 0 to
+/// 3900 mm, rivers and lakes, and each kind of plant at varied offsets.
 fn varied(pos: TilePos) -> Tile {
     let (x, y) = (pos.x, pos.y);
     Tile {
@@ -80,6 +81,9 @@ fn varied(pos: TilePos) -> Tile {
             _ => None,
         },
         biome: BIOMES[((x * 3 + y) % 13) as usize],
+        // Climate in bands, below freezing and above, as Azgaar's grid gives it.
+        temperature: ((x / 5 + y / 4) % 60) as i8 - 30,
+        precipitation: ((x / 6 + y / 5) % 40) as u16 * 100,
         plant: match (x * y) % 5 {
             kind @ 0..=2 => Some(Plant {
                 kind: KINDS[kind as usize],
@@ -173,7 +177,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 4
+version = 5
 
 [recipe]
 source = ""
@@ -192,7 +196,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 4);
+    assert_eq!(MAP_VERSION, 5);
 }
 
 #[test]
@@ -246,15 +250,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [3, 5] {
+    for found in [4, 6] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 4",
+            "version = 5",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 4")
+            format!("this map is version {found}, but this build reads version 5")
         );
     }
 }
@@ -460,6 +464,8 @@ fn any_tile(seed: u64, pos: TilePos) -> Tile {
             }),
         },
         biome: BIOMES[next(13) as usize],
+        temperature: next(256) as u8 as i8,
+        precipitation: next(65_536) as u16,
         plant: match next(4) {
             3 => None,
             kind => Some(Plant {
@@ -489,6 +495,8 @@ proptest! {
                 terrain: (bits & 2 != 0).then_some(tile.terrain),
                 water: (bits & 4 != 0).then_some(tile.water),
                 biome: (bits & 8 != 0).then_some(tile.biome),
+                temperature: (bits & 64 != 0).then_some(tile.temperature),
+                precipitation: (bits & 128 != 0).then_some(tile.precipitation),
                 plant: (bits & 16 != 0).then_some(tile.plant),
             };
             map.edit(pos, edit).expect("on the map");

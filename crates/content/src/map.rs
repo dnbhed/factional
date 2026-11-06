@@ -16,7 +16,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 4;
+pub const MAP_VERSION: u32 = 5;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -192,6 +192,8 @@ struct Layers {
     terrain: Vec<u8>,
     water: Vec<FileWater>,
     biome: Vec<u8>,
+    temperature: Vec<i8>,
+    precipitation: Vec<u16>,
     plant: Vec<Option<FilePlant>>,
 }
 
@@ -220,6 +222,8 @@ struct FileOverride {
     terrain: Option<u8>,
     water: Option<FileWater>,
     biome: Option<u8>,
+    temperature: Option<i8>,
+    precipitation: Option<u16>,
     plant: Option<Option<FilePlant>>,
 }
 
@@ -320,6 +324,8 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
                     .collect(),
                 water: tiles.iter().map(|tile| file_water(tile.water)).collect(),
                 biome: tiles.iter().map(|tile| code(&BIOMES, tile.biome)).collect(),
+                temperature: tiles.iter().map(|tile| tile.temperature).collect(),
+                precipitation: tiles.iter().map(|tile| tile.precipitation).collect(),
                 plant: tiles.iter().map(|tile| file_plant(tile.plant)).collect(),
             };
             pack(&postcard_of(&layers))
@@ -336,6 +342,8 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
             terrain: edit.terrain.map(|terrain| code(&TERRAINS, terrain)),
             water: edit.water.map(file_water),
             biome: edit.biome.map(|biome| code(&BIOMES, biome)),
+            temperature: edit.temperature,
+            precipitation: edit.precipitation,
             plant: edit.plant.map(file_plant),
         })
         .collect();
@@ -499,6 +507,8 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
                 .biome
                 .map(|biome| decode(&BIOMES, biome, "biome", &whose))
                 .transpose()?,
+            temperature: written.temperature,
+            precipitation: written.precipitation,
             plant: written
                 .plant
                 .map(|plant| plant_of(plant, &whose))
@@ -531,6 +541,8 @@ fn chunk_tiles(packed: &[u8], at: ChunkPos, count: usize) -> Result<Vec<Tile>, M
         ("terrain", layers.terrain.len()),
         ("water", layers.water.len()),
         ("biome", layers.biome.len()),
+        ("temperature", layers.temperature.len()),
+        ("precipitation", layers.precipitation.len()),
         ("plant", layers.plant.len()),
     ];
     if let Some((layer, length)) = lengths.iter().find(|(_, length)| *length != count) {
@@ -548,6 +560,8 @@ fn chunk_tiles(packed: &[u8], at: ChunkPos, count: usize) -> Result<Vec<Tile>, M
                 terrain: decode(&TERRAINS, layers.terrain[i], "terrain", &whose)?,
                 water: water_of(layers.water[i]),
                 biome: decode(&BIOMES, layers.biome[i], "biome", &whose)?,
+                temperature: layers.temperature[i],
+                precipitation: layers.precipitation[i],
                 plant: plant_of(layers.plant[i], &whose)?,
             })
         })
@@ -586,6 +600,8 @@ mod tests {
             terrain: vec![3; count],
             water: vec![FileWater::None; count],
             biome: vec![4; count],
+            temperature: vec![0; count],
+            precipitation: vec![0; count],
             plant: vec![None; count],
         }
     }
@@ -600,6 +616,8 @@ mod tests {
             terrain: Some(2),
             water: None,
             biome: None,
+            temperature: None,
+            precipitation: None,
             plant: None,
         }
     }
@@ -620,6 +638,8 @@ mod tests {
     fn crafted_layers_read_as_their_tiles() {
         let mut second = layers(12);
         second.level[5] = 7;
+        second.temperature[5] = -12;
+        second.precipitation[5] = 2400;
         let chunks = [layers(128), second].map(|layers| pack(&postcard_of(&layers)));
         let mut overrides: Vec<FileOverride> = vec![sand(0, 1), sand(69, 1)];
         overrides[1].level = Some(3);
@@ -631,12 +651,16 @@ mod tests {
             terrain: Terrain::Grass,
             water: None,
             biome: Biome::Grassland,
+            temperature: -12,
+            precipitation: 2400,
             plant: None,
         };
         assert_eq!(map.tile(TilePos { x: 69, y: 0 }), Some(grass));
         let sand = Tile {
             level: 3,
             terrain: Terrain::Sand,
+            temperature: 0,
+            precipitation: 0,
             ..grass
         };
         assert_eq!(map.tile(TilePos { x: 69, y: 1 }), Some(sand));
@@ -712,6 +736,8 @@ mod tests {
             ("level", 2),
             ("terrain", 1),
             ("biome", 3),
+            ("temperature", 5),
+            ("precipitation", 6),
             ("plant", 4),
         ] {
             let mut short = layers(128);
@@ -720,6 +746,8 @@ mod tests {
                 1 => drop(short.terrain.pop()),
                 2 => drop(short.level.pop()),
                 3 => drop(short.biome.pop()),
+                5 => drop(short.temperature.pop()),
+                6 => drop(short.precipitation.pop()),
                 _ => drop(short.plant.pop()),
             }
             assert_eq!(

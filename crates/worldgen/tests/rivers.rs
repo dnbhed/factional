@@ -27,6 +27,12 @@ fn cell(x: i64, y: i64, height: u8, feature: u32, neighbours: &[u32], flux: u32)
         neighbours: neighbours.to_vec(),
         corners: Vec::new(),
         flux,
+        biome: match height {
+            20.. => Biome::Grassland,
+            _ => Biome::Marine,
+        },
+        temperature: 0,
+        precipitation: 0,
     }
 }
 

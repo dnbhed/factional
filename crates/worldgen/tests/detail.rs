@@ -4,8 +4,8 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Feature, Levels, MapError, Point, Recipe, Region, Size, Source, SourceCell,
-    SourceVertex, TilePos, WorldMap, cell_reliefs, rasterise,
+    Biome, Coast, Detail, Feature, Levels, MapError, Point, Recipe, Region, Size, Source,
+    SourceCell, SourceVertex, TilePos, WorldMap, cell_reliefs, rasterise,
 };
 use proptest::prelude::*;
 
@@ -24,6 +24,13 @@ fn cell(x: i64, y: i64, height: u8, feature: u32, neighbours: &[u32]) -> SourceC
         neighbours: neighbours.to_vec(),
         corners: Vec::new(),
         flux: 0,
+        // Azgaar's land cells have a land biome, its sea and lakes Marine.
+        biome: match height {
+            20.. => Biome::Grassland,
+            _ => Biome::Marine,
+        },
+        temperature: 0,
+        precipitation: 0,
     }
 }
 

@@ -186,11 +186,15 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
     let scale = i128::from(recipe.scale);
     let origin = [region.x, region.y].map(|from| i128::from(from) * 200 * scale);
     let centre = |from: i128, tile: u32| from + (2 * i128::from(tile) + 1) * 100;
-    // Every tile's height and the water cell it lies under, row by row; then the specks.
-    let (elevations, mut waters): (Vec<Fixed>, Vec<Option<u32>>) = (0..size.height)
+    // Every tile's ground, row by row: its height, the water cell it lies under and the cell it
+    // lies in; then the specks.
+    let point = |x: u32, y: u32| [centre(origin[0], x), centre(origin[1], y)];
+    let grounds: Vec<Ground> = (0..size.height)
         .flat_map(|y| (0..size.width).map(move |x| (x, y)))
-        .map(|(x, y)| raster.ground([centre(origin[0], x), centre(origin[1], y)]))
-        .unzip();
+        .map(|(x, y)| raster.ground(point(x, y)))
+        .collect();
+    let elevations: Vec<Fixed> = grounds.iter().map(|ground| ground.elevation).collect();
+    let mut waters: Vec<Option<u32>> = grounds.iter().map(|ground| ground.water).collect();
     let width = size.width as usize;
     coast::remove_specks(width, &mut waters, recipe.coast.specks as usize);
     // The rivers, on the land, each tile lowered to its bed; then each land tile's level, then
@@ -228,12 +232,31 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
             None => tile,
         };
         let surface = body.map_or(elevations[i], |body| body.surface);
+        // The climate of the cell it lies in; on land, the biome of the nearest land cell.
+        let cell = &source.cells[grounds[i].cell];
+        let biome = match land[i] && courses[i].is_none() {
+            true => raster
+                .nearest_land(point(at.x, at.y))
+                .map_or(Biome::Marine, |(land, _)| source.cells[land].biome),
+            false => Biome::Marine,
+        };
         Tile {
             level: levels[i].unwrap_or_else(|| level(surface)),
+            biome,
+            temperature: cell.temperature,
+            precipitation: cell.precipitation,
             ..tile
         }
     })
     .map_err(RasterError::Map)
+}
+
+/// The ground at a point: its height, the water cell it lies under, if any, and the cell it
+/// lies in.
+struct Ground {
+    elevation: Fixed,
+    water: Option<u32>,
+    cell: usize,
 }
 
 /// The source made ready to rasterise: its cells' centres, metres, reliefs and water, its
@@ -251,6 +274,7 @@ struct Raster<'a> {
     wavelength: i128,
     grid: Grid,
     cells_in: Vec<Vec<usize>>,
+    land_in: Vec<Vec<usize>>,
     triangles_in: Vec<Vec<usize>>,
 }
 
@@ -302,8 +326,13 @@ impl Raster<'_> {
             [source.size.width, source.size.height].map(|side| i128::from(side) * 200 * scale);
         let grid = Grid::new(&centres, corner);
         let mut cells_in = vec![Vec::new(); grid.len()];
+        let mut land_in = vec![Vec::new(); grid.len()];
         for (i, &centre) in centres.iter().enumerate() {
-            cells_in[grid.index(grid.bucket(centre))].push(i);
+            let bucket = grid.index(grid.bucket(centre));
+            cells_in[bucket].push(i);
+            if source.cells[i].biome != Biome::Marine {
+                land_in[bucket].push(i);
+            }
         }
         let mut triangles_in = vec![Vec::new(); grid.len()];
         for (i, triangle) in triangles.iter().enumerate() {
@@ -331,6 +360,7 @@ impl Raster<'_> {
             wavelength: i128::from(detail.wavelength.hundredths()) * 2 * scale,
             grid,
             cells_in,
+            land_in,
             triangles_in,
         }
     }
@@ -360,7 +390,7 @@ impl Raster<'_> {
                     &half_widths,
                     &running,
                     scale,
-                    |at| self.ground(at).0,
+                    |at| self.ground(at).elevation,
                     floor,
                 )
             })
@@ -368,10 +398,11 @@ impl Raster<'_> {
     }
 
     /// The ground whose centre is at `at`: its height interpolated, or the nearest cell's, with
-    /// strength × relief × noise added, rounded once; and the water cell it lies under, if any.
-    /// That is the water cell nearest `at` among the nearest cell and its neighbours, the first
-    /// if several are as near, if `at` lies below its surface.
-    fn ground(&self, at: At) -> (Fixed, Option<u32>) {
+    /// strength × relief × noise added, rounded once; the water cell it lies under, if any; and
+    /// the cell it lies in, the nearest. The water cell is the one nearest `at` among the
+    /// nearest cell and its neighbours, the first if several are as near, if `at` lies below its
+    /// surface.
+    fn ground(&self, at: At) -> Ground {
         let (nearest, _) = self.nearest(at);
         let weights = self
             .weights(at)
@@ -402,7 +433,11 @@ impl Raster<'_> {
             .min_by_key(|&(key, _)| key)
             .filter(|(_, body)| elevation < body.surface)
             .map(|((_, cell), _)| u32::try_from(cell).expect("a source's cells fit"));
-        (elevation, water)
+        Ground {
+            elevation,
+            water,
+            cell: nearest,
+        }
     }
 
     /// The square of the distance from cell `i`'s centre to `at`.
@@ -428,15 +463,29 @@ impl Raster<'_> {
     }
 
     /// The cell whose centre is nearest `at`, the first if several are as near, and how many
-    /// rings of buckets were searched for it: ring by ring outward, until none further out could
-    /// hold a nearer one or the whole grid has been searched.
+    /// rings of buckets were searched for it.
     fn nearest(&self, at: At) -> (usize, u32) {
+        self.nearest_in(at, &self.cells_in)
+            .expect("the grid holds a cell")
+    }
+
+    /// The land cell, one whose biome isn't Marine, whose centre is nearest `at`, the first
+    /// if several are as near, and how many rings of buckets were searched for it; none if
+    /// the source has no land cell.
+    fn nearest_land(&self, at: At) -> Option<(usize, u32)> {
+        self.nearest_in(at, &self.land_in)
+    }
+
+    /// Of the cells in `buckets`, the one whose centre is nearest `at`, the first if several
+    /// are as near, and how many rings of buckets were searched for it: ring by ring outward,
+    /// until none further out could hold a nearer one or the whole grid has been searched.
+    fn nearest_in(&self, at: At, buckets: &[Vec<usize>]) -> Option<(usize, u32)> {
         let centre = self.grid.bucket(at);
         let mut best: Option<(i128, usize)> = None;
         let last = self.grid.cover(centre);
         for ring in 0..=last {
             for bucket in self.grid.ring(centre, ring) {
-                for &i in &self.cells_in[self.grid.index(bucket)] {
+                for &i in &buckets[self.grid.index(bucket)] {
                     let candidate = (self.distance(i, at), i);
                     best = Some(best.map_or(candidate, |best| best.min(candidate)));
                 }
@@ -446,11 +495,10 @@ impl Raster<'_> {
             if let Some((distance, i)) = best
                 && distance < reach * reach
             {
-                return (i, ring + 1);
+                return Some((i, ring + 1));
             }
         }
-        let (_, i) = best.expect("the grid holds a cell");
-        (i, last + 1)
+        best.map(|(_, i)| (i, last + 1))
     }
 }
 
@@ -576,6 +624,9 @@ mod tests {
                     neighbours: Vec::new(),
                     corners: Vec::new(),
                     flux: 0,
+                    biome: Biome::Grassland,
+                    temperature: 0,
+                    precipitation: 0,
                 })
                 .collect(),
             vertices: Vec::new(),
@@ -616,6 +667,25 @@ mod tests {
         assert_eq!(raster.nearest([100, 100]), (0, 4));
         // At a cell's centre, the next ring settles it.
         assert_eq!(raster.nearest([8000, 8000]), (1, 2));
+    }
+
+    #[test]
+    fn the_land_search_passes_over_the_sea_and_finds_none_without_land() {
+        // As above, but cell 0 is Marine: from (100, 100), cell 1 at (8000, 8000) is the
+        // nearest land, √2 × 7900 away, beyond ring 4's reach of 8000, so every ring is searched.
+        let mut centres = vec![[4100, 100]];
+        centres.extend([[8000, 8000]; 15]);
+        let mut source = source(&centres);
+        source.cells[0].biome = Biome::Marine;
+        let raster = Raster::new(&source, &whole());
+        assert_eq!(raster.nearest([100, 100]), (0, 4));
+        assert_eq!(raster.nearest_land([100, 100]), Some((1, 5)));
+        assert_eq!(raster.nearest_land([8000, 8000]), Some((1, 2)));
+        for cell in &mut source.cells {
+            cell.biome = Biome::Marine;
+        }
+        let raster = Raster::new(&source, &whole());
+        assert_eq!(raster.nearest_land([100, 100]), None);
     }
 
     #[test]

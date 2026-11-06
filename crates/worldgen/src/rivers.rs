@@ -311,6 +311,9 @@ mod tests {
             neighbours: Vec::new(),
             corners: Vec::new(),
             flux,
+            biome: crate::Biome::Grassland,
+            temperature: 0,
+            precipitation: 0,
         }
     }
 

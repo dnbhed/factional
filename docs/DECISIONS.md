@@ -1114,6 +1114,27 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **No new options, and no new version:** the carving follows from the source, and the map file's layers already hold the heights and levels.
   - **Checked by a separate script:** every count was worked by `carving_ref.py`, written from these rules apart from the code, and the code agreed on its first run. Menayland's were checked by a second script.
   - *Why:* a river that rises along its course, or water that never drops, reads wrongly on a terraced 2D map. Carving only the river keeps the ground the designer made, while the water finds its level.
+- **P-141 · Climate and biomes** (made in W4a, 2026-11-06; P-119, P-134, P-139, P-140).
+  - **W4 split in two,** so each is reviewable in one sitting: W4a reads the climate and biomes into the tiles, and W4b chooses their terrain.
+  - **What's read:**
+    - each cell's `biome` and `g`, its grid cell;
+    - each grid cell's `temp` and `prec`.
+  - **Checks on what's read:**
+    - A biome must be one of Azgaar's 13 defaults, 0 to 12. Azgaar lets a designer add biomes, but a Full export doesn't say what an added one is, so it's refused by number.
+    - A grid cell must exist.
+    - A temperature must fit Azgaar's own range, −128 to 127 °C, and a precipitation 0 to 255.
+    - An export without `grid.cells` isn't Full. Every list a Full export needs is now named by its whole path, `pack.cells` or `grid.cells`.
+  - **Units:** a temperature is kept in whole °C, as Azgaar keeps it. A precipitation is kept in mm, Azgaar's figure × 100, as Azgaar shows it.
+  - **The cell it lies in:** a tile's climate is its nearest cell's, the first if several are as near, as for its height when no triangle holds it. Azgaar's grid is coarser than its cells, so the climate comes in blocks, as it does in Azgaar.
+  - **Azgaar's biome,** at the user's choice: a land tile takes the biome of the nearest land cell, a cell whose biome isn't Marine. So land the detail raises in a sea cell, or the lake's cell, takes the biome of the land nearest it, never Marine. A source with no land cell gives its land Marine, so every tile's biome is decided.
+    - Water, rivers included, stays Marine.
+    - Recomputing a biome from each tile's own climate was the other choice. It would give finer edges, but could disagree with the map the designer made.
+  - **Layers of their own,** at the user's choice: `Tile` gains `temperature: i8` and `precipitation: u16`, each with an override, for foliage, weather and gameplay to read later.
+    - The map file goes to version 5, and version 4 is refused.
+    - The committed hand-made map was written again; its climate is in bands, as real climate is, so it stays small.
+  - **`world import`** says its temperatures, precipitation and how many biomes: "temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes".
+  - **Checked by a separate script:** every count was worked by `climate_ref.py`, written from these rules apart from the code, and the code agreed on its first run. Menayland's were checked by a second script.
+  - *Why:* the climate and biomes are the designer's own, as they made them in Azgaar, and later systems need the climate as well as the biome.
 
 ## Open
 
