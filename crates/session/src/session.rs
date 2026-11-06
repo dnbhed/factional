@@ -83,7 +83,11 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "world suggestions <map>",
-        "a world map's suggestions: its settlements, routes and points of interest, where each lies and what the source says of it",
+        "a world map's suggestions: its settlements, routes and points of interest, where each lies, and its cultures, religions and states, how many tiles lie in each; and what the source says of each",
+    ),
+    (
+        "world tile <map> <x>,<y>",
+        "one tile of a world map: every layer, the culture, religion and state it lies in, and which layers are overridden",
     ),
     (
         "world dismiss <map> <id> [<id>…]",
@@ -357,7 +361,7 @@ pub struct Session {
 
 /// How `world` is used.
 pub(crate) const WORLD_FORM: &str = "world needs the form: world info <file>, world source <file>, \
-     world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], \
+     world suggestions <map>, world tile <map> <x>,<y>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], \
      or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
      [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
      [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] \
@@ -881,7 +885,8 @@ impl Session {
     }
 
     /// `world info <file>`: what the map in `file` holds (W1b); `world source <file>`: what
-    /// the Azgaar export in `file` holds (W2a); `world dismiss` and `world restore` (W6c).
+    /// the Azgaar export in `file` holds (W2a); `world dismiss` and `world restore` (W6c); and
+    /// `world tile <map> <x>,<y>` (W6f).
     fn world_info(&self, args: &str) -> Outcome {
         match split_command(args) {
             ("import", args) => {
@@ -892,6 +897,15 @@ impl Session {
                     Err(why) => Outcome::Error(why),
                 }
             }
+            ("tile", args) => match split_command(args) {
+                (file, at) if !file.is_empty() && !at.is_empty() => {
+                    match crate::world::world_tile(&self.base_dir, file, at) {
+                        Ok(said) => Outcome::Output(said),
+                        Err(why) => Outcome::Error(why),
+                    }
+                }
+                _ => Outcome::Error(WORLD_FORM.to_owned()),
+            },
             (change @ ("dismiss" | "restore"), args) => {
                 let (file, ids) = split_command(args);
                 let ids: Vec<&str> = ids.split_whitespace().collect();
@@ -3723,7 +3737,7 @@ mod tests {
         assert_eq!(
             WORLD_FORM,
             "world needs the form: world info <file>, world source <file>, world suggestions <map>, \
-             world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], \
+             world tile <map> <x>,<y>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], \
              or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
              [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
              [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] \
@@ -3734,6 +3748,8 @@ mod tests {
         assert_eq!(run("world inspect hand-made.map"), form);
         assert_eq!(run("world source"), form);
         assert_eq!(run("world suggestions"), form);
+        assert_eq!(run("world tile"), form);
+        assert_eq!(run("world tile hand-made.map"), form);
         assert_eq!(run("world dismiss"), form);
         assert_eq!(run("world dismiss hand-made.map"), form);
         assert_eq!(run("world restore"), form);
@@ -3866,6 +3882,82 @@ mod tests {
     }
 
     #[test]
+    fn world_tile_says_every_layer_its_peoples_and_what_is_overridden() {
+        let dir = import_dir("tile");
+        let map = include_bytes!("../../content/tests/fixtures/maps/hand-made.map");
+        std::fs::write(dir.join("hand-made.map"), map).expect("written");
+        let mut session = Session::new(&dir);
+        // Worked by hand from the hand-made map's generator and overrides, in
+        // factional-content's tests: (0, 0) overridden to -250 m, level 255 and ice, and out
+        // of Riverfolk.
+        assert_eq!(
+            session.execute("world tile hand-made.map 0,0"),
+            output(
+                "hand-made.map, tile (0, 0): -250.00 m, level 255, ice, a river of 0 m³/s, marine, -30 °C, 0 mm, a tree at (0, 0) in the tile\n\
+                 peoples: no culture, religion_5 Ferry Saints and state_3 Riverhold\n\
+                 overridden: elevation, level, terrain and culture"
+            )
+        );
+        // (1, 0) as generated: (37 × 1) × 3 hundredths, shallow water, savanna; x + y odd.
+        assert_eq!(
+            session.execute("world tile hand-made.map 1,0"),
+            output(
+                "hand-made.map, tile (1, 0): 1.11 m, level 0, shallow water, no water, savanna, -30 °C, 0 mm, a tree at (3, 0) in the tile\n\
+                 peoples: culture_2 Riverfolk, religion_5 Ferry Saints and no state"
+            )
+        );
+        // (69, 65): (69 × 37 − 65 × 101) × 3 = −12036 hundredths; level (17 + 21) mod 21;
+        // ice; (13 + 16) − 30 °C; (11 + 13) × 100 mm. Its override sets the water, biome,
+        // plant and culture, and clears the state.
+        assert_eq!(
+            session.execute("world tile hand-made.map 69,65"),
+            output(
+                "hand-made.map, tile (69, 65): -120.36 m, level 17, ice, a river of 5 m³/s, wetland, -1 °C, 2400 mm, grass at (1, 2) in the tile\n\
+                 peoples: culture_2 Riverfolk, no religion and no state\n\
+                 overridden: water, biome, plant, culture and state"
+            )
+        );
+        // (4, 6): (148 − 606) × 3 hundredths; level 1 + 2; a lake, as 4 + 6 is 3 mod 7; tropical
+        // seasonal forest, 18 mod 13; −29 °C; 100 mm; no plant, as 24 is 4 mod 5.
+        assert_eq!(
+            session.execute("world tile hand-made.map 4,6"),
+            output(
+                "hand-made.map, tile (4, 6): -13.74 m, level 3, shallow water, a lake, tropical seasonal forest, -29 °C, 100 mm, no plant\n\
+                 peoples: culture_2 Riverfolk, religion_5 Ferry Saints and state_3 Riverhold"
+            )
+        );
+        // A dismissed people is marked.
+        let done = session.execute("world dismiss hand-made.map state_3");
+        assert!(matches!(done, Ok(Outcome::Output(_))), "{done:?}");
+        let Ok(Outcome::Output(said)) = session.execute("world tile hand-made.map 0,0") else {
+            panic!("a tile")
+        };
+        assert!(
+            said.contains(
+                "\npeoples: no culture, religion_5 Ferry Saints and state_3 Riverhold (dismissed)\n"
+            ),
+            "{said}"
+        );
+        assert_eq!(
+            session.execute("world tile hand-made.map 70,0"),
+            command_error("tile (70, 0) is off the map, which is 70 × 66 tiles")
+        );
+        assert_eq!(
+            session.execute("world tile hand-made.map 3"),
+            command_error("the tile needs two whole numbers, <x>,<y>, not 3")
+        );
+        assert_eq!(
+            session.execute("world tile hand-made.map 3,-1"),
+            command_error("the tile needs two whole numbers, <x>,<y>, not 3,-1")
+        );
+        assert_eq!(
+            session.execute("world tile nowhere.map 0,0"),
+            command_error("cannot read nowhere.map: No such file or directory (os error 2)")
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
     fn a_dismissal_not_on_the_map_is_counted_listed_and_can_be_restored() {
         let dir = import_dir("stale");
         let map = include_bytes!("../../content/tests/fixtures/maps/hand-made.map");
@@ -3878,9 +3970,9 @@ mod tests {
                  settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town\n\
                  route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)\n\
                  poi_0: ruins, at tile (33, 7); Walls of an older keep. (dismissed)\n\
-                 culture_2 Riverfolk: river; 40 cells and 61234 people in the source, 1200 tiles on the map\n\
-                 religion_5 Ferry Saints: heresy, Sect, of culture_2; 12 cells and 9001 people in the source, 300 tiles on the map\n\
-                 state_3 Riverhold: Free City of Riverhold, union, of culture_7 (not on the map), capital settlement_9; vassal toward state_1 (not on the map), suzerain toward state_4 (not on the map); 40 cells and 61234 people in the source, 4620 tiles on the map\n\
+                 culture_2 Riverfolk: river; 40 cells and 61234 people in the source, 1320 tiles on the map\n\
+                 religion_5 Ferry Saints: heresy, Sect, of culture_2; 12 cells and 9001 people in the source, 699 tiles on the map\n\
+                 state_3 Riverhold: Free City of Riverhold, union, of culture_7 (not on the map), capital settlement_9; vassal toward state_1 (not on the map), suzerain toward state_4 (not on the map); 40 cells and 61234 people in the source, 2309 tiles on the map\n\
                  dismissed, not on the map: route_7"
             )
         );

@@ -271,8 +271,9 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
     let plants = foliage::plants(width, &candidates, foliage.spacing);
     let shallows = recipe.coast.shallows;
     let cells: Vec<usize> = grounds.iter().map(|ground| ground.cell).collect();
+    // The source's places and peoples, on the map (W6b, P-145; W6e, P-148).
     let suggestions = suggestions::suggest(source, &recipe, size, &cells);
-    let mut map = WorldMap::new(recipe, |at: TilePos| {
+    WorldMap::with_suggestions(recipe, suggestions, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
         let tile = coast::tile(elevations[i], bodies[i], shallows);
         let tile = match courses[i] {
@@ -283,7 +284,7 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
             },
             None => tile,
         };
-        // The climate of the cell it lies in.
+        // The climate of the cell it lies in, and its culture, religion and state (W6f).
         let cell = &source.cells[grounds[i].cell];
         Tile {
             level: levels[i],
@@ -292,13 +293,13 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
             temperature: cell.temperature,
             precipitation: cell.precipitation,
             plant: plants[i],
+            culture: cell.culture,
+            religion: cell.religion,
+            state: cell.state,
             ..tile
         }
     })
-    .map_err(RasterError::Map)?;
-    // The source's places, on the map (W6b, P-145).
-    map.suggest(suggestions).map_err(RasterError::Map)?;
-    Ok(map)
+    .map_err(RasterError::Map)
 }
 
 /// The ground at a point: its height, the water cell it lies under, if any, and the cell it

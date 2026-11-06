@@ -94,14 +94,30 @@ fn varied(pos: TilePos) -> Tile {
             }),
             _ => None,
         },
+        culture: None,
+        religion: None,
+        state: None,
+    }
+}
+
+/// `varied`, lying in Riverfolk (culture 2) where x is under 20, Ferry Saints (religion 5)
+/// where y is under 10, and Riverhold (state 3) where x + y is even (W6f).
+fn peopled(pos: TilePos) -> Tile {
+    Tile {
+        culture: (pos.x < 20).then_some(2),
+        religion: (pos.y < 10).then_some(5),
+        state: (pos.x + pos.y).is_multiple_of(2).then_some(3),
+        ..varied(pos)
     }
 }
 
 /// 70 × 66 tiles, so 2 × 2 chunks with partial ones at the right and bottom, from source
-/// pixels (3, 4) to (37, 36) at 2 tiles a pixel, with three overrides that set every layer
-/// between them, water and a plant cleared among them.
+/// pixels (3, 4) to (37, 36) at 2 tiles a pixel, `peopled`, with three overrides that set every
+/// layer between them, water, a plant, a culture, a religion and a state cleared among them.
 fn hand_made() -> WorldMap {
-    let mut map = WorldMap::new(recipe(3, 4, 35, 33, 2), varied).expect("the recipe makes a map");
+    let mut map =
+        WorldMap::with_suggestions(recipe(3, 4, 35, 33, 2), hand_made_suggestions(), peopled)
+            .expect("the recipe makes a map");
     let edits = [
         (
             at(0, 0),
@@ -109,6 +125,7 @@ fn hand_made() -> WorldMap {
                 elevation: Some(Fixed::from_hundredths(-250_00)),
                 level: Some(255),
                 terrain: Some(Terrain::Ice),
+                culture: Some(None),
                 ..Override::default()
             },
         ),
@@ -117,6 +134,7 @@ fn hand_made() -> WorldMap {
             Override {
                 water: Some(None),
                 plant: Some(None),
+                religion: Some(None),
                 ..Override::default()
             },
         ),
@@ -129,6 +147,8 @@ fn hand_made() -> WorldMap {
                     kind: PlantKind::Grass,
                     offset: [1, 2],
                 })),
+                culture: Some(Some(2)),
+                state: Some(None),
                 ..Override::default()
             },
         ),
@@ -136,7 +156,6 @@ fn hand_made() -> WorldMap {
     for (pos, edit) in edits {
         map.edit(pos, edit).expect("on the map");
     }
-    map.suggest(hand_made_suggestions()).expect("on the map");
     // Its point of interest dismissed, and route_7, not on it.
     map.keep_dismissed(hand_made_dismissals())
         .expect("valid ids");
@@ -200,7 +219,6 @@ fn hand_made_suggestions() -> Suggestions {
                 cells: 40,
                 people: 61_234,
             },
-            tiles: 1200,
         }],
         religions: vec![Religion {
             id: "religion_5".to_owned(),
@@ -213,7 +231,6 @@ fn hand_made_suggestions() -> Suggestions {
                 cells: 12,
                 people: 9001,
             },
-            tiles: 300,
         }],
         states: vec![State {
             id: "state_3".to_owned(),
@@ -230,7 +247,6 @@ fn hand_made_suggestions() -> Suggestions {
                 cells: 40,
                 people: 61_234,
             },
-            tiles: 4620,
         }],
     }
 }
@@ -276,7 +292,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 9
+version = 10
 
 [recipe]
 source = ""
@@ -314,7 +330,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 9);
+    assert_eq!(MAP_VERSION, 10);
 }
 
 #[test]
@@ -461,7 +477,6 @@ fn every_kind_and_figure_of_a_suggestion_reads_back() {
                 cells: i * 7,
                 people: u64::from(i) * 1_000_003,
             },
-            tiles: i,
         })
         .collect();
     let religions = [
@@ -483,7 +498,6 @@ fn every_kind_and_figure_of_a_suggestion_reads_back() {
             cells: i,
             people: u64::from(i) * 17,
         },
-        tiles: 100 + i,
     })
     .collect();
     let stances = [
@@ -527,7 +541,6 @@ fn every_kind_and_figure_of_a_suggestion_reads_back() {
             cells: i * 3,
             people: u64::from(i) * 101,
         },
-        tiles: 1000 + i,
     })
     .collect();
     let suggestions = Suggestions {
@@ -592,15 +605,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [8, 10] {
+    for found in [9, 11] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 9",
+            "version = 10",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 9")
+            format!("this map is version {found}, but this build reads version 10")
         );
     }
 }
@@ -784,6 +797,48 @@ fn tiles_that_dont_match_their_fingerprint_are_refused() {
     );
 }
 
+/// Three cultures, religions and states, `_0` to `_2`, that a small map's tiles may lie in.
+fn three_of_each() -> Suggestions {
+    let extent = Extent {
+        cells: 1,
+        people: 1,
+    };
+    Suggestions {
+        cultures: (0..3)
+            .map(|i| Culture {
+                id: format!("culture_{i}"),
+                name: format!("Folk {i}"),
+                kind: SettlementKind::Generic,
+                extent,
+            })
+            .collect(),
+        religions: (0..3)
+            .map(|i| Religion {
+                id: format!("religion_{i}"),
+                name: format!("Faith {i}"),
+                kind: ReligionKind::Cult,
+                form: "Cult".to_owned(),
+                deity: None,
+                culture: None,
+                extent,
+            })
+            .collect(),
+        states: (0..3)
+            .map(|i| State {
+                id: format!("state_{i}"),
+                name: format!("Realm {i}"),
+                full_name: format!("The Realm of {i}"),
+                form: StateForm::Anarchy,
+                culture: None,
+                capital: None,
+                stances: Vec::new(),
+                extent,
+            })
+            .collect(),
+        ..Suggestions::default()
+    }
+}
+
 /// A small map's tile from `seed`: any value in every layer.
 fn any_tile(seed: u64, pos: TilePos) -> Tile {
     let mut bits = seed ^ (u64::from(pos.x) << 32 | u64::from(pos.y));
@@ -815,6 +870,10 @@ fn any_tile(seed: u64, pos: TilePos) -> Tile {
                 offset: [next(256) as u8, next(256) as u8],
             }),
         },
+        // W6f: one of the three of each kind every small map suggests, or none.
+        culture: [None, Some(0), Some(1), Some(2)][next(4) as usize],
+        religion: [None, Some(0), Some(1), Some(2)][next(4) as usize],
+        state: [None, Some(0), Some(1), Some(2)][next(4) as usize],
     }
 }
 
@@ -827,8 +886,12 @@ proptest! {
         edits in proptest::collection::vec((any::<u32>(), any::<u32>(), any::<u64>()), 0..12),
         places in proptest::collection::vec((any::<u32>(), any::<u32>(), any::<u8>()), 0..6),
     ) {
-        let mut map = WorldMap::new(recipe(0, 0, width, height, 1), |pos| any_tile(seed, pos))
-            .expect("the recipe makes a map");
+        let mut map = WorldMap::with_suggestions(
+            recipe(0, 0, width, height, 1),
+            three_of_each(),
+            |pos| any_tile(seed, pos),
+        )
+        .expect("the recipe makes a map");
         for (x, y, bits) in edits {
             let pos = at(x % width, y % height);
             let tile = any_tile(bits, pos);
@@ -841,6 +904,9 @@ proptest! {
                 temperature: (bits & 64 != 0).then_some(tile.temperature),
                 precipitation: (bits & 128 != 0).then_some(tile.precipitation),
                 plant: (bits & 16 != 0).then_some(tile.plant),
+                culture: (bits & 256 != 0).then_some(tile.culture),
+                religion: (bits & 512 != 0).then_some(tile.religion),
+                state: (bits & 1024 != 0).then_some(tile.state),
             };
             map.edit(pos, edit).expect("on the map");
         }
@@ -871,15 +937,16 @@ proptest! {
                 note: Some(format!("Note {i}")),
                 at: at(place),
             }).collect(),
-            // W6e: a culture for each place, covering some of the map's tiles.
-            cultures: places.iter().zip(0u64..).map(|(&place, i)| Culture {
-                id: format!("culture_{i}"),
-                name: format!("Folk {i}"),
-                kind: SettlementKind::Lake,
-                extent: Extent { cells: place.0, people: i * 104_729 },
-                tiles: place.1 % (width * height) + 1,
-            }).collect(),
-            ..Suggestions::default()
+            // W6e: a culture for each place, after the three the tiles may lie in.
+            cultures: three_of_each().cultures.into_iter().chain(
+                places.iter().zip(3u64..).map(|(&place, i)| Culture {
+                    id: format!("culture_{i}"),
+                    name: format!("Folk {i}"),
+                    kind: SettlementKind::Lake,
+                    extent: Extent { cells: place.0, people: i * 104_729 },
+                })
+            ).collect(),
+            ..three_of_each()
         };
         map.suggest(suggestions).expect("on the map");
         prop_assert_eq!(read_map(&write_map(&map)), Ok(map));

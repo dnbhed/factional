@@ -329,14 +329,33 @@ fn world_suggestions_lists_a_maps_suggestions_and_exits_zero() {
          settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town\n\
          route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)\n\
          poi_0: ruins, at tile (33, 7); Walls of an older keep. (dismissed)\n\
-                 culture_2 Riverfolk: river; 40 cells and 61234 people in the source, 1200 tiles on the map\n\
-                 religion_5 Ferry Saints: heresy, Sect, of culture_2; 12 cells and 9001 people in the source, 300 tiles on the map\n\
-                 state_3 Riverhold: Free City of Riverhold, union, of culture_7 (not on the map), capital settlement_9; vassal toward state_1 (not on the map), suzerain toward state_4 (not on the map); 40 cells and 61234 people in the source, 4620 tiles on the map\n\
+                 culture_2 Riverfolk: river; 40 cells and 61234 people in the source, 1320 tiles on the map\n\
+                 religion_5 Ferry Saints: heresy, Sect, of culture_2; 12 cells and 9001 people in the source, 699 tiles on the map\n\
+                 state_3 Riverhold: Free City of Riverhold, union, of culture_7 (not on the map), capital settlement_9; vassal toward state_1 (not on the map), suzerain toward state_4 (not on the map); 40 cells and 61234 people in the source, 2309 tiles on the map\n\
          dismissed, not on the map: route_7\n"
     );
     let refused = factional_in_repo(&["world", "suggestions", "content/sample/factions.toml"]);
     assert_eq!(refused.status.code(), Some(1));
     assert_eq!(text(&refused.stderr), "this isn't a Factional map\n");
+}
+
+#[test]
+fn world_tile_says_one_tiles_layers_and_exits_zero() {
+    let map = "crates/content/tests/fixtures/maps/hand-made.map";
+    let output = factional_in_repo(&["world", "tile", map, "0,0"]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "hand-made.map, tile (0, 0): -250.00 m, level 255, ice, a river of 0 m³/s, marine, -30 °C, 0 mm, a tree at (0, 0) in the tile\n\
+         peoples: no culture, religion_5 Ferry Saints and state_3 Riverhold\n\
+         overridden: elevation, level, terrain and culture\n"
+    );
+    let refused = factional_in_repo(&["world", "tile", map, "70,0"]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert_eq!(
+        text(&refused.stderr),
+        "tile (70, 0) is off the map, which is 70 × 66 tiles\n"
+    );
 }
 
 #[test]

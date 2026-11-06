@@ -8,5 +8,15 @@ world info crates/content/tests/fixtures/maps/hand-made.map
 # (W6c): a dismissal is kept whatever's suggested now. The session's tests assert the listing.
 world suggestions crates/content/tests/fixtures/maps/hand-made.map
 
+# One tile (W6f): every layer, the culture, religion and state it lies in, and what's
+# overridden. (0, 0) is overridden out of Riverfolk; (69, 65) into it, and out of Riverhold. The
+# session's tests work each figure by hand.
+world tile crates/content/tests/fixtures/maps/hand-made.map 0,0
+world tile crates/content/tests/fixtures/maps/hand-made.map 69,65
+world tile crates/content/tests/fixtures/maps/hand-made.map 4,6
+assert world tile crates/content/tests/fixtures/maps/hand-made.map 70,0 == error: tile (70, 0) is off the map, which is 70 × 66 tiles
+assert world tile crates/content/tests/fixtures/maps/hand-made.map 3 == error: the tile needs two whole numbers, <x>,<y>, not 3
+assert world tile crates/content/tests/fixtures/maps/hand-made.map == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world tile <map> <x>,<y>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
+
 assert world info content/sample/factions.toml == error: this isn't a Factional map
-assert world info == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
+assert world info == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world tile <map> <x>,<y>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]

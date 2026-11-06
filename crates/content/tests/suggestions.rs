@@ -54,6 +54,23 @@ fn suggested(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Suggestions
         .clone()
 }
 
+/// How many tiles lie in each people (W6f), in the order `peoples` gives them; checking the
+/// territory holds no others.
+fn territory(x: u32, y: u32, width: u32, height: u32, scale: u32) -> [u32; 6] {
+    let map = rasterise(&source(), recipe(x, y, width, height, scale)).expect("a map");
+    let territory = map.territory();
+    let ids = [
+        "culture_1",
+        "culture_2",
+        "religion_1",
+        "religion_2",
+        "state_1",
+        "state_2",
+    ];
+    assert_eq!(territory.len(), 6, "{territory:?}");
+    ids.map(|id| territory[id])
+}
+
 fn highmoor() -> Settlement {
     Settlement {
         id: "settlement_1".to_owned(),
@@ -113,11 +130,10 @@ fn extent(cells: u32, people: u64) -> Extent {
     Extent { cells, people }
 }
 
-/// raster.json's two cultures, two religions and two states with their tiles on the map, in
-/// order: Highfolk, Pinefolk, Old Ways, Pine Faith, Highmoor and Pinewatch. Seafolk is on no
+/// raster.json's two cultures, two religions and two states, in order: Highfolk, Pinefolk, Old Ways, Pine Faith, Highmoor and Pinewatch. Seafolk is on no
 /// cell, so is never suggested. Highfolk's cells, 1 and 4, have 10 and 8 points at 1000 a
 /// point, and Highmoor's 2345 people and Lakeside's 857: 21,202.
-fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
+fn peoples() -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
     let culture = |id: &str| Some(id.to_owned());
     (
         vec![
@@ -126,14 +142,12 @@ fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
                 name: "Highfolk".to_owned(),
                 kind: SettlementKind::Highland,
                 extent: extent(2, 21_202),
-                tiles: tiles[0],
             },
             Culture {
                 id: "culture_2".to_owned(),
                 name: "Pinefolk".to_owned(),
                 kind: SettlementKind::Hunting,
                 extent: extent(1, 17_600),
-                tiles: tiles[1],
             },
         ],
         vec![
@@ -145,7 +159,6 @@ fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
                 deity: Some("Ash, the Burning".to_owned()),
                 culture: culture("culture_1"),
                 extent: extent(1, 12_345),
-                tiles: tiles[2],
             },
             Religion {
                 id: "religion_2".to_owned(),
@@ -155,7 +168,6 @@ fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
                 deity: None,
                 culture: culture("culture_2"),
                 extent: extent(2, 26_457),
-                tiles: tiles[3],
             },
         ],
         vec![
@@ -168,7 +180,6 @@ fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
                 capital: Some("settlement_1".to_owned()),
                 stances: vec![("state_2".to_owned(), Stance::Rival)],
                 extent: extent(2, 21_202),
-                tiles: tiles[4],
             },
             State {
                 id: "state_2".to_owned(),
@@ -179,7 +190,6 @@ fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
                 capital: Some("settlement_4".to_owned()),
                 stances: vec![("state_1".to_owned(), Stance::Enemy)],
                 extent: extent(1, 17_600),
-                tiles: tiles[5],
             },
         ],
     )
@@ -187,7 +197,9 @@ fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
 
 #[test]
 fn the_whole_map_at_a_tile_a_pixel_suggests_every_place_where_it_lies() {
-    let (cultures, religions, states) = peoples([535, 325, 354, 506, 535, 325]);
+    // Worked by peoples_map_ref.py, apart from the code.
+    assert_eq!(territory(0, 0, 40, 40, 1), [535, 325, 354, 506, 535, 325]);
+    let (cultures, religions, states) = peoples();
     assert_eq!(
         suggested(0, 0, 40, 40, 1),
         Suggestions {
@@ -253,7 +265,8 @@ fn a_region_drops_the_places_outside_it_and_cuts_routes_at_its_edge() {
     // Pixels 10 to 29 each way at 2 tiles a pixel: Highmoor, Pinewatch and Ash Peak lie
     // outside; the High road runs in and out again in one stretch; the Coast road leaves and
     // comes back, in two. Pinewatch, the state, is on the map though its capital isn't.
-    let (cultures, religions, states) = peoples([969, 171, 209, 931, 969, 171]);
+    assert_eq!(territory(10, 10, 20, 20, 2), [969, 171, 209, 931, 969, 171]);
+    let (cultures, religions, states) = peoples();
     assert_eq!(
         suggested(10, 10, 20, 20, 2),
         Suggestions {

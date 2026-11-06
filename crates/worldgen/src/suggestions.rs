@@ -3,10 +3,10 @@
 //! dropped, and each route cut exactly at the map's edge into its stretches inside. Each keeps
 //! what the source says of it, and a stable id from its kind and Azgaar's id. Nothing is built
 //! from them (D-49). Cultures, religions and states (W6e, P-148) are suggested when a tile of
-//! the map lies in one of their cells, with their tiles counted.
+//! the map lies in one of their cells; the tiles lying in each are the map's (W6f).
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use factional_core::{Fixed, div_round};
 
@@ -58,19 +58,17 @@ pub struct PointOfInterest {
     pub at: Placed,
 }
 
-/// A culture suggested (W6e): its id, name and type, its extent in the whole source, and how
-/// many of the map's tiles lie in its cells.
+/// A culture suggested (W6e): its id, name and type, and its extent in the whole source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Culture {
     pub id: String,
     pub name: String,
     pub kind: SettlementKind,
     pub extent: Extent,
-    pub tiles: u32,
 }
 
 /// A religion suggested (W6e): its id, name, type, form and deity if any, its culture's id if
-/// it has one, on the map or not, its extent in the whole source, and its tiles on the map.
+/// it has one, on the map or not, and its extent in the whole source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Religion {
     pub id: String,
@@ -80,12 +78,11 @@ pub struct Religion {
     pub deity: Option<String>,
     pub culture: Option<String>,
     pub extent: Extent,
-    pub tiles: u32,
 }
 
 /// A state suggested (W6e): its id, name, full name and form, its culture's and capital's ids
 /// if any and its stance toward each other state by id, each on the map or not, its extent in
-/// the whole source, and its tiles on the map.
+/// the whole source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
     pub id: String,
@@ -96,7 +93,6 @@ pub struct State {
     pub capital: Option<String>,
     pub stances: Vec<(String, Stance)>,
     pub extent: Extent,
-    pub tiles: u32,
 }
 
 /// A map's suggestions: its settlements, routes and points of interest, and its cultures,
@@ -225,7 +221,7 @@ pub(crate) fn suggest(
     cells: &[usize],
 ) -> Suggestions {
     let (region, scale) = (recipe.region, recipe.scale);
-    let tiles = Tiles::count(source, cells);
+    let lying = Lying::in_cells(source, cells);
     let at = |point: Point| {
         [
             place(point.x, region.x, scale),
@@ -291,79 +287,71 @@ pub(crate) fn suggest(
         cultures: source
             .cultures
             .iter()
-            .filter_map(|culture| {
-                Some(Culture {
-                    id: format!("culture_{}", culture.id),
-                    name: culture.name.clone(),
-                    kind: culture.kind,
-                    extent: culture.extent,
-                    tiles: *tiles.cultures.get(&culture.id)?,
-                })
+            .filter(|culture| lying.cultures.contains(&culture.id))
+            .map(|culture| Culture {
+                id: format!("culture_{}", culture.id),
+                name: culture.name.clone(),
+                kind: culture.kind,
+                extent: culture.extent,
             })
             .collect(),
         religions: source
             .religions
             .iter()
-            .filter_map(|religion| {
-                Some(Religion {
-                    id: format!("religion_{}", religion.id),
-                    name: religion.name.clone(),
-                    kind: religion.kind,
-                    form: religion.form.clone(),
-                    deity: religion.deity.clone(),
-                    culture: religion.culture.map(|id| format!("culture_{id}")),
-                    extent: religion.extent,
-                    tiles: *tiles.religions.get(&religion.id)?,
-                })
+            .filter(|religion| lying.religions.contains(&religion.id))
+            .map(|religion| Religion {
+                id: format!("religion_{}", religion.id),
+                name: religion.name.clone(),
+                kind: religion.kind,
+                form: religion.form.clone(),
+                deity: religion.deity.clone(),
+                culture: religion.culture.map(|id| format!("culture_{id}")),
+                extent: religion.extent,
             })
             .collect(),
         states: source
             .states
             .iter()
-            .filter_map(|state| {
-                Some(State {
-                    id: format!("state_{}", state.id),
-                    name: state.name.clone(),
-                    full_name: state.full_name.clone(),
-                    form: state.form,
-                    culture: state.culture.map(|id| format!("culture_{id}")),
-                    capital: state.capital.map(|id| format!("settlement_{id}")),
-                    stances: (state.stances.iter())
-                        .map(|&(toward, stance)| (format!("state_{toward}"), stance))
-                        .collect(),
-                    extent: state.extent,
-                    tiles: *tiles.states.get(&state.id)?,
-                })
+            .filter(|state| lying.states.contains(&state.id))
+            .map(|state| State {
+                id: format!("state_{}", state.id),
+                name: state.name.clone(),
+                full_name: state.full_name.clone(),
+                form: state.form,
+                culture: state.culture.map(|id| format!("culture_{id}")),
+                capital: state.capital.map(|id| format!("settlement_{id}")),
+                stances: (state.stances.iter())
+                    .map(|&(toward, stance)| (format!("state_{toward}"), stance))
+                    .collect(),
+                extent: state.extent,
             })
             .collect(),
     }
 }
 
-/// How many tiles lie in each culture's, religion's and state's cells, by Azgaar's id.
+/// The cultures, religions and states at least one tile lies in, by Azgaar's id.
 #[derive(Default)]
-struct Tiles {
-    cultures: BTreeMap<u32, u32>,
-    religions: BTreeMap<u32, u32>,
-    states: BTreeMap<u32, u32>,
+struct Lying {
+    cultures: BTreeSet<u32>,
+    religions: BTreeSet<u32>,
+    states: BTreeSet<u32>,
 }
 
-impl Tiles {
-    /// The tiles in each, `cells` holding each tile's cell in `source`.
-    fn count(source: &Source, cells: &[usize]) -> Tiles {
-        let mut tiles = Tiles::default();
+impl Lying {
+    /// Those the tiles lie in, `cells` holding each tile's cell in `source`.
+    fn in_cells(source: &Source, cells: &[usize]) -> Lying {
+        let mut lying = Lying::default();
         for &cell in cells {
             let cell = &source.cells[cell];
-            for (counts, id) in [
-                (&mut tiles.cultures, cell.culture),
-                (&mut tiles.religions, cell.religion),
-                (&mut tiles.states, cell.state),
+            for (ids, id) in [
+                (&mut lying.cultures, cell.culture),
+                (&mut lying.religions, cell.religion),
+                (&mut lying.states, cell.state),
             ] {
-                if let Some(id) = id {
-                    *counts.entry(id).or_default() += 1;
-                }
+                ids.extend(id);
             }
         }
-        tiles
+        lying
     }
 }
 

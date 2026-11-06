@@ -5,9 +5,9 @@
 use factional_core::Fixed;
 use factional_worldgen::{
     Area, Biome, Buildings, CHUNK, ChunkPos, Coast, Culture, Detail, Extent, Foliage, Levels,
-    Override, Placed, Plant, PlantKind, PointOfInterest, Recipe, Region, Religion, ReligionKind,
-    Route, RouteKind, Settlement, SettlementKind, Size, Stance, State, StateForm, Suggestions,
-    Terrain, Tile, TilePos, Water, WorldMap,
+    MapError, Override, Placed, Plant, PlantKind, PointOfInterest, Recipe, Region, Religion,
+    ReligionKind, Route, RouteKind, Settlement, SettlementKind, Size, Stance, State, StateForm,
+    Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -83,6 +83,9 @@ fn made(pos: TilePos) -> Tile {
             kind: PlantKind::Shrub,
             offset: [(pos.x % 256) as u8, (pos.y % 256) as u8],
         }),
+        culture: None,
+        religion: None,
+        state: None,
     }
 }
 
@@ -227,6 +230,9 @@ fn an_override_shows_on_the_tile_and_leaves_what_was_generated() {
                 kind: PlantKind::Tree,
                 offset: [128, 64],
             }),
+            culture: None,
+            religion: None,
+            state: None,
         }),
         "the second adds to the first"
     );
@@ -588,7 +594,6 @@ fn with_peoples() -> Suggestions {
             name: "Highfolk".to_owned(),
             kind: SettlementKind::Highland,
             extent,
-            tiles: 7000,
         }],
         religions: vec![Religion {
             id: "religion_2".to_owned(),
@@ -598,7 +603,6 @@ fn with_peoples() -> Suggestions {
             deity: None,
             culture: Some("culture_1".to_owned()),
             extent,
-            tiles: 1,
         }],
         states: vec![State {
             id: "state_3".to_owned(),
@@ -612,7 +616,6 @@ fn with_peoples() -> Suggestions {
                 ("state_4".to_owned(), Stance::Ally),
             ],
             extent,
-            tiles: 40,
         }],
         ..suggestions()
     }
@@ -650,7 +653,7 @@ fn peoples_are_suggested_after_places_their_links_on_the_map_or_not() {
 }
 
 #[test]
-fn a_people_covers_at_least_one_tile_and_no_more_than_the_map() {
+fn a_peoples_id_is_valid_and_unique_among_every_kind() {
     let mut map = hundred_by_seventy();
     let before = map.clone();
     let refusal = |map: &mut WorldMap, wrong: Suggestions| {
@@ -659,37 +662,12 @@ fn a_people_covers_at_least_one_tile_and_no_more_than_the_map() {
         refused
     };
     let mut wrong = with_peoples();
-    wrong.cultures[0].tiles = 0;
-    assert_eq!(
-        refusal(&mut map, wrong),
-        "the suggestion culture_1 covers no tiles"
-    );
-    let mut wrong = with_peoples();
-    wrong.religions[0].tiles = 7001;
-    assert_eq!(
-        refusal(&mut map, wrong),
-        "the suggestion religion_2 covers 7001 tiles, more than the map's 7000"
-    );
-    let mut wrong = with_peoples();
-    wrong.states[0].tiles = 0;
-    assert_eq!(
-        refusal(&mut map, wrong),
-        "the suggestion state_3 covers no tiles"
-    );
-    let mut wrong = with_peoples();
-    wrong.states[0].tiles = 7001;
-    assert_eq!(
-        refusal(&mut map, wrong),
-        "the suggestion state_3 covers 7001 tiles, more than the map's 7000"
-    );
-    let mut wrong = with_peoples();
     wrong.cultures[0].id = "Culture-1".to_owned();
     assert_eq!(
         refusal(&mut map, wrong),
         "the suggestion id \"Culture-1\" isn't a valid id: a lowercase letter, then lowercase \
          letters, digits or underscores"
     );
-    // A people's id is unique among every kind.
     let mut wrong = with_peoples();
     wrong.states[0].id = "settlement_1".to_owned();
     assert_eq!(refusal(&mut map, wrong), "two suggestions are settlement_1");
@@ -741,9 +719,9 @@ fn links_and_stances_name_valid_ids_and_a_stance_is_toward_another_once() {
     );
     // The first wrong is named: places, then cultures, religions and states.
     let mut wrong = with_peoples();
-    wrong.cultures[0].tiles = 0;
-    wrong.religions[0].tiles = 0;
-    wrong.states[0].tiles = 0;
+    wrong.cultures[0].id = "Culture 1".to_owned();
+    wrong.religions[0].culture = Some("Culture 1".to_owned());
+    wrong.states[0].capital = Some("9".to_owned());
     wrong.points[0].at = placed(0, 70);
     assert_eq!(
         refused(&mut map, wrong.clone()),
@@ -752,18 +730,196 @@ fn links_and_stances_name_valid_ids_and_a_stance_is_toward_another_once() {
     wrong.points.clear();
     assert_eq!(
         refused(&mut map, wrong.clone()),
-        "the suggestion culture_1 covers no tiles"
+        "the suggestion id \"Culture 1\" isn't a valid id: a lowercase letter, then lowercase \
+         letters, digits or underscores"
     );
     wrong.cultures.clear();
     assert_eq!(
         refused(&mut map, wrong.clone()),
-        "the suggestion religion_2 covers no tiles"
+        format!("the suggestion religion_2 names \"Culture 1\", {valid}")
     );
     wrong.religions.clear();
     assert_eq!(
         refused(&mut map, wrong),
-        "the suggestion state_3 covers no tiles"
+        format!("the suggestion state_3 names \"9\", {valid}")
     );
+}
+
+/// `made`, lying in culture_1 where x is under 10, religion_2 where y is under 5, and state_3
+/// where x + y is even (W6f).
+fn peopled(pos: TilePos) -> Tile {
+    Tile {
+        culture: (pos.x < 10).then_some(1),
+        religion: (pos.y < 5).then_some(2),
+        state: (pos.x + pos.y).is_multiple_of(2).then_some(3),
+        ..made(pos)
+    }
+}
+
+/// The 100 × 70 map, `peopled`, with `with_peoples()`.
+fn with_territory() -> WorldMap {
+    WorldMap::with_suggestions(recipe(10, 7, 10), with_peoples(), peopled).expect("a map")
+}
+
+fn named(tiles: [(&str, u32); 3]) -> Vec<(String, u32)> {
+    tiles.map(|(id, n)| (id.to_owned(), n)).to_vec()
+}
+
+fn territory(map: &WorldMap) -> Vec<(String, u32)> {
+    map.territory().into_iter().collect()
+}
+
+#[test]
+fn a_peoples_tiles_are_those_lying_in_it_overrides_applied() {
+    let mut map = with_territory();
+    // 10 columns of 70, 5 rows of 100, and half of 7000.
+    assert_eq!(
+        territory(&map),
+        named([("culture_1", 700), ("religion_2", 500), ("state_3", 3500)])
+    );
+    let peoples = |map: &WorldMap, x, y| {
+        let tile = map.tile(at(x, y)).expect("on the map");
+        (tile.culture, tile.religion, tile.state)
+    };
+    assert_eq!(peoples(&map, 0, 0), (Some(1), Some(2), Some(3)));
+    assert_eq!(peoples(&map, 10, 5), (None, None, None));
+    // Overrides clear one and set another; edits add up, layer by layer.
+    for (pos, edit) in [
+        (
+            at(0, 0),
+            Override {
+                culture: Some(None),
+                ..Override::default()
+            },
+        ),
+        (
+            at(0, 0),
+            Override {
+                state: Some(None),
+                ..Override::default()
+            },
+        ),
+        (
+            at(50, 50),
+            Override {
+                culture: Some(Some(1)),
+                religion: Some(Some(2)),
+                ..Override::default()
+            },
+        ),
+    ] {
+        assert_eq!(map.edit(pos, edit), Ok(()));
+    }
+    assert_eq!(peoples(&map, 0, 0), (None, Some(2), None));
+    assert_eq!(peoples(&map, 50, 50), (Some(1), Some(2), Some(3)));
+    assert_eq!(
+        territory(&map),
+        named([("culture_1", 700), ("religion_2", 501), ("state_3", 3499)])
+    );
+    // Dismissing a people leaves its tiles lying in it.
+    assert_eq!(map.dismiss(&["culture_1"]), Ok(()));
+    assert_eq!(peoples(&map, 1, 1), (Some(1), Some(2), Some(3)));
+    assert_eq!(territory(&map)[0], ("culture_1".to_owned(), 700));
+    // A people no tile lies in stays suggested, with none.
+    let empty = WorldMap::with_suggestions(recipe(10, 7, 10), with_peoples(), made).expect("a map");
+    assert_eq!(territory(&empty), []);
+    assert_eq!(empty.suggestions(), &with_peoples());
+}
+
+#[test]
+fn a_tile_lies_only_in_a_people_suggested_on_the_map() {
+    let unsuggested = |people: &str, x, y| {
+        format!("tile ({x}, {y}) lies in {people}, which isn't suggested on the map")
+    };
+    let refused = |made: Result<WorldMap, MapError>| made.expect_err("refused").to_string();
+    // Made with no suggestions, a map can't name any people.
+    assert_eq!(
+        refused(WorldMap::new(recipe(10, 7, 10), peopled)),
+        unsuggested("culture_1", 0, 0)
+    );
+    // Each tile in reading order, then culture, religion and state.
+    let without = |strip: fn(&mut Suggestions)| {
+        let mut suggestions = with_peoples();
+        strip(&mut suggestions);
+        WorldMap::with_suggestions(recipe(10, 7, 10), suggestions, peopled)
+    };
+    assert_eq!(
+        refused(without(|s| s.religions.clear())),
+        unsuggested("religion_2", 0, 0)
+    );
+    assert_eq!(
+        refused(without(|s| s.states.clear())),
+        unsuggested("state_3", 0, 0)
+    );
+    let stray = |pos: TilePos| Tile {
+        culture: (pos == at(12, 3)).then_some(5),
+        ..peopled(pos)
+    };
+    assert_eq!(
+        refused(WorldMap::with_suggestions(
+            recipe(10, 7, 10),
+            with_peoples(),
+            stray
+        )),
+        unsuggested("culture_5", 12, 3)
+    );
+    // The suggestions are checked first.
+    assert_eq!(
+        refused(without(|s| s.points[0].at = placed(0, 70))),
+        "the suggestion poi_3 is at tile (0, 70), off the map of 100 × 70 tiles"
+    );
+    // New suggestions, an edit or regenerating that would leave a tile in a people not
+    // suggested is refused, the map unchanged.
+    let mut map = with_territory();
+    let mut more = with_peoples();
+    more.cultures.push(Culture {
+        id: "culture_6".to_owned(),
+        ..more.cultures[0].clone()
+    });
+    assert_eq!(map.suggest(more), Ok(()));
+    let six = Override {
+        culture: Some(Some(6)),
+        ..Override::default()
+    };
+    assert_eq!(map.edit(at(99, 69), six), Ok(()));
+    let before = map.clone();
+    assert_eq!(
+        map.suggest(with_peoples()).map_err(|e| e.to_string()),
+        Err(unsuggested("culture_6", 99, 69))
+    );
+    let four = Override {
+        state: Some(Some(4)),
+        ..Override::default()
+    };
+    assert_eq!(
+        map.edit(at(98, 69), four).map_err(|e| e.to_string()),
+        Err(unsuggested("state_4", 98, 69))
+    );
+    let eight = |pos: TilePos| Tile {
+        religion: (pos == at(3, 3)).then_some(8),
+        ..peopled(pos)
+    };
+    assert_eq!(
+        map.regenerate(recipe(10, 7, 10), eight)
+            .map_err(|e| e.to_string()),
+        Err(unsuggested("religion_8", 3, 3))
+    );
+    assert_eq!(map, before, "nothing changed");
+    // A tile overridden out of a people no longer needs it suggested.
+    let mut map = with_territory();
+    for y in 0..70 {
+        for x in 0..10 {
+            let clear = Override {
+                culture: Some(None),
+                ..Override::default()
+            };
+            map.edit(at(x, y), clear).expect("on the map");
+        }
+    }
+    let mut fewer = with_peoples();
+    fewer.cultures.clear();
+    fewer.religions[0].culture = None;
+    assert_eq!(map.suggest(fewer), Ok(()));
 }
 
 /// Two settlements; route_0 whole, route_2 cut in two, and route_20 cut, its first stretch

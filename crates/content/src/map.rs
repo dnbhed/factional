@@ -18,7 +18,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 9;
+pub const MAP_VERSION: u32 = 10;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -352,7 +352,6 @@ struct FileCulture {
     name: String,
     kind: u8,
     extent: FileExtent,
-    tiles: u32,
 }
 
 /// A religion as written, its type by code.
@@ -365,7 +364,6 @@ struct FileReligion {
     deity: Option<String>,
     culture: Option<String>,
     extent: FileExtent,
-    tiles: u32,
 }
 
 /// A state as written, its form and each stance by code.
@@ -379,7 +377,6 @@ struct FileState {
     capital: Option<String>,
     stances: Vec<(String, u8)>,
     extent: FileExtent,
-    tiles: u32,
 }
 
 fn file_extent(extent: Extent) -> FileExtent {
@@ -467,7 +464,6 @@ fn file_suggestions(suggestions: &Suggestions) -> FileSuggestions {
                 name: culture.name.clone(),
                 kind: code(&SETTLEMENT_KINDS, culture.kind),
                 extent: file_extent(culture.extent),
-                tiles: culture.tiles,
             })
             .collect(),
         religions: suggestions
@@ -481,7 +477,6 @@ fn file_suggestions(suggestions: &Suggestions) -> FileSuggestions {
                 deity: religion.deity.clone(),
                 culture: religion.culture.clone(),
                 extent: file_extent(religion.extent),
-                tiles: religion.tiles,
             })
             .collect(),
         states: suggestions
@@ -498,7 +493,6 @@ fn file_suggestions(suggestions: &Suggestions) -> FileSuggestions {
                     .map(|(toward, stance)| (toward.clone(), code(&STANCES, *stance)))
                     .collect(),
                 extent: file_extent(state.extent),
-                tiles: state.tiles,
             })
             .collect(),
     }
@@ -570,7 +564,6 @@ fn suggestions_of(written: FileSuggestions) -> Result<Suggestions, MapFileError>
                 id: culture.id,
                 name: culture.name,
                 extent: extent_of(culture.extent),
-                tiles: culture.tiles,
             })
         })
         .collect::<Result<_, MapFileError>>()?;
@@ -587,7 +580,6 @@ fn suggestions_of(written: FileSuggestions) -> Result<Suggestions, MapFileError>
                 deity: religion.deity,
                 culture: religion.culture,
                 extent: extent_of(religion.extent),
-                tiles: religion.tiles,
             })
         })
         .collect::<Result<_, MapFileError>>()?;
@@ -610,7 +602,6 @@ fn suggestions_of(written: FileSuggestions) -> Result<Suggestions, MapFileError>
                 culture: state.culture,
                 capital: state.capital,
                 extent: extent_of(state.extent),
-                tiles: state.tiles,
             })
         })
         .collect::<Result<_, MapFileError>>()?;
@@ -640,7 +631,8 @@ impl<'de: 'a, 'a> Deserialize<'de> for Packed<'a> {
 }
 
 /// A chunk's layers, each row by row. Elevation is each tile's difference from the one
-/// before it, in hundredths, wrapping, so smooth ground compresses well.
+/// before it, in hundredths, wrapping, so smooth ground compresses well. The culture, religion
+/// and state each tile lies in are Azgaar's ids (W6f).
 #[derive(Serialize, Deserialize)]
 struct Layers {
     elevation: Vec<i64>,
@@ -651,6 +643,9 @@ struct Layers {
     temperature: Vec<i8>,
     precipitation: Vec<u16>,
     plant: Vec<Option<FilePlant>>,
+    culture: Vec<Option<u32>>,
+    religion: Vec<Option<u32>>,
+    state: Vec<Option<u32>>,
 }
 
 /// Water as written: none, a river with its flow, or a lake, in that order.
@@ -681,6 +676,9 @@ struct FileOverride {
     temperature: Option<i8>,
     precipitation: Option<u16>,
     plant: Option<Option<FilePlant>>,
+    culture: Option<Option<u32>>,
+    religion: Option<Option<u32>>,
+    state: Option<Option<u32>>,
 }
 
 /// `value`'s code: its place in `table`.
@@ -783,6 +781,9 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
                 temperature: tiles.iter().map(|tile| tile.temperature).collect(),
                 precipitation: tiles.iter().map(|tile| tile.precipitation).collect(),
                 plant: tiles.iter().map(|tile| file_plant(tile.plant)).collect(),
+                culture: tiles.iter().map(|tile| tile.culture).collect(),
+                religion: tiles.iter().map(|tile| tile.religion).collect(),
+                state: tiles.iter().map(|tile| tile.state).collect(),
             };
             pack(&postcard_of(&layers))
         })
@@ -801,6 +802,9 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
             temperature: edit.temperature,
             precipitation: edit.precipitation,
             plant: edit.plant.map(file_plant),
+            culture: edit.culture,
+            religion: edit.religion,
+            state: edit.state,
         })
         .collect();
     let overrides = pack(&postcard_of(&overrides));
@@ -973,12 +977,17 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
             chunk_tiles(packed.0, at, (width * height) as usize)
         })
         .collect::<Result<Vec<Vec<Tile>>, MapFileError>>()?;
-    let mut map = WorldMap::new(recipe, |at| {
+    // The suggestions first, since the tiles may lie only in the peoples among them (W6f).
+    let suggestions = suggestions_of(unpack(body.suggestions.0, "the suggestions")?)?;
+    let mut map = WorldMap::with_suggestions(recipe, suggestions, |at| {
         let chunk = (at.y / CHUNK * across + at.x / CHUNK) as usize;
         let width = (size.width - at.x / CHUNK * CHUNK).min(CHUNK);
         chunks[chunk][(at.y % CHUNK * width + at.x % CHUNK) as usize]
     })
-    .map_err(MapFileError::Recipe)?;
+    .map_err(|error| match error {
+        MapError::NotSuggested { .. } => damaged(error.to_string()),
+        error => damaged(format!("the suggestions: {error}")),
+    })?;
     let overrides: Vec<FileOverride> = unpack(body.overrides.0, "the overrides")?;
     let mut last: Option<TilePos> = None;
     for written in overrides {
@@ -1009,16 +1018,18 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
                 .plant
                 .map(|plant| plant_of(plant, &whose))
                 .transpose()?,
+            culture: written.culture,
+            religion: written.religion,
+            state: written.state,
         };
         if edit.is_empty() {
             return Err(damaged(format!("{whose} sets nothing")));
         }
-        map.edit(at, edit)
-            .map_err(|_| damaged(format!("{whose} is off the map")))?;
+        map.edit(at, edit).map_err(|error| match error {
+            MapError::NotSuggested { .. } => damaged(format!("{whose}: {error}")),
+            _ => damaged(format!("{whose} is off the map")),
+        })?;
     }
-    let suggestions = suggestions_of(unpack(body.suggestions.0, "the suggestions")?)?;
-    map.suggest(suggestions)
-        .map_err(|error| damaged(format!("the suggestions: {error}")))?;
     let dismissed: Vec<String> = unpack(body.dismissed.0, "the dismissals")?;
     map.keep_dismissed(dismissed.iter().cloned().collect())
         .map_err(|error| damaged(format!("the dismissals: {error}")))?;
@@ -1052,6 +1063,9 @@ fn chunk_tiles(packed: &[u8], at: ChunkPos, count: usize) -> Result<Vec<Tile>, M
         ("temperature", layers.temperature.len()),
         ("precipitation", layers.precipitation.len()),
         ("plant", layers.plant.len()),
+        ("culture", layers.culture.len()),
+        ("religion", layers.religion.len()),
+        ("state", layers.state.len()),
     ];
     if let Some((layer, length)) = lengths.iter().find(|(_, length)| *length != count) {
         return Err(damaged(format!(
@@ -1071,6 +1085,9 @@ fn chunk_tiles(packed: &[u8], at: ChunkPos, count: usize) -> Result<Vec<Tile>, M
                 temperature: layers.temperature[i],
                 precipitation: layers.precipitation[i],
                 plant: plant_of(layers.plant[i], &whose)?,
+                culture: layers.culture[i],
+                religion: layers.religion[i],
+                state: layers.state[i],
             })
         })
         .collect()
@@ -1112,6 +1129,9 @@ mod tests {
             temperature: vec![0; count],
             precipitation: vec![0; count],
             plant: vec![None; count],
+            culture: vec![None; count],
+            religion: vec![None; count],
+            state: vec![None; count],
         }
     }
 
@@ -1128,6 +1148,9 @@ mod tests {
             temperature: None,
             precipitation: None,
             plant: None,
+            culture: None,
+            religion: None,
+            state: None,
         }
     }
 
@@ -1231,6 +1254,9 @@ mod tests {
             temperature: -12,
             precipitation: 2400,
             plant: None,
+            culture: None,
+            religion: None,
+            state: None,
         };
         assert_eq!(map.tile(TilePos { x: 69, y: 0 }), Some(grass));
         let sand = Tile {
@@ -1315,6 +1341,92 @@ mod tests {
     }
 
     #[test]
+    fn a_tile_or_override_in_a_people_not_suggested_is_damage() {
+        let extent = FileExtent {
+            cells: 1,
+            people: 1,
+        };
+        let one_of_each = pack(&postcard_of(&FileSuggestions {
+            settlements: Vec::new(),
+            routes: Vec::new(),
+            points: Vec::new(),
+            cultures: vec![FileCulture {
+                id: "culture_1".to_owned(),
+                name: "Highfolk".to_owned(),
+                kind: 3,
+                extent,
+            }],
+            religions: vec![FileReligion {
+                id: "religion_2".to_owned(),
+                name: "Old Ways".to_owned(),
+                kind: 0,
+                form: "Shamanism".to_owned(),
+                deity: None,
+                culture: None,
+                extent,
+            }],
+            states: vec![FileState {
+                id: "state_3".to_owned(),
+                name: "Highmoor".to_owned(),
+                full_name: "Kingdom of Highmoor".to_owned(),
+                form: 0,
+                culture: None,
+                capital: None,
+                stances: Vec::new(),
+                extent,
+            }],
+        }));
+        let read = |first: &Layers, second: &Layers, overrides: &[FileOverride]| {
+            let chunks = [first, second].map(|layers| pack(&postcard_of(layers)));
+            read_map(&file_of(
+                &recipe(),
+                &chunks,
+                &pack(&postcard_of(&overrides)),
+                &one_of_each,
+                &none_dismissed(),
+            ))
+        };
+        // Each layer read where it lies, and an override's.
+        let mut second = layers(12);
+        second.culture[7] = Some(1);
+        second.religion[7] = Some(2);
+        second.state[7] = Some(3);
+        let mut state = sand(3, 1);
+        state.terrain = None;
+        state.state = Some(Some(3));
+        state.culture = Some(None);
+        let map = read(&layers(128), &second, &[state]).expect("it reads");
+        let tile = map.tile(TilePos { x: 65, y: 1 }).expect("on the map");
+        assert_eq!(
+            (tile.culture, tile.religion, tile.state),
+            (Some(1), Some(2), Some(3))
+        );
+        assert_eq!(
+            map.overrides()[&TilePos { x: 3, y: 1 }].state,
+            Some(Some(3))
+        );
+        // A tile, or an override, in one not suggested.
+        let mut first = layers(128);
+        first.religion[66] = Some(5);
+        assert_eq!(
+            read(&first, &layers(12), &[])
+                .expect_err("refused")
+                .to_string(),
+            says("tile (2, 1) lies in religion_5, which isn't suggested on the map")
+        );
+        let mut culture = sand(3, 1);
+        culture.culture = Some(Some(2));
+        assert_eq!(
+            read(&layers(128), &layers(12), &[culture])
+                .expect_err("refused")
+                .to_string(),
+            says(
+                "the override of tile (3, 1): tile (3, 1) lies in culture_2, which isn't suggested on the map"
+            )
+        );
+    }
+
+    #[test]
     fn a_layer_of_the_wrong_length_is_damage_naming_it() {
         let mut short = layers(12);
         short.water.pop();
@@ -1330,6 +1442,9 @@ mod tests {
             ("temperature", 5),
             ("precipitation", 6),
             ("plant", 4),
+            ("culture", 7),
+            ("religion", 8),
+            ("state", 9),
         ] {
             let mut short = layers(128);
             match cut {
@@ -1339,6 +1454,9 @@ mod tests {
                 3 => drop(short.biome.pop()),
                 5 => drop(short.temperature.pop()),
                 6 => drop(short.precipitation.pop()),
+                7 => drop(short.culture.pop()),
+                8 => drop(short.religion.pop()),
+                9 => drop(short.state.pop()),
                 _ => drop(short.plant.pop()),
             }
             assert_eq!(
@@ -1498,7 +1616,6 @@ mod tests {
             name: "Highfolk".to_owned(),
             kind,
             extent,
-            tiles: 1,
         };
         let religion = |kind| FileReligion {
             id: "religion_1".to_owned(),
@@ -1508,7 +1625,6 @@ mod tests {
             deity: None,
             culture: None,
             extent,
-            tiles: 1,
         };
         let state = |form, stance| FileState {
             id: "state_1".to_owned(),
@@ -1519,7 +1635,6 @@ mod tests {
             capital: None,
             stances: vec![("state_2".to_owned(), stance)],
             extent,
-            tiles: 1,
         };
         let written = |culture, religion, state| {
             pack(&postcard_of(&FileSuggestions {
