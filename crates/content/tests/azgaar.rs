@@ -886,6 +886,79 @@ fn the_users_menayland_export_reads() {
     );
 }
 
+/// The user's own export's suggestions (W6b) in three recipes, when `FACTIONAL_AZGAAR` names
+/// it: the settlements, stretches and points of interest, the routes cut in two or more, the
+/// stretches' points, and a sum of every place in 256ths (x × 7 + y), each by a second script.
+#[test]
+#[ignore = "reads the user's own export, named by FACTIONAL_AZGAAR"]
+fn the_users_menayland_suggestions_agree_with_a_second_script() {
+    let path = std::env::var("FACTIONAL_AZGAAR").expect("FACTIONAL_AZGAAR names the export");
+    let text = std::fs::read_to_string(path).expect("the export is readable");
+    let source = read_azgaar(&text).expect("Menayland reads");
+    let sum = |at: factional_worldgen::Placed| {
+        let x = u64::from(at.tile.x) * 256 + u64::from(at.offset[0]);
+        let y = u64::from(at.tile.y) * 256 + u64::from(at.offset[1]);
+        x * 7 + y
+    };
+    for ((x, y, width, height, scale), expected) in [
+        ((0, 0, 1470, 801, 1), [163, 162, 47, 0, 1984, 2_694_059_293]),
+        ((300, 200, 400, 300, 2), [46, 53, 12, 0, 491, 435_098_133]),
+        ((1000, 100, 470, 500, 3), [13, 17, 5, 1, 175, 254_060_563]),
+    ] {
+        let recipe = Recipe {
+            source: fingerprint_of(text.as_bytes()),
+            region: Region {
+                x,
+                y,
+                size: Size { width, height },
+            },
+            scale,
+            seed: 0,
+            detail: Detail::default(),
+            coast: Coast::default(),
+            levels: Levels::default(),
+            foliage: Foliage::default(),
+        };
+        let map = rasterise(&source, recipe).expect("Menayland rasterises");
+        let suggestions = map.suggestions();
+        let cut = suggestions
+            .routes
+            .iter()
+            // A cut route's first stretch: route_<i>_1, not route_1 itself.
+            .filter(|route| route.id.matches('_').count() == 2 && route.id.ends_with("_1"))
+            .count() as u64;
+        let places = suggestions
+            .settlements
+            .iter()
+            .map(|settlement| sum(settlement.at))
+            .chain(suggestions.points.iter().map(|point| sum(point.at)))
+            .chain(
+                suggestions
+                    .routes
+                    .iter()
+                    .flat_map(|route| route.points.iter().map(|&at| sum(at))),
+            )
+            .sum::<u64>();
+        let points = suggestions
+            .routes
+            .iter()
+            .map(|route| route.points.len() as u64)
+            .sum::<u64>();
+        assert_eq!(
+            [
+                suggestions.settlements.len() as u64,
+                suggestions.routes.len() as u64,
+                suggestions.points.len() as u64,
+                cut,
+                points,
+                places,
+            ],
+            expected,
+            "region ({x}, {y}, {width}, {height}) at scale {scale}"
+        );
+    }
+}
+
 /// The user's own export rasterised whole at a tile a pixel, when `FACTIONAL_AZGAAR` names it;
 /// its tile counts were taken with a separate script.
 #[test]

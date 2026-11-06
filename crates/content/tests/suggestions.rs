@@ -1,0 +1,262 @@
+//! Suggestions on the map (W6b, P-145): raster.json's settlements, routes and points of
+//! interest placed by tile and offset, those outside the region dropped, routes cut exactly at
+//! its edge. Every expected value was worked by `suggest_ref.py`, written from the acceptance
+//! apart from the code, and the crossings by hand (worldgen's unit tests show the working).
+
+use factional_content::{fingerprint_of, read_azgaar};
+use factional_worldgen::{
+    Buildings, Coast, Detail, Foliage, Levels, Placed, PointOfInterest, Recipe, Region, Route,
+    RouteKind, Settlement, SettlementKind, Size, Source, Suggestions, TilePos, rasterise,
+};
+use proptest::prelude::*;
+
+const RASTER: &str = include_str!("fixtures/azgaar/raster.json");
+
+fn source() -> Source {
+    read_azgaar(RASTER).expect("raster.json reads")
+}
+
+fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
+    Recipe {
+        source: fingerprint_of(RASTER.as_bytes()),
+        region: Region {
+            x,
+            y,
+            size: Size { width, height },
+        },
+        scale,
+        seed: 0,
+        detail: Detail::default(),
+        coast: Coast::default(),
+        levels: Levels::default(),
+        foliage: Foliage::default(),
+    }
+}
+
+/// A place in 256ths each way, as its tile and offset.
+fn placed(x: u32, y: u32) -> Placed {
+    Placed {
+        tile: TilePos {
+            x: x / 256,
+            y: y / 256,
+        },
+        offset: [(x % 256) as u8, (y % 256) as u8],
+    }
+}
+
+fn suggested(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Suggestions {
+    rasterise(&source(), recipe(x, y, width, height, scale))
+        .expect("the recipe makes a map")
+        .suggestions()
+        .clone()
+}
+
+fn highmoor() -> Settlement {
+    Settlement {
+        id: "settlement_1".to_owned(),
+        name: "Highmoor".to_owned(),
+        at: placed(7744, 2496),
+        people: 2345,
+        kind: SettlementKind::Generic,
+        capital: true,
+        port: false,
+        buildings: Buildings {
+            citadel: true,
+            walls: true,
+            plaza: false,
+            temple: true,
+            shanty: false,
+        },
+    }
+}
+
+fn lakeside(at: Placed) -> Settlement {
+    Settlement {
+        id: "settlement_2".to_owned(),
+        name: "Lakeside".to_owned(),
+        at,
+        people: 857,
+        kind: SettlementKind::Lake,
+        capital: false,
+        port: true,
+        buildings: Buildings {
+            plaza: true,
+            ..Buildings::default()
+        },
+    }
+}
+
+fn route(id: &str, name: Option<&str>, kind: RouteKind, points: &[[u32; 2]]) -> Route {
+    Route {
+        id: id.to_owned(),
+        name: name.map(str::to_owned),
+        kind,
+        points: points.iter().map(|&[x, y]| placed(x, y)).collect(),
+    }
+}
+
+fn old_keep(at: Placed) -> PointOfInterest {
+    PointOfInterest {
+        id: "poi_1".to_owned(),
+        kind: "ruins".to_owned(),
+        icon: "glyph-1f3f0".to_owned(),
+        name: Some("Old Keep".to_owned()),
+        note: None,
+        at,
+    }
+}
+
+#[test]
+fn the_whole_map_at_a_tile_a_pixel_suggests_every_place_where_it_lies() {
+    assert_eq!(
+        suggested(0, 0, 40, 40, 1),
+        Suggestions {
+            settlements: vec![
+                highmoor(),
+                lakeside(placed(3712, 6848)),
+                Settlement {
+                    id: "settlement_4".to_owned(),
+                    name: "Pinewatch".to_owned(),
+                    at: placed(8064, 7936),
+                    people: 12_600,
+                    kind: SettlementKind::Highland,
+                    capital: false,
+                    port: false,
+                    buildings: Buildings {
+                        walls: true,
+                        plaza: true,
+                        shanty: true,
+                        ..Buildings::default()
+                    },
+                },
+            ],
+            routes: vec![
+                route(
+                    "route_0",
+                    Some("High road"),
+                    RouteKind::Road,
+                    &[[7744, 2496], [6528, 3968], [5248, 5248], [8064, 7936]]
+                ),
+                route(
+                    "route_1",
+                    None,
+                    RouteKind::Trail,
+                    &[[3712, 6848], [5248, 5248]]
+                ),
+                route(
+                    "route_2",
+                    Some("Coast road"),
+                    RouteKind::Road,
+                    &[[3072, 3072], [8960, 3840], [6400, 6400]]
+                ),
+            ],
+            points: vec![
+                PointOfInterest {
+                    id: "poi_0".to_owned(),
+                    kind: "volcanoes".to_owned(),
+                    icon: "glyph-1f30b".to_owned(),
+                    name: Some("Ash Peak".to_owned()),
+                    note: Some("Dormant volcano.".to_owned()),
+                    at: placed(8525, 8806),
+                },
+                old_keep(placed(5120, 5376)),
+            ],
+        }
+    );
+}
+
+#[test]
+fn a_region_drops_the_places_outside_it_and_cuts_routes_at_its_edge() {
+    // Pixels 10 to 29 each way at 2 tiles a pixel: Highmoor, Pinewatch and Ash Peak lie
+    // outside; the High road runs in and out again in one stretch; the Coast road leaves and
+    // comes back, in two.
+    assert_eq!(
+        suggested(10, 10, 20, 20, 2),
+        Suggestions {
+            settlements: vec![lakeside(placed(2304, 8576))],
+            routes: vec![
+                route(
+                    "route_0",
+                    Some("High road"),
+                    RouteKind::Road,
+                    &[[10_239, 28], [7936, 2816], [5376, 5376], [10_239, 10_018]]
+                ),
+                route(
+                    "route_1",
+                    None,
+                    RouteKind::Trail,
+                    &[[2304, 8576], [5376, 5376]]
+                ),
+                route(
+                    "route_2_1",
+                    Some("Coast road"),
+                    RouteKind::Road,
+                    &[[1024, 1024], [10_239, 2226]]
+                ),
+                route(
+                    "route_2_2",
+                    Some("Coast road"),
+                    RouteKind::Road,
+                    &[[10_239, 5121], [7680, 7680]]
+                ),
+            ],
+            points: vec![old_keep(placed(5120, 5632))],
+        }
+    );
+}
+
+#[test]
+fn a_region_with_no_places_in_it_suggests_none() {
+    // The top-left corner, pixels 0 to 9: no place, and no route passes.
+    assert_eq!(suggested(0, 0, 10, 10, 1), Suggestions::default());
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// Any region at any scale: every place is on the map, a settlement is suggested exactly
+    /// when its point lies in the region, and every stretch is at least two points, none
+    /// repeated in a row.
+    #[test]
+    fn every_suggestion_lies_on_the_map(
+        x in 0u32..39,
+        y in 0u32..39,
+        width in 1u32..40,
+        height in 1u32..40,
+        scale in 1u32..4,
+    ) {
+        let (width, height) = (width.min(40 - x), height.min(40 - y));
+        let map = rasterise(&source(), recipe(x, y, width, height, scale))
+            .expect("the recipe makes a map");
+        let size = map.size();
+        let on = |at: Placed| at.tile.x < size.width && at.tile.y < size.height;
+        let suggestions = map.suggestions();
+        for settlement in &suggestions.settlements {
+            prop_assert!(on(settlement.at));
+        }
+        for point in &suggestions.points {
+            prop_assert!(on(point.at));
+        }
+        for route in &suggestions.routes {
+            prop_assert!(route.points.len() >= 2);
+            prop_assert!(route.points.iter().all(|&at| on(at)));
+            prop_assert!(route.points.windows(2).all(|pair| pair[0] != pair[1]));
+        }
+        // A hundredth of a pixel is 2.56 256ths of a tile or more, so rounding never moves a
+        // place across the region's edge: it's suggested exactly when its point is inside.
+        for settlement in source().settlements {
+            let inside = |at: factional_core::Fixed, from: u32, side: u32| {
+                let hundredths = at.hundredths();
+                hundredths >= i64::from(from) * 100 && hundredths < i64::from(from + side) * 100
+            };
+            let expected = inside(settlement.at.x, x, width) && inside(settlement.at.y, y, height);
+            let id = format!("settlement_{}", settlement.id);
+            prop_assert_eq!(
+                suggestions.settlements.iter().any(|s| s.id == id),
+                expected,
+                "{}",
+                id
+            );
+        }
+    }
+}

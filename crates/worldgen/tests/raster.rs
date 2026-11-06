@@ -5,9 +5,9 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Feature, Foliage, HEIGHT_EXPONENTS, Levels, Point, RasterError, Recipe,
-    Region, Size, Source, SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres,
-    rasterise,
+    Biome, Buildings, Coast, Detail, Feature, Foliage, HEIGHT_EXPONENTS, Levels, Placed, Point,
+    RasterError, Recipe, Region, RouteKind, SettlementKind, Size, Source, SourceCell, SourceMarker,
+    SourceRoute, SourceSettlement, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
 };
 use proptest::prelude::*;
 
@@ -121,6 +121,234 @@ fn elevation(source: &Source, recipe: Recipe, x: u32, y: u32) -> Fixed {
         .tile(TilePos { x, y })
         .expect("on the map")
         .elevation
+}
+
+/// `raster` with raster.json's places (W6b): Highmoor, Lakeside and Pinewatch; the High road,
+/// an unnamed trail and the Coast road; Ash Peak and Old Keep.
+fn with_places() -> Source {
+    let settlement = |id, name: &str, at, kind| SourceSettlement {
+        id,
+        name: name.to_owned(),
+        at,
+        cell: 4,
+        people: u64::from(id) * 1000,
+        kind,
+        capital: id == 1,
+        port: id == 2,
+        buildings: Buildings {
+            walls: id == 4,
+            ..Buildings::default()
+        },
+    };
+    let route = |id, name: Option<&str>, kind, points: Vec<Point>| SourceRoute {
+        id,
+        name: name.map(str::to_owned),
+        kind,
+        points,
+    };
+    let marker = |id, name: &str, at| SourceMarker {
+        id,
+        kind: "ruins".to_owned(),
+        icon: "glyph".to_owned(),
+        name: Some(name.to_owned()),
+        note: None,
+        at,
+        cell: 3,
+    };
+    Source {
+        settlements: vec![
+            settlement(1, "Highmoor", point(30_25, 9_75), SettlementKind::Generic),
+            settlement(2, "Lakeside", point(14_50, 26_75), SettlementKind::Lake),
+            settlement(
+                4,
+                "Pinewatch",
+                point(31_50, 31_00),
+                SettlementKind::Highland,
+            ),
+        ],
+        routes: vec![
+            route(
+                0,
+                Some("High road"),
+                RouteKind::Road,
+                vec![
+                    point(30_25, 9_75),
+                    point(25_50, 15_50),
+                    point(20_50, 20_50),
+                    point(31_50, 31_00),
+                ],
+            ),
+            route(
+                1,
+                None,
+                RouteKind::Trail,
+                vec![point(14_50, 26_75), point(20_50, 20_50)],
+            ),
+            route(
+                2,
+                Some("Coast road"),
+                RouteKind::Road,
+                vec![
+                    point(12_00, 12_00),
+                    point(35_00, 15_00),
+                    point(25_00, 25_00),
+                ],
+            ),
+        ],
+        markers: vec![
+            marker(0, "Ash Peak", point(33_30, 34_40)),
+            marker(1, "Old Keep", point(20_00, 21_00)),
+        ],
+        ..raster(2_00)
+    }
+}
+
+/// A place in 256ths each way, as its tile and offset.
+fn placed(x: u32, y: u32) -> Placed {
+    Placed {
+        tile: TilePos {
+            x: x / 256,
+            y: y / 256,
+        },
+        offset: [(x % 256) as u8, (y % 256) as u8],
+    }
+}
+
+/// Each suggestion's id and places, in order: settlements, routes, then points of interest.
+fn places(source: &Source, recipe: Recipe) -> Vec<(String, Vec<Placed>)> {
+    let map = rasterise(source, recipe).expect("the recipe makes a map");
+    let suggestions = map.suggestions();
+    suggestions
+        .settlements
+        .iter()
+        .map(|s| (s.id.clone(), vec![s.at]))
+        .chain(
+            suggestions
+                .routes
+                .iter()
+                .map(|r| (r.id.clone(), r.points.clone())),
+        )
+        .chain(
+            suggestions
+                .points
+                .iter()
+                .map(|p| (p.id.clone(), vec![p.at])),
+        )
+        .collect()
+}
+
+fn at(id: &str, points: &[[u32; 2]]) -> (String, Vec<Placed>) {
+    (
+        id.to_owned(),
+        points.iter().map(|&[x, y]| placed(x, y)).collect(),
+    )
+}
+
+#[test]
+fn rasterising_suggests_the_sources_places_where_they_lie() {
+    // Worked by suggest_ref.py, apart from the code, as in factional-content's tests.
+    assert_eq!(
+        places(&with_places(), whole()),
+        vec![
+            at("settlement_1", &[[7744, 2496]]),
+            at("settlement_2", &[[3712, 6848]]),
+            at("settlement_4", &[[8064, 7936]]),
+            at(
+                "route_0",
+                &[[7744, 2496], [6528, 3968], [5248, 5248], [8064, 7936]]
+            ),
+            at("route_1", &[[3712, 6848], [5248, 5248]]),
+            at("route_2", &[[3072, 3072], [8960, 3840], [6400, 6400]]),
+            at("poi_0", &[[8525, 8806]]),
+            at("poi_1", &[[5120, 5376]]),
+        ]
+    );
+    let map = rasterise(&with_places(), whole()).expect("a map");
+    let highmoor = &map.suggestions().settlements[0];
+    assert_eq!(
+        (
+            highmoor.name.as_str(),
+            highmoor.people,
+            highmoor.kind,
+            highmoor.capital,
+            highmoor.port
+        ),
+        ("Highmoor", 1000, SettlementKind::Generic, true, false)
+    );
+    assert!(map.suggestions().settlements[2].buildings.walls);
+    let trail = &map.suggestions().routes[1];
+    assert_eq!(
+        (trail.name.as_deref(), trail.kind),
+        (None, RouteKind::Trail)
+    );
+    let keep = &map.suggestions().points[1];
+    assert_eq!(
+        (
+            keep.kind.as_str(),
+            keep.icon.as_str(),
+            keep.name.as_deref(),
+            keep.note.as_deref()
+        ),
+        ("ruins", "glyph", Some("Old Keep"), None)
+    );
+}
+
+#[test]
+fn a_regions_suggestions_drop_whats_outside_and_cut_routes_at_its_edge() {
+    assert_eq!(
+        places(&with_places(), recipe(10, 10, 20, 20, 2)),
+        vec![
+            at("settlement_2", &[[2304, 8576]]),
+            at(
+                "route_0",
+                &[[10_239, 28], [7936, 2816], [5376, 5376], [10_239, 10_018]]
+            ),
+            at("route_1", &[[2304, 8576], [5376, 5376]]),
+            at("route_2_1", &[[1024, 1024], [10_239, 2226]]),
+            at("route_2_2", &[[10_239, 5121], [7680, 7680]]),
+            at("poi_1", &[[5120, 5632]]),
+        ]
+    );
+    // Not square: 20 × 10 pixels from (10, 20) at 1 tile a pixel, so 5120 × 2560 256ths.
+    // Lakeside (4.5, 6.75) and Old Keep (10, 1) lie inside; Pinewatch, at x 21.5, doesn't.
+    let part = places(&with_places(), recipe(10, 20, 20, 10, 1));
+    let ids: Vec<&str> = part.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["settlement_2", "route_0", "route_1", "route_2", "poi_1"]
+    );
+    assert_eq!(part[0], at("settlement_2", &[[1152, 1728]]));
+    assert_eq!(
+        part[1],
+        at("route_0", &[[2816, 0], [2688, 128], [5119, 2449]])
+    );
+    assert_eq!(part[2], at("route_1", &[[1152, 1728], [2688, 128]]));
+    assert_eq!(part[3], at("route_2", &[[5119, 1], [3840, 1280]]));
+    assert_eq!(part[4], at("poi_1", &[[2560, 256]]));
+    // Tall: 20 × 40 pixels from (10, 0). Highmoor, Pinewatch and Ash Peak lie within it top to
+    // bottom but not left to right, so none is suggested.
+    let tall = places(&with_places(), recipe(10, 0, 20, 40, 1));
+    let ids: Vec<&str> = tall.iter().map(|(id, _)| id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "settlement_2",
+            "route_0",
+            "route_1",
+            "route_2_1",
+            "route_2_2",
+            "poi_1"
+        ]
+    );
+    assert_eq!(tall[0], at("settlement_2", &[[1152, 6848]]));
+    assert_eq!(
+        tall[1],
+        at(
+            "route_0",
+            &[[5119, 2575], [3968, 3968], [2688, 5248], [5119, 7569]]
+        )
+    );
+    assert_eq!(tall[5], at("poi_1", &[[2560, 5376]]));
 }
 
 #[test]

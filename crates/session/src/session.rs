@@ -82,6 +82,10 @@ const COMMANDS: &[(&str, &str)] = &[
         "what an Azgaar Full JSON export holds: its cells, vertices and features, or every problem in it",
     ),
     (
+        "world suggestions <map>",
+        "a world map's suggestions: its settlements, routes and points of interest, where each lies and what the source says of it",
+    ),
+    (
         "world import <export> <map> [options]",
         "rasterise an Azgaar Full JSON export into a map file; options --region <x>,<y>,<width>,<height>, --scale <n>, --seed <n>, --detail <strength>, --wavelength <pixels>, --octaves <n>, --shallows <metres>, --specks <tiles>, --levels <points>, --level-specks <tiles>, --foliage <scale>, --tree-spacing <tiles>, --shrub-spacing <tiles>, --grass-spacing <tiles>; the whole map at 1 tile a pixel, seed 0, detail 0.25 of the relief over 8 pixels in 4 octaves, shallows to 10 metres, specks under 4 tiles, a level every 5 of Azgaar's heights with specks under 4 tiles, and foliage at scale 1 with trees 2 tiles apart, shrubs 1.5 and grass 1 unless told",
     ),
@@ -345,7 +349,7 @@ pub struct Session {
 
 /// How `world` is used.
 pub(crate) const WORLD_FORM: &str = "world needs the form: world info <file>, world source <file>, \
-     or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
+     world suggestions <map>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
      [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
      [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] \
      [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]";
@@ -879,10 +883,11 @@ impl Session {
                     Err(why) => Outcome::Error(why),
                 }
             }
-            (read @ ("info" | "source"), file) if !file.is_empty() => {
+            (read @ ("info" | "source" | "suggestions"), file) if !file.is_empty() => {
                 let read = match read {
                     "info" => crate::world::world_info,
-                    _ => crate::world::world_source,
+                    "source" => crate::world::world_source,
+                    _ => crate::world::world_suggestions,
                 };
                 match read(&self.base_dir, file) {
                     Ok(info) => Outcome::Output(info),
@@ -3214,7 +3219,7 @@ mod tests {
         assert_eq!(
             repo().execute(&format!("world info {file}")),
             output(&format!(
-                "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
+                "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions; {bytes} bytes\n\
                  recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
                  detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
                  shallows to 10.00 metres, specks under 4 tiles; \
@@ -3295,7 +3300,7 @@ mod tests {
                 "imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); {bytes} bytes"
+                 levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
             ))
         );
         let recipe = factional_worldgen::Recipe {
@@ -3333,7 +3338,7 @@ mod tests {
                 "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
                  166 ocean, 58 lake, 0 river and 1376 land (34 sand, 204 grass, 1125 forest floor and 13 rock); heights -187.80 to 1734.65 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); {bytes} bytes"
+                 levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); 1 settlement, 4 routes and 1 point of interest suggested; {bytes} bytes"
             ))
         );
         let recipe = map.recipe();
@@ -3365,7 +3370,7 @@ mod tests {
                 "imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, \
                  299 ocean, 181 lake, 0 river and 1120 land (71 sand, 339 grass, 579 forest floor and 131 rock); heights -381.73 to 2241.02 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 9, 756 ledges and 170 cliffs; 168 plants (53 trees, 28 shrubs and 87 grass); {bytes} bytes"
+                 levels 0 to 9, 756 ledges and 170 cliffs; 168 plants (53 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3379,7 +3384,7 @@ mod tests {
         assert_eq!(
             session.execute("world info rough.map"),
             output(&format!(
-                "rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides; {bytes} bytes\n\
+                "rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; {bytes} bytes\n\
                  recipe: source {}, source pixels (0, 0) to (39, 39), 1 tile a source pixel, \
                  seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; \
                  shallows to 10.00 metres, specks under 4 tiles; \
@@ -3414,7 +3419,7 @@ mod tests {
                 "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
                  294 ocean, 183 lake, 0 river and 1123 land (88 sand, 339 grass, 563 forest floor and 133 rock); heights -381.73 to 2241.02 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 9, 757 ledges and 175 cliffs; 170 plants (55 trees, 28 shrubs and 87 grass); {bytes} bytes"
+                 levels 0 to 9, 757 ledges and 175 cliffs; 170 plants (55 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3457,7 +3462,7 @@ mod tests {
                 "imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land (34 sand, 344 grass, 667 forest floor and 24 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 4, 324 ledges and 24 cliffs; 163 plants (49 trees, 23 shrubs and 91 grass); {bytes} bytes"
+                 levels 0 to 4, 324 ledges and 24 cliffs; 163 plants (49 trees, 23 shrubs and 91 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3503,7 +3508,7 @@ mod tests {
                 "imported Raster into foliage.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 8, 490 ledges and 48 cliffs; 520 plants (272 trees, 37 shrubs and 211 grass); {bytes} bytes"
+                 levels 0 to 8, 490 ledges and 48 cliffs; 520 plants (272 trees, 37 shrubs and 211 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
             ))
         );
         let foliage = map.recipe().foliage;
@@ -3577,7 +3582,7 @@ mod tests {
                 "imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); {bytes} bytes"
+                 levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes and 0 points of interest suggested; {bytes} bytes"
             ))
         );
         let said = session
@@ -3589,7 +3594,7 @@ mod tests {
                 "imported Rivers into part.map: 40 × 40 tiles in 1 × 1 chunks, \
                  166 ocean, 58 lake, 141 river and 1235 land (34 sand, 185 grass, 1003 forest floor and 13 rock); heights -187.80 to 1694.00 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 7, 468 ledges and 14 cliffs; 146 plants (58 trees, 21 shrubs and 67 grass); {bytes} bytes"
+                 levels 0 to 7, 468 ledges and 14 cliffs; 146 plants (58 trees, 21 shrubs and 67 grass); 0 settlements, 0 routes and 0 points of interest suggested; {bytes} bytes"
             ))
         );
         std::fs::remove_dir_all(&dir).expect("removed");
@@ -3693,7 +3698,7 @@ mod tests {
         let form = command_error(WORLD_FORM);
         assert_eq!(
             WORLD_FORM,
-            "world needs the form: world info <file>, world source <file>, \
+            "world needs the form: world info <file>, world source <file>, world suggestions <map>, \
              or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
              [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
              [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] \
@@ -3703,7 +3708,104 @@ mod tests {
         assert_eq!(run("world info"), form);
         assert_eq!(run("world inspect hand-made.map"), form);
         assert_eq!(run("world source"), form);
+        assert_eq!(run("world suggestions"), form);
         assert_eq!(run("world import"), form);
+    }
+
+    #[test]
+    fn world_suggestions_lists_settlements_then_routes_then_points_of_interest() {
+        let dir = import_dir("suggestions");
+        let mut session = Session::new(&dir);
+        let imported = session.execute("world import raster.json raster.map");
+        assert!(matches!(imported, Ok(Outcome::Output(_))), "{imported:?}");
+        // Each place worked by a separate script from the acceptance.
+        assert_eq!(
+            session.execute("world suggestions raster.map"),
+            output(
+                "raster.map: 3 settlements, 3 routes and 2 points of interest\n\
+                 settlement_1 Highmoor: generic, capital, 2345 people, at tile (30, 9); citadel, walls and temple\n\
+                 settlement_2 Lakeside: lake, port, 857 people, at tile (14, 26); plaza\n\
+                 settlement_4 Pinewatch: highland, 12600 people, at tile (31, 31); walls, plaza and shanty town\n\
+                 route_0 High road: road, 4 points, tile (30, 9) to (31, 31)\n\
+                 route_1: trail, 2 points, tile (14, 26) to (20, 20)\n\
+                 route_2 Coast road: road, 3 points, tile (12, 12) to (25, 25)\n\
+                 poi_0 Ash Peak: volcanoes, at tile (33, 34); Dormant volcano.\n\
+                 poi_1 Old Keep: ruins, at tile (20, 21)"
+            )
+        );
+        // A region drops what's outside it and cuts the routes at its edge.
+        let imported =
+            session.execute("world import raster.json part.map --region 10,10,20,20 --scale 2");
+        assert!(matches!(imported, Ok(Outcome::Output(_))), "{imported:?}");
+        assert_eq!(
+            session.execute("world suggestions part.map"),
+            output(
+                "part.map: 1 settlement, 4 routes and 1 point of interest\n\
+                 settlement_2 Lakeside: lake, port, 857 people, at tile (9, 33); plaza\n\
+                 route_0 High road: road, 4 points, tile (39, 0) to (39, 39)\n\
+                 route_1: trail, 2 points, tile (9, 33) to (21, 21)\n\
+                 route_2_1 Coast road: road, 2 points, tile (4, 4) to (39, 8)\n\
+                 route_2_2 Coast road: road, 2 points, tile (39, 20) to (30, 30)\n\
+                 poi_1 Old Keep: ruins, at tile (20, 22)"
+            )
+        );
+        // None at all.
+        let imported = session.execute("world import raster.json corner.map --region 0,0,10,10");
+        assert!(matches!(imported, Ok(Outcome::Output(_))), "{imported:?}");
+        assert_eq!(
+            session.execute("world suggestions corner.map"),
+            output("corner.map: 0 settlements, 0 routes and 0 points of interest")
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_suggestions_shows_every_kind_capital_port_and_building() {
+        let dir = import_dir("kinds");
+        let raster = std::fs::read_to_string(dir.join("raster.json")).expect("the export");
+        // Pinewatch a naval capital and port with a citadel and a temple, and the High road a
+        // sea route, the Coast road a trail.
+        let changed = raster
+            .replacen("\"type\": \"Highland\"", "\"type\": \"Naval\", \"port\": 1", 1)
+            .replacen("\"i\": 4, \"name\": \"Pinewatch\", \"x\": 31.5, \"y\": 31, \"cell\": 3, \"state\": 0, \"culture\": 1, \"feature\": 3, \"capital\": 0", "\"i\": 4, \"name\": \"Pinewatch\", \"x\": 31.5, \"y\": 31, \"cell\": 3, \"state\": 0, \"culture\": 1, \"feature\": 3, \"capital\": 1", 1)
+            .replacen("\"citadel\": 0, \"walls\": 1, \"plaza\": 1, \"temple\": 0, \"shanty\": 1", "\"citadel\": 1, \"walls\": 0, \"plaza\": 0, \"temple\": 1, \"shanty\": 0", 1)
+            .replacen("\"group\": \"roads\", \"name\": \"High road\"", "\"group\": \"searoutes\", \"name\": \"High road\"", 1)
+            .replacen("\"group\": \"roads\", \"name\": \"Coast road\"", "\"group\": \"trails\", \"name\": \"Coast road\"", 1);
+        assert_ne!(changed, raster);
+        std::fs::write(dir.join("kinds.json"), changed).expect("written");
+        let mut session = Session::new(&dir);
+        let imported = session.execute("world import kinds.json kinds.map");
+        assert!(matches!(imported, Ok(Outcome::Output(_))), "{imported:?}");
+        let listed = session.execute("world suggestions kinds.map");
+        let Ok(Outcome::Output(listed)) = listed else {
+            panic!("listed: {listed:?}")
+        };
+        let lines: Vec<&str> = listed.lines().collect();
+        assert_eq!(
+            lines[3],
+            "settlement_4 Pinewatch: naval, capital, port, 12600 people, at tile (31, 31); citadel and temple"
+        );
+        assert_eq!(
+            lines[4],
+            "route_0 High road: sea route, 4 points, tile (30, 9) to (31, 31)"
+        );
+        assert_eq!(
+            lines[6],
+            "route_2 Coast road: trail, 3 points, tile (12, 12) to (25, 25)"
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn world_suggestions_refuses_a_file_that_isnt_a_map() {
+        assert_eq!(
+            repo().execute("world suggestions content/sample/factions.toml"),
+            command_error("this isn't a Factional map")
+        );
+        assert_eq!(
+            repo().execute("world suggestions no-such.map"),
+            command_error("cannot read no-such.map: No such file or directory (os error 2)")
+        );
     }
 
     #[test]

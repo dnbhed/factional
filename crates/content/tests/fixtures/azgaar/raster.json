@@ -39,9 +39,22 @@
       { "i": 2, "type": "lake", "land": false, "border": false, "cells": 1, "height": 19.5, "subtype": "freshwater", "name": "Mere" },
       { "i": 3, "type": "island", "land": true, "border": true, "cells": 3, "height": 0, "subtype": "continent", "name": "Raster" }
     ],
-    "burgs": [0],
-    "routes": [],
-    "markers": []
+    "burgs": [
+      0,
+      {"i": 1, "name": "Highmoor", "x": 30.25, "y": 9.75, "cell": 1, "state": 0, "culture": 1, "feature": 3, "capital": 1, "population": 2.345, "type": "Generic", "group": "town", "citadel": 1, "walls": 1, "plaza": 0, "temple": 1, "shanty": 0, "market": 1},
+      {"i": 2, "name": "Lakeside", "x": 14.5, "y": 26.75, "cell": 4, "state": 0, "culture": 1, "feature": 3, "capital": 0, "port": 2, "population": 0.857, "type": "Lake", "group": "village", "citadel": 0, "walls": 0, "plaza": 1, "temple": 0, "shanty": 0, "market": 0},
+      {"i": 3, "name": "Gone", "removed": true},
+      {"i": 4, "name": "Pinewatch", "x": 31.5, "y": 31, "cell": 3, "state": 0, "culture": 1, "feature": 3, "capital": 0, "population": 12.6, "type": "Highland", "group": "city", "citadel": 0, "walls": 1, "plaza": 1, "temple": 0, "shanty": 1, "market": 0}
+    ],
+    "routes": [
+      {"i": 0, "group": "roads", "name": "High road", "feature": 3, "points": [[30.25, 9.75, 1], [25.5, 15.5, 4], [20.5, 20.5, 4], [31.5, 31, 3]]},
+      {"i": 1, "group": "trails", "feature": 3, "points": [[14.5, 26.75, 4], [20.5, 20.5, 4]]},
+      {"i": 2, "group": "roads", "name": "Coast road", "feature": 3, "points": [[12, 12, 0], [35, 15, 1], [25, 25, 4]]}
+    ],
+    "markers": [
+      {"i": 0, "type": "volcanoes", "icon": "glyph-1f30b", "name": "Ash Peak", "note": "Dormant volcano.", "x": 33.3, "y": 34.4, "cell": 3},
+      {"i": 1, "type": "ruins", "icon": "glyph-1f3f0", "name": "Old Keep", "note": "", "x": 20, "y": 21, "cell": 4}
+    ]
   },
   "grid": {
     "cells": [

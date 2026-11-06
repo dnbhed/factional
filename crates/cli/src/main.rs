@@ -1,7 +1,7 @@
 //! The `factional` binary: `factional repl` for an interactive session, `factional run
 //! <script>` to replay a scenario (DECISIONS.md P-27), and for designers, `factional validate
 //! <dir>`, `factional schema [<file>]`, and `factional world info <file>`, `factional world source
-//! <file>` and `factional world import <export> <map>`.
+//! <file>`, `factional world suggestions <map>` and `factional world import <export> <map>`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,6 +11,7 @@ use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand};
 use factional_cli::{
     Import, compare, run_repl, run_script, validate, world_import, world_info, world_source,
+    world_suggestions,
 };
 use factional_content::{SCHEMA_FILES, schema_text};
 use factional_core::Fixed;
@@ -76,6 +77,11 @@ enum WorldCommand {
     Source {
         /// The export, such as "Menayland Full.json"
         file: String,
+    },
+    /// A map's suggestions: its settlements, routes and points of interest, where each lies and what the source says of it
+    Suggestions {
+        /// The map file, such as world/menayland.map
+        map: String,
     },
     /// Rasterise an Azgaar Full JSON export into a map file: the whole map at 1 tile a pixel and seed 0 unless told
     Import {
@@ -177,6 +183,7 @@ fn main() -> ExitCode {
         Command::World { command } => match match command {
             WorldCommand::Info { file } => world_info(Path::new(""), &file),
             WorldCommand::Source { file } => world_source(Path::new(""), &file),
+            WorldCommand::Suggestions { map } => world_suggestions(Path::new(""), &map),
             WorldCommand::Import {
                 export,
                 map,

@@ -1,25 +1,133 @@
 //! `world info <file>` (W1b): what a map file holds, read whole by `factional-content`;
 //! `world source <file>` (W2a): what an Azgaar export holds, or every problem in it; and
-//! `world import <export> <map>` (W2b): the export rasterised into a map file.
+//! `world import <export> <map>` (W2b): the export rasterised into a map file; and
+//! `world suggestions <map>` (W6b): the map's settlements, routes and points of interest.
 
 use std::path::Path;
 
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Drop, Feature, Foliage, Levels, PlantKind, Recipe, Region, Size, Terrain, Tile,
-    TilePos, Water, rasterise,
+    Coast, Detail, Drop, Feature, Foliage, Levels, Placed, PlantKind, Recipe, Region, RouteKind,
+    SettlementKind, Size, Suggestions, Terrain, Tile, TilePos, Water, WorldMap, rasterise,
 };
 
 use crate::check::count;
 use crate::session::WORLD_FORM;
 
-/// What `world info <file>` says of the map in `file`, read from `base`: its size, chunks and
-/// overrides, its length, and its recipe; or why it can't be read.
-pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
+/// The map in `file`, read from `base`, and its length; or why it can't be read.
+fn map_in(base: &Path, file: &str) -> Result<(WorldMap, usize), String> {
     let bytes =
         std::fs::read(base.join(file)).map_err(|error| format!("cannot read {file}: {error}"))?;
     let map = read_map(&bytes).map_err(|error| error.to_string())?;
+    Ok((map, bytes.len()))
+}
+
+/// How many suggestions `suggestions` holds.
+fn suggested(suggestions: &Suggestions) -> usize {
+    suggestions.settlements.len() + suggestions.routes.len() + suggestions.points.len()
+}
+
+/// "3 settlements, 3 routes and 2 points of interest".
+fn places(suggestions: &Suggestions) -> String {
+    format!(
+        "{}, {} and {}",
+        count(suggestions.settlements.len(), "settlement"),
+        count(suggestions.routes.len(), "route"),
+        match suggestions.points.len() {
+            1 => "1 point of interest".to_owned(),
+            n => format!("{n} points of interest"),
+        }
+    )
+}
+
+/// What `world suggestions <map>` says of the map in `file`, read from `base`: how many of
+/// each, then each settlement, route and point of interest on a line, in the source's order;
+/// or why it can't be read.
+pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
+    let (map, _) = map_in(base, file)?;
+    let suggestions = map.suggestions();
+    let tile = |at: Placed| format!("({}, {})", at.tile.x, at.tile.y);
+    let titled = |id: &str, name: Option<&str>| match name {
+        Some(name) => format!("{id} {name}"),
+        None => id.to_owned(),
+    };
+    let mut lines = vec![format!("{}: {}", file_name(file), places(suggestions))];
+    for settlement in &suggestions.settlements {
+        let mut figures = vec![settlement_kind(settlement.kind).to_owned()];
+        figures.extend(settlement.capital.then(|| "capital".to_owned()));
+        figures.extend(settlement.port.then(|| "port".to_owned()));
+        figures.push(format!("{} people", settlement.people));
+        figures.push(format!("at tile {}", tile(settlement.at)));
+        let built = settlement.buildings;
+        let buildings: Vec<&str> = [
+            (built.citadel, "citadel"),
+            (built.walls, "walls"),
+            (built.plaza, "plaza"),
+            (built.temple, "temple"),
+            (built.shanty, "shanty town"),
+        ]
+        .into_iter()
+        .filter_map(|(built, name)| built.then_some(name))
+        .collect();
+        let buildings = match buildings.split_last() {
+            None => String::new(),
+            Some((only, [])) => format!("; {only}"),
+            Some((last, rest)) => format!("; {} and {last}", rest.join(", ")),
+        };
+        lines.push(format!(
+            "{}: {}{buildings}",
+            titled(&settlement.id, Some(&settlement.name)),
+            figures.join(", ")
+        ));
+    }
+    for route in &suggestions.routes {
+        let (first, last) = (route.points[0], route.points[route.points.len() - 1]);
+        lines.push(format!(
+            "{}: {}, {} points, tile {} to {}",
+            titled(&route.id, route.name.as_deref()),
+            match route.kind {
+                RouteKind::Road => "road",
+                RouteKind::Trail => "trail",
+                RouteKind::SeaRoute => "sea route",
+            },
+            route.points.len(),
+            tile(first),
+            tile(last)
+        ));
+    }
+    for point in &suggestions.points {
+        let note = point
+            .note
+            .as_ref()
+            .map_or(String::new(), |note| format!("; {note}"));
+        lines.push(format!(
+            "{}: {}, at tile {}{note}",
+            titled(&point.id, point.name.as_deref()),
+            point.kind,
+            tile(point.at)
+        ));
+    }
+    Ok(lines.join("\n"))
+}
+
+/// A settlement's type, as `world suggestions` names it.
+fn settlement_kind(kind: SettlementKind) -> &'static str {
+    match kind {
+        SettlementKind::Generic => "generic",
+        SettlementKind::Naval => "naval",
+        SettlementKind::Lake => "lake",
+        SettlementKind::Highland => "highland",
+        SettlementKind::River => "river",
+        SettlementKind::Nomadic => "nomadic",
+        SettlementKind::Hunting => "hunting",
+    }
+}
+
+/// What `world info <file>` says of the map in `file`, read from `base`: its size, chunks,
+/// overrides and suggestions, its length, and its recipe; or why it can't be read.
+pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
+    let (map, length) = map_in(base, file)?;
     let name = file_name(file);
     let (size, chunks) = (map.size(), map.chunk_count());
     let recipe = map.recipe();
@@ -29,7 +137,7 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         source => format!("source {source}"),
     };
     Ok(format!(
-        "{name}: {} × {} tiles in {} × {} chunks, {}; {} bytes\n\
+        "{name}: {} × {} tiles in {} × {} chunks, {}, {}; {length} bytes\n\
          recipe: {source}, source pixels ({}, {}) to ({}, {}), {} a source pixel, seed {}; \
          detail {} of the relief, {} pixels, {}; shallows to {} metres, specks under {}; \
          levels every {} of Azgaar's heights, specks under {}; \
@@ -39,7 +147,7 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         chunks.width,
         chunks.height,
         count(map.overrides().len(), "override"),
-        bytes.len(),
+        count(suggested(map.suggestions()), "suggestion"),
         region.x,
         region.y,
         region.x + region.size.width - 1,
@@ -278,7 +386,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
     Ok(format!(
         "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake, {river} river and {} land{terrains}; \
          heights {} to {} m; temperatures {} to {} °C; precipitation {} to {} mm; {}; \
-         levels {} to {}, {} and {}; {} ({}, {} and {} grass); {} bytes",
+         levels {} to {}, {} and {}; {} ({}, {} and {} grass); {} suggested; {} bytes",
         source.name,
         file_name(import.map),
         size.width,
@@ -301,6 +409,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         count(plants[0], "tree"),
         count(plants[1], "shrub"),
         plants[2],
+        places(map.suggestions()),
         bytes.len(),
     ))
 }

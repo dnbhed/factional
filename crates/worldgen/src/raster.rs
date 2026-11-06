@@ -14,6 +14,7 @@ use crate::map::{Detail, MapError, Recipe, Region, Size, TilePos, WorldMap};
 use crate::noise;
 use crate::rivers::{self, At, Piece};
 use crate::source::{Feature, Source};
+use crate::suggestions;
 use crate::terrain;
 use crate::tile::{Biome, Terrain, Tile, Water};
 
@@ -269,7 +270,8 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
         .collect();
     let plants = foliage::plants(width, &candidates, foliage.spacing);
     let shallows = recipe.coast.shallows;
-    WorldMap::new(recipe, |at: TilePos| {
+    let suggestions = suggestions::suggest(source, &recipe, size);
+    let mut map = WorldMap::new(recipe, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
         let tile = coast::tile(elevations[i], bodies[i], shallows);
         let tile = match courses[i] {
@@ -292,7 +294,10 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
             ..tile
         }
     })
-    .map_err(RasterError::Map)
+    .map_err(RasterError::Map)?;
+    // The source's places, on the map (W6b, P-145).
+    map.suggest(suggestions).map_err(RasterError::Map)?;
+    Ok(map)
 }
 
 /// The ground at a point: its height, the water cell it lies under, if any, and the cell it

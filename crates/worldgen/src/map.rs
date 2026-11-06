@@ -2,12 +2,13 @@
 //! overrides.
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use factional_core::Fixed;
+use factional_core::{Fixed, is_valid_id};
 
 use crate::CHUNK;
+use crate::suggestions::{Placed, Suggestions};
 use crate::tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 
 /// The most tiles a map may have each way.
@@ -325,6 +326,10 @@ pub enum MapError {
     PlantChances(Biome, Fixed),
     OffTheMap { at: TilePos, size: Size },
     OtherSize { recipe: Size, map: Size },
+    SuggestionId(String),
+    SuggestionTwice(String),
+    SuggestionOffTheMap { id: String, at: TilePos, size: Size },
+    RouteTooShort { id: String, points: usize },
 }
 
 impl fmt::Display for MapError {
@@ -406,6 +411,21 @@ impl fmt::Display for MapError {
                 f,
                 "the recipe makes a map of {} × {} tiles, and this one is {} × {}; regenerating can't move the overrides",
                 recipe.width, recipe.height, map.width, map.height
+            ),
+            MapError::SuggestionId(id) => write!(
+                f,
+                "the suggestion id {id:?} isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores"
+            ),
+            MapError::SuggestionTwice(id) => write!(f, "two suggestions are {id}"),
+            MapError::SuggestionOffTheMap { id, at, size } => write!(
+                f,
+                "the suggestion {id} is at tile ({}, {}), off the map of {} × {} tiles",
+                at.x, at.y, size.width, size.height
+            ),
+            MapError::RouteTooShort { id, points } => write!(
+                f,
+                "the route {id} has {points} point{}; a route needs at least two",
+                if *points == 1 { "" } else { "s" }
             ),
         }
     }
@@ -524,13 +544,15 @@ fn chunk_count(size: Size) -> Size {
     }
 }
 
-/// A world map: its recipe, the tiles it generated, in chunks, and the designer's overrides.
+/// A world map: its recipe, the tiles it generated, in chunks, the designer's overrides, and
+/// its suggestions (W6b).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorldMap {
     recipe: Recipe,
     size: Size,
     chunks: Vec<Chunk>,
     overrides: BTreeMap<TilePos, Override>,
+    suggestions: Suggestions,
 }
 
 impl WorldMap {
@@ -545,6 +567,7 @@ impl WorldMap {
             size,
             chunks: generate_chunks(size, generate),
             overrides: BTreeMap::new(),
+            suggestions: Suggestions::default(),
         })
     }
 
@@ -611,6 +634,57 @@ impl WorldMap {
             east: drop(at.x.checked_add(1), y),
             south: drop(x, at.y.checked_add(1)),
         })
+    }
+
+    /// Its suggestions: settlements, routes and points of interest.
+    pub fn suggestions(&self) -> &Suggestions {
+        &self.suggestions
+    }
+
+    /// Sets its suggestions to `suggestions`, or refuses them, unchanged, naming the first
+    /// wrong: an id that isn't a valid content id or that two share, a place off the map, or a
+    /// route of fewer than two points.
+    pub fn suggest(&mut self, suggestions: Suggestions) -> Result<(), MapError> {
+        {
+            let mut ids = BTreeSet::new();
+            let size = self.size;
+            let mut check = |id: &str, places: &[Placed]| {
+                if !is_valid_id(id) {
+                    return Err(MapError::SuggestionId(id.to_owned()));
+                }
+                if !ids.insert(id.to_owned()) {
+                    return Err(MapError::SuggestionTwice(id.to_owned()));
+                }
+                match places
+                    .iter()
+                    .find(|at| at.tile.x >= size.width || at.tile.y >= size.height)
+                {
+                    Some(off) => Err(MapError::SuggestionOffTheMap {
+                        id: id.to_owned(),
+                        at: off.tile,
+                        size,
+                    }),
+                    None => Ok(()),
+                }
+            };
+            for settlement in &suggestions.settlements {
+                check(&settlement.id, std::slice::from_ref(&settlement.at))?;
+            }
+            for route in &suggestions.routes {
+                check(&route.id, &route.points)?;
+                if route.points.len() < 2 {
+                    return Err(MapError::RouteTooShort {
+                        id: route.id.clone(),
+                        points: route.points.len(),
+                    });
+                }
+            }
+            for point in &suggestions.points {
+                check(&point.id, std::slice::from_ref(&point.at))?;
+            }
+        }
+        self.suggestions = suggestions;
+        Ok(())
     }
 
     /// The designer's overrides, row by row.
