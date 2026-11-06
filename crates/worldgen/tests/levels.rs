@@ -317,6 +317,9 @@ fn drawn(levels: [&str; 3]) -> WorldMap {
             temperature: 0,
             precipitation: 0,
             plant: None,
+            culture: None,
+            religion: None,
+            state: None,
         }
     })
     .expect("a map")

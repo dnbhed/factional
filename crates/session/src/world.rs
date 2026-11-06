@@ -5,14 +5,15 @@
 //! its cultures, religions and states (W6e); and
 //! `world dismiss <map> <id>…` and `world restore <map> <id>…` (W6c): suggestions set aside.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Drop, Extent, Feature, Foliage, Levels, Placed, PlantKind, Recipe, Region,
-    ReligionKind, RouteKind, SettlementKind, Size, Stance, StateForm, Suggestions, Terrain, Tile,
-    TilePos, Water, WorldMap, rasterise,
+    Coast, Detail, Drop, Extent, Feature, Foliage, Levels, MapError, Placed, PlantKind, Recipe,
+    Region, ReligionKind, RouteKind, SettlementKind, Size, Stance, StateForm, Suggestions, Terrain,
+    Tile, TilePos, Water, WorldMap, rasterise,
 };
 
 use crate::check::count;
@@ -59,6 +60,115 @@ fn dismissals(map: &WorldMap) -> String {
         true => String::new(),
         false => format!(" ({})", parts.join("; ")),
     }
+}
+
+/// What `world tile <map> <x>,<y>` says of the tile `at` of the map in `file`, read from `base`:
+/// every layer, the culture, religion and state it lies in, and which layers are overridden; or
+/// why it can't.
+pub fn world_tile(base: &Path, file: &str, at: &str) -> Result<String, String> {
+    let at = match at
+        .split(',')
+        .map(str::parse)
+        .collect::<Result<Vec<u32>, _>>()
+    {
+        Ok(xy) if xy.len() == 2 => TilePos { x: xy[0], y: xy[1] },
+        _ => {
+            return Err(format!(
+                "the tile needs two whole numbers, <x>,<y>, not {at}"
+            ));
+        }
+    };
+    let (map, _) = map_in(base, file)?;
+    let Some(tile) = map.tile(at) else {
+        let size = map.size();
+        return Err(MapError::OffTheMap { at, size }.to_string());
+    };
+    let water = match tile.water {
+        None => "no water".to_owned(),
+        Some(Water::River { flow }) => format!("a river of {flow} m³/s"),
+        Some(Water::Lake) => "a lake".to_owned(),
+    };
+    let plant = match tile.plant {
+        None => "no plant".to_owned(),
+        Some(plant) => {
+            let [x, y] = plant.offset;
+            let kind = match plant.kind {
+                PlantKind::Grass => "grass".to_owned(),
+                kind => format!("a {}", kind.name()),
+            };
+            format!("{kind} at ({x}, {y}) in the tile")
+        }
+    };
+    let suggestions = map.suggestions();
+    let names: BTreeMap<&str, &str> = (suggestions.cultures.iter())
+        .map(|c| (c.id.as_str(), c.name.as_str()))
+        .chain(
+            suggestions
+                .religions
+                .iter()
+                .map(|r| (r.id.as_str(), r.name.as_str())),
+        )
+        .chain(
+            suggestions
+                .states
+                .iter()
+                .map(|s| (s.id.as_str(), s.name.as_str())),
+        )
+        .collect();
+    let people = |kind: &str, id: Option<u32>| {
+        let Some(id) = id else {
+            return format!("no {kind}");
+        };
+        let id = format!("{kind}_{id}");
+        let name = names[id.as_str()];
+        let dismissed = match map.dismissed_by(&id) {
+            Some(_) => " (dismissed)",
+            None => "",
+        };
+        format!("{id} {name}{dismissed}")
+    };
+    let mut lines = vec![
+        format!(
+            "{}, tile ({}, {}): {} m, level {}, {}, {water}, {}, {} °C, {} mm, {plant}",
+            file_name(file),
+            at.x,
+            at.y,
+            tile.elevation,
+            tile.level,
+            tile.terrain.name(),
+            tile.biome.name(),
+            tile.temperature,
+            tile.precipitation,
+        ),
+        format!(
+            "peoples: {}",
+            and_list(&[
+                people("culture", tile.culture),
+                people("religion", tile.religion),
+                people("state", tile.state),
+            ])
+        ),
+    ];
+    if let Some(edit) = map.overrides().get(&at) {
+        let layers: Vec<&str> = [
+            (edit.elevation.is_some(), "elevation"),
+            (edit.level.is_some(), "level"),
+            (edit.terrain.is_some(), "terrain"),
+            (edit.water.is_some(), "water"),
+            (edit.biome.is_some(), "biome"),
+            (edit.temperature.is_some(), "temperature"),
+            (edit.precipitation.is_some(), "precipitation"),
+            (edit.plant.is_some(), "plant"),
+            (edit.culture.is_some(), "culture"),
+            (edit.religion.is_some(), "religion"),
+            (edit.state.is_some(), "state"),
+        ]
+        .into_iter()
+        .filter_map(|(set, layer)| set.then_some(layer))
+        .collect();
+        lines.push(format!("overridden: {}", and_list(&layers)));
+    }
+    Ok(lines.join("\n"))
 }
 
 /// What `world dismiss <map> <id>…` does: dismisses each of `ids` on the map in `file`, read
@@ -193,7 +303,9 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
         true => id.to_owned(),
         false => format!("{id} (not on the map)"),
     };
-    let extent = |extent: Extent, tiles: u32| {
+    let territory = map.territory();
+    let extent = |extent: Extent, id: &str| {
+        let tiles = territory.get(id).copied().unwrap_or(0);
         format!(
             "{} and {} people in the source, {} on the map",
             count(extent.cells as usize, "cell"),
@@ -207,7 +319,7 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             culture.id,
             culture.name,
             settlement_kind(culture.kind),
-            extent(culture.extent, culture.tiles),
+            extent(culture.extent, &culture.id),
             marked(&culture.id)
         ));
     }
@@ -239,7 +351,7 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             religion.id,
             religion.name,
             figures.join(", "),
-            extent(religion.extent, religion.tiles),
+            extent(religion.extent, &religion.id),
             marked(&religion.id)
         ));
     }
@@ -274,7 +386,7 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             state.id,
             state.name,
             figures.join(", "),
-            extent(state.extent, state.tiles),
+            extent(state.extent, &state.id),
             marked(&state.id)
         ));
     }
@@ -611,18 +723,18 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
 /// 47 rock)`; nothing where there's no land.
 fn land_terrains(tiles: &[Tile]) -> String {
     let mut counted: Vec<String> = [
-        (Terrain::Sand, "sand"),
-        (Terrain::Grass, "grass"),
-        (Terrain::ForestFloor, "forest floor"),
-        (Terrain::Marsh, "marsh"),
-        (Terrain::Rock, "rock"),
-        (Terrain::Snow, "snow"),
-        (Terrain::Ice, "ice"),
+        Terrain::Sand,
+        Terrain::Grass,
+        Terrain::ForestFloor,
+        Terrain::Marsh,
+        Terrain::Rock,
+        Terrain::Snow,
+        Terrain::Ice,
     ]
     .into_iter()
-    .filter_map(|(terrain, name)| {
+    .filter_map(|terrain| {
         let n = tiles.iter().filter(|tile| tile.terrain == terrain).count();
-        (n > 0).then(|| format!("{n} {name}"))
+        (n > 0).then(|| format!("{n} {}", terrain.name()))
     })
     .collect();
     let Some(last) = counted.pop() else {
@@ -676,6 +788,9 @@ mod tests {
                 temperature: 0,
                 precipitation: 0,
                 plant: None,
+                culture: None,
+                religion: None,
+                state: None,
             })
             .collect()
     }

@@ -330,10 +330,10 @@ pub enum MapError {
     SuggestionTwice(String),
     SuggestionOffTheMap { id: String, at: TilePos, size: Size },
     RouteTooShort { id: String, points: usize },
-    PeopleTiles { id: String, tiles: u32, area: u64 },
     LinkId { id: String, link: String },
     StanceToItself(String),
     StanceTwice { id: String, toward: String },
+    NotSuggested { at: TilePos, people: String },
     NoSuggestion { id: String, near: Option<String> },
     NamedTwice(String),
     AlreadyDismissed { id: String, with: Option<String> },
@@ -460,17 +460,15 @@ impl fmt::Display for MapError {
                 "the route {id} has {points} point{}; a route needs at least two",
                 if *points == 1 { "" } else { "s" }
             ),
-            MapError::PeopleTiles { id, tiles: 0, .. } => {
-                write!(f, "the suggestion {id} covers no tiles")
-            }
-            MapError::PeopleTiles { id, tiles, area } => write!(
-                f,
-                "the suggestion {id} covers {tiles} tiles, more than the map's {area}"
-            ),
             MapError::LinkId { id, link } => write!(
                 f,
                 "the suggestion {id} names {link:?}, which isn't a valid id: a lowercase \
                  letter, then lowercase letters, digits or underscores"
+            ),
+            MapError::NotSuggested { at, people } => write!(
+                f,
+                "tile ({}, {}) lies in {people}, which isn't suggested on the map",
+                at.x, at.y
             ),
             MapError::StanceToItself(id) => {
                 write!(f, "the suggestion {id} holds a stance toward itself")
@@ -511,6 +509,9 @@ pub struct Chunk {
     temperature: Vec<i8>,
     precipitation: Vec<u16>,
     plant: Vec<Option<Plant>>,
+    culture: Vec<Option<u32>>,
+    religion: Vec<Option<u32>>,
+    state: Vec<Option<u32>>,
 }
 
 impl Chunk {
@@ -534,6 +535,9 @@ impl Chunk {
             temperature: self.temperature[i],
             precipitation: self.precipitation[i],
             plant: self.plant[i],
+            culture: self.culture[i],
+            religion: self.religion[i],
+            state: self.state[i],
         })
     }
 
@@ -549,6 +553,9 @@ impl Chunk {
             temperature: Vec::new(),
             precipitation: Vec::new(),
             plant: Vec::new(),
+            culture: Vec::new(),
+            religion: Vec::new(),
+            state: Vec::new(),
         }
     }
 
@@ -562,6 +569,9 @@ impl Chunk {
         self.temperature.push(tile.temperature);
         self.precipitation.push(tile.precipitation);
         self.plant.push(tile.plant);
+        self.culture.push(tile.culture);
+        self.religion.push(tile.religion);
+        self.state.push(tile.state);
     }
 }
 
@@ -595,6 +605,178 @@ fn chunk_count(size: Size) -> Size {
     }
 }
 
+/// Whether `suggestions` would do for a map of `size`; or the first wrong, as
+/// [`WorldMap::suggest`] names it.
+fn check_suggestions(suggestions: &Suggestions, size: Size) -> Result<(), MapError> {
+    let mut ids = BTreeSet::new();
+    let mut check = |id: &str, places: &[Placed]| {
+        if !is_valid_id(id) {
+            return Err(MapError::SuggestionId(id.to_owned()));
+        }
+        if !ids.insert(id.to_owned()) {
+            return Err(MapError::SuggestionTwice(id.to_owned()));
+        }
+        match places
+            .iter()
+            .find(|at| at.tile.x >= size.width || at.tile.y >= size.height)
+        {
+            Some(off) => Err(MapError::SuggestionOffTheMap {
+                id: id.to_owned(),
+                at: off.tile,
+                size,
+            }),
+            None => Ok(()),
+        }
+    };
+    for settlement in &suggestions.settlements {
+        check(&settlement.id, std::slice::from_ref(&settlement.at))?;
+    }
+    for route in &suggestions.routes {
+        check(&route.id, &route.points)?;
+        if route.points.len() < 2 {
+            return Err(MapError::RouteTooShort {
+                id: route.id.clone(),
+                points: route.points.len(),
+            });
+        }
+    }
+    for point in &suggestions.points {
+        check(&point.id, std::slice::from_ref(&point.at))?;
+    }
+    let mut people = |id: &str, links: &[&Option<String>]| {
+        check(id, &[])?;
+        match links
+            .iter()
+            .copied()
+            .flatten()
+            .find(|link| !is_valid_id(link))
+        {
+            Some(link) => Err(MapError::LinkId {
+                id: id.to_owned(),
+                link: link.clone(),
+            }),
+            None => Ok(()),
+        }
+    };
+    for culture in &suggestions.cultures {
+        people(&culture.id, &[])?;
+    }
+    for religion in &suggestions.religions {
+        people(&religion.id, &[&religion.culture])?;
+    }
+    for state in &suggestions.states {
+        people(&state.id, &[&state.culture, &state.capital])?;
+        let mut toward = BTreeSet::new();
+        for (other, _) in &state.stances {
+            if !is_valid_id(other) {
+                return Err(MapError::LinkId {
+                    id: state.id.clone(),
+                    link: other.clone(),
+                });
+            }
+            if *other == state.id {
+                return Err(MapError::StanceToItself(state.id.clone()));
+            }
+            if !toward.insert(other) {
+                return Err(MapError::StanceTwice {
+                    id: state.id.clone(),
+                    toward: other.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The cultures, religions and states `suggestions` holds, by Azgaar's id: each suggested as
+/// `culture_<i>`, `religion_<i>` or `state_<i>`.
+struct Suggested {
+    cultures: BTreeSet<u32>,
+    religions: BTreeSet<u32>,
+    states: BTreeSet<u32>,
+}
+
+impl Suggested {
+    fn of(suggestions: &Suggestions) -> Suggested {
+        let ids = |prefix: &str, ids: Vec<&str>| -> BTreeSet<u32> {
+            ids.into_iter()
+                .filter_map(|id| id.strip_prefix(prefix)?.parse().ok())
+                .collect()
+        };
+        Suggested {
+            cultures: ids(
+                "culture_",
+                suggestions.cultures.iter().map(|c| c.id.as_str()).collect(),
+            ),
+            religions: ids(
+                "religion_",
+                suggestions
+                    .religions
+                    .iter()
+                    .map(|r| r.id.as_str())
+                    .collect(),
+            ),
+            states: ids(
+                "state_",
+                suggestions.states.iter().map(|s| s.id.as_str()).collect(),
+            ),
+        }
+    }
+
+    /// The first people `tile` lies in that isn't suggested, culture, religion then state, by
+    /// its suggestion's id.
+    fn missing(&self, tile: &Tile) -> Option<String> {
+        [
+            ("culture", tile.culture, &self.cultures),
+            ("religion", tile.religion, &self.religions),
+            ("state", tile.state, &self.states),
+        ]
+        .into_iter()
+        .find_map(|(kind, id, suggested)| {
+            let id = id?;
+            (!suggested.contains(&id)).then(|| format!("{kind}_{id}"))
+        })
+    }
+}
+
+/// The tile at `at` of the map of `size` whose generated tiles are `chunks`, `overrides`
+/// applied; `at` must be on it.
+fn tile_of(
+    chunks: &[Chunk],
+    size: Size,
+    overrides: &BTreeMap<TilePos, Override>,
+    at: TilePos,
+) -> Tile {
+    let chunk = (at.y / CHUNK * chunk_count(size).width + at.x / CHUNK) as usize;
+    let generated = chunks[chunk]
+        .tile(at.x % CHUNK, at.y % CHUNK)
+        .expect("on the map");
+    match overrides.get(&at) {
+        Some(edit) => edit.apply(generated),
+        None => generated,
+    }
+}
+
+/// Whether every tile of the map, `overrides` applied, lies only in cultures, religions and
+/// states `suggestions` holds; or the first tile in reading order that doesn't, and the people.
+fn check_territory(
+    chunks: &[Chunk],
+    size: Size,
+    overrides: &BTreeMap<TilePos, Override>,
+    suggestions: &Suggestions,
+) -> Result<(), MapError> {
+    let suggested = Suggested::of(suggestions);
+    for y in 0..size.height {
+        for x in 0..size.width {
+            let at = TilePos { x, y };
+            if let Some(people) = suggested.missing(&tile_of(chunks, size, overrides, at)) {
+                return Err(MapError::NotSuggested { at, people });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The route a stretch's id belongs to: `route_2` for `route_2_1`; none for any other id.
 fn route_of(id: &str) -> Option<&str> {
     let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
@@ -623,20 +805,59 @@ pub struct WorldMap {
 }
 
 impl WorldMap {
-    /// The map `recipe` makes, each tile from `generate`, asked once for each, row by row.
+    /// The map `recipe` makes, each tile from `generate`, asked once for each, row by row, with
+    /// no suggestions; or why not.
     pub fn new(
         recipe: Recipe,
         generate: impl FnMut(TilePos) -> Tile,
     ) -> Result<WorldMap, MapError> {
+        WorldMap::with_suggestions(recipe, Suggestions::default(), generate)
+    }
+
+    /// The map `recipe` makes, each tile from `generate`, asked once for each, row by row, with
+    /// `suggestions`; or why not, naming the first wrong: a suggestion `suggest` would refuse, or
+    /// a tile lying in a culture, religion or state not among them.
+    pub fn with_suggestions(
+        recipe: Recipe,
+        suggestions: Suggestions,
+        generate: impl FnMut(TilePos) -> Tile,
+    ) -> Result<WorldMap, MapError> {
         let size = recipe.size()?;
+        check_suggestions(&suggestions, size)?;
+        let chunks = generate_chunks(size, generate);
+        check_territory(&chunks, size, &BTreeMap::new(), &suggestions)?;
         Ok(WorldMap {
             recipe,
             size,
-            chunks: generate_chunks(size, generate),
+            chunks,
             overrides: BTreeMap::new(),
-            suggestions: Suggestions::default(),
+            suggestions,
             dismissed: BTreeSet::new(),
         })
+    }
+
+    /// How many tiles lie in each culture, religion and state, by its suggestion's id, as the
+    /// map reads now, overrides applied; those with none left out.
+    pub fn territory(&self) -> BTreeMap<String, u32> {
+        let mut counts: BTreeMap<(&str, u32), u32> = BTreeMap::new();
+        for y in 0..self.size.height {
+            for x in 0..self.size.width {
+                let tile = tile_of(&self.chunks, self.size, &self.overrides, TilePos { x, y });
+                for (kind, id) in [
+                    ("culture", tile.culture),
+                    ("religion", tile.religion),
+                    ("state", tile.state),
+                ] {
+                    if let Some(id) = id {
+                        *counts.entry((kind, id)).or_default() += 1;
+                    }
+                }
+            }
+        }
+        counts
+            .into_iter()
+            .map(|((kind, id), tiles)| (format!("{kind}_{id}"), tiles))
+            .collect()
     }
 
     pub fn recipe(&self) -> &Recipe {
@@ -676,11 +897,8 @@ impl WorldMap {
 
     /// The tile at `at`, its override applied, if it's on the map.
     pub fn tile(&self, at: TilePos) -> Option<Tile> {
-        let generated = self.generated(at)?;
-        Some(match self.overrides.get(&at) {
-            Some(edit) => edit.apply(generated),
-            None => generated,
-        })
+        self.generated(at)?;
+        Some(tile_of(&self.chunks, self.size, &self.overrides, at))
     }
 
     /// Where the tile at `at` drops to a lower neighbour, on each side, its override and theirs
@@ -712,98 +930,12 @@ impl WorldMap {
 
     /// Sets its suggestions to `suggestions`, or refuses them, unchanged, naming the first
     /// wrong: an id that isn't a valid content id or that two share, a place off the map, a
-    /// route of fewer than two points, a people covering no tiles or more than the map has, a
-    /// link or stance naming an invalid id, or a state's stance toward itself or held twice
-    /// toward one.
+    /// route of fewer than two points, a link or stance naming an invalid id, a state's stance
+    /// toward itself or held twice toward one, or a tile lying in a culture, religion or state
+    /// not among them.
     pub fn suggest(&mut self, suggestions: Suggestions) -> Result<(), MapError> {
-        {
-            let mut ids = BTreeSet::new();
-            let size = self.size;
-            let mut check = |id: &str, places: &[Placed]| {
-                if !is_valid_id(id) {
-                    return Err(MapError::SuggestionId(id.to_owned()));
-                }
-                if !ids.insert(id.to_owned()) {
-                    return Err(MapError::SuggestionTwice(id.to_owned()));
-                }
-                match places
-                    .iter()
-                    .find(|at| at.tile.x >= size.width || at.tile.y >= size.height)
-                {
-                    Some(off) => Err(MapError::SuggestionOffTheMap {
-                        id: id.to_owned(),
-                        at: off.tile,
-                        size,
-                    }),
-                    None => Ok(()),
-                }
-            };
-            for settlement in &suggestions.settlements {
-                check(&settlement.id, std::slice::from_ref(&settlement.at))?;
-            }
-            for route in &suggestions.routes {
-                check(&route.id, &route.points)?;
-                if route.points.len() < 2 {
-                    return Err(MapError::RouteTooShort {
-                        id: route.id.clone(),
-                        points: route.points.len(),
-                    });
-                }
-            }
-            for point in &suggestions.points {
-                check(&point.id, std::slice::from_ref(&point.at))?;
-            }
-            let area = u64::from(size.width) * u64::from(size.height);
-            let mut people = |id: &str, tiles: u32, links: &[&Option<String>]| {
-                check(id, &[])?;
-                if tiles == 0 || u64::from(tiles) > area {
-                    return Err(MapError::PeopleTiles {
-                        id: id.to_owned(),
-                        tiles,
-                        area,
-                    });
-                }
-                match links
-                    .iter()
-                    .copied()
-                    .flatten()
-                    .find(|link| !is_valid_id(link))
-                {
-                    Some(link) => Err(MapError::LinkId {
-                        id: id.to_owned(),
-                        link: link.clone(),
-                    }),
-                    None => Ok(()),
-                }
-            };
-            for culture in &suggestions.cultures {
-                people(&culture.id, culture.tiles, &[])?;
-            }
-            for religion in &suggestions.religions {
-                people(&religion.id, religion.tiles, &[&religion.culture])?;
-            }
-            for state in &suggestions.states {
-                people(&state.id, state.tiles, &[&state.culture, &state.capital])?;
-                let mut toward = BTreeSet::new();
-                for (other, _) in &state.stances {
-                    if !is_valid_id(other) {
-                        return Err(MapError::LinkId {
-                            id: state.id.clone(),
-                            link: other.clone(),
-                        });
-                    }
-                    if *other == state.id {
-                        return Err(MapError::StanceToItself(state.id.clone()));
-                    }
-                    if !toward.insert(other) {
-                        return Err(MapError::StanceTwice {
-                            id: state.id.clone(),
-                            toward: other.clone(),
-                        });
-                    }
-                }
-            }
-        }
+        check_suggestions(&suggestions, self.size)?;
+        check_territory(&self.chunks, self.size, &self.overrides, &suggestions)?;
         self.suggestions = suggestions;
         Ok(())
     }
@@ -906,6 +1038,8 @@ impl WorldMap {
     }
 
     /// Adds `edit` to the override of the tile at `at`; one that then sets nothing is removed.
+    /// Or refuses it, unchanged: the tile is off the map, or would lie in a culture, religion or
+    /// state not suggested.
     pub fn edit(&mut self, at: TilePos, edit: Override) -> Result<(), MapError> {
         if self.generated(at).is_none() {
             return Err(MapError::OffTheMap {
@@ -919,6 +1053,10 @@ impl WorldMap {
             .copied()
             .unwrap_or_default()
             .and(edit);
+        let tile = edited.apply(self.generated(at).expect("on the map"));
+        if let Some(people) = Suggested::of(&self.suggestions).missing(&tile) {
+            return Err(MapError::NotSuggested { at, people });
+        }
         match edited.is_empty() {
             true => self.overrides.remove(&at),
             false => self.overrides.insert(at, edited),
@@ -940,7 +1078,8 @@ impl WorldMap {
     }
 
     /// Every tile made again from `recipe`, which must make a map this size, and `generate`;
-    /// the overrides kept.
+    /// the overrides kept. Or why not, unchanged: a tile would lie in a culture, religion or
+    /// state not suggested.
     pub fn regenerate(
         &mut self,
         recipe: Recipe,
@@ -953,7 +1092,9 @@ impl WorldMap {
                 map: self.size,
             });
         }
-        self.chunks = generate_chunks(size, generate);
+        let chunks = generate_chunks(size, generate);
+        check_territory(&chunks, size, &self.overrides, &self.suggestions)?;
+        self.chunks = chunks;
         self.recipe = recipe;
         Ok(())
     }

@@ -251,6 +251,23 @@ fn at(id: &str, points: &[[u32; 2]]) -> (String, Vec<Placed>) {
     )
 }
 
+#[test]
+fn each_tile_lies_in_its_nearest_cells_culture_religion_and_state() {
+    // Worked by peoples_tile_ref.py, apart from the code: tile (5, 5) lies in cell 0, which
+    // names none; (30, 8) in cell 1; (9, 33) in cell 2, none; (20, 20) in cell 4; (39, 39) in
+    // cell 3.
+    let map = rasterise(&with_peoples(), whole()).expect("a map");
+    let peoples = |x, y| {
+        let tile = map.tile(TilePos { x, y }).expect("on the map");
+        (tile.culture, tile.religion, tile.state)
+    };
+    assert_eq!(peoples(5, 5), (None, None, None));
+    assert_eq!(peoples(30, 8), (Some(1), Some(1), Some(1)));
+    assert_eq!(peoples(9, 33), (None, None, None));
+    assert_eq!(peoples(20, 20), (Some(1), Some(2), Some(1)));
+    assert_eq!(peoples(39, 39), (Some(2), Some(2), Some(2)));
+}
+
 /// `raster` with raster.json's peoples (W6e): cells 1 and 4 Highfolk's, cell 3 Pinefolk's;
 /// Old Ways on cell 1 and Pine Faith on 3 and 4; Highmoor on 1 and 4 and Pinewatch on 3.
 /// Seafolk is on no cell.
@@ -317,23 +334,32 @@ fn with_peoples() -> Source {
     source
 }
 
-/// Each people's id and tiles on the map, in order.
+/// Each people suggested, by id in order, and the tiles lying in it (W6f); and the map's
+/// territory holds no others.
 fn peoples(source: &Source, recipe: Recipe) -> Vec<(String, u32)> {
     let map = rasterise(source, recipe).expect("the recipe makes a map");
     let suggestions = map.suggestions();
-    (suggestions.cultures.iter().map(|c| (c.id.clone(), c.tiles)))
-        .chain(
-            suggestions
-                .religions
-                .iter()
-                .map(|r| (r.id.clone(), r.tiles)),
-        )
-        .chain(suggestions.states.iter().map(|s| (s.id.clone(), s.tiles)))
+    let territory = map.territory();
+    let ids: Vec<&str> = (suggestions.cultures.iter().map(|c| c.id.as_str()))
+        .chain(suggestions.religions.iter().map(|r| r.id.as_str()))
+        .chain(suggestions.states.iter().map(|s| s.id.as_str()))
+        .collect();
+    assert_eq!(
+        territory.keys().map(String::as_str).collect::<Vec<_>>(),
+        ids.iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>(),
+        "the territory is the suggested peoples'"
+    );
+    ids.into_iter()
+        .map(|id| (id.to_owned(), territory[id]))
         .collect()
 }
 
 #[test]
-fn rasterising_suggests_each_people_a_tile_lies_in_counting_its_tiles() {
+fn rasterising_suggests_each_people_a_tile_lies_in_and_lays_its_territory() {
     // Worked by peoples_map_ref.py, apart from the code, as in factional-content's tests: each
     // tile lies in the cell nearest its centre, the first if several are as near.
     let named = |tiles: [u32; 6]| -> Vec<(String, u32)> {

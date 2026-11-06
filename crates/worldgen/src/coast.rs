@@ -32,6 +32,9 @@ pub(crate) fn tile(elevation: Fixed, water: Option<Body>, shallows: Fixed) -> Ti
         temperature: 0,
         precipitation: 0,
         plant: None,
+        culture: None,
+        religion: None,
+        state: None,
     }
 }
 

@@ -1258,6 +1258,29 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
     - W6c's commands dismiss and restore them by id, and the listing marks them " (dismissed)".
   - **Checked by a separate script:** `peoples_map_ref.py`, written from these rules apart from the code, gives each one's tiles on `raster.json` whole and in the region `10,10,20,20` at scale 2.
   - *Why:* a designer choosing factions sees which of the source's peoples the map holds and how much of it each covers, beside how large each is in the whole world, so a small region isn't mistaken for a small people.
+- **P-149 · Territory: each tile's culture, religion and state as layers** (made in W6f, 2026-11-06; D-20, D-49, P-148).
+  - **Three tile layers, overridable,** at the user's choice: a tile's culture, religion and state, each Azgaar's id or none. An override sets one or clears it, as water and a plant are cleared, and survives regenerating like every other layer.
+  - **A tile lies in its nearest cell's,** at the user's choice: the cell W6e counts by and the climate comes from. Water tiles take their cell's too, so the territory agrees with each people's count.
+  - **Dismissing leaves the layers alone,** at the user's choice. A dismissed people's tiles still name it, and `world tile` marks it " (dismissed)".
+  - **The count comes from the layers,** at the user's choice:
+    - The suggestions no longer store a people's tiles. `WorldMap::territory` counts the tiles in each, overrides applied.
+    - W6e's refusal of a people covering no tiles, or more than the map, is gone. A people overridden out of every tile stays suggested, with 0.
+  - **Every tile lies only in a suggested people (D-20).** A tile, generated or overridden, may name only a culture, religion or state suggested on the map, as `culture_<i>`, `religion_<i>` or `state_<i>`, by me.
+    - A suggested people whose id isn't of that form can't be named by a tile.
+    - The map refuses, unchanged, naming the first tile in reading order and then culture, religion, state: "tile (3, 4) lies in culture_7, which isn't suggested on the map".
+    - It checks when it's made, when it's given suggestions, when a tile is edited and when it's regenerated. So `WorldMap::with_suggestions` makes a map and its suggestions together, checking the suggestions first; `WorldMap::new` makes one with none. Rasterising and reading a file use `with_suggestions`, by me.
+  - **The map file is version 10:**
+    - Each chunk adds the three layers, an Azgaar id or none a tile. An override adds the three it can set.
+    - The reader decodes the suggestions before making the map, since the tiles depend on them. A tile in a people not suggested is damaged; so is an override that would put one there, "the override of tile (3, 1): …". Version 9 is refused.
+    - A map with no peoples grows by about 18 bytes for each chunk of empty layers. The hand-made map grows from 11,995 to 12,131 bytes.
+  - **`world tile <map> <x>,<y>`,** at the user's choice, says one tile on up to three lines:
+    - every layer: elevation, level, terrain, water, biome, temperature, precipitation and plant;
+    - its peoples, by id and name;
+    - the layers its override sets, left out when it has none.
+    
+    The tile is checked before the map is read, by me: "the tile needs two whole numbers, <x>,<y>, not 3".
+  - **Terrain names** move into `Terrain::name`, beside `Biome::name`, and the import's land summary uses them, by me.
+  - *Why:* the builder can draw territories and W10 can make places from them only if each tile knows whose it is. Keeping the count in the layers means repainting a border is the only change a designer makes, and every count follows.
 
 ## Open
 
