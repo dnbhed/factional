@@ -457,7 +457,6 @@ impl WorldMap {
         let drop = |x: Option<u32>, y: Option<u32>| {
             let there = self.tile(TilePos { x: x?, y: y? })?;
             match here.level.checked_sub(there.level) {
-                _ if here.is_water() || there.is_water() => None,
                 Some(1) => Some(Drop::Ledge),
                 Some(2..) => Some(Drop::Cliff),
                 _ => None,

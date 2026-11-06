@@ -193,38 +193,43 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
         .unzip();
     let width = size.width as usize;
     coast::remove_specks(width, &mut waters, recipe.coast.specks as usize);
-    // The rivers, on the land; then each land tile's level, then the plateaus and pits;
-    // water, rivers included, has none.
+    // The rivers, on the land, each tile lowered to its bed; then each land tile's level, then
+    // the plateaus and pits; water stands at the level of its surface.
     let land: Vec<bool> = waters.iter().map(Option::is_none).collect();
-    let flows = rivers::paint(width, origin, &land, &raster.rivers(scale));
+    let courses = rivers::paint(width, origin, &land, &raster.rivers(scale));
+    let elevations: Vec<Fixed> = elevations
+        .iter()
+        .zip(&courses)
+        .map(|(&elevation, course)| course.map_or(elevation, |c| elevation.min(c.bed)))
+        .collect();
     let starts = level_heights(recipe.levels.spacing, source.height_exponent);
+    let level = |height: Fixed| {
+        u8::try_from(starts.partition_point(|&start| start <= height)).expect("at most 80 levels")
+    };
     let mut levels: Vec<Option<u8>> = elevations
         .iter()
-        .zip(&waters)
-        .zip(&flows)
-        .map(|((&elevation, water), flow)| {
-            let level = starts.partition_point(|&start| start <= elevation);
-            (water.is_none() && flow.is_none())
-                .then(|| u8::try_from(level).expect("at most 80 levels"))
-        })
+        .zip(&land)
+        .zip(&courses)
+        .map(|((&elevation, &land), course)| (land && course.is_none()).then(|| level(elevation)))
         .collect();
     levels::clean(width, &mut levels, recipe.levels.specks as usize);
     let shallows = recipe.coast.shallows;
     WorldMap::new(recipe, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
-        let water = waters[i].map(|cell| raster.bodies[cell as usize].expect("a water cell"));
-        let tile = coast::tile(elevations[i], water, shallows);
-        let tile = match flows[i] {
-            Some(flow) => Tile {
+        let body = waters[i].map(|cell| raster.bodies[cell as usize].expect("a water cell"));
+        let tile = coast::tile(elevations[i], body, shallows);
+        let tile = match courses[i] {
+            Some(course) => Tile {
                 terrain: Terrain::ShallowWater,
-                water: Some(Water::River { flow }),
+                water: Some(Water::River { flow: course.flow }),
                 biome: Biome::Marine,
                 ..tile
             },
             None => tile,
         };
+        let surface = body.map_or(elevations[i], |body| body.surface);
         Tile {
-            level: levels[i].unwrap_or(0),
+            level: levels[i].unwrap_or_else(|| level(surface)),
             ..tile
         }
     })
@@ -330,7 +335,8 @@ impl Raster<'_> {
         }
     }
 
-    /// The pieces of every river's line, at `scale` tiles a pixel.
+    /// The pieces of every river's line, at `scale` tiles a pixel, each with its bed: the
+    /// lowest ground along the line so far, never below the surface of the water it ends in.
     fn rivers(&self, scale: i128) -> Vec<Piece> {
         let size = self.source.size;
         let corner = [size.width, size.height].map(|side| i128::from(side) * 200 * scale);
@@ -341,7 +347,22 @@ impl Raster<'_> {
                 let running = rivers::running_fluxes(river, &self.source.cells);
                 let half_widths = rivers::half_widths(river, &running);
                 let anchors = rivers::anchors(river, &self.centres, corner);
-                rivers::pieces(&anchors, &half_widths, &running, scale)
+                // The surface of the water its last cell is in, unless it runs off the map.
+                let floor = match river.off_map {
+                    true => None,
+                    false => river
+                        .cells
+                        .last()
+                        .and_then(|&cell| self.bodies[cell as usize].map(|body| body.surface)),
+                };
+                rivers::pieces(
+                    &anchors,
+                    &half_widths,
+                    &running,
+                    scale,
+                    |at| self.ground(at).0,
+                    floor,
+                )
             })
             .collect()
     }

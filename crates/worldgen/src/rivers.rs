@@ -1,9 +1,10 @@
 //! Rivers (W3d, P-139): each of the source's rivers drawn on the tiles along a smooth curve
-//! through its cells, as wide as Azgaar draws it and never narrower than a tile.
+//! through its cells, as wide as Azgaar draws it and never narrower than a tile; its bed
+//! carved never to rise from its source to its mouth (W3e, P-140).
 
 use std::ops::Range;
 
-use factional_core::div_round;
+use factional_core::{Fixed, div_round};
 
 use crate::raster::power;
 use crate::source::{SourceCell, SourceRiver};
@@ -28,13 +29,21 @@ const LENGTH_PROGRESSION: [i128; 9] = [1, 1, 2, 3, 5, 8, 13, 21, 34];
 const PIXEL: i128 = 100 * FLUX_FACTOR * 100;
 
 /// A straight piece of a river's line, from one point of its curve to the next: its
-/// half-width in the raster's units and the flow over it.
+/// half-width in the raster's units, the flow over it and the height of its bed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Piece {
     pub from: At,
     pub to: At,
     pub half_width: i128,
     pub flow: u32,
+    pub bed: Fixed,
+}
+
+/// What a river tile takes from the pieces over it: the largest flow and the lowest bed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Course {
+    pub flow: u32,
+    pub bed: Fixed,
 }
 
 /// The largest flux so far at each of `river`'s anchors, its cells' and, off the map, the
@@ -120,19 +129,38 @@ pub(crate) fn stretch(p: [At; 4], n: i128) -> Vec<At> {
         .collect()
 }
 
+/// The bed of each piece of a river whose line, from its source to its mouth, runs over
+/// `grounds`, a piece's bed being that at its far end: the lowest ground so far, never below
+/// `floor`, the surface of the water it ends in, if any.
+pub(crate) fn beds(grounds: &[Fixed], floor: Option<Fixed>) -> Vec<Fixed> {
+    let mut lowest = grounds.first().copied();
+    grounds
+        .iter()
+        .skip(1)
+        .map(|&ground| {
+            let bed = lowest.map_or(ground, |lowest| lowest.min(ground));
+            lowest = Some(bed);
+            floor.map_or(bed, |floor| bed.max(floor))
+        })
+        .collect()
+}
+
 /// The pieces of a river through `anchors`, with Azgaar's `half_widths` there and the
 /// `running` flux, at `scale` tiles a pixel: each stretch cut into as many pieces as whole
 /// tiles its chord spans along its longer axis, at least one, its half-width interpolated
 /// between its anchors and rounded once, each piece taking its wider end and the flux where
-/// its stretch starts.
+/// its stretch starts; and its bed, from the `ground` at the points of its line, held at
+/// `floor`.
 pub(crate) fn pieces(
     anchors: &[At],
     half_widths: &[i128],
     running: &[u32],
     scale: i128,
+    ground: impl Fn(At) -> Fixed,
+    floor: Option<Fixed>,
 ) -> Vec<Piece> {
     let last = anchors.len().saturating_sub(1);
-    let mut pieces = Vec::new();
+    let mut lines = Vec::new();
     for j in 0..last {
         let p = [
             anchors[j.saturating_sub(1)],
@@ -149,22 +177,46 @@ pub(crate) fn pieces(
                 div_round(between * TILE * scale, PIXEL * n)
             })
             .collect();
-        pieces.extend((0..points.len() - 1).map(|k| Piece {
-            from: points[k],
-            to: points[k + 1],
-            half_width: widths[k].max(widths[k + 1]),
-            flow: running[j],
+        lines.extend((0..points.len() - 1).map(|k| {
+            (
+                points[k],
+                points[k + 1],
+                widths[k].max(widths[k + 1]),
+                running[j],
+            )
         }));
     }
-    pieces
+    let grounds: Vec<Fixed> = lines
+        .first()
+        .map(|&(from, ..)| from)
+        .into_iter()
+        .chain(lines.iter().map(|&(_, to, ..)| to))
+        .map(ground)
+        .collect();
+    lines
+        .into_iter()
+        .zip(beds(&grounds, floor))
+        .map(|((from, to, half_width, flow), bed)| Piece {
+            from,
+            to,
+            half_width,
+            flow,
+            bed,
+        })
+        .collect()
 }
 
-/// The flow on each tile of a map `width` tiles a row, its first tile's corner at `origin`,
+/// The course on each tile of a map `width` tiles a row, its first tile's corner at `origin`,
 /// that is `land` and lies under one of `pieces`: within its half-width of the centre, or
-/// touched by it; the largest flow of any.
-pub(crate) fn paint(width: usize, origin: At, land: &[bool], pieces: &[Piece]) -> Vec<Option<u32>> {
+/// touched by it; the largest flow of any, and the lowest bed.
+pub(crate) fn paint(
+    width: usize,
+    origin: At,
+    land: &[bool],
+    pieces: &[Piece],
+) -> Vec<Option<Course>> {
     let height = land.len() / width.max(1);
-    let mut flows = vec![None; land.len()];
+    let mut courses: Vec<Option<Course>> = vec![None; land.len()];
     for piece in pieces {
         let [xs, ys] = near(piece, origin, [width, height]);
         for y in ys {
@@ -173,12 +225,16 @@ pub(crate) fn paint(width: usize, origin: At, land: &[bool], pieces: &[Piece]) -
                 let centre = [x, y].map(|t| t as i128 * TILE + TILE / 2);
                 let centre = [origin[0] + centre[0], origin[1] + centre[1]];
                 if land[i] && (within(centre, piece) || touches(centre, piece)) {
-                    flows[i] = flows[i].max(Some(piece.flow));
+                    let (flow, bed) = (piece.flow, piece.bed);
+                    courses[i] = Some(courses[i].map_or(Course { flow, bed }, |course| Course {
+                        flow: flow.max(course.flow),
+                        bed: bed.min(course.bed),
+                    }));
                 }
             }
         }
     }
-    flows
+    courses
 }
 
 /// The columns and rows of a map `size` tiles, its first tile's corner at `origin`, whose
@@ -385,17 +441,38 @@ mod tests {
     fn a_stretch_takes_a_piece_for_each_whole_tile_its_chord_spans() {
         // At scale 1 a tile is 200 units: 1000 units across is 5 pieces, 1001 is 6, and a
         // stretch shorter than a tile still has 1.
-        let count = |to: At| pieces(&[[0, 0], to], &[0, 0], &[1, 1], 1).len();
+        let count = |to: At| pieces(&[[0, 0], to], &[0, 0], &[1, 1], 1, flat, None).len();
         assert_eq!(count([1000, 300]), 5);
         assert_eq!(count([-300, 1001]), 6);
         assert_eq!(count([50, 50]), 1);
+    }
+
+    /// Level ground, at 0 m.
+    fn flat(_: At) -> Fixed {
+        Fixed::ZERO
+    }
+
+    /// `metres` m.
+    fn m(metres: i64) -> Fixed {
+        Fixed::from_hundredths(metres * 100)
+    }
+
+    fn metres(values: &[i64]) -> Vec<Fixed> {
+        values.iter().map(|&v| m(v)).collect()
     }
 
     #[test]
     fn a_piece_takes_the_wider_end_and_the_flow_where_its_stretch_starts() {
         // Half-widths of 0.5 and 1.0 pixels at scale 2: 200 and 400 units, 300 halfway; two
         // tiles long, so two pieces.
-        let made = pieces(&[[0, 0], [400, 0]], &[2_500_000, 5_000_000], &[7, 9], 2);
+        let made = pieces(
+            &[[0, 0], [400, 0]],
+            &[2_500_000, 5_000_000],
+            &[7, 9],
+            2,
+            flat,
+            None,
+        );
         assert_eq!(made.len(), 2);
         assert_eq!(
             made[0],
@@ -403,11 +480,51 @@ mod tests {
                 from: [0, 0],
                 to: [200, 0],
                 half_width: 300,
-                flow: 7
+                flow: 7,
+                bed: Fixed::ZERO,
             }
         );
         assert_eq!(made[1].half_width, 400);
         assert_eq!(made[1].flow, 7);
+    }
+
+    #[test]
+    fn a_bed_is_the_lowest_ground_so_far_from_the_source() {
+        assert_eq!(beds(&metres(&[5, 3, 4, 1, 2]), None), metres(&[3, 3, 1, 1]));
+        assert_eq!(beds(&metres(&[1, 2, 3]), None), metres(&[1, 1]));
+        assert_eq!(beds(&metres(&[4]), None), metres(&[]));
+    }
+
+    #[test]
+    fn a_bed_is_never_below_the_surface_of_the_water_it_ends_in() {
+        let floor = Some(m(2));
+        assert_eq!(
+            beds(&metres(&[5, 3, 4, 1, 2]), floor),
+            metres(&[3, 3, 2, 2])
+        );
+        // Ground below the floor at the source is held there too.
+        assert_eq!(beds(&metres(&[1, 5]), floor), metres(&[2]));
+    }
+
+    #[test]
+    fn a_piece_takes_the_bed_at_its_far_end() {
+        // Two tiles long, so two pieces, ending at x 200 and 400; the ground there 300, 100
+        // and 200 m along it.
+        let ground = |at: At| {
+            m(match at[0] {
+                0 => 300,
+                200 => 100,
+                _ => 200,
+            })
+        };
+        let beds = |floor: Option<Fixed>| -> Vec<(At, Fixed)> {
+            pieces(&[[0, 0], [400, 0]], &[0, 0], &[1, 1], 1, ground, floor)
+                .iter()
+                .map(|piece| (piece.to, piece.bed))
+                .collect()
+        };
+        assert_eq!(beds(None), [([200, 0], m(100)), ([400, 0], m(100))]);
+        assert_eq!(beds(Some(m(150))), [([200, 0], m(150)), ([400, 0], m(150))]);
     }
 
     /// `pieces` painted on a `rows`-drawn map, `.` land and `~` water, at scale 1, drawn
@@ -418,16 +535,16 @@ mod tests {
             .iter()
             .flat_map(|row| row.chars().map(|c| c == '.'))
             .collect();
-        let flows = paint(width, [0, 0], &land, pieces);
-        flows
+        let courses = paint(width, [0, 0], &land, pieces);
+        courses
             .chunks(width)
             .zip(land.chunks(width))
-            .map(|(flows, land)| {
-                flows
+            .map(|(courses, land)| {
+                courses
                     .iter()
                     .zip(land)
-                    .map(|(flow, &land)| match (flow, land) {
-                        (Some(flow), _) => char::from_digit(*flow, 10).expect("a digit"),
+                    .map(|(course, &land)| match (course, land) {
+                        (Some(course), _) => char::from_digit(course.flow, 10).expect("a digit"),
                         (None, true) => '.',
                         (None, false) => '~',
                     })
@@ -442,6 +559,7 @@ mod tests {
             to,
             half_width,
             flow,
+            bed: Fixed::ZERO,
         }
     }
 
@@ -538,5 +656,29 @@ mod tests {
             ),
             ["..~..", "..~..", "55955", "..9..", "..9.."]
         );
+    }
+
+    #[test]
+    fn a_tile_under_two_pieces_takes_the_lower_bed() {
+        let beds = |first: i64, second: i64| {
+            let pieces = [
+                Piece {
+                    bed: m(first),
+                    ..piece([500, 100], [500, 900], 0, 9)
+                },
+                Piece {
+                    bed: m(second),
+                    ..piece([100, 500], [900, 500], 0, 5)
+                },
+            ];
+            let courses = paint(5, [0, 0], &[true; 25], &pieces);
+            [12, 2, 10].map(|i| courses[i].map(|course| (course.flow, course.bed)))
+        };
+        // Where they cross, the larger flow and the lower bed, whichever is painted first.
+        assert_eq!(
+            beds(30, 20),
+            [Some((9, m(20))), Some((9, m(30))), Some((5, m(20)))]
+        );
+        assert_eq!(beds(20, 30)[0], Some((9, m(20))));
     }
 }

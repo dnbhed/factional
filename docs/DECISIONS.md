@@ -1101,6 +1101,19 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`world source` counts rivers;** `world import` counts river tiles, "X ocean, Y lake, Z river and W land".
   - **Checked by a separate script:** the counts were worked by a Python reference from these rules, never taken from this code, and the code agreed on its first run; Menayland's river tiles, whole, by a second script. The widths at each cell were worked by hand.
   - *Why:* P-119's rivers, drawn as Azgaar draws them so the map the designer made reads the same in Factional, while staying exact and independent of Azgaar's drawing code.
+- **P-140 · River beds carved, and water at its surface's level** (made in W3e, 2026-11-06; P-138, P-139).
+  - **Never rising, to its mouth,** at the user's choice:
+    - Walking each river's line from its source to its mouth, the bed at each point is the lowest ground at the line's points so far. The ground is worked as a tile's is, at the point, detail included.
+    - A piece's bed is that at its far end.
+    - The bed is never below the surface of the water the river's last cell is in, if it ends in water. A river that joins another, or runs off the map, has no such floor.
+  - **Only the river is carved:** a river tile takes the lowest bed of the pieces over it and is lowered to it, never raised. Its banks keep their ground, so a river cuts a channel where the land around it rises.
+  - **Water at its surface,** at the user's choice:
+    - The sea stands at level 0, a lake at the level of its surface, and a river tile at the level of its carved bed.
+    - A drop is wherever a tile meets a lower neighbour, land or water, so a lake above the land around it has a bank, and a river falls by ledges and cliffs.
+    - Plateaus and pits are still cleaned on land only, water being no neighbour there, as in P-138.
+  - **No new options, and no new version:** the carving follows from the source, and the map file's layers already hold the heights and levels.
+  - **Checked by a separate script:** every count was worked by `carving_ref.py`, written from these rules apart from the code, and the code agreed on its first run. Menayland's were checked by a second script.
+  - *Why:* a river that rises along its course, or water that never drops, reads wrongly on a terraced 2D map. Carving only the river keeps the ground the designer made, while the water finds its level.
 
 ## Open
 

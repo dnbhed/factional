@@ -1,6 +1,7 @@
 //! Rivers (W3d, P-139): Azgaar's rivers drawn on the tiles along a smooth curve, as wide as
-//! Azgaar draws them and never narrower than a tile. The expected counts were worked by a
-//! separate script from the rules in DESIGN.md §21, never by this code.
+//! Azgaar draws them and never narrower than a tile; their beds carved never to rise (W3e,
+//! P-140). The expected counts were worked by a separate script from the rules in DESIGN.md
+//! §21, never by this code.
 
 use std::collections::BTreeMap;
 
@@ -208,26 +209,76 @@ fn rivers_take_land_and_leave_the_sea_and_the_lake_alone() {
 }
 
 #[test]
-fn a_river_tile_is_shallow_water_at_level_0_on_the_ground_as_it_was() {
+fn a_river_tile_is_shallow_water_on_its_bed_never_raised() {
     let mut without = rivers();
     without.rivers.clear();
     let (with, without) = (
         whole(7),
         map(&without, recipe(WHOLE, 1, 7, Levels::default())),
     );
-    let mut seen = 0;
+    let (mut seen, mut lowered, mut deepest) = (0, 0, Fixed::ZERO);
     for (here, there) in tiles(&with).into_iter().zip(tiles(&without)) {
-        assert_eq!(here.elevation, there.elevation);
-        if let Some(Water::River { .. }) = here.water {
-            seen += 1;
-            assert_eq!(here.terrain, Terrain::ShallowWater);
-            assert_eq!(here.biome, Biome::Marine);
-            assert_eq!(here.level, 0);
-            assert!(here.is_water());
-            assert!(!there.is_water());
+        match here.water {
+            Some(Water::River { .. }) => {
+                seen += 1;
+                assert_eq!(here.terrain, Terrain::ShallowWater);
+                assert_eq!(here.biome, Biome::Marine);
+                assert!(here.is_water());
+                assert!(!there.is_water());
+                assert!(here.elevation <= there.elevation);
+                let cut = there.elevation - here.elevation;
+                lowered += usize::from(cut > Fixed::ZERO);
+                deepest = deepest.max(cut);
+            }
+            _ => assert_eq!(here.elevation, there.elevation),
         }
     }
-    assert_eq!(seen, 78);
+    assert_eq!((seen, lowered, deepest), (78, 74, hundredths(282_93)));
+}
+
+#[test]
+fn a_river_is_carved_never_to_rise_and_stands_at_its_beds_level() {
+    let map = whole(7);
+    let at = |x, y| {
+        let tile = tile(&map, x, y);
+        (tile.elevation, tile.level)
+    };
+    // Beck from B, down to E.
+    assert_eq!(at(30, 10), (hundredths(412_08), 3));
+    assert_eq!(at(39, 10), (hundredths(426_54), 3));
+    // Ford, down from D and through E.
+    assert_eq!(at(30, 30), (hundredths(1754_48), 7));
+    assert_eq!(at(20, 20), (hundredths(73_52), 1));
+    // Near the lake, held at its surface, -1.28 m, at level 0.
+    assert_eq!(at(13, 27), (hundredths(-1_28), 0));
+    // Land beside it is as it was.
+    assert_eq!(at(25, 26), (hundredths(1015_99), 5));
+}
+
+#[test]
+fn water_stands_at_the_level_of_its_surface() {
+    let mut source = rivers();
+    source.features[1] = Feature::Lake {
+        surface: hundredths(30_00),
+    };
+    let map = map(&source, recipe(WHOLE, 1, 7, Levels::default()));
+    // The lake's surface at 30.00 is 144 m, level 2's start, level 3's being 289 m; the sea's,
+    // 0 m, is level 0.
+    let mut levels = BTreeMap::new();
+    for tile in tiles(&map) {
+        let kind = match (tile.terrain, tile.water) {
+            (_, Some(Water::Lake)) => "lake",
+            (Terrain::DeepWater | Terrain::ShallowWater, None) => "sea",
+            _ => continue,
+        };
+        *levels.entry((kind, tile.level)).or_insert(0) += 1;
+    }
+    assert_eq!(
+        levels,
+        BTreeMap::from([(("lake", 2), 341), (("sea", 0), 358)])
+    );
+    assert_eq!(kinds(&map), [358, 341, 64, 837]);
+    assert_eq!(drops(&map), [355, 68]);
 }
 
 #[test]
@@ -235,7 +286,8 @@ fn levels_are_made_with_the_rivers_as_water() {
     let map = whole(7);
     let top = tiles(&map).iter().map(|t| t.level).max();
     assert_eq!(top, Some(8));
-    assert_eq!(drops(&map), [331, 26]);
+    // Water drops now too, by the level of its surface.
+    assert_eq!(drops(&map), [447, 67]);
 }
 
 #[test]
