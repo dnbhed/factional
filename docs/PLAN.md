@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6a → W6b → W6c → W6d → W6e → W6f → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6a → W6b → W6c → W6d → W6e → W6f → W7a → W7b → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -144,6 +144,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W6d — cultures, religions and states read (P-147): `pack.cultures`, `pack.religions` and `pack.states` and each cell's population, culture, religion and state, checked at their key paths; placeholders and removed ones skipped; names, kinds and links at the user's choice (a culture's type, a religion's type, form, deity and culture, a state's full name, form, culture and capital), every link resolving; diplomacy kept as stances, at the user's choice; each one's cells and people worked out from its cells and their settlements, rounded once, at the user's choice; `world source` counting them; Menayland's 4 cultures and 6 religions agreeing with a second script; W6d split into W6d and W6e; done 2026-11-06 (#113)
 - W6e — peoples on the map as candidate factions (P-148): a culture, religion or state suggested when a tile's nearest cell names it, at the user's choice, with its tiles counted; ids `culture_<i>`, `religion_<i>` and `state_<i>`; W6d's names, kinds and links and its extent in the whole source kept beside its tiles, at the user's choice; links kept as ids whether on the map or not, at the user's choice; `WorldMap::suggest` refusing a people of no tiles or more than the map's, an invalid link or stance, or a stance toward itself or held twice; map file version 9; every count taking them in, `world suggestions` listing them and marking links not on the map, W6c's commands dismissing them; raster.json agreeing with a second script; territory to W6f, at the user's choice; done 2026-11-06 (#114)
 - W6f — territory on the map (P-149): each tile's culture, religion and state as layers, Azgaar's ids, overridable, at the user's choice; a tile lying in its nearest cell's, water too, at the user's choice; dismissing leaving the layers, at the user's choice; each people's tiles counted from the layers, overrides applied, the stored count and W6e's tile refusal gone, at the user's choice; every tile lying only in a suggested people, checked when made, given suggestions, edited or regenerated; `WorldMap::with_suggestions` and `territory`; map file version 10; `world tile <map> <x>,<y>` saying a tile's layers, peoples and overrides, at the user's choice; raster.json and Menayland agreeing with a second script; done 2026-11-06 (#115)
+- W7a — the terrain in the builder (P-150): the map `builder.toml`'s `[map]` names, `file` and `tile` (32 points by default), read at start and drawn under the tokens, its middle at the origin; autotiled on a dual grid, each terrain a layer of 16 worked-out shapes nesting over those before it, each chunk and terrain a Bevy `TilemapChunk` in a placeholder colour; panned by a right or middle drag, zoomed about the cursor by the wheel, Home back to the played character, at the user's choice; Riverhold's sample given an 80 × 80 map from the raster fixture; W7 split into W7a and W7b; done 2026-11-06 (#PR)
 
 ---
 
@@ -165,9 +166,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W7 · The map in the builder — P3 · Next
+### W7b · Suggestions in the builder — P3 · Next
 
-The map drawn with Bevy's `TilemapChunk`, chunk by chunk, in placeholder colours, autotiled on a dual grid; panned and zoomed; suggestions shown. After G4's shell.
+The map's settlements, routes and points of interest shown on it in the builder, with their names; dismissed ones hidden.
 
 ### W8 · The wizard — P3 · Outline
 

@@ -2349,6 +2349,7 @@ dependencies = [
  "factional-egui",
  "factional-quests",
  "factional-reputation",
+ "factional-worldgen",
  "serde",
  "toml",
  "toml_edit",

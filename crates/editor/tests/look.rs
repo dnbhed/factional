@@ -18,6 +18,9 @@ fn sample_copy(name: &str) -> PathBuf {
     fs::create_dir_all(&dir).expect("a fresh directory");
     for file in fs::read_dir(SAMPLE).expect("the sample") {
         let file = file.expect("a file").path();
+        if file.is_dir() {
+            continue; // its maps, which the editor doesn't read
+        }
         fs::copy(&file, dir.join(file.file_name().expect("named"))).expect("copied");
     }
     dir

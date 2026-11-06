@@ -17,6 +17,9 @@ fn sample_copy(name: &str) -> PathBuf {
     fs::create_dir_all(&dir).expect("a fresh directory");
     for entry in fs::read_dir(Path::new(REPO).join("content/sample")).expect("the sample") {
         let path = entry.expect("an entry").path();
+        if path.is_dir() {
+            continue; // its maps, which these tests don't read
+        }
         fs::copy(&path, dir.join(path.file_name().expect("a name"))).expect("copied");
     }
     dir
