@@ -17,7 +17,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 7;
+pub const MAP_VERSION: u32 = 8;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -242,14 +242,15 @@ struct HeaderTiles {
     fingerprint: String,
 }
 
-/// The tiles: each chunk, row by row, then the overrides, then the suggestions, each
-/// compressed.
+/// The tiles: each chunk, row by row, then the overrides, then the suggestions, then the
+/// dismissals in order, each compressed.
 #[derive(Serialize, Deserialize)]
 struct Body<'a> {
     #[serde(borrow)]
     chunks: Vec<Packed<'a>>,
     overrides: Packed<'a>,
     suggestions: Packed<'a>,
+    dismissed: Packed<'a>,
 }
 
 /// The suggestions as written: settlements, routes and points of interest, each in order.
@@ -612,16 +613,24 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
         .collect();
     let overrides = pack(&postcard_of(&overrides));
     let suggestions = pack(&postcard_of(&file_suggestions(map.suggestions())));
-    file_of(map.recipe(), &chunks, &overrides, &suggestions)
+    let dismissed = pack(&postcard_of(&map.dismissed().iter().collect::<Vec<_>>()));
+    file_of(map.recipe(), &chunks, &overrides, &suggestions, &dismissed)
 }
 
-/// A map file of `recipe`, with its packed `chunks`, `overrides` and `suggestions`: the
-/// header, a zero byte, then the tiles.
-fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8], suggestions: &[u8]) -> Vec<u8> {
+/// A map file of `recipe`, with its packed `chunks`, `overrides`, `suggestions` and
+/// `dismissed`: the header, a zero byte, then the tiles.
+fn file_of(
+    recipe: &Recipe,
+    chunks: &[Vec<u8>],
+    overrides: &[u8],
+    suggestions: &[u8],
+    dismissed: &[u8],
+) -> Vec<u8> {
     let tiles = postcard_of(&Body {
         chunks: chunks.iter().map(|chunk| Packed(chunk)).collect(),
         overrides: Packed(overrides),
         suggestions: Packed(suggestions),
+        dismissed: Packed(dismissed),
     });
     let region = recipe.region;
     let header = format!(
@@ -818,6 +827,15 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
     let suggestions = suggestions_of(unpack(body.suggestions.0, "the suggestions")?)?;
     map.suggest(suggestions)
         .map_err(|error| damaged(format!("the suggestions: {error}")))?;
+    let dismissed: Vec<String> = unpack(body.dismissed.0, "the dismissals")?;
+    map.keep_dismissed(dismissed.iter().cloned().collect())
+        .map_err(|error| damaged(format!("the dismissals: {error}")))?;
+    if let Some(pair) = dismissed.windows(2).find(|pair| pair[0] >= pair[1]) {
+        return Err(damaged(format!(
+            "the dismissals are out of order: {} after {}",
+            pair[1], pair[0]
+        )));
+    }
     Ok(map)
 }
 
@@ -930,6 +948,7 @@ mod tests {
             &chunks,
             &pack(&postcard_of(&overrides)),
             &no_suggestions(),
+            &none_dismissed(),
         );
         read_map(&file).expect_err("the map is refused").to_string()
     }
@@ -943,13 +962,40 @@ mod tests {
         }))
     }
 
+    /// No dismissals, packed.
+    fn none_dismissed() -> Vec<u8> {
+        pack(&postcard_of(&Vec::<String>::new()))
+    }
+
+    /// What reading the map of flat grass with `dismissed`, packed, says is damaged.
+    fn damaged_dismissals(dismissed: &[&str]) -> String {
+        let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
+        let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
+        let dismissed = pack(&postcard_of(&dismissed.to_vec()));
+        read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &none,
+            &no_suggestions(),
+            &dismissed,
+        ))
+        .expect_err("the map is refused")
+        .to_string()
+    }
+
     /// What reading the map of flat grass with `suggestions` says is damaged.
     fn damaged_suggestions(suggestions: &[u8]) -> String {
         let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
         let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
-        read_map(&file_of(&recipe(), &chunks, &none, suggestions))
-            .expect_err("the map is refused")
-            .to_string()
+        read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &none,
+            suggestions,
+            &none_dismissed(),
+        ))
+        .expect_err("the map is refused")
+        .to_string()
     }
 
     fn at(x: u32, y: u32) -> FilePlaced {
@@ -978,6 +1024,7 @@ mod tests {
             &chunks,
             &pack(&postcard_of(&overrides)),
             &no_suggestions(),
+            &none_dismissed(),
         );
         let map = read_map(&file).expect("the map reads");
         let grass = Tile {
@@ -1010,6 +1057,7 @@ mod tests {
             &chunks,
             &pack(&postcard_of(&Vec::<FileOverride>::new())),
             &no_suggestions(),
+            &none_dismissed(),
         );
         assert_eq!(
             read_map(&file).map_err(|error| error.to_string()),
@@ -1021,7 +1069,7 @@ mod tests {
     fn tiles_that_arent_postcard_are_damage() {
         // A real map's header, its tiles swapped for one byte that isn't postcard, with
         // that byte's length and fingerprint.
-        let file = file_of(&recipe(), &[], &[], &[]);
+        let file = file_of(&recipe(), &[], &[], &[], &[]);
         let end = file.iter().position(|byte| *byte == 0).expect("a header");
         let header = std::str::from_utf8(&file[..end]).expect("text");
         let header = header.split("[tiles]").next().expect("a header");
@@ -1042,17 +1090,29 @@ mod tests {
     fn a_chunk_that_isnt_compressed_or_isnt_postcard_is_damage() {
         let chunks = [b"not zstd".to_vec(), pack(&postcard_of(&layers(12)))];
         let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
-        let refused = read_map(&file_of(&recipe(), &chunks, &none, &no_suggestions()))
-            .expect_err("refused")
-            .to_string();
+        let refused = read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &none,
+            &no_suggestions(),
+            &none_dismissed(),
+        ))
+        .expect_err("refused")
+        .to_string();
         assert!(
             refused.starts_with(&says("chunk (0, 0) can't be decompressed: ")),
             "{refused}"
         );
         let chunks = [pack(&postcard_of(&layers(128))), pack(&[0xff, 0xff])];
-        let refused = read_map(&file_of(&recipe(), &chunks, &none, &no_suggestions()))
-            .expect_err("refused")
-            .to_string();
+        let refused = read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &none,
+            &no_suggestions(),
+            &none_dismissed(),
+        ))
+        .expect_err("refused")
+        .to_string();
         assert!(
             refused.starts_with(&says("chunk (1, 0) can't be decoded: ")),
             "{refused}"
@@ -1155,6 +1215,7 @@ mod tests {
             &chunks,
             &pack(&[0xff]),
             &no_suggestions(),
+            &none_dismissed(),
         ))
         .expect_err("refused")
         .to_string();
@@ -1218,6 +1279,7 @@ mod tests {
             &chunks,
             &none,
             &written(&settlement, &route),
+            &none_dismissed(),
         ))
         .expect("the last codes read");
         assert_eq!(
@@ -1251,6 +1313,63 @@ mod tests {
         assert!(
             refused.starts_with(&says("the suggestions can't be decoded: ")),
             "{refused}"
+        );
+    }
+
+    #[test]
+    fn dismissals_that_arent_ids_or_in_order_are_damage() {
+        assert_eq!(
+            damaged_dismissals(&["poi_0", "Route-7"]),
+            says(
+                "the dismissals: the dismissal \"Route-7\" isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores"
+            )
+        );
+        assert_eq!(
+            damaged_dismissals(&["route_7", "poi_0"]),
+            says("the dismissals are out of order: poi_0 after route_7")
+        );
+        assert_eq!(
+            damaged_dismissals(&["poi_0", "poi_0"]),
+            says("the dismissals are out of order: poi_0 after poi_0")
+        );
+        let refused = {
+            let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
+            let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
+            read_map(&file_of(
+                &recipe(),
+                &chunks,
+                &none,
+                &no_suggestions(),
+                &pack(&[0xff]),
+            ))
+            .expect_err("refused")
+            .to_string()
+        };
+        assert!(
+            refused.starts_with(&says("the dismissals can't be decoded: ")),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn dismissals_not_on_the_map_read_back_in_order() {
+        let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
+        let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
+        let dismissed = pack(&postcard_of(&vec!["poi_0", "route_7"]));
+        let map = read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &none,
+            &no_suggestions(),
+            &dismissed,
+        ))
+        .expect("it reads");
+        assert_eq!(
+            map.dismissed()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["poi_0", "route_7"]
         );
     }
 

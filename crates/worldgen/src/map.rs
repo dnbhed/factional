@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use factional_core::{Fixed, is_valid_id};
+use factional_core::{Fixed, is_valid_id, suggest};
 
 use crate::CHUNK;
 use crate::suggestions::{Placed, Suggestions};
@@ -330,6 +330,11 @@ pub enum MapError {
     SuggestionTwice(String),
     SuggestionOffTheMap { id: String, at: TilePos, size: Size },
     RouteTooShort { id: String, points: usize },
+    NoSuggestion { id: String, near: Option<String> },
+    NamedTwice(String),
+    AlreadyDismissed { id: String, with: Option<String> },
+    NotDismissed { id: String, with: Option<String> },
+    DismissalId(String),
 }
 
 impl fmt::Display for MapError {
@@ -421,6 +426,30 @@ impl fmt::Display for MapError {
                 f,
                 "the suggestion {id} is at tile ({}, {}), off the map of {} × {} tiles",
                 at.x, at.y, size.width, size.height
+            ),
+            MapError::NoSuggestion { id, near } => {
+                write!(f, "there's no suggestion {id} on the map")?;
+                match near {
+                    Some(near) => write!(f, "; did you mean {near}?"),
+                    None => Ok(()),
+                }
+            }
+            MapError::NamedTwice(id) => write!(f, "{id} is named twice"),
+            MapError::AlreadyDismissed { id, with: None } => {
+                write!(f, "{id} is already dismissed")
+            }
+            MapError::AlreadyDismissed {
+                id,
+                with: Some(route),
+            } => write!(f, "{id} is already dismissed with {route}"),
+            MapError::NotDismissed { id, with: None } => write!(f, "{id} isn't dismissed"),
+            MapError::NotDismissed {
+                id,
+                with: Some(route),
+            } => write!(f, "{id} is dismissed with {route}; restore {route}"),
+            MapError::DismissalId(id) => write!(
+                f,
+                "the dismissal {id:?} isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores"
             ),
             MapError::RouteTooShort { id, points } => write!(
                 f,
@@ -544,6 +573,21 @@ fn chunk_count(size: Size) -> Size {
     }
 }
 
+/// The route a stretch's id belongs to: `route_2` for `route_2_1`; none for any other id.
+fn route_of(id: &str) -> Option<&str> {
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    let (route, stretch) = id.strip_prefix("route_")?.split_once('_')?;
+    (digits(route) && digits(stretch)).then(|| &id[..id.len() - stretch.len() - 1])
+}
+
+/// The dismissal in `dismissed` that covers the suggestion `id`: `id` itself, or its route's.
+fn covering<'a>(dismissed: &'a BTreeSet<String>, id: &str) -> Option<&'a str> {
+    dismissed
+        .get(id)
+        .or_else(|| route_of(id).and_then(|route| dismissed.get(route)))
+        .map(String::as_str)
+}
+
 /// A world map: its recipe, the tiles it generated, in chunks, the designer's overrides, and
 /// its suggestions (W6b).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -553,6 +597,7 @@ pub struct WorldMap {
     chunks: Vec<Chunk>,
     overrides: BTreeMap<TilePos, Override>,
     suggestions: Suggestions,
+    dismissed: BTreeSet<String>,
 }
 
 impl WorldMap {
@@ -568,6 +613,7 @@ impl WorldMap {
             chunks: generate_chunks(size, generate),
             overrides: BTreeMap::new(),
             suggestions: Suggestions::default(),
+            dismissed: BTreeSet::new(),
         })
     }
 
@@ -684,6 +730,101 @@ impl WorldMap {
             }
         }
         self.suggestions = suggestions;
+        Ok(())
+    }
+
+    /// The ids dismissed (W6c), in order, whether or not each is suggested now.
+    pub fn dismissed(&self) -> &BTreeSet<String> {
+        &self.dismissed
+    }
+
+    /// The dismissal that covers the suggestion `id`, if one does: `id` itself, or, for a
+    /// stretch of a route, the route's own id.
+    pub fn dismissed_by(&self, id: &str) -> Option<&str> {
+        covering(&self.dismissed, id)
+    }
+
+    /// Every suggestion's id, settlements, then routes, then points of interest.
+    fn suggested(&self) -> impl Iterator<Item = &str> {
+        let suggestions = &self.suggestions;
+        (suggestions.settlements.iter().map(|s| s.id.as_str()))
+            .chain(suggestions.routes.iter().map(|r| r.id.as_str()))
+            .chain(suggestions.points.iter().map(|p| p.id.as_str()))
+    }
+
+    /// Whether `id` is a suggestion on the map, or a route with a stretch on it.
+    fn is_suggested(&self, id: &str) -> bool {
+        self.suggested()
+            .any(|suggested| suggested == id || route_of(suggested) == Some(id))
+    }
+
+    /// The dismissals that cover no suggestion on the map now, in order.
+    pub fn not_on_the_map(&self) -> Vec<&str> {
+        self.dismissed
+            .iter()
+            .map(String::as_str)
+            .filter(|dismissed| !self.is_suggested(dismissed))
+            .collect()
+    }
+
+    /// Dismisses each of `ids`: a suggestion on the map, or a route's own id when a stretch of
+    /// it is. Or refuses them all, unchanged, naming the first wrong: one named twice, one not
+    /// suggested, or one already dismissed, an earlier id in `ids` included.
+    pub fn dismiss(&mut self, ids: &[&str]) -> Result<(), MapError> {
+        let mut dismissed = self.dismissed.clone();
+        let mut named = BTreeSet::new();
+        for &id in ids {
+            if !named.insert(id) {
+                return Err(MapError::NamedTwice(id.to_owned()));
+            }
+            if !self.is_suggested(id) {
+                return Err(MapError::NoSuggestion {
+                    id: id.to_owned(),
+                    near: suggest(id, self.suggested()).map(str::to_owned),
+                });
+            }
+            if let Some(by) = covering(&dismissed, id) {
+                return Err(MapError::AlreadyDismissed {
+                    id: id.to_owned(),
+                    with: (by != id).then(|| by.to_owned()),
+                });
+            }
+            dismissed.insert(id.to_owned());
+        }
+        self.dismissed = dismissed;
+        Ok(())
+    }
+
+    /// Restores each of `ids`, each dismissed, suggested now or not. Or refuses them all,
+    /// unchanged, naming the first wrong: one named twice, one not dismissed, or a stretch
+    /// dismissed only with its route.
+    pub fn restore(&mut self, ids: &[&str]) -> Result<(), MapError> {
+        let mut dismissed = self.dismissed.clone();
+        let mut named = BTreeSet::new();
+        for &id in ids {
+            if !named.insert(id) {
+                return Err(MapError::NamedTwice(id.to_owned()));
+            }
+            if !dismissed.remove(id) {
+                return Err(MapError::NotDismissed {
+                    id: id.to_owned(),
+                    with: route_of(id)
+                        .filter(|route| dismissed.contains(*route))
+                        .map(str::to_owned),
+                });
+            }
+        }
+        self.dismissed = dismissed;
+        Ok(())
+    }
+
+    /// Sets the dismissals to `ids`, as kept, whatever's suggested now; or refuses them,
+    /// unchanged, naming the first that isn't a valid id.
+    pub fn keep_dismissed(&mut self, ids: BTreeSet<String>) -> Result<(), MapError> {
+        if let Some(wrong) = ids.iter().find(|id| !is_valid_id(id)) {
+            return Err(MapError::DismissalId(wrong.clone()));
+        }
+        self.dismissed = ids;
         Ok(())
     }
 

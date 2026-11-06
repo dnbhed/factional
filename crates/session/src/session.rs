@@ -86,6 +86,14 @@ const COMMANDS: &[(&str, &str)] = &[
         "a world map's suggestions: its settlements, routes and points of interest, where each lies and what the source says of it",
     ),
     (
+        "world dismiss <map> <id> [<id>…]",
+        "set aside suggestions on a world map, each by its id; a route's own id sets aside every stretch of it",
+    ),
+    (
+        "world restore <map> <id> [<id>…]",
+        "bring back dismissed suggestions on a world map, each by the id it was dismissed by",
+    ),
+    (
         "world import <export> <map> [options]",
         "rasterise an Azgaar Full JSON export into a map file; options --region <x>,<y>,<width>,<height>, --scale <n>, --seed <n>, --detail <strength>, --wavelength <pixels>, --octaves <n>, --shallows <metres>, --specks <tiles>, --levels <points>, --level-specks <tiles>, --foliage <scale>, --tree-spacing <tiles>, --shrub-spacing <tiles>, --grass-spacing <tiles>; the whole map at 1 tile a pixel, seed 0, detail 0.25 of the relief over 8 pixels in 4 octaves, shallows to 10 metres, specks under 4 tiles, a level every 5 of Azgaar's heights with specks under 4 tiles, and foliage at scale 1 with trees 2 tiles apart, shrubs 1.5 and grass 1 unless told",
     ),
@@ -349,7 +357,8 @@ pub struct Session {
 
 /// How `world` is used.
 pub(crate) const WORLD_FORM: &str = "world needs the form: world info <file>, world source <file>, \
-     world suggestions <map>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
+     world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], \
+     or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
      [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
      [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] \
      [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]";
@@ -872,13 +881,28 @@ impl Session {
     }
 
     /// `world info <file>`: what the map in `file` holds (W1b); `world source <file>`: what
-    /// the Azgaar export in `file` holds (W2a).
+    /// the Azgaar export in `file` holds (W2a); `world dismiss` and `world restore` (W6c).
     fn world_info(&self, args: &str) -> Outcome {
         match split_command(args) {
             ("import", args) => {
                 let imported = crate::world::Import::parse(args)
                     .and_then(|import| crate::world::world_import(&self.base_dir, &import));
                 match imported {
+                    Ok(said) => Outcome::Output(said),
+                    Err(why) => Outcome::Error(why),
+                }
+            }
+            (change @ ("dismiss" | "restore"), args) => {
+                let (file, ids) = split_command(args);
+                let ids: Vec<&str> = ids.split_whitespace().collect();
+                if ids.is_empty() {
+                    return Outcome::Error(WORLD_FORM.to_owned());
+                }
+                let change = match change {
+                    "dismiss" => crate::world::world_dismiss,
+                    _ => crate::world::world_restore,
+                };
+                match change(&self.base_dir, file, &ids) {
                     Ok(said) => Outcome::Output(said),
                     Err(why) => Outcome::Error(why),
                 }
@@ -3219,7 +3243,7 @@ mod tests {
         assert_eq!(
             repo().execute(&format!("world info {file}")),
             output(&format!(
-                "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions; {bytes} bytes\n\
+                "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions (1 dismissed; 1 dismissal not on the map); {bytes} bytes\n\
                  recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
                  detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
                  shallows to 10.00 metres, specks under 4 tiles; \
@@ -3699,6 +3723,7 @@ mod tests {
         assert_eq!(
             WORLD_FORM,
             "world needs the form: world info <file>, world source <file>, world suggestions <map>, \
+             world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], \
              or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] \
              [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] \
              [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] \
@@ -3709,7 +3734,139 @@ mod tests {
         assert_eq!(run("world inspect hand-made.map"), form);
         assert_eq!(run("world source"), form);
         assert_eq!(run("world suggestions"), form);
+        assert_eq!(run("world dismiss"), form);
+        assert_eq!(run("world dismiss hand-made.map"), form);
+        assert_eq!(run("world restore"), form);
+        assert_eq!(run("world restore hand-made.map"), form);
         assert_eq!(run("world import"), form);
+    }
+
+    #[test]
+    fn world_dismiss_and_restore_rewrite_the_map_and_say_what_they_did() {
+        let dir = import_dir("dismiss");
+        let mut session = Session::new(&dir);
+        let done =
+            session.execute("world import raster.json part.map --region 10,10,20,20 --scale 2");
+        assert!(matches!(done, Ok(Outcome::Output(_))), "{done:?}");
+        // route_2 is two stretches here, so three of the six are dismissed.
+        assert_eq!(
+            session.execute("world dismiss part.map route_2 poi_1"),
+            output("dismissed route_2 and poi_1 in part.map; 3 of its 6 suggestions dismissed")
+        );
+        let (_, map) = imported(&dir, "part.map");
+        assert_eq!(
+            map.dismissed()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["poi_1", "route_2"]
+        );
+        assert_eq!(
+            session.execute("world suggestions part.map"),
+            output(
+                "part.map: 1 settlement, 4 routes and 1 point of interest (3 dismissed)\n\
+                 settlement_2 Lakeside: lake, port, 857 people, at tile (9, 33); plaza\n\
+                 route_0 High road: road, 4 points, tile (39, 0) to (39, 39)\n\
+                 route_1: trail, 2 points, tile (9, 33) to (21, 21)\n\
+                 route_2_1 Coast road: road, 2 points, tile (4, 4) to (39, 8) (dismissed with route_2)\n\
+                 route_2_2 Coast road: road, 2 points, tile (39, 20) to (30, 30) (dismissed with route_2)\n\
+                 poi_1 Old Keep: ruins, at tile (20, 22) (dismissed)"
+            )
+        );
+        let Ok(Outcome::Output(info)) = session.execute("world info part.map") else {
+            panic!("info")
+        };
+        assert!(
+            info.contains(" chunks, 0 overrides, 6 suggestions (3 dismissed); "),
+            "{info}"
+        );
+        assert_eq!(
+            session.execute("world restore part.map poi_1"),
+            output("restored poi_1 in part.map; 2 of its 6 suggestions dismissed")
+        );
+        assert_eq!(
+            session.execute("world dismiss part.map route_2_1 settlement_2 route_0"),
+            command_error("route_2_1 is already dismissed with route_2")
+        );
+        assert_eq!(
+            session.execute("world restore part.map route_2 settlement_2 route_1"),
+            command_error("settlement_2 isn't dismissed")
+        );
+        assert_eq!(
+            session.execute("world dismiss part.map route_0 route_1 settlement_2 poi_1"),
+            output(
+                "dismissed route_0, route_1, settlement_2 and poi_1 in part.map; 6 of its 6 suggestions dismissed"
+            )
+        );
+        assert_eq!(
+            session.execute("world restore part.map route_2 route_0 route_1 settlement_2 poi_1"),
+            output(
+                "restored route_2, route_0, route_1, settlement_2 and poi_1 in part.map; 0 of its 6 suggestions dismissed"
+            )
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn a_refused_dismissal_writes_nothing() {
+        let dir = import_dir("refused");
+        let mut session = Session::new(&dir);
+        let done = session.execute("world import raster.json raster.map");
+        assert!(matches!(done, Ok(Outcome::Output(_))), "{done:?}");
+        let before = std::fs::read(dir.join("raster.map")).expect("written");
+        assert_eq!(
+            session.execute("world dismiss raster.map settlement_1 settlement_7"),
+            command_error(
+                "there's no suggestion settlement_7 on the map; did you mean settlement_1?"
+            )
+        );
+        assert_eq!(
+            session.execute("world dismiss raster.map poi_0 poi_0"),
+            command_error("poi_0 is named twice")
+        );
+        assert_eq!(
+            session.execute("world restore raster.map poi_0"),
+            command_error("poi_0 isn't dismissed")
+        );
+        assert_eq!(
+            std::fs::read(dir.join("raster.map")).expect("there"),
+            before
+        );
+        assert_eq!(
+            session.execute("world dismiss nowhere.map poi_0"),
+            command_error("cannot read nowhere.map: No such file or directory (os error 2)")
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
+    }
+
+    #[test]
+    fn a_dismissal_not_on_the_map_is_counted_listed_and_can_be_restored() {
+        let dir = import_dir("stale");
+        let map = include_bytes!("../../content/tests/fixtures/maps/hand-made.map");
+        std::fs::write(dir.join("hand-made.map"), map).expect("written");
+        let mut session = Session::new(&dir);
+        assert_eq!(
+            session.execute("world suggestions hand-made.map"),
+            output(
+                "hand-made.map: 1 settlement, 1 route and 1 point of interest (1 dismissed; 1 dismissal not on the map)\n\
+                 settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town\n\
+                 route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)\n\
+                 poi_0: ruins, at tile (33, 7); Walls of an older keep. (dismissed)\n\
+                 dismissed, not on the map: route_7"
+            )
+        );
+        assert_eq!(
+            session.execute("world restore hand-made.map route_7"),
+            output("restored route_7 in hand-made.map; 1 of its 3 suggestions dismissed")
+        );
+        let Ok(Outcome::Output(info)) = session.execute("world info hand-made.map") else {
+            panic!("info")
+        };
+        assert!(
+            info.contains(", 3 overrides, 3 suggestions (1 dismissed); "),
+            "{info}"
+        );
+        std::fs::remove_dir_all(&dir).expect("removed");
     }
 
     #[test]

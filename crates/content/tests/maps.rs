@@ -136,7 +136,14 @@ fn hand_made() -> WorldMap {
         map.edit(pos, edit).expect("on the map");
     }
     map.suggest(hand_made_suggestions()).expect("on the map");
+    // Its point of interest dismissed, and route_7, not on it.
+    map.keep_dismissed(hand_made_dismissals())
+        .expect("valid ids");
     map
+}
+
+fn hand_made_dismissals() -> std::collections::BTreeSet<String> {
+    ["poi_0".to_owned(), "route_7".to_owned()].into()
 }
 
 fn placed(x: u32, y: u32, offset: [u8; 2]) -> Placed {
@@ -227,7 +234,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 7
+version = 8
 
 [recipe]
 source = ""
@@ -265,7 +272,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 7);
+    assert_eq!(MAP_VERSION, 8);
 }
 
 #[test]
@@ -339,6 +346,14 @@ fn a_maps_suggestions_read_back_exactly() {
 }
 
 #[test]
+fn a_maps_dismissals_read_back_even_those_not_on_it() {
+    let read = read_map(&write_map(&hand_made())).expect("it reads");
+    assert_eq!(read.dismissed(), &hand_made_dismissals());
+    assert_eq!(read.dismissed_by("poi_0"), Some("poi_0"));
+    assert_eq!(read.not_on_the_map(), ["route_7"]);
+}
+
+#[test]
 fn every_kind_and_figure_of_a_suggestion_reads_back() {
     let kinds = [
         SettlementKind::Generic,
@@ -408,7 +423,7 @@ fn suggestions_the_map_refuses_are_damaged_naming_why() {
     // The hand-made map's settlement renamed, byte for byte, to an id that isn't valid.
     let bytes = write_map(&hand_made());
     let (header, tiles) = split(&bytes);
-    let (chunks, overrides, suggestions): (Vec<Vec<u8>>, Vec<u8>, Vec<u8>) =
+    let (chunks, overrides, suggestions, dismissed): (Vec<Vec<u8>>, Vec<u8>, Vec<u8>, Vec<u8>) =
         postcard::from_bytes(tiles).expect("the body");
     let mut unpacked = zstd::stream::decode_all(suggestions.as_slice()).expect("unpacked");
     let id = b"settlement_9";
@@ -418,7 +433,7 @@ fn suggestions_the_map_refuses_are_damaged_naming_why() {
         .expect("the settlement's id is written");
     unpacked[found] = b'S';
     let repacked = zstd::stream::encode_all(unpacked.as_slice(), 3).expect("packed");
-    let body = postcard::to_allocvec(&(chunks, overrides, repacked)).expect("the body");
+    let body = postcard::to_allocvec(&(chunks, overrides, repacked, dismissed)).expect("the body");
     let header = header
         .replace(
             &format!("bytes = {}", tiles.len()),
@@ -450,15 +465,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [6, 8] {
+    for found in [7, 9] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 7",
+            "version = 8",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 7")
+            format!("this map is version {found}, but this build reads version 8")
         );
     }
 }

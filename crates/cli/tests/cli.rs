@@ -305,7 +305,7 @@ fn world_info_summarises_a_map_file_and_exits_zero() {
     assert_eq!(
         text(&output.stdout),
         format!(
-            "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions; {bytes} bytes\n\
+            "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions (1 dismissed; 1 dismissal not on the map); {bytes} bytes\n\
              recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
              detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
              shallows to 10.00 metres, specks under 4 tiles; \
@@ -325,14 +325,55 @@ fn world_suggestions_lists_a_maps_suggestions_and_exits_zero() {
     assert!(output.status.success(), "stderr: {}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "hand-made.map: 1 settlement, 1 route and 1 point of interest\n\
+        "hand-made.map: 1 settlement, 1 route and 1 point of interest (1 dismissed; 1 dismissal not on the map)\n\
          settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town\n\
          route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)\n\
-         poi_0: ruins, at tile (33, 7); Walls of an older keep.\n"
+         poi_0: ruins, at tile (33, 7); Walls of an older keep. (dismissed)\n\
+         dismissed, not on the map: route_7\n"
     );
     let refused = factional_in_repo(&["world", "suggestions", "content/sample/factions.toml"]);
     assert_eq!(refused.status.code(), Some(1));
     assert_eq!(text(&refused.stderr), "this isn't a Factional map\n");
+}
+
+#[test]
+fn world_dismiss_and_restore_rewrite_a_map_and_exit_zero() {
+    let dir = std::env::temp_dir().join(format!("factional-w6c-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    let map = dir.join("hand-made.map");
+    std::fs::copy(
+        format!(
+            "{}/../../crates/content/tests/fixtures/maps/hand-made.map",
+            env!("CARGO_MANIFEST_DIR")
+        ),
+        &map,
+    )
+    .expect("copied");
+    let path = map.to_str().expect("a UTF-8 path");
+    let dismissed = factional_in_repo(&["world", "dismiss", path, "settlement_9", "route_4_2"]);
+    assert!(
+        dismissed.status.success(),
+        "stderr: {}",
+        text(&dismissed.stderr)
+    );
+    assert_eq!(
+        text(&dismissed.stdout),
+        "dismissed settlement_9 and route_4_2 in hand-made.map; 3 of its 3 suggestions dismissed\n"
+    );
+    let restored = factional_in_repo(&["world", "restore", path, "route_7", "poi_0"]);
+    assert!(
+        restored.status.success(),
+        "stderr: {}",
+        text(&restored.stderr)
+    );
+    assert_eq!(
+        text(&restored.stdout),
+        "restored route_7 and poi_0 in hand-made.map; 2 of its 3 suggestions dismissed\n"
+    );
+    let refused = factional_in_repo(&["world", "restore", path, "poi_0"]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert_eq!(text(&refused.stderr), "poi_0 isn't dismissed\n");
+    std::fs::remove_dir_all(&dir).expect("removed");
 }
 
 #[test]
