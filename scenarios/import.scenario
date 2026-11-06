@@ -12,7 +12,7 @@ world info target/raster.map
 
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 30,30,20,20 == error: the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels
 assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 10,10 == error: --region needs four whole numbers, <x>,<y>,<width>,<height>, not 10,10
-assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
+assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
 
 # Rougher detail, and another seed, in the recipe: heights -381.73 to 2241.02 m, and the
 # recipe's detail in what `world info` says. The lengths are in the snapshot.
@@ -45,7 +45,26 @@ assert world import crates/content/tests/fixtures/azgaar/raster.json target/foli
 # the map's edge. 77 of the 1069 land tiles are river, their beds carved never to rise from source
 # to mouth; water stands at the level of its surface, and drops as land does.
 world source crates/content/tests/fixtures/azgaar/rivers.json
-assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 6526 bytes
+assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes and 0 points of interest suggested; 6539 bytes
 
 # A region at scale 2: the rivers twice as wide, 141 river tiles.
 world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers-part.map --region 10,10,20,20 --scale 2 --seed 7
+
+# Suggestions (W6b): raster.json's three settlements, three routes and two points of interest,
+# each placed by its tile and an offset within it, worked by a separate script. The import
+# counts them, `world info` counts them all, and `world suggestions` lists each.
+world import crates/content/tests/fixtures/azgaar/raster.json target/places.map
+world info target/places.map
+world suggestions target/places.map
+
+# A region drops what's outside it and cuts the routes at its edge: Highmoor, Pinewatch and Ash
+# Peak fall outside, and the Coast road leaves and comes back, two stretches, route_2_1 and
+# route_2_2.
+world import crates/content/tests/fixtures/azgaar/raster.json target/places-part.map --region 10,10,20,20 --scale 2
+world suggestions target/places-part.map
+
+# The top-left corner holds none.
+world import crates/content/tests/fixtures/azgaar/raster.json target/corner.map --region 0,0,10,10
+assert world suggestions target/corner.map == corner.map: 0 settlements, 0 routes and 0 points of interest
+assert world suggestions content/sample/factions.toml == error: this isn't a Factional map
+assert world suggestions == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]

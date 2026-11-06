@@ -4,8 +4,9 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Area, Biome, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, Override, Plant, PlantKind,
-    Recipe, Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
+    Area, Biome, Buildings, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, Override, Placed,
+    Plant, PlantKind, PointOfInterest, Recipe, Region, Route, RouteKind, Settlement,
+    SettlementKind, Size, Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -403,6 +404,174 @@ fn regenerating_to_another_size_is_refused_and_changes_nothing() {
         "the scale must be at least 1 tile a source pixel"
     );
     assert_eq!(map, before);
+}
+
+fn placed(x: u32, y: u32) -> Placed {
+    Placed {
+        tile: at(x, y),
+        offset: [255, 0],
+    }
+}
+
+/// A settlement, a route and a point of interest, each at the map's edge or corner.
+fn suggestions() -> Suggestions {
+    Suggestions {
+        settlements: vec![Settlement {
+            id: "settlement_1".to_owned(),
+            name: "Highmoor".to_owned(),
+            at: placed(99, 69),
+            people: 2345,
+            kind: SettlementKind::Generic,
+            capital: true,
+            port: false,
+            buildings: Buildings::default(),
+        }],
+        routes: vec![Route {
+            id: "route_0_2".to_owned(),
+            name: None,
+            kind: RouteKind::Trail,
+            points: vec![placed(0, 69), placed(99, 0)],
+        }],
+        points: vec![PointOfInterest {
+            id: "poi_3".to_owned(),
+            kind: "ruins".to_owned(),
+            icon: "glyph-1f3f0".to_owned(),
+            name: Some("Old Keep".to_owned()),
+            note: None,
+            at: placed(0, 0),
+        }],
+    }
+}
+
+#[test]
+fn a_map_has_no_suggestions_until_its_given_them_and_regenerating_keeps_them() {
+    let mut map = hundred_by_seventy();
+    assert_eq!(map.suggestions(), &Suggestions::default());
+    assert_eq!(map.suggest(suggestions()), Ok(()));
+    assert_eq!(map.suggestions(), &suggestions());
+    map.regenerate(recipe(10, 7, 10), made)
+        .expect("the same size");
+    assert_eq!(map.suggestions(), &suggestions());
+    // Given again, they're replaced.
+    assert_eq!(map.suggest(Suggestions::default()), Ok(()));
+    assert_eq!(map.suggestions(), &Suggestions::default());
+}
+
+#[test]
+fn suggestions_off_the_map_are_refused_naming_which_and_change_nothing() {
+    let mut map = hundred_by_seventy();
+    map.suggest(suggestions()).expect("on the map");
+    let before = map.clone();
+    let refusal = |map: &mut WorldMap, wrong: Suggestions| {
+        let refused = map.suggest(wrong).expect_err("refused").to_string();
+        assert_eq!(map, &before, "nothing changed");
+        refused
+    };
+    let mut wrong = suggestions();
+    wrong.settlements[0].at = placed(100, 69);
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion settlement_1 is at tile (100, 69), off the map of 100 × 70 tiles"
+    );
+    let mut wrong = suggestions();
+    wrong.routes[0].points[1] = placed(99, 70);
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion route_0_2 is at tile (99, 70), off the map of 100 × 70 tiles"
+    );
+    let mut wrong = suggestions();
+    wrong.points[0].at = placed(100, 70);
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion poi_3 is at tile (100, 70), off the map of 100 × 70 tiles"
+    );
+}
+
+#[test]
+fn a_suggestion_id_must_be_valid_and_unique_across_every_kind() {
+    let mut map = hundred_by_seventy();
+    let before = map.clone();
+    for (id, why) in [
+        (
+            "Route_0",
+            "the suggestion id \"Route_0\" isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores",
+        ),
+        (
+            "route-0",
+            "the suggestion id \"route-0\" isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores",
+        ),
+        ("settlement_1", "two suggestions are settlement_1"),
+        ("poi_3", "two suggestions are poi_3"),
+    ] {
+        let mut wrong = suggestions();
+        wrong.routes[0].id = id.to_owned();
+        assert_eq!(map.suggest(wrong).expect_err(id).to_string(), why);
+        assert_eq!(map, before);
+    }
+    // Two settlements, and two points of interest, sharing an id.
+    let mut wrong = suggestions();
+    wrong.settlements.push(wrong.settlements[0].clone());
+    assert_eq!(
+        map.suggest(wrong).expect_err("twice").to_string(),
+        "two suggestions are settlement_1"
+    );
+    let mut wrong = suggestions();
+    wrong.points.push(wrong.points[0].clone());
+    assert_eq!(
+        map.suggest(wrong).expect_err("twice").to_string(),
+        "two suggestions are poi_3"
+    );
+    let mut wrong = suggestions();
+    wrong.settlements[0].id = String::new();
+    assert_eq!(
+        map.suggest(wrong).expect_err("empty").to_string(),
+        "the suggestion id \"\" isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores"
+    );
+    let mut wrong = suggestions();
+    wrong.points[0].id = "poi 3".to_owned();
+    assert!(map.suggest(wrong).is_err());
+    assert_eq!(map, before);
+}
+
+#[test]
+fn a_route_of_fewer_than_two_points_is_refused() {
+    let mut map = hundred_by_seventy();
+    let mut wrong = suggestions();
+    wrong.routes[0].points.truncate(1);
+    assert_eq!(
+        map.suggest(wrong).expect_err("short").to_string(),
+        "the route route_0_2 has 1 point; a route needs at least two"
+    );
+    let mut wrong = suggestions();
+    wrong.routes[0].points.clear();
+    assert_eq!(
+        map.suggest(wrong).expect_err("empty").to_string(),
+        "the route route_0_2 has 0 points; a route needs at least two"
+    );
+    assert_eq!(map.suggestions(), &Suggestions::default());
+}
+
+#[test]
+fn the_first_wrong_suggestion_is_named_settlements_then_routes_then_points() {
+    let mut map = hundred_by_seventy();
+    let mut wrong = suggestions();
+    wrong.settlements[0].at = placed(100, 0);
+    wrong.routes[0].points.clear();
+    wrong.points[0].at = placed(0, 70);
+    assert_eq!(
+        map.suggest(wrong.clone()).expect_err("wrong").to_string(),
+        "the suggestion settlement_1 is at tile (100, 0), off the map of 100 × 70 tiles"
+    );
+    wrong.settlements.clear();
+    assert_eq!(
+        map.suggest(wrong.clone()).expect_err("wrong").to_string(),
+        "the route route_0_2 has 0 points; a route needs at least two"
+    );
+    wrong.routes.clear();
+    assert_eq!(
+        map.suggest(wrong).expect_err("wrong").to_string(),
+        "the suggestion poi_3 is at tile (0, 70), off the map of 100 × 70 tiles"
+    );
 }
 
 proptest! {

@@ -305,7 +305,7 @@ fn world_info_summarises_a_map_file_and_exits_zero() {
     assert_eq!(
         text(&output.stdout),
         format!(
-            "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides; {bytes} bytes\n\
+            "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions; {bytes} bytes\n\
              recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
              detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
              shallows to 10.00 metres, specks under 4 tiles; \
@@ -313,6 +313,26 @@ fn world_info_summarises_a_map_file_and_exits_zero() {
         )
     );
     assert_eq!(text(&output.stderr), "");
+}
+
+#[test]
+fn world_suggestions_lists_a_maps_suggestions_and_exits_zero() {
+    let output = factional_in_repo(&[
+        "world",
+        "suggestions",
+        "crates/content/tests/fixtures/maps/hand-made.map",
+    ]);
+    assert!(output.status.success(), "stderr: {}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "hand-made.map: 1 settlement, 1 route and 1 point of interest\n\
+         settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town\n\
+         route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)\n\
+         poi_0: ruins, at tile (33, 7); Walls of an older keep.\n"
+    );
+    let refused = factional_in_repo(&["world", "suggestions", "content/sample/factions.toml"]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert_eq!(text(&refused.stderr), "this isn't a Factional map\n");
 }
 
 #[test]
@@ -374,7 +394,7 @@ fn world_import_writes_a_map_file_and_exits_zero() {
             "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
              166 ocean, 58 lake, 0 river and 1376 land (34 sand, 204 grass, 1125 forest floor and 13 rock); heights -187.80 to 1734.65 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-             levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); {bytes} bytes\n"
+             levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); 1 settlement, 4 routes and 1 point of interest suggested; {bytes} bytes\n"
         )
     );
     std::fs::remove_dir_all(&dir).expect("removed");
@@ -416,7 +436,7 @@ fn world_import_takes_the_detail_and_the_coast() {
             "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
              294 ocean, 183 lake, 0 river and 1123 land (112 sand, 346 grass, 642 forest floor and 23 rock); heights -381.73 to 2241.02 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-             levels 0 to 4, 588 ledges and 24 cliffs; 173 plants (58 trees, 28 shrubs and 87 grass); {bytes} bytes\n"
+             levels 0 to 4, 588 ledges and 24 cliffs; 173 plants (58 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes\n"
         )
     );
     let info = factional_in_repo(&["world", "info", map.to_str().expect("a UTF-8 path")]);

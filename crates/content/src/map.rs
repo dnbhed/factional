@@ -1,22 +1,23 @@
 //! The map file (W1b, D-52, P-133): `world/<name>.map`. A readable header first, TOML text
 //! naming the format, version and recipe, and the tiles' length and fingerprint, ended by a
-//! zero byte; then the tiles in postcard, each chunk row by row and then the overrides, each
-//! compressed by zstd. A file is read back as exactly the map that was written, or refused
+//! zero byte; then the tiles in postcard, each chunk row by row, then the overrides, then the
+//! suggestions (W6b, P-145), each compressed by zstd. A file is read back as exactly the map that was written, or refused
 //! with why.
 
 use std::fmt;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, MapError, Override, PerKind, Plant,
-    PlantKind, Recipe, Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
+    Biome, Buildings, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, MapError, Override, PerKind,
+    Placed, Plant, PlantKind, PointOfInterest, Recipe, Region, Route, RouteKind, Settlement,
+    SettlementKind, Size, Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 6;
+pub const MAP_VERSION: u32 = 7;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -54,6 +55,20 @@ const BIOMES: [Biome; 13] = [
     Biome::Wetland,
 ];
 const KINDS: [PlantKind; 3] = [PlantKind::Tree, PlantKind::Shrub, PlantKind::Grass];
+
+/// A settlement's type, each by its code.
+const SETTLEMENT_KINDS: [SettlementKind; 7] = [
+    SettlementKind::Generic,
+    SettlementKind::Naval,
+    SettlementKind::Lake,
+    SettlementKind::Highland,
+    SettlementKind::River,
+    SettlementKind::Nomadic,
+    SettlementKind::Hunting,
+];
+
+/// A route's kind, each by its code.
+const ROUTE_KINDS: [RouteKind; 3] = [RouteKind::Road, RouteKind::Trail, RouteKind::SeaRoute];
 
 /// Why a map file can't be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,12 +242,193 @@ struct HeaderTiles {
     fingerprint: String,
 }
 
-/// The tiles: each chunk, row by row, then the overrides, each compressed.
+/// The tiles: each chunk, row by row, then the overrides, then the suggestions, each
+/// compressed.
 #[derive(Serialize, Deserialize)]
 struct Body<'a> {
     #[serde(borrow)]
     chunks: Vec<Packed<'a>>,
     overrides: Packed<'a>,
+    suggestions: Packed<'a>,
+}
+
+/// The suggestions as written: settlements, routes and points of interest, each in order.
+#[derive(Serialize, Deserialize)]
+struct FileSuggestions {
+    settlements: Vec<FileSettlement>,
+    routes: Vec<FileRoute>,
+    points: Vec<FilePoint>,
+}
+
+/// A place as written: its tile and offset.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+struct FilePlaced {
+    x: u32,
+    y: u32,
+    offset: [u8; 2],
+}
+
+/// A settlement as written, its type by code and its buildings in order: citadel, walls,
+/// plaza, temple and shanty town.
+#[derive(Serialize, Deserialize)]
+struct FileSettlement {
+    id: String,
+    name: String,
+    at: FilePlaced,
+    people: u64,
+    kind: u8,
+    capital: bool,
+    port: bool,
+    buildings: [bool; 5],
+}
+
+/// A route as written, its kind by code.
+#[derive(Serialize, Deserialize)]
+struct FileRoute {
+    id: String,
+    name: Option<String>,
+    kind: u8,
+    points: Vec<FilePlaced>,
+}
+
+/// A point of interest as written.
+#[derive(Serialize, Deserialize)]
+struct FilePoint {
+    id: String,
+    kind: String,
+    icon: String,
+    name: Option<String>,
+    note: Option<String>,
+    at: FilePlaced,
+}
+
+fn file_placed(at: Placed) -> FilePlaced {
+    FilePlaced {
+        x: at.tile.x,
+        y: at.tile.y,
+        offset: at.offset,
+    }
+}
+
+fn placed_of(at: FilePlaced) -> Placed {
+    Placed {
+        tile: TilePos { x: at.x, y: at.y },
+        offset: at.offset,
+    }
+}
+
+/// `suggestions` as written.
+fn file_suggestions(suggestions: &Suggestions) -> FileSuggestions {
+    FileSuggestions {
+        settlements: suggestions
+            .settlements
+            .iter()
+            .map(|settlement| {
+                let built = settlement.buildings;
+                FileSettlement {
+                    id: settlement.id.clone(),
+                    name: settlement.name.clone(),
+                    at: file_placed(settlement.at),
+                    people: settlement.people,
+                    kind: code(&SETTLEMENT_KINDS, settlement.kind),
+                    capital: settlement.capital,
+                    port: settlement.port,
+                    buildings: [
+                        built.citadel,
+                        built.walls,
+                        built.plaza,
+                        built.temple,
+                        built.shanty,
+                    ],
+                }
+            })
+            .collect(),
+        routes: suggestions
+            .routes
+            .iter()
+            .map(|route| FileRoute {
+                id: route.id.clone(),
+                name: route.name.clone(),
+                kind: code(&ROUTE_KINDS, route.kind),
+                points: route.points.iter().map(|&at| file_placed(at)).collect(),
+            })
+            .collect(),
+        points: suggestions
+            .points
+            .iter()
+            .map(|point| FilePoint {
+                id: point.id.clone(),
+                kind: point.kind.clone(),
+                icon: point.icon.clone(),
+                name: point.name.clone(),
+                note: point.note.clone(),
+                at: file_placed(point.at),
+            })
+            .collect(),
+    }
+}
+
+/// The suggestions `written` stands for, or the first code that isn't one.
+fn suggestions_of(written: FileSuggestions) -> Result<Suggestions, MapFileError> {
+    let settlements = written
+        .settlements
+        .into_iter()
+        .map(|settlement| {
+            let whose = format!("the suggestion {}", settlement.id);
+            let [citadel, walls, plaza, temple, shanty] = settlement.buildings;
+            Ok(Settlement {
+                kind: decode(
+                    &SETTLEMENT_KINDS,
+                    settlement.kind,
+                    "settlement type",
+                    &whose,
+                )?,
+                id: settlement.id,
+                name: settlement.name,
+                at: placed_of(settlement.at),
+                people: settlement.people,
+                capital: settlement.capital,
+                port: settlement.port,
+                buildings: Buildings {
+                    citadel,
+                    walls,
+                    plaza,
+                    temple,
+                    shanty,
+                },
+            })
+        })
+        .collect::<Result<_, MapFileError>>()?;
+    let routes = written
+        .routes
+        .into_iter()
+        .map(|route| {
+            let whose = format!("the suggestion {}", route.id);
+            Ok(Route {
+                kind: decode(&ROUTE_KINDS, route.kind, "route kind", &whose)?,
+                id: route.id,
+                name: route.name,
+                points: route.points.into_iter().map(placed_of).collect(),
+            })
+        })
+        .collect::<Result<_, MapFileError>>()?;
+    let points = written
+        .points
+        .into_iter()
+        .map(|point| PointOfInterest {
+            id: point.id,
+            kind: point.kind,
+            icon: point.icon,
+            name: point.name,
+            note: point.note,
+            at: placed_of(point.at),
+        })
+        .collect();
+    Ok(Suggestions {
+        settlements,
+        routes,
+        points,
+    })
 }
 
 /// Compressed bytes, written as postcard's bytes: their length, then each byte.
@@ -415,15 +611,17 @@ pub fn write_map(map: &WorldMap) -> Vec<u8> {
         })
         .collect();
     let overrides = pack(&postcard_of(&overrides));
-    file_of(map.recipe(), &chunks, &overrides)
+    let suggestions = pack(&postcard_of(&file_suggestions(map.suggestions())));
+    file_of(map.recipe(), &chunks, &overrides, &suggestions)
 }
 
-/// A map file of `recipe`, with its packed `chunks` and `overrides`: the header, a zero byte,
-/// then the tiles.
-fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8]) -> Vec<u8> {
+/// A map file of `recipe`, with its packed `chunks`, `overrides` and `suggestions`: the
+/// header, a zero byte, then the tiles.
+fn file_of(recipe: &Recipe, chunks: &[Vec<u8>], overrides: &[u8], suggestions: &[u8]) -> Vec<u8> {
     let tiles = postcard_of(&Body {
         chunks: chunks.iter().map(|chunk| Packed(chunk)).collect(),
         overrides: Packed(overrides),
+        suggestions: Packed(suggestions),
     });
     let region = recipe.region;
     let header = format!(
@@ -617,6 +815,9 @@ pub fn read_map(bytes: &[u8]) -> Result<WorldMap, MapFileError> {
         map.edit(at, edit)
             .map_err(|_| damaged(format!("{whose} is off the map")))?;
     }
+    let suggestions = suggestions_of(unpack(body.suggestions.0, "the suggestions")?)?;
+    map.suggest(suggestions)
+        .map_err(|error| damaged(format!("the suggestions: {error}")))?;
     Ok(map)
 }
 
@@ -724,8 +925,39 @@ mod tests {
     /// `overrides`, says is damaged.
     fn damage(first: Layers, second: Layers, overrides: Vec<FileOverride>) -> String {
         let chunks = [first, second].map(|layers| pack(&postcard_of(&layers)));
-        let file = file_of(&recipe(), &chunks, &pack(&postcard_of(&overrides)));
+        let file = file_of(
+            &recipe(),
+            &chunks,
+            &pack(&postcard_of(&overrides)),
+            &no_suggestions(),
+        );
         read_map(&file).expect_err("the map is refused").to_string()
+    }
+
+    /// No suggestions, packed.
+    fn no_suggestions() -> Vec<u8> {
+        pack(&postcard_of(&FileSuggestions {
+            settlements: Vec::new(),
+            routes: Vec::new(),
+            points: Vec::new(),
+        }))
+    }
+
+    /// What reading the map of flat grass with `suggestions` says is damaged.
+    fn damaged_suggestions(suggestions: &[u8]) -> String {
+        let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
+        let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
+        read_map(&file_of(&recipe(), &chunks, &none, suggestions))
+            .expect_err("the map is refused")
+            .to_string()
+    }
+
+    fn at(x: u32, y: u32) -> FilePlaced {
+        FilePlaced {
+            x,
+            y,
+            offset: [0, 0],
+        }
     }
 
     fn says(what: &str) -> String {
@@ -741,7 +973,12 @@ mod tests {
         let chunks = [layers(128), second].map(|layers| pack(&postcard_of(&layers)));
         let mut overrides: Vec<FileOverride> = vec![sand(0, 1), sand(69, 1)];
         overrides[1].level = Some(3);
-        let file = file_of(&recipe(), &chunks, &pack(&postcard_of(&overrides)));
+        let file = file_of(
+            &recipe(),
+            &chunks,
+            &pack(&postcard_of(&overrides)),
+            &no_suggestions(),
+        );
         let map = read_map(&file).expect("the map reads");
         let grass = Tile {
             elevation: Fixed::ZERO,
@@ -772,6 +1009,7 @@ mod tests {
             &recipe(),
             &chunks,
             &pack(&postcard_of(&Vec::<FileOverride>::new())),
+            &no_suggestions(),
         );
         assert_eq!(
             read_map(&file).map_err(|error| error.to_string()),
@@ -783,7 +1021,7 @@ mod tests {
     fn tiles_that_arent_postcard_are_damage() {
         // A real map's header, its tiles swapped for one byte that isn't postcard, with
         // that byte's length and fingerprint.
-        let file = file_of(&recipe(), &[], &[]);
+        let file = file_of(&recipe(), &[], &[], &[]);
         let end = file.iter().position(|byte| *byte == 0).expect("a header");
         let header = std::str::from_utf8(&file[..end]).expect("text");
         let header = header.split("[tiles]").next().expect("a header");
@@ -804,7 +1042,7 @@ mod tests {
     fn a_chunk_that_isnt_compressed_or_isnt_postcard_is_damage() {
         let chunks = [b"not zstd".to_vec(), pack(&postcard_of(&layers(12)))];
         let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
-        let refused = read_map(&file_of(&recipe(), &chunks, &none))
+        let refused = read_map(&file_of(&recipe(), &chunks, &none, &no_suggestions()))
             .expect_err("refused")
             .to_string();
         assert!(
@@ -812,7 +1050,7 @@ mod tests {
             "{refused}"
         );
         let chunks = [pack(&postcard_of(&layers(128))), pack(&[0xff, 0xff])];
-        let refused = read_map(&file_of(&recipe(), &chunks, &none))
+        let refused = read_map(&file_of(&recipe(), &chunks, &none, &no_suggestions()))
             .expect_err("refused")
             .to_string();
         assert!(
@@ -912,11 +1150,106 @@ mod tests {
     #[test]
     fn overrides_that_cant_be_decoded_are_damage() {
         let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
-        let refused = read_map(&file_of(&recipe(), &chunks, &pack(&[0xff])))
-            .expect_err("refused")
-            .to_string();
+        let refused = read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &pack(&[0xff]),
+            &no_suggestions(),
+        ))
+        .expect_err("refused")
+        .to_string();
         assert!(
             refused.starts_with(&says("the overrides can't be decoded: ")),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn a_settlement_type_or_route_kind_that_isnt_one_is_damage() {
+        let settlement = FileSettlement {
+            id: "settlement_1".to_owned(),
+            name: "Highmoor".to_owned(),
+            at: at(0, 0),
+            people: 2345,
+            kind: 7,
+            capital: false,
+            port: false,
+            buildings: [false; 5],
+        };
+        let route = FileRoute {
+            id: "route_0".to_owned(),
+            name: None,
+            kind: 3,
+            points: vec![at(0, 0), at(69, 1)],
+        };
+        let written = |settlement: &FileSettlement, route: &FileRoute| {
+            pack(&postcard_of(&FileSuggestions {
+                settlements: vec![FileSettlement {
+                    id: settlement.id.clone(),
+                    name: settlement.name.clone(),
+                    ..*settlement
+                }],
+                routes: vec![FileRoute {
+                    id: route.id.clone(),
+                    name: None,
+                    points: route.points.clone(),
+                    ..*route
+                }],
+                points: Vec::new(),
+            }))
+        };
+        assert_eq!(
+            damaged_suggestions(&written(&settlement, &route)),
+            says("the suggestion settlement_1 has settlement type code 7, which isn't one")
+        );
+        let settlement = FileSettlement {
+            kind: 6,
+            ..settlement
+        };
+        assert_eq!(
+            damaged_suggestions(&written(&settlement, &route)),
+            says("the suggestion route_0 has route kind code 3, which isn't one")
+        );
+        let route = FileRoute { kind: 2, ..route };
+        let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
+        let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
+        let map = read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &none,
+            &written(&settlement, &route),
+        ))
+        .expect("the last codes read");
+        assert_eq!(
+            map.suggestions().settlements[0].kind,
+            SettlementKind::Hunting
+        );
+        assert_eq!(map.suggestions().routes[0].kind, RouteKind::SeaRoute);
+    }
+
+    #[test]
+    fn suggestions_off_the_map_or_that_cant_be_decoded_are_damage() {
+        let written = pack(&postcard_of(&FileSuggestions {
+            settlements: Vec::new(),
+            routes: Vec::new(),
+            points: vec![FilePoint {
+                id: "poi_0".to_owned(),
+                kind: "ruins".to_owned(),
+                icon: String::new(),
+                name: None,
+                note: None,
+                at: at(70, 0),
+            }],
+        }));
+        assert_eq!(
+            damaged_suggestions(&written),
+            says(
+                "the suggestions: the suggestion poi_0 is at tile (70, 0), off the map of 70 × 2 tiles"
+            )
+        );
+        let refused = damaged_suggestions(&pack(&[0xff]));
+        assert!(
+            refused.starts_with(&says("the suggestions can't be decoded: ")),
             "{refused}"
         );
     }

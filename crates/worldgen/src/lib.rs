@@ -14,6 +14,7 @@ mod noise;
 mod raster;
 mod rivers;
 mod source;
+mod suggestions;
 mod terrain;
 mod tile;
 
@@ -29,6 +30,7 @@ pub use source::{
     Buildings, Feature, Point, RouteKind, SettlementKind, Source, SourceCell, SourceMarker,
     SourceRiver, SourceRoute, SourceSettlement, SourceVertex,
 };
+pub use suggestions::{Placed, PointOfInterest, Route, Settlement, Suggestions};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 
 /// How many tiles a chunk has each way.

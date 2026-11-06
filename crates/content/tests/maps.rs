@@ -5,8 +5,9 @@
 use factional_content::{MAP_VERSION, MapFileError, fingerprint_of, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Foliage, Levels, Override, PerKind, Plant, PlantKind, Recipe, Region,
-    Size, Terrain, Tile, TilePos, Water, WorldMap,
+    Biome, Buildings, Coast, Detail, Foliage, Levels, Override, PerKind, Placed, Plant, PlantKind,
+    PointOfInterest, Recipe, Region, Route, RouteKind, Settlement, SettlementKind, Size,
+    Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -134,7 +135,55 @@ fn hand_made() -> WorldMap {
     for (pos, edit) in edits {
         map.edit(pos, edit).expect("on the map");
     }
+    map.suggest(hand_made_suggestions()).expect("on the map");
     map
+}
+
+fn placed(x: u32, y: u32, offset: [u8; 2]) -> Placed {
+    Placed {
+        tile: at(x, y),
+        offset,
+    }
+}
+
+/// A settlement, a route of three points and a point of interest, on the hand-made map.
+fn hand_made_suggestions() -> Suggestions {
+    Suggestions {
+        settlements: vec![Settlement {
+            id: "settlement_9".to_owned(),
+            name: "Riverhold".to_owned(),
+            at: placed(12, 40, [0, 255]),
+            people: 24_129,
+            kind: SettlementKind::River,
+            capital: true,
+            port: true,
+            buildings: Buildings {
+                citadel: true,
+                walls: false,
+                plaza: true,
+                temple: false,
+                shanty: true,
+            },
+        }],
+        routes: vec![Route {
+            id: "route_4_2".to_owned(),
+            name: Some("Ferry way".to_owned()),
+            kind: RouteKind::SeaRoute,
+            points: vec![
+                placed(0, 0, [0, 0]),
+                placed(69, 65, [255, 255]),
+                placed(12, 40, [0, 255]),
+            ],
+        }],
+        points: vec![PointOfInterest {
+            id: "poi_0".to_owned(),
+            kind: "ruins".to_owned(),
+            icon: "glyph-1f3f0".to_owned(),
+            name: None,
+            note: Some("Walls of an older keep.".to_owned()),
+            at: placed(33, 7, [128, 64]),
+        }],
+    }
 }
 
 /// The header's text and the tiles after it, split at the first zero byte.
@@ -178,7 +227,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 6
+version = 7
 
 [recipe]
 source = ""
@@ -216,7 +265,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 6);
+    assert_eq!(MAP_VERSION, 7);
 }
 
 #[test]
@@ -284,6 +333,108 @@ fn a_committed_map_still_reads_as_the_same_map() {
 }
 
 #[test]
+fn a_maps_suggestions_read_back_exactly() {
+    let read = read_map(&write_map(&hand_made())).expect("it reads");
+    assert_eq!(read.suggestions(), &hand_made_suggestions());
+}
+
+#[test]
+fn every_kind_and_figure_of_a_suggestion_reads_back() {
+    let kinds = [
+        SettlementKind::Generic,
+        SettlementKind::Naval,
+        SettlementKind::Lake,
+        SettlementKind::Highland,
+        SettlementKind::River,
+        SettlementKind::Nomadic,
+        SettlementKind::Hunting,
+    ];
+    let settlements = (0u8..32)
+        .map(|bits| Settlement {
+            id: format!("settlement_{bits}"),
+            name: format!("Place {bits}"),
+            at: placed(u32::from(bits), u32::from(bits) * 2, [bits, 255 - bits]),
+            people: u64::from(bits) * 1_000_003,
+            kind: kinds[usize::from(bits) % 7],
+            capital: bits & 1 != 0,
+            port: bits & 2 == 0,
+            buildings: Buildings {
+                citadel: bits & 1 != 0,
+                walls: bits & 2 != 0,
+                plaza: bits & 4 != 0,
+                temple: bits & 8 != 0,
+                shanty: bits & 16 != 0,
+            },
+        })
+        .collect();
+    let routes = [RouteKind::Road, RouteKind::Trail, RouteKind::SeaRoute]
+        .into_iter()
+        .zip(0u32..)
+        .map(|(kind, i)| Route {
+            id: format!("route_{i}"),
+            name: (i != 1).then(|| format!("Way {i}")),
+            kind,
+            points: vec![
+                placed(i, 0, [1, 2]),
+                placed(0, i, [3, 4]),
+                placed(i, i, [5, 6]),
+            ],
+        })
+        .collect();
+    let points = (0u32..3)
+        .map(|i| PointOfInterest {
+            id: format!("poi_{i}"),
+            kind: ["volcanoes", "ruins", "bridges"][i as usize].to_owned(),
+            icon: format!("glyph-{i}"),
+            name: (i != 0).then(|| "Ash Peak".to_owned()),
+            note: (i != 2).then(|| "Dormant.".to_owned()),
+            at: placed(69, 65 - i, [255, 0]),
+        })
+        .collect();
+    let suggestions = Suggestions {
+        settlements,
+        routes,
+        points,
+    };
+    let mut map = WorldMap::new(recipe(3, 4, 35, 33, 2), varied).expect("a map");
+    map.suggest(suggestions.clone()).expect("on the map");
+    let read = read_map(&write_map(&map)).expect("it reads");
+    assert_eq!(read.suggestions(), &suggestions);
+    assert_eq!(read, map);
+}
+
+#[test]
+fn suggestions_the_map_refuses_are_damaged_naming_why() {
+    // The hand-made map's settlement renamed, byte for byte, to an id that isn't valid.
+    let bytes = write_map(&hand_made());
+    let (header, tiles) = split(&bytes);
+    let (chunks, overrides, suggestions): (Vec<Vec<u8>>, Vec<u8>, Vec<u8>) =
+        postcard::from_bytes(tiles).expect("the body");
+    let mut unpacked = zstd::stream::decode_all(suggestions.as_slice()).expect("unpacked");
+    let id = b"settlement_9";
+    let found = unpacked
+        .windows(id.len())
+        .position(|window| window == id)
+        .expect("the settlement's id is written");
+    unpacked[found] = b'S';
+    let repacked = zstd::stream::encode_all(unpacked.as_slice(), 3).expect("packed");
+    let body = postcard::to_allocvec(&(chunks, overrides, repacked)).expect("the body");
+    let header = header
+        .replace(
+            &format!("bytes = {}", tiles.len()),
+            &format!("bytes = {}", body.len()),
+        )
+        .replace(&fingerprint_of(tiles), &fingerprint_of(&body));
+    let mut damaged = header.into_bytes();
+    damaged.push(0);
+    damaged.extend_from_slice(&body);
+    assert_eq!(
+        refusal(&damaged),
+        "this map's tiles are damaged: the suggestions: the suggestion id \"Settlement_9\" isn't a valid id: a lowercase letter, then lowercase letters, digits or underscores"
+    );
+}
+
+#[test]
 fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
     let not_a_map = "this isn't a Factional map";
     assert_eq!(refusal(b"name = \"The Watch\"\n"), not_a_map);
@@ -299,15 +450,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [5, 7] {
+    for found in [6, 8] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 6",
+            "version = 7",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 6")
+            format!("this map is version {found}, but this build reads version 7")
         );
     }
 }
@@ -532,6 +683,7 @@ proptest! {
         height in 1u32..80,
         seed in any::<u64>(),
         edits in proptest::collection::vec((any::<u32>(), any::<u32>(), any::<u64>()), 0..12),
+        places in proptest::collection::vec((any::<u32>(), any::<u32>(), any::<u8>()), 0..6),
     ) {
         let mut map = WorldMap::new(recipe(0, 0, width, height, 1), |pos| any_tile(seed, pos))
             .expect("the recipe makes a map");
@@ -550,6 +702,35 @@ proptest! {
             };
             map.edit(pos, edit).expect("on the map");
         }
+        // Each place a settlement, a point of interest, and a route's point.
+        let at = |(x, y, offset): (u32, u32, u8)| placed(x % width, y % height, [offset, !offset]);
+        let suggestions = Suggestions {
+            settlements: places.iter().zip(0u64..).map(|(&place, i)| Settlement {
+                id: format!("settlement_{i}"),
+                name: format!("Place {i}"),
+                at: at(place),
+                people: i * 7919,
+                kind: SettlementKind::Naval,
+                capital: place.2 & 1 != 0,
+                port: place.2 & 2 != 0,
+                buildings: Buildings::default(),
+            }).collect(),
+            routes: (places.len() >= 2).then(|| Route {
+                id: "route_0".to_owned(),
+                name: None,
+                kind: RouteKind::Road,
+                points: places.iter().map(|&place| at(place)).collect(),
+            }).into_iter().collect(),
+            points: places.iter().zip(0u64..).map(|(&place, i)| PointOfInterest {
+                id: format!("poi_{i}"),
+                kind: "ruins".to_owned(),
+                icon: String::new(),
+                name: None,
+                note: Some(format!("Note {i}")),
+                at: at(place),
+            }).collect(),
+        };
+        map.suggest(suggestions).expect("on the map");
         prop_assert_eq!(read_map(&write_map(&map)), Ok(map));
     }
 }

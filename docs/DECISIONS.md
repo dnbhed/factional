@@ -1187,6 +1187,25 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`world source`** counts them after the rivers: "2 settlements, 2 routes and 2 points of interest".
   - **Menayland,** checked by a second script: 163 settlements of 1,261,062 people, 162 routes of 1,984 points and 47 points of interest.
   - *Why:* every reference is checked as it's read (D-20), so W6b can keep them on the map knowing each resolves.
+- **P-145 · Suggestions on the map: placed by tile and offset, cut at the region's edge** (made in W6b, 2026-11-06; D-49, P-119, P-133, P-143, P-144).
+  - **W6b split in two,** by me: W6b places, keeps and lists the suggestions; W6c dismisses and restores them. Peoples move to W6d.
+  - **Tile and offset,** at the user's choice: a place is (source pixels − the region's corner) × scale × 256, rounded once, half away from zero, in 256ths of a tile; its tile that ÷ 256, its offset the rest, as a plant's (P-143). A hundredth of a pixel is at least 2.56 256ths, so rounding never moves a place across the region's edge.
+  - **Outside the region, dropped,** at the user's choice.
+  - **Routes cut exactly,** at the user's choice: each piece is clipped to the map, 0 to 256 × its size − 1 each way, by Liang and Barsky's algorithm with each t a fraction compared exactly; a crossing's other coordinate is rounded once. Each run of the route inside is a stretch. A point repeated in a row is kept once, and a stretch needs two different points, so a route that only touches a corner isn't suggested there.
+  - **Ids from the kind and Azgaar's id,** at the user's choice: `settlement_<i>`, `route_<i>` and `poi_<i>`, and `route_<i>_1`, `route_<i>_2`… for a route cut into more than one stretch. They're stable for as long as the same export is used. Underscores, not the hyphens first proposed, so each is a valid content id (`is_valid_id`) for when the designer builds from it.
+  - **The map holds them:**
+    - `WorldMap::suggest` sets them, or refuses them, unchanged, naming the first wrong: settlements, then routes, then points of interest. A wrong one is an id that isn't valid or that two share, a place off the map, or a route of fewer than two points.
+    - Regenerating keeps them; `rasterise` sets them.
+  - **The map file is version 7:**
+    - The suggestions follow the overrides in the body, compressed. A settlement's type and a route's kind are written as codes.
+    - A code that isn't one, or suggestions the map refuses, is damaged, named. Version 6 is refused.
+    - The hand-made map gains a settlement, a route and a point of interest, and grows from 11,725 to 11,866 bytes. An import of raster.json grows 251 bytes for its 8 suggestions.
+  - **What's said:**
+    - `world import` adds "3 settlements, 3 routes and 2 points of interest suggested".
+    - `world info` adds "8 suggestions" after the overrides.
+    - `world suggestions <map>` lists each on a line: settlements, routes, then points of interest, in the source's order, with each one's tile and what the source says of it.
+  - **Checked by a separate script:** `suggest_ref.py`, written from these rules apart from the code. raster.json's places in two recipes, and Menayland's in three, agree with the code.
+  - *Why:* places line up with tiles and plants however the map is cut. Routes reach the edge rather than stopping short. Ids survive regenerating, so W6c's dismissals can refer to them.
 
 ## Open
 

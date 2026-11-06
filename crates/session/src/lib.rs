@@ -27,4 +27,4 @@ pub use session::{
     Mark, Named, Outcome, ScriptError, Session, describe_character, describe_event,
     describe_faction, help_text, is_blank_or_comment,
 };
-pub use world::{Import, world_import, world_info, world_source};
+pub use world::{Import, world_import, world_info, world_source, world_suggestions};
