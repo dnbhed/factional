@@ -4,13 +4,16 @@ expression: transcript
 input_file: scenarios/maps.scenario
 ---
 > world info crates/content/tests/fixtures/maps/hand-made.map
-hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions (1 dismissed; 1 dismissal not on the map); 11891 bytes
+hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 6 suggestions (1 dismissed; 1 dismissal not on the map); 11995 bytes
 recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
 > world suggestions crates/content/tests/fixtures/maps/hand-made.map
-hand-made.map: 1 settlement, 1 route and 1 point of interest (1 dismissed; 1 dismissal not on the map)
+hand-made.map: 1 settlement, 1 route, 1 point of interest, 1 culture, 1 religion and 1 state (1 dismissed; 1 dismissal not on the map)
 settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town
 route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)
 poi_0: ruins, at tile (33, 7); Walls of an older keep. (dismissed)
+culture_2 Riverfolk: river; 40 cells and 61234 people in the source, 1200 tiles on the map
+religion_5 Ferry Saints: heresy, Sect, of culture_2; 12 cells and 9001 people in the source, 300 tiles on the map
+state_3 Riverhold: Free City of Riverhold, union, of culture_7 (not on the map), capital settlement_9; vassal toward state_1 (not on the map), suzerain toward state_4 (not on the map); 40 cells and 61234 people in the source, 4620 tiles on the map
 dismissed, not on the map: route_7
 > assert world info content/sample/factions.toml == error: this isn't a Factional map
 > assert world info == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]

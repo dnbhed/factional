@@ -2,13 +2,18 @@
 //! the map, by tile and offset in 256ths of a tile, as a plant is; those outside the region
 //! dropped, and each route cut exactly at the map's edge into its stretches inside. Each keeps
 //! what the source says of it, and a stable id from its kind and Azgaar's id. Nothing is built
-//! from them (D-49).
+//! from them (D-49). Cultures, religions and states (W6e, P-148) are suggested when a tile of
+//! the map lies in one of their cells, with their tiles counted.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 use factional_core::{Fixed, div_round};
 
-use crate::{Buildings, Point, Recipe, RouteKind, SettlementKind, Size, Source, TilePos};
+use crate::{
+    Buildings, Extent, Point, Recipe, ReligionKind, RouteKind, SettlementKind, Size, Source,
+    Stance, StateForm, TilePos,
+};
 
 /// A place on the map: its tile, and where in the tile, in 256ths each way.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,13 +58,80 @@ pub struct PointOfInterest {
     pub at: Placed,
 }
 
-/// A map's suggestions: its settlements, routes and points of interest, each in the source's
-/// order.
+/// A culture suggested (W6e): its id, name and type, its extent in the whole source, and how
+/// many of the map's tiles lie in its cells.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Culture {
+    pub id: String,
+    pub name: String,
+    pub kind: SettlementKind,
+    pub extent: Extent,
+    pub tiles: u32,
+}
+
+/// A religion suggested (W6e): its id, name, type, form and deity if any, its culture's id if
+/// it has one, on the map or not, its extent in the whole source, and its tiles on the map.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Religion {
+    pub id: String,
+    pub name: String,
+    pub kind: ReligionKind,
+    pub form: String,
+    pub deity: Option<String>,
+    pub culture: Option<String>,
+    pub extent: Extent,
+    pub tiles: u32,
+}
+
+/// A state suggested (W6e): its id, name, full name and form, its culture's and capital's ids
+/// if any and its stance toward each other state by id, each on the map or not, its extent in
+/// the whole source, and its tiles on the map.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct State {
+    pub id: String,
+    pub name: String,
+    pub full_name: String,
+    pub form: StateForm,
+    pub culture: Option<String>,
+    pub capital: Option<String>,
+    pub stances: Vec<(String, Stance)>,
+    pub extent: Extent,
+    pub tiles: u32,
+}
+
+/// A map's suggestions: its settlements, routes and points of interest, and its cultures,
+/// religions and states, each in the source's order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Suggestions {
     pub settlements: Vec<Settlement>,
     pub routes: Vec<Route>,
     pub points: Vec<PointOfInterest>,
+    pub cultures: Vec<Culture>,
+    pub religions: Vec<Religion>,
+    pub states: Vec<State>,
+}
+
+impl Suggestions {
+    /// Every suggestion's id, in order: settlements, routes, points of interest, cultures,
+    /// religions, then states.
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        (self.settlements.iter().map(|s| s.id.as_str()))
+            .chain(self.routes.iter().map(|r| r.id.as_str()))
+            .chain(self.points.iter().map(|p| p.id.as_str()))
+            .chain(self.cultures.iter().map(|c| c.id.as_str()))
+            .chain(self.religions.iter().map(|r| r.id.as_str()))
+            .chain(self.states.iter().map(|s| s.id.as_str()))
+    }
+
+    /// How many suggestions there are, of every kind.
+    pub fn len(&self) -> usize {
+        self.ids().count()
+    }
+
+    /// Whether there are none.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// A coordinate on the map in 256ths of a tile: (`at` − `corner`) × `scale` × 256, `at` and
@@ -143,9 +215,17 @@ pub(crate) fn stretches(points: &[[i64; 2]], last: [i64; 2]) -> Vec<Vec<[i64; 2]
         .collect()
 }
 
-/// What `source` suggests on the map of `size` tiles that `recipe` makes of it.
-pub(crate) fn suggest(source: &Source, recipe: &Recipe, size: Size) -> Suggestions {
+/// What `source` suggests on the map of `size` tiles that `recipe` makes of it: its places on a map of `size` made by `recipe`; and its cultures, religions and
+/// states, each counted by the tiles lying in its cells, `cells` holding each tile's cell, row
+/// by row.
+pub(crate) fn suggest(
+    source: &Source,
+    recipe: &Recipe,
+    size: Size,
+    cells: &[usize],
+) -> Suggestions {
     let (region, scale) = (recipe.region, recipe.scale);
+    let tiles = Tiles::count(source, cells);
     let at = |point: Point| {
         [
             place(point.x, region.x, scale),
@@ -208,6 +288,82 @@ pub(crate) fn suggest(source: &Source, recipe: &Recipe, size: Size) -> Suggestio
                 at: placed(at(marker.at)),
             })
             .collect(),
+        cultures: source
+            .cultures
+            .iter()
+            .filter_map(|culture| {
+                Some(Culture {
+                    id: format!("culture_{}", culture.id),
+                    name: culture.name.clone(),
+                    kind: culture.kind,
+                    extent: culture.extent,
+                    tiles: *tiles.cultures.get(&culture.id)?,
+                })
+            })
+            .collect(),
+        religions: source
+            .religions
+            .iter()
+            .filter_map(|religion| {
+                Some(Religion {
+                    id: format!("religion_{}", religion.id),
+                    name: religion.name.clone(),
+                    kind: religion.kind,
+                    form: religion.form.clone(),
+                    deity: religion.deity.clone(),
+                    culture: religion.culture.map(|id| format!("culture_{id}")),
+                    extent: religion.extent,
+                    tiles: *tiles.religions.get(&religion.id)?,
+                })
+            })
+            .collect(),
+        states: source
+            .states
+            .iter()
+            .filter_map(|state| {
+                Some(State {
+                    id: format!("state_{}", state.id),
+                    name: state.name.clone(),
+                    full_name: state.full_name.clone(),
+                    form: state.form,
+                    culture: state.culture.map(|id| format!("culture_{id}")),
+                    capital: state.capital.map(|id| format!("settlement_{id}")),
+                    stances: (state.stances.iter())
+                        .map(|&(toward, stance)| (format!("state_{toward}"), stance))
+                        .collect(),
+                    extent: state.extent,
+                    tiles: *tiles.states.get(&state.id)?,
+                })
+            })
+            .collect(),
+    }
+}
+
+/// How many tiles lie in each culture's, religion's and state's cells, by Azgaar's id.
+#[derive(Default)]
+struct Tiles {
+    cultures: BTreeMap<u32, u32>,
+    religions: BTreeMap<u32, u32>,
+    states: BTreeMap<u32, u32>,
+}
+
+impl Tiles {
+    /// The tiles in each, `cells` holding each tile's cell in `source`.
+    fn count(source: &Source, cells: &[usize]) -> Tiles {
+        let mut tiles = Tiles::default();
+        for &cell in cells {
+            let cell = &source.cells[cell];
+            for (counts, id) in [
+                (&mut tiles.cultures, cell.culture),
+                (&mut tiles.religions, cell.religion),
+                (&mut tiles.states, cell.state),
+            ] {
+                if let Some(id) = id {
+                    *counts.entry(id).or_default() += 1;
+                }
+            }
+        }
+        tiles
     }
 }
 

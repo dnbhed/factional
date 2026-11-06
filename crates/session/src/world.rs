@@ -1,7 +1,8 @@
 //! `world info <file>` (W1b): what a map file holds, read whole by `factional-content`;
 //! `world source <file>` (W2a): what an Azgaar export holds, or every problem in it; and
 //! `world import <export> <map>` (W2b): the export rasterised into a map file; and
-//! `world suggestions <map>` (W6b): the map's settlements, routes and points of interest; and
+//! `world suggestions <map>` (W6b): the map's settlements, routes and points of interest, and
+//! its cultures, religions and states (W6e); and
 //! `world dismiss <map> <id>…` and `world restore <map> <id>…` (W6c): suggestions set aside.
 
 use std::path::Path;
@@ -9,8 +10,9 @@ use std::path::Path;
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Drop, Feature, Foliage, Levels, Placed, PlantKind, Recipe, Region, RouteKind,
-    SettlementKind, Size, Suggestions, Terrain, Tile, TilePos, Water, WorldMap, rasterise,
+    Coast, Detail, Drop, Extent, Feature, Foliage, Levels, Placed, PlantKind, Recipe, Region,
+    ReligionKind, RouteKind, SettlementKind, Size, Stance, StateForm, Suggestions, Terrain, Tile,
+    TilePos, Water, WorldMap, rasterise,
 };
 
 use crate::check::count;
@@ -22,11 +24,6 @@ fn map_in(base: &Path, file: &str) -> Result<(WorldMap, usize), String> {
         std::fs::read(base.join(file)).map_err(|error| format!("cannot read {file}: {error}"))?;
     let map = read_map(&bytes).map_err(|error| error.to_string())?;
     Ok((map, bytes.len()))
-}
-
-/// How many suggestions `suggestions` holds.
-fn suggested(suggestions: &Suggestions) -> usize {
-    suggestions.settlements.len() + suggestions.routes.len() + suggestions.points.len()
 }
 
 /// "a", "a and b", "a, b and c".
@@ -41,18 +38,9 @@ fn and_list<S: AsRef<str>>(items: &[S]) -> String {
     }
 }
 
-/// The ids of every suggestion on `map`: settlements, then routes, then points of interest.
-fn suggestion_ids(map: &WorldMap) -> Vec<&str> {
-    let suggestions = map.suggestions();
-    (suggestions.settlements.iter().map(|s| s.id.as_str()))
-        .chain(suggestions.routes.iter().map(|r| r.id.as_str()))
-        .chain(suggestions.points.iter().map(|p| p.id.as_str()))
-        .collect()
-}
-
 /// How many of `map`'s suggestions are dismissed.
 fn dismissed_count(map: &WorldMap) -> usize {
-    (suggestion_ids(map).into_iter())
+    (map.suggestions().ids())
         .filter(|id| map.dismissed_by(id).is_some())
         .count()
 }
@@ -102,26 +90,29 @@ fn change_dismissals(
         and_list(ids),
         file_name(file),
         dismissed_count(&map),
-        count(suggested(map.suggestions()), "suggestion")
+        count(map.suggestions().len(), "suggestion")
     ))
 }
 
-/// "3 settlements, 3 routes and 2 points of interest".
+/// "3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states".
 fn places(suggestions: &Suggestions) -> String {
-    format!(
-        "{}, {} and {}",
+    and_list(&[
         count(suggestions.settlements.len(), "settlement"),
         count(suggestions.routes.len(), "route"),
         match suggestions.points.len() {
             1 => "1 point of interest".to_owned(),
             n => format!("{n} points of interest"),
-        }
-    )
+        },
+        count(suggestions.cultures.len(), "culture"),
+        count(suggestions.religions.len(), "religion"),
+        count(suggestions.states.len(), "state"),
+    ])
 }
 
 /// What `world suggestions <map>` says of the map in `file`, read from `base`: how many of
-/// each, then each settlement, route and point of interest on a line, in the source's order;
-/// or why it can't be read.
+/// each, then each settlement, route, point of interest, culture, religion and state on a line,
+/// in the source's order, a link to a suggestion that isn't on the map marked; or why it can't
+/// be read.
 pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
     let (map, _) = map_in(base, file)?;
     let suggestions = map.suggestions();
@@ -198,6 +189,95 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             marked(&point.id)
         ));
     }
+    let linked = |id: &str| match suggestions.ids().any(|on| on == id) {
+        true => id.to_owned(),
+        false => format!("{id} (not on the map)"),
+    };
+    let extent = |extent: Extent, tiles: u32| {
+        format!(
+            "{} and {} people in the source, {} on the map",
+            count(extent.cells as usize, "cell"),
+            extent.people,
+            count(tiles as usize, "tile")
+        )
+    };
+    for culture in &suggestions.cultures {
+        lines.push(format!(
+            "{} {}: {}; {}{}",
+            culture.id,
+            culture.name,
+            settlement_kind(culture.kind),
+            extent(culture.extent, culture.tiles),
+            marked(&culture.id)
+        ));
+    }
+    for religion in &suggestions.religions {
+        let mut figures = vec![
+            match religion.kind {
+                ReligionKind::Folk => "folk",
+                ReligionKind::Organized => "organized",
+                ReligionKind::Cult => "cult",
+                ReligionKind::Heresy => "heresy",
+            }
+            .to_owned(),
+            religion.form.clone(),
+        ];
+        figures.extend(
+            religion
+                .deity
+                .as_ref()
+                .map(|deity| format!("deity {deity}")),
+        );
+        figures.extend(
+            religion
+                .culture
+                .as_ref()
+                .map(|c| format!("of {}", linked(c))),
+        );
+        lines.push(format!(
+            "{} {}: {}; {}{}",
+            religion.id,
+            religion.name,
+            figures.join(", "),
+            extent(religion.extent, religion.tiles),
+            marked(&religion.id)
+        ));
+    }
+    for state in &suggestions.states {
+        let mut figures = vec![
+            state.full_name.clone(),
+            match state.form {
+                StateForm::Monarchy => "monarchy",
+                StateForm::Republic => "republic",
+                StateForm::Union => "union",
+                StateForm::Theocracy => "theocracy",
+                StateForm::Anarchy => "anarchy",
+            }
+            .to_owned(),
+        ];
+        figures.extend(state.culture.as_ref().map(|c| format!("of {}", linked(c))));
+        figures.extend(
+            state
+                .capital
+                .as_ref()
+                .map(|c| format!("capital {}", linked(c))),
+        );
+        let stances: Vec<String> = (state.stances.iter())
+            .map(|(toward, the)| format!("{} toward {}", stance(*the), linked(toward)))
+            .collect();
+        let stances = match stances.is_empty() {
+            true => String::new(),
+            false => format!("; {}", stances.join(", ")),
+        };
+        lines.push(format!(
+            "{} {}: {}{stances}; {}{}",
+            state.id,
+            state.name,
+            figures.join(", "),
+            extent(state.extent, state.tiles),
+            marked(&state.id)
+        ));
+    }
     let stale = map.not_on_the_map();
     if !stale.is_empty() {
         lines.push(format!("dismissed, not on the map: {}", stale.join(", ")));
@@ -205,7 +285,22 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
-/// A settlement's type, as `world suggestions` names it.
+/// A stance, as `world suggestions` names it.
+fn stance(stance: Stance) -> &'static str {
+    match stance {
+        Stance::Ally => "ally",
+        Stance::Friendly => "friendly",
+        Stance::Neutral => "neutral",
+        Stance::Suspicion => "suspicion",
+        Stance::Enemy => "enemy",
+        Stance::Unknown => "unknown",
+        Stance::Rival => "rival",
+        Stance::Vassal => "vassal",
+        Stance::Suzerain => "suzerain",
+    }
+}
+
+/// A settlement's or culture's type, as `world suggestions` names it.
 fn settlement_kind(kind: SettlementKind) -> &'static str {
     match kind {
         SettlementKind::Generic => "generic",
@@ -241,7 +336,7 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
         chunks.width,
         chunks.height,
         count(map.overrides().len(), "override"),
-        count(suggested(map.suggestions()), "suggestion"),
+        count(map.suggestions().len(), "suggestion"),
         dismissals(&map),
         region.x,
         region.y,

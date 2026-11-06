@@ -45,13 +45,14 @@ assert world import crates/content/tests/fixtures/azgaar/raster.json target/foli
 # the map's edge. 77 of the 1069 land tiles are river, their beds carved never to rise from source
 # to mouth; water stands at the level of its surface, and drops as land does.
 world source crates/content/tests/fixtures/azgaar/rivers.json
-assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes and 0 points of interest suggested; 6550 bytes
+assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states suggested; 6553 bytes
 
 # A region at scale 2: the rivers twice as wide, 141 river tiles.
 world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers-part.map --region 10,10,20,20 --scale 2 --seed 7
 
 # Suggestions (W6b): raster.json's three settlements, three routes and two points of interest,
-# each placed by its tile and an offset within it, worked by a separate script. The import
+# each placed by its tile and an offset within it, worked by a separate script; and (W6e) its
+# two cultures, two religions and two states, each with the tiles lying in its cells. The import
 # counts them, `world info` counts them all, and `world suggestions` lists each.
 world import crates/content/tests/fixtures/azgaar/raster.json target/places.map
 world info target/places.map
@@ -65,24 +66,33 @@ world suggestions target/places-part.map
 
 # The top-left corner holds none.
 world import crates/content/tests/fixtures/azgaar/raster.json target/corner.map --region 0,0,10,10
-assert world suggestions target/corner.map == corner.map: 0 settlements, 0 routes and 0 points of interest
+assert world suggestions target/corner.map == corner.map: 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states
 assert world suggestions content/sample/factions.toml == error: this isn't a Factional map
 assert world suggestions == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
 
 # Dismissing (W6c): a suggestion set aside stays on the map, marked. A route's own id dismisses
-# every stretch of it, so route_2 sets aside both of the region's stretches: three of six.
-assert world dismiss target/places-part.map route_2 poi_1 == dismissed route_2 and poi_1 in places-part.map; 3 of its 6 suggestions dismissed
+# every stretch of it, so route_2 sets aside both of the region's stretches: three of twelve.
+assert world dismiss target/places-part.map route_2 poi_1 == dismissed route_2 and poi_1 in places-part.map; 3 of its 12 suggestions dismissed
 world suggestions target/places-part.map
 assert world dismiss target/places-part.map route_2_1 == error: route_2_1 is already dismissed with route_2
 assert world dismiss target/places-part.map settlement_7 == error: there's no suggestion settlement_7 on the map; did you mean settlement_2?
 assert world dismiss target/places-part.map route_0 route_0 == error: route_0 is named twice
 assert world restore target/places-part.map route_2_2 == error: route_2_2 is dismissed with route_2; restore route_2
 assert world restore target/places-part.map settlement_2 == error: settlement_2 isn't dismissed
-assert world restore target/places-part.map poi_1 == restored poi_1 in places-part.map; 2 of its 6 suggestions dismissed
+assert world restore target/places-part.map poi_1 == restored poi_1 in places-part.map; 2 of its 12 suggestions dismissed
 assert world dismiss target/places-part.map == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
 
 # On the whole map the Coast road is one route, route_2, dismissed by its own id. `world info`
 # counts the dismissed.
-assert world dismiss target/places.map route_2 settlement_2 == dismissed route_2 and settlement_2 in places.map; 2 of its 8 suggestions dismissed
+assert world dismiss target/places.map route_2 settlement_2 == dismissed route_2 and settlement_2 in places.map; 2 of its 14 suggestions dismissed
 world info target/places.map
 world suggestions target/places.map
+
+# Peoples (W6e): a culture, religion or state is on the map when a tile's nearest cell names it,
+# and keeps its cells and people in the whole source beside its tiles on the map. Seafolk names
+# no cell, so it's never suggested. In the region, both capitals fall outside: their links say
+# so. A people is dismissed and restored like a place.
+assert world dismiss target/places-part.map culture_2 state_2 == dismissed culture_2 and state_2 in places-part.map; 4 of its 12 suggestions dismissed
+assert world dismiss target/places-part.map culture_3 == error: there's no suggestion culture_3 on the map; did you mean culture_1?
+world suggestions target/places-part.map
+assert world restore target/places-part.map culture_2 state_2 == restored culture_2 and state_2 in places-part.map; 2 of its 12 suggestions dismissed

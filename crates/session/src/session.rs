@@ -3243,7 +3243,7 @@ mod tests {
         assert_eq!(
             repo().execute(&format!("world info {file}")),
             output(&format!(
-                "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions (1 dismissed; 1 dismissal not on the map); {bytes} bytes\n\
+                "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 6 suggestions (1 dismissed; 1 dismissal not on the map); {bytes} bytes\n\
                  recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
                  detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
                  shallows to 10.00 metres, specks under 4 tiles; \
@@ -3324,7 +3324,7 @@ mod tests {
                 "imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
+                 levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes"
             ))
         );
         let recipe = factional_worldgen::Recipe {
@@ -3362,7 +3362,7 @@ mod tests {
                 "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
                  166 ocean, 58 lake, 0 river and 1376 land (34 sand, 204 grass, 1125 forest floor and 13 rock); heights -187.80 to 1734.65 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); 1 settlement, 4 routes and 1 point of interest suggested; {bytes} bytes"
+                 levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes"
             ))
         );
         let recipe = map.recipe();
@@ -3394,7 +3394,7 @@ mod tests {
                 "imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, \
                  299 ocean, 181 lake, 0 river and 1120 land (71 sand, 339 grass, 579 forest floor and 131 rock); heights -381.73 to 2241.02 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 9, 756 ledges and 170 cliffs; 168 plants (53 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
+                 levels 0 to 9, 756 ledges and 170 cliffs; 168 plants (53 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3408,7 +3408,7 @@ mod tests {
         assert_eq!(
             session.execute("world info rough.map"),
             output(&format!(
-                "rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; {bytes} bytes\n\
+                "rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions; {bytes} bytes\n\
                  recipe: source {}, source pixels (0, 0) to (39, 39), 1 tile a source pixel, \
                  seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; \
                  shallows to 10.00 metres, specks under 4 tiles; \
@@ -3443,7 +3443,7 @@ mod tests {
                 "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
                  294 ocean, 183 lake, 0 river and 1123 land (88 sand, 339 grass, 563 forest floor and 133 rock); heights -381.73 to 2241.02 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 9, 757 ledges and 175 cliffs; 170 plants (55 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
+                 levels 0 to 9, 757 ledges and 175 cliffs; 170 plants (55 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3486,7 +3486,7 @@ mod tests {
                 "imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land (34 sand, 344 grass, 667 forest floor and 24 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 4, 324 ledges and 24 cliffs; 163 plants (49 trees, 23 shrubs and 91 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
+                 levels 0 to 4, 324 ledges and 24 cliffs; 163 plants (49 trees, 23 shrubs and 91 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes"
             ))
         );
         assert_eq!(
@@ -3532,7 +3532,7 @@ mod tests {
                 "imported Raster into foliage.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 8, 490 ledges and 48 cliffs; 520 plants (272 trees, 37 shrubs and 211 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes"
+                 levels 0 to 8, 490 ledges and 48 cliffs; 520 plants (272 trees, 37 shrubs and 211 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes"
             ))
         );
         let foliage = map.recipe().foliage;
@@ -3606,7 +3606,7 @@ mod tests {
                 "imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, \
                  357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes and 0 points of interest suggested; {bytes} bytes"
+                 levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states suggested; {bytes} bytes"
             ))
         );
         let said = session
@@ -3618,7 +3618,7 @@ mod tests {
                 "imported Rivers into part.map: 40 × 40 tiles in 1 × 1 chunks, \
                  166 ocean, 58 lake, 141 river and 1235 land (34 sand, 185 grass, 1003 forest floor and 13 rock); heights -187.80 to 1694.00 m; \
                  temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-                 levels 0 to 7, 468 ledges and 14 cliffs; 146 plants (58 trees, 21 shrubs and 67 grass); 0 settlements, 0 routes and 0 points of interest suggested; {bytes} bytes"
+                 levels 0 to 7, 468 ledges and 14 cliffs; 146 plants (58 trees, 21 shrubs and 67 grass); 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states suggested; {bytes} bytes"
             ))
         );
         std::fs::remove_dir_all(&dir).expect("removed");
@@ -3748,10 +3748,10 @@ mod tests {
         let done =
             session.execute("world import raster.json part.map --region 10,10,20,20 --scale 2");
         assert!(matches!(done, Ok(Outcome::Output(_))), "{done:?}");
-        // route_2 is two stretches here, so three of the six are dismissed.
+        // route_2 is two stretches here, so three of the twelve are dismissed.
         assert_eq!(
             session.execute("world dismiss part.map route_2 poi_1"),
-            output("dismissed route_2 and poi_1 in part.map; 3 of its 6 suggestions dismissed")
+            output("dismissed route_2 and poi_1 in part.map; 3 of its 12 suggestions dismissed")
         );
         let (_, map) = imported(&dir, "part.map");
         assert_eq!(
@@ -3764,25 +3764,31 @@ mod tests {
         assert_eq!(
             session.execute("world suggestions part.map"),
             output(
-                "part.map: 1 settlement, 4 routes and 1 point of interest (3 dismissed)\n\
+                "part.map: 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states (3 dismissed)\n\
                  settlement_2 Lakeside: lake, port, 857 people, at tile (9, 33); plaza\n\
                  route_0 High road: road, 4 points, tile (39, 0) to (39, 39)\n\
                  route_1: trail, 2 points, tile (9, 33) to (21, 21)\n\
                  route_2_1 Coast road: road, 2 points, tile (4, 4) to (39, 8) (dismissed with route_2)\n\
                  route_2_2 Coast road: road, 2 points, tile (39, 20) to (30, 30) (dismissed with route_2)\n\
-                 poi_1 Old Keep: ruins, at tile (20, 22) (dismissed)"
+                 poi_1 Old Keep: ruins, at tile (20, 22) (dismissed)\n\
+                 culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 969 tiles on the map\n\
+                 culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 171 tiles on the map\n\
+                 religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 209 tiles on the map\n\
+                 religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 931 tiles on the map\n\
+                 state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1 (not on the map); rival toward state_2; 2 cells and 21202 people in the source, 969 tiles on the map\n\
+                 state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4 (not on the map); enemy toward state_1; 1 cell and 17600 people in the source, 171 tiles on the map"
             )
         );
         let Ok(Outcome::Output(info)) = session.execute("world info part.map") else {
             panic!("info")
         };
         assert!(
-            info.contains(" chunks, 0 overrides, 6 suggestions (3 dismissed); "),
+            info.contains(" chunks, 0 overrides, 12 suggestions (3 dismissed); "),
             "{info}"
         );
         assert_eq!(
             session.execute("world restore part.map poi_1"),
-            output("restored poi_1 in part.map; 2 of its 6 suggestions dismissed")
+            output("restored poi_1 in part.map; 2 of its 12 suggestions dismissed")
         );
         assert_eq!(
             session.execute("world dismiss part.map route_2_1 settlement_2 route_0"),
@@ -3795,14 +3801,34 @@ mod tests {
         assert_eq!(
             session.execute("world dismiss part.map route_0 route_1 settlement_2 poi_1"),
             output(
-                "dismissed route_0, route_1, settlement_2 and poi_1 in part.map; 6 of its 6 suggestions dismissed"
+                "dismissed route_0, route_1, settlement_2 and poi_1 in part.map; 6 of its 12 suggestions dismissed"
             )
         );
         assert_eq!(
             session.execute("world restore part.map route_2 route_0 route_1 settlement_2 poi_1"),
             output(
-                "restored route_2, route_0, route_1, settlement_2 and poi_1 in part.map; 0 of its 6 suggestions dismissed"
+                "restored route_2, route_0, route_1, settlement_2 and poi_1 in part.map; 0 of its 12 suggestions dismissed"
             )
+        );
+        // A people is dismissed and restored like any other suggestion.
+        assert_eq!(
+            session.execute("world dismiss part.map culture_2 state_2"),
+            output(
+                "dismissed culture_2 and state_2 in part.map; 2 of its 12 suggestions dismissed"
+            )
+        );
+        let Ok(Outcome::Output(listing)) = session.execute("world suggestions part.map") else {
+            panic!("listing")
+        };
+        assert!(
+            listing.contains(
+                "\nculture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 171 tiles on the map (dismissed)\n"
+            ),
+            "{listing}"
+        );
+        assert_eq!(
+            session.execute("world restore part.map state_2"),
+            output("restored state_2 in part.map; 1 of its 12 suggestions dismissed")
         );
         std::fs::remove_dir_all(&dir).expect("removed");
     }
@@ -3848,22 +3874,25 @@ mod tests {
         assert_eq!(
             session.execute("world suggestions hand-made.map"),
             output(
-                "hand-made.map: 1 settlement, 1 route and 1 point of interest (1 dismissed; 1 dismissal not on the map)\n\
+                "hand-made.map: 1 settlement, 1 route, 1 point of interest, 1 culture, 1 religion and 1 state (1 dismissed; 1 dismissal not on the map)\n\
                  settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town\n\
                  route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)\n\
                  poi_0: ruins, at tile (33, 7); Walls of an older keep. (dismissed)\n\
+                 culture_2 Riverfolk: river; 40 cells and 61234 people in the source, 1200 tiles on the map\n\
+                 religion_5 Ferry Saints: heresy, Sect, of culture_2; 12 cells and 9001 people in the source, 300 tiles on the map\n\
+                 state_3 Riverhold: Free City of Riverhold, union, of culture_7 (not on the map), capital settlement_9; vassal toward state_1 (not on the map), suzerain toward state_4 (not on the map); 40 cells and 61234 people in the source, 4620 tiles on the map\n\
                  dismissed, not on the map: route_7"
             )
         );
         assert_eq!(
             session.execute("world restore hand-made.map route_7"),
-            output("restored route_7 in hand-made.map; 1 of its 3 suggestions dismissed")
+            output("restored route_7 in hand-made.map; 1 of its 6 suggestions dismissed")
         );
         let Ok(Outcome::Output(info)) = session.execute("world info hand-made.map") else {
             panic!("info")
         };
         assert!(
-            info.contains(", 3 overrides, 3 suggestions (1 dismissed); "),
+            info.contains(", 3 overrides, 6 suggestions (1 dismissed); "),
             "{info}"
         );
         std::fs::remove_dir_all(&dir).expect("removed");
@@ -3879,7 +3908,7 @@ mod tests {
         assert_eq!(
             session.execute("world suggestions raster.map"),
             output(
-                "raster.map: 3 settlements, 3 routes and 2 points of interest\n\
+                "raster.map: 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states\n\
                  settlement_1 Highmoor: generic, capital, 2345 people, at tile (30, 9); citadel, walls and temple\n\
                  settlement_2 Lakeside: lake, port, 857 people, at tile (14, 26); plaza\n\
                  settlement_4 Pinewatch: highland, 12600 people, at tile (31, 31); walls, plaza and shanty town\n\
@@ -3887,7 +3916,13 @@ mod tests {
                  route_1: trail, 2 points, tile (14, 26) to (20, 20)\n\
                  route_2 Coast road: road, 3 points, tile (12, 12) to (25, 25)\n\
                  poi_0 Ash Peak: volcanoes, at tile (33, 34); Dormant volcano.\n\
-                 poi_1 Old Keep: ruins, at tile (20, 21)"
+                 poi_1 Old Keep: ruins, at tile (20, 21)\n\
+                 culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 535 tiles on the map\n\
+                 culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 325 tiles on the map\n\
+                 religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 354 tiles on the map\n\
+                 religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 506 tiles on the map\n\
+                 state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1; rival toward state_2; 2 cells and 21202 people in the source, 535 tiles on the map\n\
+                 state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4; enemy toward state_1; 1 cell and 17600 people in the source, 325 tiles on the map"
             )
         );
         // A region drops what's outside it and cuts the routes at its edge.
@@ -3897,13 +3932,19 @@ mod tests {
         assert_eq!(
             session.execute("world suggestions part.map"),
             output(
-                "part.map: 1 settlement, 4 routes and 1 point of interest\n\
+                "part.map: 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states\n\
                  settlement_2 Lakeside: lake, port, 857 people, at tile (9, 33); plaza\n\
                  route_0 High road: road, 4 points, tile (39, 0) to (39, 39)\n\
                  route_1: trail, 2 points, tile (9, 33) to (21, 21)\n\
                  route_2_1 Coast road: road, 2 points, tile (4, 4) to (39, 8)\n\
                  route_2_2 Coast road: road, 2 points, tile (39, 20) to (30, 30)\n\
-                 poi_1 Old Keep: ruins, at tile (20, 22)"
+                 poi_1 Old Keep: ruins, at tile (20, 22)\n\
+                 culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 969 tiles on the map\n\
+                 culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 171 tiles on the map\n\
+                 religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 209 tiles on the map\n\
+                 religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 931 tiles on the map\n\
+                 state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1 (not on the map); rival toward state_2; 2 cells and 21202 people in the source, 969 tiles on the map\n\
+                 state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4 (not on the map); enemy toward state_1; 1 cell and 17600 people in the source, 171 tiles on the map"
             )
         );
         // None at all.
@@ -3911,7 +3952,9 @@ mod tests {
         assert!(matches!(imported, Ok(Outcome::Output(_))), "{imported:?}");
         assert_eq!(
             session.execute("world suggestions corner.map"),
-            output("corner.map: 0 settlements, 0 routes and 0 points of interest")
+            output(
+                "corner.map: 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states"
+            )
         );
         std::fs::remove_dir_all(&dir).expect("removed");
     }

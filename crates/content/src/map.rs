@@ -8,16 +8,17 @@ use std::fmt;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Buildings, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, MapError, Override, PerKind,
-    Placed, Plant, PlantKind, PointOfInterest, Recipe, Region, Route, RouteKind, Settlement,
-    SettlementKind, Size, Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
+    Biome, Buildings, CHUNK, ChunkPos, Coast, Culture, Detail, Extent, Foliage, Levels, MapError,
+    Override, PerKind, Placed, Plant, PlantKind, PointOfInterest, Recipe, Region, Religion,
+    ReligionKind, Route, RouteKind, Settlement, SettlementKind, Size, Stance, State, StateForm,
+    Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::fingerprint_of;
 
 /// The map file version this build writes and reads.
-pub const MAP_VERSION: u32 = 8;
+pub const MAP_VERSION: u32 = 9;
 
 /// How every map file starts: its first line, before anything is parsed.
 const FORMAT_LINE: &str = "format = \"factional-map\"\n";
@@ -69,6 +70,36 @@ const SETTLEMENT_KINDS: [SettlementKind; 7] = [
 
 /// A route's kind, each by its code.
 const ROUTE_KINDS: [RouteKind; 3] = [RouteKind::Road, RouteKind::Trail, RouteKind::SeaRoute];
+
+/// A religion's type, each by its code.
+const RELIGION_KINDS: [ReligionKind; 4] = [
+    ReligionKind::Folk,
+    ReligionKind::Organized,
+    ReligionKind::Cult,
+    ReligionKind::Heresy,
+];
+
+/// A state's form, each by its code.
+const STATE_FORMS: [StateForm; 5] = [
+    StateForm::Monarchy,
+    StateForm::Republic,
+    StateForm::Union,
+    StateForm::Theocracy,
+    StateForm::Anarchy,
+];
+
+/// A stance, each by its code.
+const STANCES: [Stance; 9] = [
+    Stance::Ally,
+    Stance::Friendly,
+    Stance::Neutral,
+    Stance::Suspicion,
+    Stance::Enemy,
+    Stance::Unknown,
+    Stance::Rival,
+    Stance::Vassal,
+    Stance::Suzerain,
+];
 
 /// Why a map file can't be read.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,12 +284,16 @@ struct Body<'a> {
     dismissed: Packed<'a>,
 }
 
-/// The suggestions as written: settlements, routes and points of interest, each in order.
+/// The suggestions as written: settlements, routes and points of interest, then cultures,
+/// religions and states (W6e), each in order.
 #[derive(Serialize, Deserialize)]
 struct FileSuggestions {
     settlements: Vec<FileSettlement>,
     routes: Vec<FileRoute>,
     points: Vec<FilePoint>,
+    cultures: Vec<FileCulture>,
+    religions: Vec<FileReligion>,
+    states: Vec<FileState>,
 }
 
 /// A place as written: its tile and offset.
@@ -301,6 +336,64 @@ struct FilePoint {
     name: Option<String>,
     note: Option<String>,
     at: FilePlaced,
+}
+
+/// A people's extent in the whole source as written: its cells, then its people.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+struct FileExtent {
+    cells: u32,
+    people: u64,
+}
+
+/// A culture as written, its type by code.
+#[derive(Serialize, Deserialize)]
+struct FileCulture {
+    id: String,
+    name: String,
+    kind: u8,
+    extent: FileExtent,
+    tiles: u32,
+}
+
+/// A religion as written, its type by code.
+#[derive(Serialize, Deserialize)]
+struct FileReligion {
+    id: String,
+    name: String,
+    kind: u8,
+    form: String,
+    deity: Option<String>,
+    culture: Option<String>,
+    extent: FileExtent,
+    tiles: u32,
+}
+
+/// A state as written, its form and each stance by code.
+#[derive(Serialize, Deserialize)]
+struct FileState {
+    id: String,
+    name: String,
+    full_name: String,
+    form: u8,
+    culture: Option<String>,
+    capital: Option<String>,
+    stances: Vec<(String, u8)>,
+    extent: FileExtent,
+    tiles: u32,
+}
+
+fn file_extent(extent: Extent) -> FileExtent {
+    FileExtent {
+        cells: extent.cells,
+        people: extent.people,
+    }
+}
+
+fn extent_of(extent: FileExtent) -> Extent {
+    Extent {
+        cells: extent.cells,
+        people: extent.people,
+    }
 }
 
 fn file_placed(at: Placed) -> FilePlaced {
@@ -366,6 +459,48 @@ fn file_suggestions(suggestions: &Suggestions) -> FileSuggestions {
                 at: file_placed(point.at),
             })
             .collect(),
+        cultures: suggestions
+            .cultures
+            .iter()
+            .map(|culture| FileCulture {
+                id: culture.id.clone(),
+                name: culture.name.clone(),
+                kind: code(&SETTLEMENT_KINDS, culture.kind),
+                extent: file_extent(culture.extent),
+                tiles: culture.tiles,
+            })
+            .collect(),
+        religions: suggestions
+            .religions
+            .iter()
+            .map(|religion| FileReligion {
+                id: religion.id.clone(),
+                name: religion.name.clone(),
+                kind: code(&RELIGION_KINDS, religion.kind),
+                form: religion.form.clone(),
+                deity: religion.deity.clone(),
+                culture: religion.culture.clone(),
+                extent: file_extent(religion.extent),
+                tiles: religion.tiles,
+            })
+            .collect(),
+        states: suggestions
+            .states
+            .iter()
+            .map(|state| FileState {
+                id: state.id.clone(),
+                name: state.name.clone(),
+                full_name: state.full_name.clone(),
+                form: code(&STATE_FORMS, state.form),
+                culture: state.culture.clone(),
+                capital: state.capital.clone(),
+                stances: (state.stances.iter())
+                    .map(|(toward, stance)| (toward.clone(), code(&STANCES, *stance)))
+                    .collect(),
+                extent: file_extent(state.extent),
+                tiles: state.tiles,
+            })
+            .collect(),
     }
 }
 
@@ -425,10 +560,67 @@ fn suggestions_of(written: FileSuggestions) -> Result<Suggestions, MapFileError>
             at: placed_of(point.at),
         })
         .collect();
+    let cultures = written
+        .cultures
+        .into_iter()
+        .map(|culture| {
+            let whose = format!("the suggestion {}", culture.id);
+            Ok(Culture {
+                kind: decode(&SETTLEMENT_KINDS, culture.kind, "culture type", &whose)?,
+                id: culture.id,
+                name: culture.name,
+                extent: extent_of(culture.extent),
+                tiles: culture.tiles,
+            })
+        })
+        .collect::<Result<_, MapFileError>>()?;
+    let religions = written
+        .religions
+        .into_iter()
+        .map(|religion| {
+            let whose = format!("the suggestion {}", religion.id);
+            Ok(Religion {
+                kind: decode(&RELIGION_KINDS, religion.kind, "religion type", &whose)?,
+                id: religion.id,
+                name: religion.name,
+                form: religion.form,
+                deity: religion.deity,
+                culture: religion.culture,
+                extent: extent_of(religion.extent),
+                tiles: religion.tiles,
+            })
+        })
+        .collect::<Result<_, MapFileError>>()?;
+    let states = written
+        .states
+        .into_iter()
+        .map(|state| {
+            let whose = format!("the suggestion {}", state.id);
+            Ok(State {
+                form: decode(&STATE_FORMS, state.form, "state form", &whose)?,
+                stances: (state.stances.into_iter())
+                    .map(|(toward, stance)| {
+                        let whose = format!("{whose}'s stance toward {toward}");
+                        Ok((toward, decode(&STANCES, stance, "stance", &whose)?))
+                    })
+                    .collect::<Result<_, MapFileError>>()?,
+                id: state.id,
+                name: state.name,
+                full_name: state.full_name,
+                culture: state.culture,
+                capital: state.capital,
+                extent: extent_of(state.extent),
+                tiles: state.tiles,
+            })
+        })
+        .collect::<Result<_, MapFileError>>()?;
     Ok(Suggestions {
         settlements,
         routes,
         points,
+        cultures,
+        religions,
+        states,
     })
 }
 
@@ -959,6 +1151,9 @@ mod tests {
             settlements: Vec::new(),
             routes: Vec::new(),
             points: Vec::new(),
+            cultures: Vec::new(),
+            religions: Vec::new(),
+            states: Vec::new(),
         }))
     }
 
@@ -1257,6 +1452,9 @@ mod tests {
                     ..*route
                 }],
                 points: Vec::new(),
+                cultures: Vec::new(),
+                religions: Vec::new(),
+                states: Vec::new(),
             }))
         };
         assert_eq!(
@@ -1290,6 +1488,89 @@ mod tests {
     }
 
     #[test]
+    fn a_culture_or_religion_type_state_form_or_stance_that_isnt_one_is_damage() {
+        let extent = FileExtent {
+            cells: 1,
+            people: 10,
+        };
+        let culture = |kind| FileCulture {
+            id: "culture_1".to_owned(),
+            name: "Highfolk".to_owned(),
+            kind,
+            extent,
+            tiles: 1,
+        };
+        let religion = |kind| FileReligion {
+            id: "religion_1".to_owned(),
+            name: "Old Ways".to_owned(),
+            kind,
+            form: "Shamanism".to_owned(),
+            deity: None,
+            culture: None,
+            extent,
+            tiles: 1,
+        };
+        let state = |form, stance| FileState {
+            id: "state_1".to_owned(),
+            name: "Highmoor".to_owned(),
+            full_name: "Kingdom of Highmoor".to_owned(),
+            form,
+            culture: None,
+            capital: None,
+            stances: vec![("state_2".to_owned(), stance)],
+            extent,
+            tiles: 1,
+        };
+        let written = |culture, religion, state| {
+            pack(&postcard_of(&FileSuggestions {
+                settlements: Vec::new(),
+                routes: Vec::new(),
+                points: Vec::new(),
+                cultures: vec![culture],
+                religions: vec![religion],
+                states: vec![state],
+            }))
+        };
+        assert_eq!(
+            damaged_suggestions(&written(culture(7), religion(4), state(5, 9))),
+            says("the suggestion culture_1 has culture type code 7, which isn't one")
+        );
+        assert_eq!(
+            damaged_suggestions(&written(culture(6), religion(4), state(5, 9))),
+            says("the suggestion religion_1 has religion type code 4, which isn't one")
+        );
+        assert_eq!(
+            damaged_suggestions(&written(culture(6), religion(3), state(5, 9))),
+            says("the suggestion state_1 has state form code 5, which isn't one")
+        );
+        assert_eq!(
+            damaged_suggestions(&written(culture(6), religion(3), state(4, 9))),
+            says(
+                "the suggestion state_1's stance toward state_2 has stance code 9, which isn't one"
+            )
+        );
+        // The last of each reads.
+        let chunks = [layers(128), layers(12)].map(|layers| pack(&postcard_of(&layers)));
+        let none = pack(&postcard_of(&Vec::<FileOverride>::new()));
+        let map = read_map(&file_of(
+            &recipe(),
+            &chunks,
+            &none,
+            &written(culture(6), religion(3), state(4, 8)),
+            &none_dismissed(),
+        ))
+        .expect("the last codes read");
+        let suggestions = map.suggestions();
+        assert_eq!(suggestions.cultures[0].kind, SettlementKind::Hunting);
+        assert_eq!(suggestions.religions[0].kind, ReligionKind::Heresy);
+        assert_eq!(suggestions.states[0].form, StateForm::Anarchy);
+        assert_eq!(
+            suggestions.states[0].stances,
+            [("state_2".to_owned(), Stance::Suzerain)]
+        );
+    }
+
+    #[test]
     fn suggestions_off_the_map_or_that_cant_be_decoded_are_damage() {
         let written = pack(&postcard_of(&FileSuggestions {
             settlements: Vec::new(),
@@ -1302,6 +1583,9 @@ mod tests {
                 note: None,
                 at: at(70, 0),
             }],
+            cultures: Vec::new(),
+            religions: Vec::new(),
+            states: Vec::new(),
         }));
         assert_eq!(
             damaged_suggestions(&written),

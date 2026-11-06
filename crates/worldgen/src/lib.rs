@@ -31,7 +31,9 @@ pub use source::{
     SourceCulture, SourceMarker, SourceReligion, SourceRiver, SourceRoute, SourceSettlement,
     SourceState, SourceVertex, Stance, StateForm,
 };
-pub use suggestions::{Placed, PointOfInterest, Route, Settlement, Suggestions};
+pub use suggestions::{
+    Culture, Placed, PointOfInterest, Religion, Route, Settlement, State, Suggestions,
+};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 
 /// How many tiles a chunk has each way.

@@ -270,7 +270,8 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
         .collect();
     let plants = foliage::plants(width, &candidates, foliage.spacing);
     let shallows = recipe.coast.shallows;
-    let suggestions = suggestions::suggest(source, &recipe, size);
+    let cells: Vec<usize> = grounds.iter().map(|ground| ground.cell).collect();
+    let suggestions = suggestions::suggest(source, &recipe, size, &cells);
     let mut map = WorldMap::new(recipe, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
         let tile = coast::tile(elevations[i], bodies[i], shallows);
