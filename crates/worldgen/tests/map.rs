@@ -4,8 +4,8 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Area, Biome, CHUNK, ChunkPos, Coast, Detail, Levels, Override, Plant, PlantKind, Recipe,
-    Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
+    Area, Biome, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, Override, Plant, PlantKind,
+    Recipe, Region, Size, Terrain, Tile, TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -59,6 +59,7 @@ fn recipe(width: u32, height: u32, scale: u32) -> Recipe {
         detail: Detail::default(),
         coast: Coast::default(),
         levels: Levels::default(),
+        foliage: Foliage::default(),
     }
 }
 

@@ -8,6 +8,7 @@ use std::fmt;
 use factional_core::{Fixed, div_round};
 
 use crate::coast::{self, Body};
+use crate::foliage;
 use crate::levels;
 use crate::map::{Detail, MapError, Recipe, Region, Size, TilePos, WorldMap};
 use crate::noise;
@@ -248,6 +249,25 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
         })
         .collect();
     let terrains = terrain::terrains(width, &kinds, &levels);
+    // Each land tile's candidate plant, but on rock or ice, at its place on the whole map; then
+    // those that stand (P-143).
+    let foliage = recipe.foliage;
+    let corner = [region.x, region.y].map(|from| u64::from(from) * u64::from(recipe.scale));
+    let candidates: Vec<Option<foliage::Candidate>> = (0..grounds.len())
+        .map(|i| {
+            let biome = biomes[i]?;
+            if matches!(terrains[i], Some(Terrain::Rock | Terrain::Ice)) {
+                return None;
+            }
+            let at = [
+                corner[0] + (i % width) as u64,
+                corner[1] + (i / width) as u64,
+            ];
+            let hash = foliage::hash(recipe.seed, at);
+            foliage::candidate(hash, foliage.chances_in(biome), foliage.scale)
+        })
+        .collect();
+    let plants = foliage::plants(width, &candidates, foliage.spacing);
     let shallows = recipe.coast.shallows;
     WorldMap::new(recipe, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
@@ -268,6 +288,7 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
             biome: biomes[i].unwrap_or(Biome::Marine),
             temperature: cell.temperature,
             precipitation: cell.precipitation,
+            plant: plants[i],
             ..tile
         }
     })
@@ -675,6 +696,7 @@ mod tests {
             detail: Detail::default(),
             coast: crate::map::Coast::default(),
             levels: crate::map::Levels::default(),
+            foliage: crate::map::Foliage::default(),
         }
     }
 

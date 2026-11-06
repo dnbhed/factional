@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Feature, Levels, Point, Recipe, Region, Size, Source, SourceCell,
-    SourceRiver, SourceVertex, Terrain, Tile, TilePos, Water, WorldMap, rasterise,
+    Biome, Coast, Detail, Feature, Foliage, Levels, MapError, PerKind, Plant, PlantKind, Point,
+    Recipe, Region, Size, Source, SourceCell, SourceRiver, SourceVertex, Terrain, Tile, TilePos,
+    Water, WorldMap, rasterise,
 };
 use proptest::prelude::*;
 
@@ -135,6 +136,7 @@ fn recipe(region: [u32; 4], scale: u32, seed: u32) -> Recipe {
         detail: Detail::default(),
         coast: Coast::default(),
         levels: Levels::default(),
+        foliage: Foliage::default(),
     }
 }
 
@@ -347,8 +349,9 @@ proptest! {
         let source = rivers();
         let part = map(&source, recipe([x, y, width, height], scale, seed));
         let whole = map(&source, recipe(WHOLE, scale, seed));
-        // A tile's terrain looks at its neighbours, so one tile further in.
-        let margin = 2 * Coast::default().specks + Levels::default().specks + 1;
+        // A tile's terrain looks at its neighbours, so one tile further in; and a plant at the
+        // candidates as far as the widest spacing reaches, rounded up (W5).
+        let margin = 2 * Coast::default().specks + Levels::default().specks + 1 + 2;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {
@@ -361,6 +364,214 @@ proptest! {
                 if inside {
                     prop_assert_eq!(here, there);
                 }
+            }
+        }
+    }
+}
+
+/// How many plants of each kind: trees, shrubs and grass.
+fn plants(map: &WorldMap) -> [usize; 3] {
+    let kinds: Vec<PlantKind> = tiles(map)
+        .iter()
+        .filter_map(|t| t.plant.map(|p| p.kind))
+        .collect();
+    PlantKind::ALL.map(|kind| kinds.iter().filter(|&&k| k == kind).count())
+}
+
+/// Every plant, row by row: where it stands, in 256ths of a tile from the map's top left, and
+/// its kind.
+fn standing(map: &WorldMap) -> Vec<([i64; 2], PlantKind)> {
+    let size = map.size();
+    (0..size.height)
+        .flat_map(|y| (0..size.width).map(move |x| (x, y)))
+        .filter_map(|(x, y)| {
+            let plant = tile(map, x, y).plant?;
+            let at = |tile: u32, offset: u8| i64::from(tile) * 256 + i64::from(offset);
+            Some(([at(x, plant.offset[0]), at(y, plant.offset[1])], plant.kind))
+        })
+        .collect()
+}
+
+#[test]
+fn plants_scatter_by_their_biomes_chances_spaced_by_kind() {
+    let map = map(&raster(), recipe(WHOLE, 1, 7));
+    // From foliage_ref.py: 157 plants of 615 candidates.
+    assert_eq!(plants(&map), [47, 15, 95]);
+    let offsets: u32 = tiles(&map)
+        .iter()
+        .filter_map(|t| t.plant)
+        .map(|p| u32::from(p.offset[0]) + 2 * u32::from(p.offset[1]))
+        .sum();
+    assert_eq!(offsets, 58_945);
+    // The first of each kind, row by row: on grassland, then forest.
+    let plant = |x, y| tile(&map, x, y).plant;
+    let of = |kind, offset| Some(Plant { kind, offset });
+    assert_eq!(plant(25, 0), of(PlantKind::Grass, [96, 38]));
+    assert_eq!(plant(34, 3), of(PlantKind::Shrub, [37, 251]));
+    assert_eq!(plant(15, 11), of(PlantKind::Tree, [41, 92]));
+    // Grass on (24, 0) and (26, 0) were candidates, too close to (25, 0)'s and outranked.
+    assert_eq!((plant(24, 0), plant(26, 0)), (None, None));
+}
+
+#[test]
+fn the_plants_follow_the_seed_the_region_the_rivers_the_scale_and_the_spacing() {
+    let raster = raster();
+    let with = |change: fn(&mut Foliage)| {
+        let mut recipe = recipe(WHOLE, 1, 7);
+        change(&mut recipe.foliage);
+        plants(&map(&raster, recipe))
+    };
+    assert_eq!(plants(&map(&raster, recipe(WHOLE, 1, 0))), [51, 24, 91]);
+    assert_eq!(
+        plants(&map(&raster, recipe([10, 10, 20, 20], 2, 7))),
+        [62, 23, 73]
+    );
+    assert_eq!(plants(&map(&rivers(), recipe(WHOLE, 1, 7))), [47, 16, 90]);
+    assert_eq!(with(|f| f.scale = hundredths(2_00)), [57, 12, 90]);
+    assert_eq!(
+        with(|f| f.spacing = PerKind {
+            tree: Fixed::ONE,
+            shrub: Fixed::ONE,
+            grass: Fixed::ONE
+        }),
+        [167, 54, 129]
+    );
+    assert_eq!(with(|f| f.scale = Fixed::ZERO), [0, 0, 0]);
+}
+
+#[test]
+fn foliage_outside_its_ranges_is_refused() {
+    let said = |change: fn(&mut Foliage)| {
+        let mut recipe = recipe(WHOLE, 1, 7);
+        change(&mut recipe.foliage);
+        rasterise(&raster(), recipe)
+            .expect_err("refused")
+            .to_string()
+    };
+    assert_eq!(
+        said(|f| f.scale = hundredths(10_01)),
+        "the foliage's scale must be 0.00 to 10.00, not 10.01"
+    );
+    assert_eq!(
+        said(|f| f.scale = hundredths(-1)),
+        "the foliage's scale must be 0.00 to 10.00, not -0.01"
+    );
+    assert_eq!(
+        said(|f| f.spacing.tree = hundredths(8_01)),
+        "the foliage's tree spacing must be 0.00 to 8.00 tiles, not 8.01"
+    );
+    assert_eq!(
+        said(|f| f.spacing.shrub = hundredths(-1)),
+        "the foliage's shrub spacing must be 0.00 to 8.00 tiles, not -0.01"
+    );
+    assert_eq!(
+        said(|f| f.spacing.grass = hundredths(8_01)),
+        "the foliage's grass spacing must be 0.00 to 8.00 tiles, not 8.01"
+    );
+    assert_eq!(
+        said(|f| f.chances[Biome::HotDesert as usize].tree = hundredths(1_01)),
+        "the foliage's chance of a tree in hot desert must be 0.00 to 1.00, not 1.01"
+    );
+    assert_eq!(
+        said(|f| f.chances[Biome::Wetland as usize].shrub = hundredths(-1)),
+        "the foliage's chance of a shrub in wetland must be 0.00 to 1.00, not -0.01"
+    );
+    assert_eq!(
+        said(|f| f.chances[Biome::Marine as usize].grass = hundredths(1_01)),
+        "the foliage's chance of grass in marine must be 0.00 to 1.00, not 1.01"
+    );
+    assert_eq!(
+        said(|f| f.chances[Biome::Taiga as usize] = PerKind {
+            tree: hundredths(50),
+            shrub: hundredths(30),
+            grass: hundredths(21)
+        }),
+        "the foliage's chances in taiga must add up to 1.00 at most, not 1.01"
+    );
+    assert!(matches!(
+        {
+            let mut recipe = recipe(WHOLE, 1, 7);
+            recipe.foliage.spacing.tree = hundredths(8_01);
+            recipe.size()
+        },
+        Err(MapError::PlantSpacing(PlantKind::Tree, _))
+    ));
+    // The edges of every range are allowed: each chance at 1.00 alone, and summing to 1.00.
+    let edges: [fn(&mut Foliage); 4] = [
+        |f| {
+            f.scale = hundredths(10_00);
+            f.spacing = PerKind {
+                tree: hundredths(8_00),
+                shrub: hundredths(8_00),
+                grass: hundredths(8_00),
+            };
+        },
+        |f| {
+            f.scale = Fixed::ZERO;
+            f.spacing = PerKind {
+                tree: Fixed::ZERO,
+                shrub: Fixed::ZERO,
+                grass: Fixed::ZERO,
+            };
+        },
+        |f| {
+            f.chances = [PerKind {
+                tree: Fixed::ONE,
+                shrub: Fixed::ZERO,
+                grass: Fixed::ZERO,
+            }; 13]
+        },
+        |f| {
+            f.chances = [PerKind {
+                tree: hundredths(20),
+                shrub: hundredths(30),
+                grass: hundredths(50),
+            }; 13]
+        },
+    ];
+    for edge in edges {
+        let mut recipe = recipe(WHOLE, 1, 7);
+        edge(&mut recipe.foliage);
+        assert!(rasterise(&raster(), recipe).is_ok());
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(16))]
+
+    /// With every biome given a chance of each kind, no plant stands on water, rock or ice,
+    /// and no two stand nearer than the larger of their spacings, checked pair by pair.
+    #[test]
+    fn plants_stand_apart_and_never_on_water_rock_or_ice(
+        seed in any::<u32>(),
+        rivers_too in any::<bool>(),
+        scale in 1u32..=2,
+        spacing in prop::array::uniform3(0i64..=300),
+    ) {
+        let mut recipe = recipe(WHOLE, scale, seed);
+        let all = PerKind { tree: hundredths(30), shrub: hundredths(30), grass: hundredths(30) };
+        recipe.foliage.chances = [all; 13];
+        recipe.foliage.spacing = PerKind {
+            tree: hundredths(spacing[0]),
+            shrub: hundredths(spacing[1]),
+            grass: hundredths(spacing[2]),
+        };
+        let source = if rivers_too { rivers() } else { raster() };
+        let map = map(&source, recipe.clone());
+        for t in tiles(&map) {
+            let bare = t.water.is_some()
+                || matches!(t.terrain, Terrain::DeepWater | Terrain::ShallowWater | Terrain::Rock | Terrain::Ice);
+            prop_assert!(!(bare && t.plant.is_some()), "{t:?}");
+        }
+        let plants = standing(&map);
+        // Enough plants that the spacing is tested, even at the widest.
+        prop_assert!(plants.len() > 30, "{}", plants.len());
+        let reach = |kind: PlantKind| recipe.foliage.spacing.of_kind(kind).hundredths();
+        for (i, &(a, first)) in plants.iter().enumerate() {
+            for &(b, second) in &plants[i + 1..] {
+                let squared = (a[0] - b[0]).pow(2) + (a[1] - b[1]).pow(2);
+                let spacing = reach(first).max(reach(second));
+                prop_assert!(squared * 10_000 >= (spacing * 256).pow(2), "{a:?} {b:?}");
             }
         }
     }

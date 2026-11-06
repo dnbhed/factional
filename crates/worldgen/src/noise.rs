@@ -20,19 +20,23 @@ const GRADIENTS: [[i128; 2]; 8] = [
 ];
 
 /// SplitMix64's step: `z` mixed so that every bit of it moves every bit of the result.
-fn mix(z: u64) -> u64 {
+pub(crate) fn mix(z: u64) -> u64 {
     let z = z.wrapping_add(0x9e37_79b9_7f4a_7c15);
     let z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     let z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
     z ^ (z >> 31)
 }
 
+/// `parts` hashed with the seed: the seed mixed, then each part in turn added and mixed.
+pub(crate) fn hash(seed: u32, parts: [u64; 3]) -> u64 {
+    parts
+        .into_iter()
+        .fold(mix(u64::from(seed)), |hash, part| mix(hash ^ part))
+}
+
 /// The gradient at lattice point `x, y` of `octave`, picked by the seed.
 fn gradient(seed: u32, octave: u32, [x, y]: [u64; 2]) -> [i128; 2] {
-    let hash = [u64::from(octave), x, y]
-        .into_iter()
-        .fold(mix(u64::from(seed)), |hash, part| mix(hash ^ part));
-    GRADIENTS[(hash % 8) as usize]
+    GRADIENTS[(hash(seed, [u64::from(octave), x, y]) % 8) as usize]
 }
 
 /// Perlin's fade, 6t⁵ − 15t⁴ + 10t³, of `t` in fixed point.

@@ -35,6 +35,44 @@ pub enum Biome {
     Wetland,
 }
 
+impl Biome {
+    /// Every biome, in Azgaar's order.
+    pub const ALL: [Biome; 13] = [
+        Biome::Marine,
+        Biome::HotDesert,
+        Biome::ColdDesert,
+        Biome::Savanna,
+        Biome::Grassland,
+        Biome::TropicalSeasonalForest,
+        Biome::TemperateDeciduousForest,
+        Biome::TropicalRainforest,
+        Biome::TemperateRainforest,
+        Biome::Taiga,
+        Biome::Tundra,
+        Biome::Glacier,
+        Biome::Wetland,
+    ];
+
+    /// Its name, as a designer reads it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Biome::Marine => "marine",
+            Biome::HotDesert => "hot desert",
+            Biome::ColdDesert => "cold desert",
+            Biome::Savanna => "savanna",
+            Biome::Grassland => "grassland",
+            Biome::TropicalSeasonalForest => "tropical seasonal forest",
+            Biome::TemperateDeciduousForest => "temperate deciduous forest",
+            Biome::TropicalRainforest => "tropical rainforest",
+            Biome::TemperateRainforest => "temperate rainforest",
+            Biome::Taiga => "taiga",
+            Biome::Tundra => "tundra",
+            Biome::Glacier => "glacier",
+            Biome::Wetland => "wetland",
+        }
+    }
+}
+
 /// Water on a tile: a river, with its flow in cubic metres a second, or a lake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Water {
@@ -48,6 +86,20 @@ pub enum PlantKind {
     Tree,
     Shrub,
     Grass,
+}
+
+impl PlantKind {
+    /// Every kind, in order.
+    pub const ALL: [PlantKind; 3] = [PlantKind::Tree, PlantKind::Shrub, PlantKind::Grass];
+
+    /// Its name, as a designer reads it.
+    pub fn name(self) -> &'static str {
+        match self {
+            PlantKind::Tree => "tree",
+            PlantKind::Shrub => "shrub",
+            PlantKind::Grass => "grass",
+        }
+    }
 }
 
 /// A plant on a tile: its kind, and where it stands within the tile, in 256ths of a tile from

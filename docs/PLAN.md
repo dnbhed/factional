@@ -137,6 +137,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W3e — river beds carved and water at its surface's level (P-140): each river's bed, from source to mouth, the lowest ground along its line so far, never below the surface of the water it ends in; river tiles lowered to it, never raised, the banks untouched; the sea at level 0, a lake at its surface's, a river at its bed's; drops wherever a tile meets a lower neighbour, land or water; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-06 (#106)
 - W4a — climate and biomes (P-141): W4 split, climate and biomes then terrain (W4b); each cell's biome and grid cell, and each grid cell's temperature and precipitation, read and checked, an export without `grid.cells` not Full; each tile the climate of the cell it lies in, in °C and mm, and on land the biome of the nearest land cell, water Marine; temperature and precipitation layers of their own with overrides, the map file version 5, version 4 refused; `world import` saying its temperatures, precipitation and biomes; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-06 (#107)
 - W4b — terrain from the biome, with beaches and cliffs (P-142): each land tile's terrain from its biome by a fixed table; rock where it drops by a cliff to any neighbour, otherwise sand beside the sea, a tile deep, a lake's or river's shore its biome's; a glacier always ice; water keeping its own; `world import` counting the land by terrain; the map file still version 5; counts checked against a separate Python reference, Menayland's whole by a second; the region properties a tile further in; done 2026-11-06 (#108)
+- W5 — foliage (P-143): a local Poisson-disc scatter, each tile hashing its whole-map place with the seed into a roll, an offset and a priority; candidates on land but rock and ice by a per-biome table of tree, shrub and grass chances times a scale; a candidate standing unless a too-close one outranks it, each kind its own spacing, the larger applying; the recipe's foliage with its defaults and checks, the map file version 6, version 5 refused; `world import` taking `--foliage` and each kind's spacing and counting its plants, `world info` saying them; counts checked against a separate Python reference, Menayland's whole by a second; spacing and bare tiles a property test, the region properties 2 tiles further in; done 2026-11-06 (#109)
 
 ---
 
@@ -158,11 +159,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W5 · Foliage — P3 · Next
-
-Trees, shrubs and grass scattered by Poisson-disc sampling, their kind and density by biome, seeded; each density an option with its default.
-
-### W6 · Suggestions — P3 · Outline
+### W6 · Suggestions — P3 · Next
 
 Settlements, routes, points of interest, and cultures and religions as candidate factions, kept as markers with what the source says of them; nothing built from them (D-49).
 

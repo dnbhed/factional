@@ -5,8 +5,9 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Feature, HEIGHT_EXPONENTS, Levels, Point, RasterError, Recipe, Region,
-    Size, Source, SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
+    Biome, Coast, Detail, Feature, Foliage, HEIGHT_EXPONENTS, Levels, Point, RasterError, Recipe,
+    Region, Size, Source, SourceCell, SourceVertex, Terrain, TilePos, Water, cell_metres,
+    rasterise,
 };
 use proptest::prelude::*;
 
@@ -103,6 +104,7 @@ fn recipe(x: u32, y: u32, width: u32, height: u32, scale: u32) -> Recipe {
         },
         coast: Coast::default(),
         levels: Levels::default(),
+        foliage: Foliage::default(),
     }
 }
 
@@ -222,10 +224,11 @@ fn sea_lake_and_land_have_their_layers() {
             None
         )
     );
+    // Land's plant is the foliage's, tested in climate.rs (W5).
     let land = at(20, 15);
     assert_eq!(
-        (land.terrain, land.water, land.biome, land.plant),
-        (Terrain::Grass, None, Biome::Grassland, None)
+        (land.terrain, land.water, land.biome),
+        (Terrain::Grass, None, Biome::Grassland)
     );
 }
 

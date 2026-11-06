@@ -7,8 +7,9 @@ use std::collections::BTreeMap;
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Drop, Drops, Feature, Levels, Point, Recipe, Region, Size, Source,
-    SourceCell, SourceRiver, SourceVertex, Terrain, Tile, TilePos, Water, WorldMap, rasterise,
+    Biome, Coast, Detail, Drop, Drops, Feature, Foliage, Levels, Point, Recipe, Region, Size,
+    Source, SourceCell, SourceRiver, SourceVertex, Terrain, Tile, TilePos, Water, WorldMap,
+    rasterise,
 };
 use proptest::prelude::*;
 
@@ -111,6 +112,7 @@ fn recipe(region: [u32; 4], scale: u32, seed: u32, levels: Levels) -> Recipe {
         detail: Detail::default(),
         coast: Coast::default(),
         levels,
+        foliage: Foliage::default(),
     }
 }
 
@@ -321,8 +323,9 @@ proptest! {
         let source = rivers();
         let part = map(&source, recipe([x, y, width, height], scale, seed, Levels::default()));
         let whole = map(&source, recipe(WHOLE, scale, seed, Levels::default()));
-        // A tile's terrain looks at its neighbours (W4b), so a tile further in.
-        let margin = 2 * Coast::default().specks + Levels::default().specks + 1;
+        // A tile's terrain looks at its neighbours (W4b), so a tile further in; and a plant at
+        // the candidates as far as the widest spacing reaches, 2 tiles (W5).
+        let margin = 2 * Coast::default().specks + Levels::default().specks + 1 + 2;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {

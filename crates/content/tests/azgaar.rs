@@ -5,8 +5,8 @@
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Drop, Feature, Levels, Point, Recipe, Region, Size, Source, SourceCell,
-    SourceRiver, SourceVertex, Terrain, TilePos, Water, rasterise,
+    Biome, Coast, Detail, Drop, Feature, Foliage, Levels, Point, Recipe, Region, Size, Source,
+    SourceCell, SourceRiver, SourceVertex, Terrain, TilePos, Water, rasterise,
 };
 use serde_json::{Value, json};
 
@@ -602,6 +602,7 @@ fn the_users_menayland_export_rasterises_whole() {
         detail: Detail::default(),
         coast: Coast::default(),
         levels: Levels::default(),
+        foliage: Foliage::default(),
     };
     let map = rasterise(&source, recipe).expect("Menayland rasterises");
     let mut counts = [0; 5];
@@ -628,6 +629,8 @@ fn the_users_menayland_export_rasterises_whole() {
     let mut climate = [0i64; 2];
     let mut biomes = std::collections::BTreeMap::new();
     let mut terrains = std::collections::BTreeMap::new();
+    let mut plants = [0u64; 3];
+    let (mut planted, mut offsets) = (0u64, 0u64);
     let mut water = std::collections::BTreeMap::new();
     for at in (0..size.height).flat_map(|y| (0..size.width).map(move |x| TilePos { x, y })) {
         let tile = map.tile(at).expect("on the map");
@@ -636,6 +639,11 @@ fn the_users_menayland_export_rasterises_whole() {
         climate[1] += i64::from(tile.precipitation);
         *biomes.entry(tile.biome).or_insert(0) += 1;
         *terrains.entry(tile.terrain).or_insert(0) += 1;
+        if let Some(plant) = tile.plant {
+            plants[plant.kind as usize] += 1;
+            planted += u64::from(at.y) * u64::from(size.width) + u64::from(at.x);
+            offsets += u64::from(plant.offset[0]) + 2 * u64::from(plant.offset[1]);
+        }
         let kind = match (tile.terrain, tile.water) {
             (_, Some(Water::Lake)) => "lake",
             (_, Some(Water::River { .. })) => "river",
@@ -722,4 +730,8 @@ fn the_users_menayland_export_rasterises_whole() {
             (Terrain::Ice, 20_152),
         ])
     );
+    // The plants (W5): trees, shrubs and grass; their tiles' indices summed, row by row; and
+    // their offsets summed, x plus twice y. 43,903 of 262,067 candidates stand.
+    assert_eq!(plants, [16_848, 8_269, 18_786]);
+    assert_eq!((planted, offsets), (17_704_508_347, 16_785_940));
 }
