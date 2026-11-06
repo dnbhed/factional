@@ -451,7 +451,8 @@ proptest! {
         let options = levels(spacing, specks);
         let part = map(recipe([x, y, width, height], scale, seed, Detail::default(), options));
         let whole = map(recipe(WHOLE, scale, seed, Detail::default(), options));
-        let margin = 2 * Coast::default().specks + specks;
+        // A tile's terrain looks at its neighbours (W4b), so a tile further in.
+        let margin = 2 * Coast::default().specks + specks + 1;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {

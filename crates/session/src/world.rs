@@ -7,7 +7,8 @@ use std::path::Path;
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Coast, Detail, Drop, Feature, Levels, Recipe, Region, Size, Terrain, TilePos, Water, rasterise,
+    Coast, Detail, Drop, Feature, Levels, Recipe, Region, Size, Terrain, Tile, TilePos, Water,
+    rasterise,
 };
 
 use crate::check::count;
@@ -228,6 +229,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         .iter()
         .filter(|tile| matches!(tile.water, Some(Water::River { .. })))
         .count();
+    let terrains = land_terrains(&tiles);
     let heights = tiles.iter().map(|tile| tile.elevation);
     let temperatures = tiles.iter().map(|tile| tile.temperature);
     let precipitation = tiles.iter().map(|tile| tile.precipitation);
@@ -247,7 +249,7 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         }
     }
     Ok(format!(
-        "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake, {river} river and {} land; \
+        "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake, {river} river and {} land{terrains}; \
          heights {} to {} m; temperatures {} to {} °C; precipitation {} to {} mm; {}; \
          levels {} to {}, {} and {}; {} bytes",
         source.name,
@@ -272,6 +274,33 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
     ))
 }
 
+/// How many land tiles take each terrain, in the terrain's order, as ` (22 sand, 339 grass and
+/// 47 rock)`; nothing where there's no land.
+fn land_terrains(tiles: &[Tile]) -> String {
+    let mut counted: Vec<String> = [
+        (Terrain::Sand, "sand"),
+        (Terrain::Grass, "grass"),
+        (Terrain::ForestFloor, "forest floor"),
+        (Terrain::Marsh, "marsh"),
+        (Terrain::Rock, "rock"),
+        (Terrain::Snow, "snow"),
+        (Terrain::Ice, "ice"),
+    ]
+    .into_iter()
+    .filter_map(|(terrain, name)| {
+        let n = tiles.iter().filter(|tile| tile.terrain == terrain).count();
+        (n > 0).then(|| format!("{n} {name}"))
+    })
+    .collect();
+    let Some(last) = counted.pop() else {
+        return String::new();
+    };
+    match counted.is_empty() {
+        true => format!(" ({last})"),
+        false => format!(" ({} and {last})", counted.join(", ")),
+    }
+}
+
 /// The last part of `file`'s path.
 fn file_name(file: &str) -> std::borrow::Cow<'_, str> {
     Path::new(file)
@@ -294,5 +323,42 @@ fn unreadable(name: &str, error: AzgaarError) -> String {
             lines.join("\n")
         }
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use factional_worldgen::Biome;
+
+    fn tiles(terrains: &[Terrain]) -> Vec<Tile> {
+        terrains
+            .iter()
+            .map(|&terrain| Tile {
+                elevation: Fixed::ZERO,
+                level: 0,
+                terrain,
+                water: None,
+                biome: Biome::Marine,
+                temperature: 0,
+                precipitation: 0,
+                plant: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_land_is_counted_by_terrain_in_the_terrains_order_and_water_not_at_all() {
+        use Terrain::*;
+        assert_eq!(land_terrains(&tiles(&[DeepWater, ShallowWater])), "");
+        assert_eq!(land_terrains(&tiles(&[Ice, DeepWater])), " (1 ice)");
+        assert_eq!(
+            land_terrains(&tiles(&[Rock, Sand, Rock, ShallowWater])),
+            " (1 sand and 2 rock)"
+        );
+        assert_eq!(
+            land_terrains(&tiles(&[Ice, Snow, Rock, Marsh, ForestFloor, Grass, Sand])),
+            " (1 sand, 1 grass, 1 forest floor, 1 marsh, 1 rock, 1 snow and 1 ice)"
+        );
     }
 }

@@ -1135,6 +1135,24 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`world import`** says its temperatures, precipitation and how many biomes: "temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes".
   - **Checked by a separate script:** every count was worked by `climate_ref.py`, written from these rules apart from the code, and the code agreed on its first run. Menayland's were checked by a second script.
   - *Why:* the climate and biomes are the designer's own, as they made them in Azgaar, and later systems need the climate as well as the biome.
+- **P-142 · Terrain from the biome, with beaches and cliffs** (made in W4b, 2026-11-06; P-119, P-138, P-140, P-141).
+  - **The table,** at the user's choice:
+    - hot desert: sand; cold desert: rock;
+    - savanna and grassland: grass;
+    - the four forests and taiga: forest floor;
+    - tundra: snow; glacier: ice; wetland: marsh;
+    - Marine land, only where the source has no land cell: sand.
+  - **Cliffs, then beaches,** at the user's choice:
+    - A land tile that drops by a cliff, two levels or more, to any of its four neighbours on the map, land or water, is rock. Only the upper tile: the one below keeps its terrain.
+    - Otherwise, a land tile beside the sea, deep or shallow, is sand: one tile deep. A lake's or a river's shore keeps its biome's terrain.
+    - The map's edge is no neighbour, so nothing is rock or sand for what lies past it.
+  - **A glacier is always ice,** even at a cliff or by the sea. This one was my call, not asked: a glacier's edge is still ice, and rock there would break up the ice sheets Azgaar draws.
+  - **Water keeps its terrain:** deep or shallow sea, and lakes and rivers shallow water, as before.
+  - **A region** is the whole map's terrain one tile further in than before, as a tile's terrain looks at its neighbours. The region property tests' margins grow by one.
+  - **No new layer:** the terrain layer was already there, with its override, so the map file stays at version 5. It grows a little, as its terrain now varies: the fixture's 4,766 bytes become 4,787.
+  - **`world import`** says how many land tiles take each terrain, in the order of Factional's terrains, those with none left out: "… and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); …".
+  - **Checked by a separate script:** every count was worked by `terrain_ref.py`, written from these rules apart from the code, and the code agreed on its first run. Menayland's were checked by a second script: 6,925 tiles of sand, 254 of rock and 20,152 of ice among its 388,397 of land.
+  - *Why:* the biome is the designer's, as they made it in Azgaar, and the beaches and cliffs come from the map's own shape, so the terrain reads as the map does without any new knob.
 
 ## Open
 

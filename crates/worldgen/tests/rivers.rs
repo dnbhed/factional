@@ -321,7 +321,8 @@ proptest! {
         let source = rivers();
         let part = map(&source, recipe([x, y, width, height], scale, seed, Levels::default()));
         let whole = map(&source, recipe(WHOLE, scale, seed, Levels::default()));
-        let margin = 2 * Coast::default().specks + Levels::default().specks;
+        // A tile's terrain looks at its neighbours (W4b), so a tile further in.
+        let margin = 2 * Coast::default().specks + Levels::default().specks + 1;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {

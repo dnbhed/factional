@@ -372,7 +372,7 @@ fn world_import_writes_a_map_file_and_exits_zero() {
         text(&output.stdout),
         format!(
             "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
-             166 ocean, 58 lake, 0 river and 1376 land; heights -187.80 to 1734.65 m; \
+             166 ocean, 58 lake, 0 river and 1376 land (34 sand, 204 grass, 1125 forest floor and 13 rock); heights -187.80 to 1734.65 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
              levels 0 to 7, 435 ledges and 14 cliffs; {bytes} bytes\n"
         )
@@ -414,7 +414,7 @@ fn world_import_takes_the_detail_and_the_coast() {
         text(&output.stdout),
         format!(
             "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
-             294 ocean, 183 lake, 0 river and 1123 land; heights -381.73 to 2241.02 m; \
+             294 ocean, 183 lake, 0 river and 1123 land (112 sand, 346 grass, 642 forest floor and 23 rock); heights -381.73 to 2241.02 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
              levels 0 to 4, 588 ledges and 24 cliffs; {bytes} bytes\n"
         )
