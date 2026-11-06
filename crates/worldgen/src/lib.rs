@@ -13,6 +13,7 @@ mod noise;
 mod raster;
 mod rivers;
 mod source;
+mod terrain;
 mod tile;
 
 pub use map::{

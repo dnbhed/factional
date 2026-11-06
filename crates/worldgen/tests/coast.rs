@@ -148,7 +148,8 @@ fn kind(tile: Tile) -> (Kind, Fixed) {
         (Terrain::DeepWater, None, Biome::Marine) => Kind::Deep,
         (Terrain::ShallowWater, None, Biome::Marine) => Kind::Shallow,
         (Terrain::ShallowWater, Some(Water::Lake), Biome::Marine) => Kind::Lake,
-        (Terrain::Grass, None, Biome::Grassland) => Kind::Land,
+        // Land's terrain is its biome's, or sand by the sea or rock at a cliff (W4b).
+        (Terrain::Grass | Terrain::Sand | Terrain::Rock, None, Biome::Grassland) => Kind::Land,
         layers => panic!("no kind of tile has the layers {layers:?}"),
     };
     assert_eq!(tile.plant, None);
@@ -349,7 +350,8 @@ proptest! {
         };
         let part = flat(recipe([x, y, width, height], scale, seed, options.0, options.1));
         let whole = flat(recipe(WHOLE, scale, seed, options.0, options.1));
-        let margin = 2 * specks;
+        // A tile's terrain looks at its neighbours (W4b), so a tile further in.
+        let margin = 2 * specks + 1;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {

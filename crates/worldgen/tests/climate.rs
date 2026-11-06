@@ -1,13 +1,14 @@
 //! Climate and biomes (W4a, P-141): each tile takes the temperature and precipitation of the
-//! cell it lies in, and land the biome of the nearest land cell. The expected counts were
-//! worked by a separate script from the rules in DESIGN.md §21, never by this code.
+//! cell it lies in, and land the biome of the nearest land cell; and terrain (W4b, P-142), land's
+//! from its biome, rock at a cliff and sand by the sea. The expected counts were worked by a
+//! separate script from the rules in DESIGN.md §21, never by this code.
 
 use std::collections::BTreeMap;
 
 use factional_core::Fixed;
 use factional_worldgen::{
     Biome, Coast, Detail, Feature, Levels, Point, Recipe, Region, Size, Source, SourceCell,
-    SourceRiver, SourceVertex, Tile, TilePos, Water, WorldMap, rasterise,
+    SourceRiver, SourceVertex, Terrain, Tile, TilePos, Water, WorldMap, rasterise,
 };
 use proptest::prelude::*;
 
@@ -273,6 +274,63 @@ fn with_no_land_cell_land_is_marine() {
     assert_eq!(biomes(&map), BTreeMap::from([(Biome::Marine, 1600)]));
 }
 
+fn terrains(map: &WorldMap) -> BTreeMap<Terrain, usize> {
+    counts(map, |tile| tile.terrain)
+}
+
+#[test]
+fn land_takes_its_biomes_terrain_rock_at_a_cliff_and_sand_by_the_sea() {
+    let map = map(&raster(), recipe(WHOLE, 1, 7));
+    assert_eq!(
+        terrains(&map),
+        BTreeMap::from([
+            (Terrain::DeepWater, 346),
+            (Terrain::ShallowWater, 198),
+            (Terrain::Sand, 23),
+            (Terrain::Grass, 338),
+            (Terrain::ForestFloor, 644),
+            (Terrain::Rock, 51),
+        ])
+    );
+    // Grassland, Taiga and temperate deciduous forest away from the sea and cliffs.
+    let terrain = |x, y| tile(&map, x, y).terrain;
+    assert_eq!(terrain(30, 10), Terrain::Grass);
+    assert_eq!(terrain(30, 30), Terrain::ForestFloor);
+    assert_eq!(terrain(20, 20), Terrain::ForestFloor);
+    // The first rock, sand and forest floor, row by row.
+    assert_eq!(terrain(21, 0), Terrain::Rock);
+    assert_eq!(terrain(11, 10), Terrain::Sand);
+    assert_eq!(terrain(14, 11), Terrain::ForestFloor);
+}
+
+#[test]
+fn the_terrain_follows_the_seed_the_region_and_the_rivers() {
+    let terrains_of = |source: &Source, region, scale, seed| {
+        let counts = terrains(&map(source, recipe(region, scale, seed)));
+        [
+            Terrain::DeepWater,
+            Terrain::ShallowWater,
+            Terrain::ForestFloor,
+            Terrain::Grass,
+            Terrain::Rock,
+            Terrain::Sand,
+        ]
+        .map(|terrain| counts.get(&terrain).copied().unwrap_or(0))
+    };
+    assert_eq!(
+        terrains_of(&raster(), WHOLE, 1, 0),
+        [348, 183, 661, 339, 47, 22]
+    );
+    assert_eq!(
+        terrains_of(&raster(), [10, 10, 20, 20], 2, 7),
+        [150, 74, 1125, 204, 13, 34]
+    );
+    assert_eq!(
+        terrains_of(&rivers(), WHOLE, 1, 7),
+        [346, 276, 583, 312, 60, 23]
+    );
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
@@ -289,7 +347,8 @@ proptest! {
         let source = rivers();
         let part = map(&source, recipe([x, y, width, height], scale, seed));
         let whole = map(&source, recipe(WHOLE, scale, seed));
-        let margin = 2 * Coast::default().specks + Levels::default().specks;
+        // A tile's terrain looks at its neighbours, so one tile further in.
+        let margin = 2 * Coast::default().specks + Levels::default().specks + 1;
         let (w, h) = (width * scale, height * scale);
         for ty in 0..h {
             for tx in 0..w {

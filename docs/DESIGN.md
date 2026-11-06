@@ -1285,7 +1285,7 @@ A designer starts a game's world from a map generated in Azgaar's Fantasy Map Ge
   | `levels.specks` (`--level-specks`) | 4 | 0 to 4096 | the fewest tiles a plateau or pit keeps its level with, away from the map's edge |
 
 - **Climate and biomes** (W4a, P-141): each tile takes the temperature and precipitation of the cell it lies in, the nearest, the first if several are as near; each a layer of its own. A land tile takes the biome Azgaar gave the nearest land cell, a cell whose biome isn't Marine, the first if several are as near, or Marine if the source has none; water, rivers included, is Marine. A region shows the whole map's climate everywhere, and its biomes except near its edge, as the levels.
-- **Terrain** (W4b, to come): each land tile's terrain from its biome, out of a closed vocabulary: deep water, shallow water, sand, grass, forest floor, marsh, rock, snow, ice; sand beside the sea and rock where a tile drops by a cliff.
+- **Terrain** (W4b, P-142): out of a closed vocabulary: deep water, shallow water, sand, grass, forest floor, marsh, rock, snow, ice. Water keeps its own: deep or shallow sea, lakes and rivers shallow. A land tile's comes from its biome by a fixed table: hot desert sand, cold desert rock, savanna and grassland grass, the four forests and taiga forest floor, tundra snow, glacier ice, wetland marsh, and Marine land (only where the source has no land cell) sand. Then the map's shape: a land tile that drops by a cliff, two levels or more, to any of its four neighbours on the map is rock; otherwise one beside the sea, deep or shallow, is sand, one tile deep, though a lake's or river's shore keeps its biome's. A glacier is ice whatever is around it. A region shows the whole map's terrain away from its edges, a tile further in than its levels.
 - **Foliage** is scattered, not tiled: trees, shrubs and grass by Poisson-disc sampling, their kind and density by biome.
 - **Suggestions** (D-49): settlements, routes, points of interest, and cultures and religions as candidate factions, kept as markers with what the source says of them (name, kind, size, figures). They're listed and shown on the map, and can be dismissed; nothing is built from them.
 - **Editing:** brushes paint terrain, raise and lower elevation, draw water and place or clear foliage. Edits are overrides, kept apart from what was generated, so regenerating rebuilds the rest from the recipe and applies them again; "reset to generated" clears them in an area.
@@ -1303,7 +1303,7 @@ A designer starts a game's world from a map generated in Azgaar's Fantasy Map Ge
 | W1a, W1b (done) | The world map and its file: chunks, layers, recipe and overrides, read and written exactly; `factional world info` |
 | W2a, W2b (done) | Importing Azgaar's terrain: the JSON read and checked; a region at a scale rasterised; `factional world import` |
 | W3a to W3e (done) | Polishing the terrain: detail; coasts; levels and cliffs; rivers; carved river beds and water's levels |
-| W4a (done), W4b | Climate and biomes; each tile's terrain |
+| W4a, W4b (done) | Climate and biomes; each tile's terrain |
 | W5 | Foliage, scattered by biome |
 | W6 | Suggestions: settlements, routes, points of interest, peoples |
 | W7 | The map in the builder: drawn in chunks, autotiled, panned and zoomed |

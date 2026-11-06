@@ -136,6 +136,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W3d — rivers drawn (P-139): W3 split again, drawing then carving (W3e); `pack.rivers` and each cell's flux read and checked, an export without rivers not Full; each river along a uniform Catmull-Rom curve through its cells' centres, −1 the nearest point of the map's edge, a piece a tile its chord spans; Azgaar's drawn half-width at each cell from its width factor, source width and the flux so far, never under a tile, a tile river if its centre is within it or its square is touched; river tiles shallow water with their flow, made before the levels; `world source` counts rivers, `world import` river tiles; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-05 (#105)
 - W3e — river beds carved and water at its surface's level (P-140): each river's bed, from source to mouth, the lowest ground along its line so far, never below the surface of the water it ends in; river tiles lowered to it, never raised, the banks untouched; the sea at level 0, a lake at its surface's, a river at its bed's; drops wherever a tile meets a lower neighbour, land or water; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-06 (#106)
 - W4a — climate and biomes (P-141): W4 split, climate and biomes then terrain (W4b); each cell's biome and grid cell, and each grid cell's temperature and precipitation, read and checked, an export without `grid.cells` not Full; each tile the climate of the cell it lies in, in °C and mm, and on land the biome of the nearest land cell, water Marine; temperature and precipitation layers of their own with overrides, the map file version 5, version 4 refused; `world import` saying its temperatures, precipitation and biomes; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-06 (#107)
+- W4b — terrain from the biome, with beaches and cliffs (P-142): each land tile's terrain from its biome by a fixed table; rock where it drops by a cliff to any neighbour, otherwise sand beside the sea, a tile deep, a lake's or river's shore its biome's; a glacier always ice; water keeping its own; `world import` counting the land by terrain; the map file still version 5; counts checked against a separate Python reference, Menayland's whole by a second; the region properties a tile further in; done 2026-11-06 (#108)
 
 ---
 
@@ -157,11 +158,7 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W4b · Terrain — P3 · Next
-
-Each land tile's terrain from its biome by a fixed table, sand beside the sea and rock where a tile drops by a cliff, at the user's choice.
-
-### W5 · Foliage — P3 · Outline
+### W5 · Foliage — P3 · Next
 
 Trees, shrubs and grass scattered by Poisson-disc sampling, their kind and density by biome, seeded; each density an option with its default.
 

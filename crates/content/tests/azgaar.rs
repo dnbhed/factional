@@ -627,6 +627,7 @@ fn the_users_menayland_export_rasterises_whole() {
     let mut heights = 0i64;
     let mut climate = [0i64; 2];
     let mut biomes = std::collections::BTreeMap::new();
+    let mut terrains = std::collections::BTreeMap::new();
     let mut water = std::collections::BTreeMap::new();
     for at in (0..size.height).flat_map(|y| (0..size.width).map(move |x| TilePos { x, y })) {
         let tile = map.tile(at).expect("on the map");
@@ -634,6 +635,7 @@ fn the_users_menayland_export_rasterises_whole() {
         climate[0] += i64::from(tile.temperature);
         climate[1] += i64::from(tile.precipitation);
         *biomes.entry(tile.biome).or_insert(0) += 1;
+        *terrains.entry(tile.terrain).or_insert(0) += 1;
         let kind = match (tile.terrain, tile.water) {
             (_, Some(Water::Lake)) => "lake",
             (_, Some(Water::River { .. })) => "river",
@@ -702,6 +704,22 @@ fn the_users_menayland_export_rasterises_whole() {
             (Biome::Tundra, 5_832),
             (Biome::Glacier, 20_152),
             (Biome::Wetland, 21_476),
+        ])
+    );
+    // The tiles of each terrain (W4b): the lakes and rivers shallow water; the cold desert
+    // rock, with the cliffs.
+    assert_eq!(
+        terrains,
+        std::collections::BTreeMap::from([
+            (Terrain::DeepWater, 106_308),
+            (Terrain::ShallowWater, 682_765),
+            (Terrain::Sand, 6_925),
+            (Terrain::Grass, 55_328),
+            (Terrain::ForestFloor, 280_286),
+            (Terrain::Marsh, 19_629),
+            (Terrain::Rock, 254),
+            (Terrain::Snow, 5_823),
+            (Terrain::Ice, 20_152),
         ])
     );
 }

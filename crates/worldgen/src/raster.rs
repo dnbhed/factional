@@ -13,6 +13,7 @@ use crate::map::{Detail, MapError, Recipe, Region, Size, TilePos, WorldMap};
 use crate::noise;
 use crate::rivers::{self, At, Piece};
 use crate::source::{Feature, Source};
+use crate::terrain;
 use crate::tile::{Biome, Terrain, Tile, Water};
 
 /// The lowest and highest height exponents Azgaar allows (`settings.heightExponent`).
@@ -217,32 +218,54 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
         .map(|((&elevation, &land), course)| (land && course.is_none()).then(|| level(elevation)))
         .collect();
     levels::clean(width, &mut levels, recipe.levels.specks as usize);
+    // Each tile's water body; each land tile's biome, that of the nearest land cell; each
+    // tile's level, water's that of its surface; then each land tile's terrain (P-142).
+    let bodies: Vec<Option<Body>> = waters
+        .iter()
+        .map(|water| water.map(|cell| raster.bodies[cell as usize].expect("a water cell")))
+        .collect();
+    let biomes: Vec<Option<Biome>> = (0..grounds.len())
+        .map(|i| {
+            (land[i] && courses[i].is_none()).then(|| {
+                let at = point((i % width) as u32, (i / width) as u32);
+                raster
+                    .nearest_land(at)
+                    .map_or(Biome::Marine, |(land, _)| source.cells[land].biome)
+            })
+        })
+        .collect();
+    let levels: Vec<u8> = (0..grounds.len())
+        .map(|i| {
+            let surface = bodies[i].map_or(elevations[i], |body| body.surface);
+            levels[i].unwrap_or_else(|| level(surface))
+        })
+        .collect();
+    let kinds: Vec<terrain::Kind> = (0..grounds.len())
+        .map(|i| match (biomes[i], bodies[i]) {
+            (Some(biome), _) => terrain::Kind::Land(biome),
+            (None, Some(Body { lake: false, .. })) => terrain::Kind::Sea,
+            (None, _) => terrain::Kind::Fresh,
+        })
+        .collect();
+    let terrains = terrain::terrains(width, &kinds, &levels);
     let shallows = recipe.coast.shallows;
     WorldMap::new(recipe, |at: TilePos| {
         let i = at.y as usize * width + at.x as usize;
-        let body = waters[i].map(|cell| raster.bodies[cell as usize].expect("a water cell"));
-        let tile = coast::tile(elevations[i], body, shallows);
+        let tile = coast::tile(elevations[i], bodies[i], shallows);
         let tile = match courses[i] {
             Some(course) => Tile {
                 terrain: Terrain::ShallowWater,
                 water: Some(Water::River { flow: course.flow }),
-                biome: Biome::Marine,
                 ..tile
             },
             None => tile,
         };
-        let surface = body.map_or(elevations[i], |body| body.surface);
-        // The climate of the cell it lies in; on land, the biome of the nearest land cell.
+        // The climate of the cell it lies in.
         let cell = &source.cells[grounds[i].cell];
-        let biome = match land[i] && courses[i].is_none() {
-            true => raster
-                .nearest_land(point(at.x, at.y))
-                .map_or(Biome::Marine, |(land, _)| source.cells[land].biome),
-            false => Biome::Marine,
-        };
         Tile {
-            level: levels[i].unwrap_or_else(|| level(surface)),
-            biome,
+            level: levels[i],
+            terrain: terrains[i].unwrap_or(tile.terrain),
+            biome: biomes[i].unwrap_or(Biome::Marine),
             temperature: cell.temperature,
             precipitation: cell.precipitation,
             ..tile
