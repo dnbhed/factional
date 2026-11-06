@@ -1173,6 +1173,20 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **Region properties:** a region matches the whole map a further 2 tiles in, the largest default spacing rounded up.
   - **Checked by a separate script:** every count was worked by `foliage_ref.py`, written from these rules apart from the code. The code agreed on its first run. Menayland's were checked by a second script.
   - *Why:* plants that never crowd, decided locally, keep a region exactly the whole map's, and the biome table is the designer's to tune.
+- **P-144 · Reading settlements, routes and points of interest** (made in W6a, 2026-11-06; D-49, P-134).
+  - **W6 split three ways:** W6a and W6b (places) and W6c (peoples), at the user's choice of places apart from peoples, and then mine to read places apart from keeping them on the map, so each is reviewable in one sitting.
+  - **A Full export now has `pack.burgs`, `pack.routes` and `pack.markers`,** and `settings.populationRate` and `settings.urbanization`. An export without one isn't Full, named by its path.
+  - **Typed figures,** at the user's choice: a settlement's people, type, capital, port and buildings; a route's kind and name; a point of interest's type, icon, name and note.
+    - **People** are Azgaar's population × the population rate × urbanization, as Azgaar shows them, rounded once, half away from zero. The population is read exactly to the thousandth, the digits Azgaar writes, and urbanization to the hundredth.
+    - **A port** is Azgaar's `port`, the water feature its harbour is on; 0 or none is no port.
+    - **Buildings:** citadel, walls, plaza, temple and shanty town. Azgaar's market and its group (village, town, city…) aren't kept: the group follows from the people, and nothing reads a market yet.
+    - **A point of interest's type and icon** are kept as Azgaar names them, free text, since Azgaar's marker types are many and open-ended.
+  - **What's skipped:** `burgs[0]`, Azgaar's placeholder, and any burg marked `removed`, however it looks. Removed routes and markers aren't a thing in Azgaar's export.
+  - **Empty text is none:** a route's or marker's name or note of "" reads as having none.
+  - **Checks,** each at its key path, all at once: every cell and port feature exists; a type, kind or group is one Factional reads, listed in the message; a capital or building is 0 or 1; a population is 0 or more; the rate a whole number at least 1, and urbanization 0 or more; a route has at least two points, each an x, a y and a cell; each list's ids are unique, the later one named.
+  - **`world source`** counts them after the rivers: "2 settlements, 2 routes and 2 points of interest".
+  - **Menayland,** checked by a second script: 163 settlements of 1,261,062 people, 162 routes of 1,984 points and 47 points of interest.
+  - *Why:* every reference is checked as it's read (D-20), so W6b can keep them on the map knowing each resolves.
 
 ## Open
 

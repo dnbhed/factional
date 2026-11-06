@@ -9,7 +9,7 @@
     "seed": "987654321",
     "mapId": 2
   },
-  "settings": { "heightUnit": "m", "heightExponent": 2 },
+  "settings": { "heightUnit": "m", "heightExponent": 2, "populationRate": 1000, "urbanization": 1 },
   "pack": {
     "cells": [
       { "i": 0, "v": [0, 4, 5, 7, 11], "c": [1, 2, 4], "p": [10.5, 10.5], "h": 10, "f": 1, "fl": 0, "g": 0, "biome": 0 },
@@ -38,7 +38,10 @@
       { "i": 1, "type": "ocean", "land": false, "border": true, "cells": 1, "height": 0, "subtype": "ocean", "name": "Sound" },
       { "i": 2, "type": "lake", "land": false, "border": false, "cells": 1, "height": 19.5, "subtype": "freshwater", "name": "Mere" },
       { "i": 3, "type": "island", "land": true, "border": true, "cells": 3, "height": 0, "subtype": "continent", "name": "Raster" }
-    ]
+    ],
+    "burgs": [0],
+    "routes": [],
+    "markers": []
   },
   "grid": {
     "cells": [

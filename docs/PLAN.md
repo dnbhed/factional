@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6 → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6a → W6b → W6c → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -138,6 +138,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W4a — climate and biomes (P-141): W4 split, climate and biomes then terrain (W4b); each cell's biome and grid cell, and each grid cell's temperature and precipitation, read and checked, an export without `grid.cells` not Full; each tile the climate of the cell it lies in, in °C and mm, and on land the biome of the nearest land cell, water Marine; temperature and precipitation layers of their own with overrides, the map file version 5, version 4 refused; `world import` saying its temperatures, precipitation and biomes; counts checked against a separate Python reference, Menayland's whole by a second; a region the same as the whole map away from its edges, a property test; done 2026-11-06 (#107)
 - W4b — terrain from the biome, with beaches and cliffs (P-142): each land tile's terrain from its biome by a fixed table; rock where it drops by a cliff to any neighbour, otherwise sand beside the sea, a tile deep, a lake's or river's shore its biome's; a glacier always ice; water keeping its own; `world import` counting the land by terrain; the map file still version 5; counts checked against a separate Python reference, Menayland's whole by a second; the region properties a tile further in; done 2026-11-06 (#108)
 - W5 — foliage (P-143): a local Poisson-disc scatter, each tile hashing its whole-map place with the seed into a roll, an offset and a priority; candidates on land but rock and ice by a per-biome table of tree, shrub and grass chances times a scale; a candidate standing unless a too-close one outranks it, each kind its own spacing, the larger applying; the recipe's foliage with its defaults and checks, the map file version 6, version 5 refused; `world import` taking `--foliage` and each kind's spacing and counting its plants, `world info` saying them; counts checked against a separate Python reference, Menayland's whole by a second; spacing and bare tiles a property test, the region properties 2 tiles further in; done 2026-11-06 (#109)
+- W6a — settlements, routes and points of interest read (P-144): a Full export has `pack.burgs`, `pack.routes` and `pack.markers` and the population settings; settlements but the placeholder and removed ones, with typed figures at the user's choice: id, name, point, cell, people (population to thousandths × rate × urbanization, rounded once, as Azgaar shows them), type, capital, port and five buildings; routes with their kind, name if any and at least two points; points of interest with Azgaar's type and icon, name and note if any; every cell, port feature, type, flag, figure and id checked at its key path; `world source` counts them; Menayland's 163, 162 and 47 agreeing with a second script; W6 split into W6a, W6b and W6c; done 2026-11-06 (#110)
 
 ---
 
@@ -159,9 +160,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W6 · Suggestions — P3 · Next
+### W6b · Settlements, routes and points of interest on the map — P3 · Next
 
-Settlements, routes, points of interest, and cultures and religions as candidate factions, kept as markers with what the source says of them; nothing built from them (D-49).
+They're kept in the map file as suggestions, in the region, a route cut to its stretches inside, each with a stable id. `world import` counts them; they're listed, and can be dismissed and restored, the dismissals kept apart so that regenerating keeps them.
+
+### W6c · Peoples as candidate factions — P3 · Outline
+
+Cultures and religions, and Azgaar's states where a map has real ones, read and kept as candidate factions with what the source says of them; nothing built from them (D-49).
 
 ### W7 · The map in the builder — P3 · Outline
 

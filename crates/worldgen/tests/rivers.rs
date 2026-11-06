@@ -95,6 +95,9 @@ fn rivers() -> Source {
             river(&[1, 4], false, 1_00, 4),
             river(&[1], true, 1_00, 4),
         ],
+        settlements: Vec::new(),
+        routes: Vec::new(),
+        markers: Vec::new(),
     }
 }
 

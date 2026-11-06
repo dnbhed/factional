@@ -676,6 +676,9 @@ mod tests {
             vertices: Vec::new(),
             features: vec![Feature::Island],
             rivers: Vec::new(),
+            settlements: Vec::new(),
+            routes: Vec::new(),
+            markers: Vec::new(),
         }
     }
 
