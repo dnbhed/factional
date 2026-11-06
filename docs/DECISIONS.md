@@ -1222,6 +1222,22 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
     - Its heading and `world info`'s suggestion count add " (3 dismissed)", and "; 1 dismissal not on the map" when there are such, each only when it isn't none. The dismissed are the suggestions on the map now that a dismissal covers.
   - **Not here:** `world import` still replaces the file, dismissals and all. Keeping what's in a map when importing over it is W9's.
   - *Why:* a designer sets aside what they won't build without losing it, and one id dismisses a whole road however the region cuts it. Keeping a dismissal whose suggestion is gone means narrowing or moving the region and coming back doesn't bring back what was set aside.
+- **P-147 · Reading cultures, religions and states: names, kinds, links, stances and sizes** (made in W6d, 2026-11-06; D-49, P-134, P-144).
+  - **W6d split in two,** at the user's choice: W6d reads and checks them; W6e keeps those in the region on the map as suggestions, lists them and lets W6c's commands dismiss them.
+  - **A Full export has `pack.cultures`, `pack.religions` and `pack.states`,** and each cell's `pop`, `culture`, `religion` and `state`; an export without them isn't Full. Each list's placeholder at 0 and removed ones are skipped, as burgs' are. A culture's, religion's or state's `i` must be its place in the list, since cells and each other refer to them by place, by me.
+  - **Names, kinds and links,** at the user's choice:
+    - A culture keeps its name and type, one of the seven a settlement has, so it reuses `SettlementKind`, by me.
+    - A religion keeps its name, type (Folk, Organized, Cult or Heresy), form as Azgaar words it, deity if any (missing, null or empty is none), and its culture.
+    - A state keeps its name, full name, form (Monarchy, Republic, Union, Theocracy or Anarchy), culture and capital. Colours, shields, coats of arms, codes, origins and expansion settings are dropped.
+    - A link is 0 for none, else to one that exists and isn't removed: "culture 3 is removed", "religion 9 doesn't exist; there are 4 religions". A capital is a settlement read, by its id: "settlement 3 isn't one of the settlements read".
+  - **Diplomacy as stances,** at the user's choice: one of Azgaar's nine toward each other state read. The list has an entry for each state; entries toward itself, the placeholder and removed states, Azgaar's "x", aren't read, by me.
+  - **Sizes worked out,** at the user's choice: the cells naming it, and its people.
+    - The people are its cells' population read to millionths times the rate, plus the population read to thousandths of the settlements on its cells times the rate and urbanization, summed exactly and rounded once.
+    - A settlement counts where its cell is, as Azgaar's own editors count it, not by the culture or state it names, by me.
+    - Millionths, not the thousandths a settlement's population is read to, by me: at thousandths Menayland's rural total was 31 people short of Azgaar's own 43,249,637; at millionths it agrees.
+  - **`world source`** adds "2 cultures, 3 religions and 2 states". Listing them waits for W6e, as W6a's places waited for W6b.
+  - **Checked by a separate script:** `peoples_ref.py`, written from these rules apart from the code; Menayland's 4 cultures and 6 religions, each one's cells and people, agree with the code.
+  - *Why:* cultures, religions and states are the source's own factions. Keeping what they're called and how they relate, and how far they reach, gives a designer what they need to choose candidate factions, without building any (D-49).
 
 ## Open
 

@@ -5,6 +5,7 @@ input_file: scenarios/azgaar.scenario
 ---
 > world source crates/content/tests/fixtures/azgaar/tiny.json
 tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels
-4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; 2 settlements, 2 routes and 2 points of interest; fingerprint fnv1a64:709639dd4707edbc
+4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; 2 settlements, 2 routes and 2 points of interest; 2 cultures, 3 religions and 2 states; fingerprint fnv1a64:6da37bb62d2f5a9c
+> assert world source crates/content/tests/fixtures/azgaar/no-peoples.json == error: this isn't a Full export: it has no pack.cultures; export the Full JSON from Azgaar
 > assert world source crates/content/tests/fixtures/maps/hand-made.map == error: cannot read crates/content/tests/fixtures/maps/hand-made.map: stream did not contain valid UTF-8
 > assert world source == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]

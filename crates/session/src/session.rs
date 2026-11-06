@@ -3269,7 +3269,7 @@ mod tests {
             repo().execute(&format!("world source {file}")),
             output(&format!(
                 "tiny.json: Tiny, from Azgaar 1.154.0, 40 × 30 pixels\n\
-                 4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; 2 settlements, 2 routes and 2 points of interest; fingerprint {}",
+                 4 cells, 6 vertices; 1 ocean, 1 lake and 1 island; 2 rivers; 2 settlements, 2 routes and 2 points of interest; 2 cultures, 3 religions and 2 states; fingerprint {}",
                 factional_content::fingerprint_of(&text)
             ))
         );

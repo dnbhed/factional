@@ -314,6 +314,9 @@ mod tests {
             biome: crate::Biome::Grassland,
             temperature: 0,
             precipitation: 0,
+            culture: None,
+            religion: None,
+            state: None,
         }
     }
 

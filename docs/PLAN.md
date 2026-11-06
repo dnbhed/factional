@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6a → W6b → W6c → W6d → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6a → W6b → W6c → W6d → W6e → W7 → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -141,6 +141,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W6a — settlements, routes and points of interest read (P-144): a Full export has `pack.burgs`, `pack.routes` and `pack.markers` and the population settings; settlements but the placeholder and removed ones, with typed figures at the user's choice: id, name, point, cell, people (population to thousandths × rate × urbanization, rounded once, as Azgaar shows them), type, capital, port and five buildings; routes with their kind, name if any and at least two points; points of interest with Azgaar's type and icon, name and note if any; every cell, port feature, type, flag, figure and id checked at its key path; `world source` counts them; Menayland's 163, 162 and 47 agreeing with a second script; W6 split into W6a, W6b and W6c; done 2026-11-06 (#110)
 - W6b — suggestions on the map (P-145): settlements, routes and points of interest placed by tile and offset in 256ths, rounded once, at the user's choice; those outside the region dropped; routes clipped to the map exactly, each run inside a stretch of two different points or more; ids `settlement_<i>`, `route_<i>`, `route_<i>_<k>` and `poi_<i>`; `WorldMap::suggest` refusing an invalid or shared id, a place off the map or a short route; map file version 7; `world import` and `world info` counting them, `world suggestions <map>` listing them; raster.json and Menayland agreeing with a second script; W6b split into W6b and W6c, peoples to W6d; done 2026-11-06 (#111)
 - W6c — dismissing and restoring suggestions (P-146): `world dismiss <map> <id>…` and `world restore <map> <id>…`, one or more ids at the user's choice, all checked before anything is written; a route's own id covering its stretches, at the user's choice; refusals for an id not suggested (with a "did you mean"), already dismissed, not dismissed, dismissed only with its route, or named twice; dismissals kept as a set through regenerating and new suggestions, those not on the map too, at the user's choice; map file version 8; `world suggestions` marking the dismissed in place, at the user's choice, and listing those not on the map; it and `world info` counting them; done 2026-11-06 (#112)
+- W6d — cultures, religions and states read (P-147): `pack.cultures`, `pack.religions` and `pack.states` and each cell's population, culture, religion and state, checked at their key paths; placeholders and removed ones skipped; names, kinds and links at the user's choice (a culture's type, a religion's type, form, deity and culture, a state's full name, form, culture and capital), every link resolving; diplomacy kept as stances, at the user's choice; each one's cells and people worked out from its cells and their settlements, rounded once, at the user's choice; `world source` counting them; Menayland's 4 cultures and 6 religions agreeing with a second script; W6d split into W6d and W6e; done 2026-11-06 (#PR)
 
 ---
 
@@ -162,9 +163,9 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W6d · Peoples as candidate factions — P3 · Next
+### W6e · Peoples on the map as candidate factions — P3 · Next
 
-Cultures and religions, and Azgaar's states where a map has real ones, read and kept as candidate factions with what the source says of them; nothing built from them (D-49).
+Cultures, religions and states present in the map's region kept on it as suggestions, with what the source says of them; listed, and dismissed and restored as W6c's; nothing built from them (D-49).
 
 ### W7 · The map in the builder — P3 · Outline
 
