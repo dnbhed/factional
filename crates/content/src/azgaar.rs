@@ -4,11 +4,13 @@
 //! path, and every reference kept checked to resolve. Numbers
 //! with decimals are rounded once, as they're read, to hundredths, half away from zero.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
-use factional_core::Fixed;
+use factional_core::{Fixed, div_round};
 use factional_worldgen::{
-    Biome, Feature, HEIGHT_EXPONENTS, Point, Size, Source, SourceCell, SourceRiver, SourceVertex,
+    Biome, Buildings, Feature, HEIGHT_EXPONENTS, Point, RouteKind, SettlementKind, Size, Source,
+    SourceCell, SourceMarker, SourceRiver, SourceRoute, SourceSettlement, SourceVertex,
 };
 use serde_json::Value;
 
@@ -16,12 +18,33 @@ use serde_json::Value;
 const READS: (u64, u64) = (1, 154);
 
 /// The lists a Full export has and the others lack, in the order they're checked.
-const FULL: [&str; 5] = [
+const FULL: [&str; 8] = [
     "pack.cells",
     "pack.vertices",
     "pack.features",
     "pack.rivers",
+    "pack.burgs",
+    "pack.routes",
+    "pack.markers",
     "grid.cells",
+];
+
+/// Azgaar's settlement types, by the name it gives each.
+const SETTLEMENT_KINDS: [(&str, SettlementKind); 7] = [
+    ("Generic", SettlementKind::Generic),
+    ("Naval", SettlementKind::Naval),
+    ("Lake", SettlementKind::Lake),
+    ("Highland", SettlementKind::Highland),
+    ("River", SettlementKind::River),
+    ("Nomadic", SettlementKind::Nomadic),
+    ("Hunting", SettlementKind::Hunting),
+];
+
+/// Azgaar's route groups, by the name it gives each.
+const ROUTE_KINDS: [(&str, RouteKind); 3] = [
+    ("roads", RouteKind::Road),
+    ("trails", RouteKind::Trail),
+    ("searoutes", RouteKind::SeaRoute),
 ];
 
 /// Azgaar's 13 biomes, each at its number.
@@ -117,10 +140,28 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         json.pointer(&format!("/{}", list.replace('.', "/")))
             .ok_or(AzgaarError::NotFull(list))
     });
-    let [cells, vertices, features, rivers, grid] = match lists {
-        [Ok(cells), Ok(vertices), Ok(features), Ok(rivers), Ok(grid)] => {
-            [cells, vertices, features, rivers, grid]
-        }
+    let [
+        cells,
+        vertices,
+        features,
+        rivers,
+        burgs,
+        routes,
+        markers,
+        grid,
+    ] = match lists {
+        [
+            Ok(cells),
+            Ok(vertices),
+            Ok(features),
+            Ok(rivers),
+            Ok(burgs),
+            Ok(routes),
+            Ok(markers),
+            Ok(grid),
+        ] => [
+            cells, vertices, features, rivers, burgs, routes, markers, grid,
+        ],
         _ => {
             return Err(lists
                 .into_iter()
@@ -145,6 +186,7 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
     };
     let (width, height) = (side("width"), side("height"));
     let exponent = reader.height_exponent(&json);
+    let rate = reader.population_rate(&json);
     let cells = reader.list(cells, "pack.cells");
     let vertices = reader.list(vertices, "pack.vertices");
     let features = reader.list(features, "pack.features");
@@ -183,6 +225,52 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         .enumerate()
         .map(|(i, climate)| reader.climate(climate, &format!("grid.cells[{i}]")))
         .collect();
+    // Burgs[0] is Azgaar's placeholder, and a removed burg is gone.
+    let burgs = reader.list(burgs, "pack.burgs");
+    let settlements: Vec<(usize, Option<(SourceSettlement, i64)>)> = burgs
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(_, burg)| burg.get("removed") != Some(&Value::Bool(true)))
+        .map(|(i, burg)| {
+            (
+                i,
+                reader.settlement(burg, &format!("pack.burgs[{i}]"), &counts),
+            )
+        })
+        .collect();
+    reader.unique(
+        "pack.burgs",
+        settlements
+            .iter()
+            .map(|(i, s)| (*i, s.as_ref().map(|s| s.0.id))),
+    );
+    let routes = reader.list(routes, "pack.routes");
+    let routes: Vec<Option<SourceRoute>> = routes
+        .iter()
+        .enumerate()
+        .map(|(i, route)| reader.route(route, &format!("pack.routes[{i}]"), &counts))
+        .collect();
+    reader.unique(
+        "pack.routes",
+        routes
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (i, r.as_ref().map(|r| r.id))),
+    );
+    let markers = reader.list(markers, "pack.markers");
+    let markers: Vec<Option<SourceMarker>> = markers
+        .iter()
+        .enumerate()
+        .map(|(i, marker)| reader.marker(marker, &format!("pack.markers[{i}]"), &counts))
+        .collect();
+    reader.unique(
+        "pack.markers",
+        markers
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (i, m.as_ref().map(|m| m.id))),
+    );
     if !reader.problems.is_empty() {
         return Err(AzgaarError::Problems(reader.problems));
     }
@@ -219,6 +307,31 @@ pub fn read_azgaar(text: &str) -> Result<Source, AzgaarError> {
         rivers: rivers
             .into_iter()
             .map(|river| river.expect(every))
+            .collect(),
+        // Each settlement's people: its population in thousandths, times the rate, times
+        // urbanization in hundredths, rounded once.
+        settlements: settlements
+            .into_iter()
+            .map(|(_, settlement)| {
+                let (settlement, thousandths) = settlement.expect(every);
+                let (rate, urbanization) = rate.expect(every);
+                let people = div_round(
+                    i128::from(thousandths) * i128::from(rate) * i128::from(urbanization),
+                    100_000,
+                );
+                SourceSettlement {
+                    people: u64::try_from(people).expect("0 or more"),
+                    ..settlement
+                }
+            })
+            .collect(),
+        routes: routes
+            .into_iter()
+            .map(|route| route.expect(every))
+            .collect(),
+        markers: markers
+            .into_iter()
+            .map(|marker| marker.expect(every))
             .collect(),
     })
 }
@@ -349,6 +462,281 @@ impl Reader {
                 format!("{exponent} is outside {lowest} to {highest}, as Azgaar allows"),
             ),
         }
+    }
+
+    /// The people a point of population stands for, `settings.populationRate`, and
+    /// urbanization in hundredths, `settings.urbanization`.
+    fn population_rate(&mut self, json: &Value) -> Option<(u64, i64)> {
+        let settings = json.get("settings").unwrap_or(&Value::Null);
+        let rate = self
+            .field(settings, "settings", "populationRate")
+            .and_then(|rate| self.whole(rate, "settings.populationRate"))
+            .and_then(|rate| match rate {
+                0 => self.problem(
+                    "settings.populationRate",
+                    "expected at least 1 person a point, not 0".to_owned(),
+                ),
+                rate => Some(rate),
+            });
+        let urbanization = self
+            .field(settings, "settings", "urbanization")
+            .and_then(|urbanization| self.decimal(urbanization, "settings.urbanization"))
+            .and_then(|urbanization| match urbanization < Fixed::ZERO {
+                true => self.problem(
+                    "settings.urbanization",
+                    format!("expected 0 or more, not {urbanization}"),
+                ),
+                false => Some(urbanization.hundredths()),
+            });
+        Some((rate?, urbanization?))
+    }
+
+    /// The reference `value` to a cell, one of the `count` there are.
+    fn cell_of(&mut self, value: &Value, path: &str, count: usize) -> Option<u32> {
+        match self.whole(value, path)? {
+            cell if cell < count as u64 => Some(cell as u32),
+            cell => self.problem(
+                path,
+                format!("cell {cell} doesn't exist; there are {count} cells"),
+            ),
+        }
+    }
+
+    /// An id, `object`'s `i`.
+    fn id(&mut self, object: &Value, path: &str) -> Option<u32> {
+        let at = format!("{path}.i");
+        let id = self.field(object, path, "i")?;
+        match self.whole(id, &at).map(u32::try_from)? {
+            Ok(id) => Some(id),
+            Err(_) => self.problem(&at, format!("{id} is too large")),
+        }
+    }
+
+    /// Notes each id in `ids`, by the place in `list` it's at, that an earlier one has.
+    fn unique(&mut self, list: &str, ids: impl Iterator<Item = (usize, Option<u32>)>) {
+        let mut first = BTreeMap::new();
+        for (i, id) in ids {
+            let Some(id) = id else { continue };
+            match first.get(&id) {
+                Some(earlier) => {
+                    let what = format!("{id} is also {list}[{earlier}]'s");
+                    self.problem::<()>(&format!("{list}[{i}].i"), what);
+                }
+                None => {
+                    first.insert(id, i);
+                }
+            }
+        }
+    }
+
+    /// `object`'s text at `key`, if it has any: none when it's missing or empty.
+    fn optional_text(&mut self, object: &Value, path: &str, key: &str) -> Option<Option<String>> {
+        match object.get(key) {
+            None => Some(None),
+            Some(value) => {
+                let text = self.text(value, &format!("{path}.{key}"))?;
+                Some(Some(text).filter(|text| !text.is_empty()))
+            }
+        }
+    }
+
+    /// `object`'s `key`, 0 or 1, as no or yes.
+    fn flag(&mut self, object: &Value, path: &str, key: &str) -> Option<bool> {
+        let value = self.field(object, path, key)?;
+        match value.as_u64() {
+            Some(0) => Some(false),
+            Some(1) => Some(true),
+            _ => self.problem(
+                &format!("{path}.{key}"),
+                format!("expected 0 or 1, not {value}"),
+            ),
+        }
+    }
+
+    /// The point at `object`'s `x` and `y`.
+    fn place(&mut self, object: &Value, path: &str) -> Option<Point> {
+        let mut coordinate = |key: &str| {
+            let value = self.field(object, path, key)?;
+            self.decimal(value, &format!("{path}.{key}"))
+        };
+        let (x, y) = (coordinate("x"), coordinate("y"));
+        Some(Point { x: x?, y: y? })
+    }
+
+    /// The settlement `burg`, its people yet to come from the settings, and its population in
+    /// thousandths.
+    fn settlement(
+        &mut self,
+        burg: &Value,
+        path: &str,
+        counts: &Counts,
+    ) -> Option<(SourceSettlement, i64)> {
+        let at = |key: &str| format!("{path}.{key}");
+        let id = self.id(burg, path);
+        let name = self
+            .field(burg, path, "name")
+            .and_then(|name| self.text(name, &at("name")));
+        let point = self.place(burg, path);
+        let cell = self
+            .field(burg, path, "cell")
+            .and_then(|cell| self.cell_of(cell, &at("cell"), counts.cells));
+        let population =
+            self.field(burg, path, "population").and_then(|population| {
+                match population.as_number().and_then(|n| scaled(n, 3)) {
+                    Some(thousandths) if thousandths >= 0 => Some(thousandths),
+                    Some(_) => self.problem(
+                        &at("population"),
+                        format!("expected 0 or more, not {population}"),
+                    ),
+                    None => self.problem(
+                        &at("population"),
+                        format!("expected a number, not {population}"),
+                    ),
+                }
+            });
+        let kind = self.field(burg, path, "type").and_then(|kind| {
+            match SETTLEMENT_KINDS
+                .iter()
+                .find(|(name, _)| kind.as_str() == Some(name))
+            {
+                Some(&(_, kind)) => Some(kind),
+                None => self.problem(
+                    &at("type"),
+                    format!(
+                        "{kind} isn't a settlement type Factional reads: Generic, Naval, Lake, \
+                         Highland, River, Nomadic or Hunting"
+                    ),
+                ),
+            }
+        });
+        let capital = self.flag(burg, path, "capital");
+        // A port is the water feature its harbour is on; none, or 0, is no port.
+        let port = match burg.get("port") {
+            None => Some(false),
+            Some(port) => match self.whole(port, &at("port"))? {
+                0 => Some(false),
+                feature if feature <= counts.features as u64 => Some(true),
+                feature => self.problem(
+                    &at("port"),
+                    format!(
+                        "feature {feature} doesn't exist; there are {} features",
+                        counts.features
+                    ),
+                ),
+            },
+        };
+        let mut building = |key: &str| self.flag(burg, path, key);
+        let (citadel, walls, plaza, temple, shanty) = (
+            building("citadel"),
+            building("walls"),
+            building("plaza"),
+            building("temple"),
+            building("shanty"),
+        );
+        let settlement = SourceSettlement {
+            id: id?,
+            name: name?,
+            at: point?,
+            cell: cell?,
+            people: 0,
+            kind: kind?,
+            capital: capital?,
+            port: port?,
+            buildings: Buildings {
+                citadel: citadel?,
+                walls: walls?,
+                plaza: plaza?,
+                temple: temple?,
+                shanty: shanty?,
+            },
+        };
+        Some((settlement, population?))
+    }
+
+    /// The route `route`: its points at least two, each an x, a y and a cell.
+    fn route(&mut self, route: &Value, path: &str, counts: &Counts) -> Option<SourceRoute> {
+        let at = |key: &str| format!("{path}.{key}");
+        let id = self.id(route, path);
+        let kind =
+            self.field(route, path, "group").and_then(|group| {
+                match ROUTE_KINDS.iter().find(|(name, _)| group.as_str() == Some(name)) {
+                Some(&(_, kind)) => Some(kind),
+                None => self.problem(
+                    &at("group"),
+                    format!(
+                        "{group} isn't a route group Factional reads: roads, trails or searoutes"
+                    ),
+                ),
+            }
+            });
+        let name = self.optional_text(route, path, "name");
+        let points = self.field(route, path, "points").and_then(|points| {
+            let points = self.list(points, &at("points"));
+            let read: Vec<Option<Point>> = points
+                .iter()
+                .enumerate()
+                .map(|(i, point)| {
+                    let here = format!("{path}.points[{i}]");
+                    match point.as_array().map(Vec::as_slice) {
+                        Some([x, y, cell]) => {
+                            let cell = self.cell_of(cell, &here, counts.cells);
+                            let x = x.as_number().and_then(hundredths);
+                            let y = y.as_number().and_then(hundredths);
+                            match (x, y) {
+                                (Some(x), Some(y)) => cell.map(|_| Point {
+                                    x: Fixed::from_hundredths(x),
+                                    y: Fixed::from_hundredths(y),
+                                }),
+                                _ => {
+                                    self.problem(&here, "expected an x, a y and a cell".to_owned())
+                                }
+                            }
+                        }
+                        _ => self.problem(&here, "expected an x, a y and a cell".to_owned()),
+                    }
+                })
+                .collect();
+            if read.len() < 2 {
+                return self.problem(
+                    &at("points"),
+                    format!("a route needs at least two points, not {}", read.len()),
+                );
+            }
+            read.into_iter().collect::<Option<Vec<Point>>>()
+        });
+        Some(SourceRoute {
+            id: id?,
+            name: name?,
+            kind: kind?,
+            points: points?,
+        })
+    }
+
+    /// The point of interest `marker`.
+    fn marker(&mut self, marker: &Value, path: &str, counts: &Counts) -> Option<SourceMarker> {
+        let at = |key: &str| format!("{path}.{key}");
+        let id = self.id(marker, path);
+        let kind = self
+            .field(marker, path, "type")
+            .and_then(|kind| self.text(kind, &at("type")));
+        let icon = self
+            .field(marker, path, "icon")
+            .and_then(|icon| self.text(icon, &at("icon")));
+        let name = self.optional_text(marker, path, "name");
+        let note = self.optional_text(marker, path, "note");
+        let point = self.place(marker, path);
+        let cell = self
+            .field(marker, path, "cell")
+            .and_then(|cell| self.cell_of(cell, &at("cell"), counts.cells));
+        Some(SourceMarker {
+            id: id?,
+            kind: kind?,
+            icon: icon?,
+            name: name?,
+            note: note?,
+            at: point?,
+            cell: cell?,
+        })
     }
 
     /// The point `value`, an x and a y.
@@ -594,11 +982,17 @@ impl Reader {
 }
 
 /// `number` in hundredths, rounded once, half away from zero; `None` if it's too large.
-/// A number with decimals is read from its shortest decimal form, the digits the export
-/// wrote, so no binary rounding creeps in.
 fn hundredths(number: &serde_json::Number) -> Option<i64> {
+    scaled(number, 2)
+}
+
+/// `number` in units of 10^-`places`, rounded once, half away from zero; `None` if it's too
+/// large. A number with decimals is read from its shortest decimal form, the digits the
+/// export wrote, so no binary rounding creeps in.
+fn scaled(number: &serde_json::Number, places: u32) -> Option<i64> {
+    let unit = 10i64.pow(places);
     if let Some(whole) = number.as_i64() {
-        return whole.checked_mul(100);
+        return whole.checked_mul(unit);
     }
     let text = format!("{}", number.as_f64()?);
     let (negative, digits) = match text.strip_prefix('-') {
@@ -609,13 +1003,13 @@ fn hundredths(number: &serde_json::Number) -> Option<i64> {
     let mut fraction = fraction
         .bytes()
         .map(|digit| i64::from(digit - b'0'))
-        .chain([0; 3]);
-    let mut next = || fraction.next().expect("padded with zeros");
-    let (tenths, hundredths, thousandths) = (next(), next(), next());
+        .chain(std::iter::repeat(0));
+    let kept = (0..places).fold(0, |kept, _| kept * 10 + fraction.next().expect("endless"));
+    let next = fraction.next().expect("endless");
     let magnitude = whole
         .parse::<i64>()
         .ok()?
-        .checked_mul(100)?
-        .checked_add(tenths * 10 + hundredths + i64::from(thousandths >= 5))?;
+        .checked_mul(unit)?
+        .checked_add(kept + i64::from(next >= 5))?;
     Some(if negative { -magnitude } else { magnitude })
 }

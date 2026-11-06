@@ -25,7 +25,10 @@ pub use raster::{
     HEIGHT_EXPONENTS, RasterError, cell_metres, cell_reliefs, height_metres, level_heights,
     rasterise,
 };
-pub use source::{Feature, Point, Source, SourceCell, SourceRiver, SourceVertex};
+pub use source::{
+    Buildings, Feature, Point, RouteKind, SettlementKind, Source, SourceCell, SourceMarker,
+    SourceRiver, SourceRoute, SourceSettlement, SourceVertex,
+};
 pub use tile::{Biome, Override, Plant, PlantKind, Terrain, Tile, Water};
 
 /// How many tiles a chunk has each way.

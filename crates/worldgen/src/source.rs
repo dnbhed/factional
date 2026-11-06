@@ -58,9 +58,78 @@ pub struct SourceRiver {
     pub source_width: Fixed,
 }
 
+/// One of the source's settlements, Azgaar's burgs (W6a, P-144): its id, name, point and cell;
+/// its people, as Azgaar shows them; its type; whether it's a capital and a port; and its
+/// buildings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceSettlement {
+    pub id: u32,
+    pub name: String,
+    pub at: Point,
+    pub cell: u32,
+    pub people: u64,
+    pub kind: SettlementKind,
+    pub capital: bool,
+    pub port: bool,
+    pub buildings: Buildings,
+}
+
+/// A settlement's type, as Azgaar has it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SettlementKind {
+    Generic,
+    Naval,
+    Lake,
+    Highland,
+    River,
+    Nomadic,
+    Hunting,
+}
+
+/// The buildings Azgaar gives a settlement.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Buildings {
+    pub citadel: bool,
+    pub walls: bool,
+    pub plaza: bool,
+    pub temple: bool,
+    pub shanty: bool,
+}
+
+/// One of the source's routes (W6a, P-144): its id, its name if it has one, its kind, and its
+/// points, at least two.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceRoute {
+    pub id: u32,
+    pub name: Option<String>,
+    pub kind: RouteKind,
+    pub points: Vec<Point>,
+}
+
+/// A route's kind: Azgaar's roads, trails and sea routes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RouteKind {
+    Road,
+    Trail,
+    SeaRoute,
+}
+
+/// One of the source's points of interest, Azgaar's markers (W6a, P-144): its id, its type and
+/// icon as Azgaar names them, its name and note if it has them, and its point and cell.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceMarker {
+    pub id: u32,
+    pub kind: String,
+    pub icon: String,
+    pub name: Option<String>,
+    pub note: Option<String>,
+    pub at: Point,
+    pub cell: u32,
+}
+
 /// A source map: its name, the generator's version that made it, its size in pixels, the
 /// exponent its heights are raised to in metres, and its cells, vertices, features and
-/// rivers.
+/// rivers; and its settlements, routes and points of interest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Source {
     pub name: String,
@@ -71,4 +140,7 @@ pub struct Source {
     pub vertices: Vec<SourceVertex>,
     pub features: Vec<Feature>,
     pub rivers: Vec<SourceRiver>,
+    pub settlements: Vec<SourceSettlement>,
+    pub routes: Vec<SourceRoute>,
+    pub markers: Vec<SourceMarker>,
 }

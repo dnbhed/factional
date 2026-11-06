@@ -5,8 +5,9 @@
 use factional_content::{AzgaarError, fingerprint_of, read_azgaar};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Coast, Detail, Drop, Feature, Foliage, Levels, Point, Recipe, Region, Size, Source,
-    SourceCell, SourceRiver, SourceVertex, Terrain, TilePos, Water, rasterise,
+    Biome, Buildings, Coast, Detail, Drop, Feature, Foliage, Levels, Point, Recipe, Region,
+    RouteKind, SettlementKind, Size, Source, SourceCell, SourceMarker, SourceRiver, SourceRoute,
+    SourceSettlement, SourceVertex, Terrain, TilePos, Water, rasterise,
 };
 use serde_json::{Value, json};
 
@@ -142,6 +143,76 @@ fn a_full_export_reads_as_its_cells_vertices_features_and_rivers() {
                 off_map: true,
                 width_factor: Fixed::from_hundredths(84),
                 source_width: Fixed::from_hundredths(13),
+            },
+        ],
+        // Burgs[0] is Azgaar's placeholder, and Gone is removed. People are Azgaar's
+        // population times 1000 a point and urbanization 1.
+        settlements: vec![
+            SourceSettlement {
+                id: 1,
+                name: "Highmoor".to_owned(),
+                at: point(30_25, 7_75),
+                cell: 1,
+                people: 2345,
+                kind: SettlementKind::Generic,
+                capital: true,
+                port: false,
+                buildings: Buildings {
+                    citadel: true,
+                    walls: true,
+                    temple: true,
+                    ..Buildings::default()
+                },
+            },
+            SourceSettlement {
+                id: 2,
+                name: "Lakeside".to_owned(),
+                at: point(21_50, 20_25),
+                cell: 3,
+                people: 857,
+                kind: SettlementKind::Lake,
+                capital: false,
+                port: true,
+                buildings: Buildings {
+                    plaza: true,
+                    ..Buildings::default()
+                },
+            },
+        ],
+        // The sea route has no name.
+        routes: vec![
+            SourceRoute {
+                id: 0,
+                name: Some("High road".to_owned()),
+                kind: RouteKind::Road,
+                points: vec![point(30_25, 7_75), point(25_50, 15_00), point(21_50, 20_25)],
+            },
+            SourceRoute {
+                id: 1,
+                name: None,
+                kind: RouteKind::SeaRoute,
+                points: vec![point(21_50, 20_25), point(12_00, 22_50)],
+            },
+        ],
+        // Old Keep's note is empty, so it has none; its id, 2, isn't its place in the list.
+        markers: vec![
+            SourceMarker {
+                id: 0,
+                kind: "volcanoes".to_owned(),
+                icon: "glyph-1f30b".to_owned(),
+                name: Some("Ash Peak".to_owned()),
+                note: Some("Dormant volcano.".to_owned()),
+                at: point(33_30, 9_40),
+                cell: 1,
+            },
+            SourceMarker {
+                id: 2,
+                kind: "ruins".to_owned(),
+                icon: "glyph-1f3f0".to_owned(),
+                name: Some("Old Keep".to_owned()),
+                note: None,
+                at: point(20_00, 21_00),
+                cell: 3,
             },
         ],
     };
@@ -476,7 +547,207 @@ fn a_missing_or_misshapen_height_exponent_is_named() {
     let text = tiny_with(|json| {
         json.as_object_mut().expect("an export").remove("settings");
     });
-    assert_eq!(problems(&text), ["settings: missing heightExponent"]);
+    assert_eq!(
+        problems(&text),
+        [
+            "settings: missing heightExponent",
+            "settings: missing populationRate",
+            "settings: missing urbanization",
+        ]
+    );
+}
+
+fn people(text: &str) -> Vec<u64> {
+    let source = read_azgaar(text).expect("it reads");
+    source.settlements.iter().map(|s| s.people).collect()
+}
+
+#[test]
+fn people_are_the_population_times_the_rate_and_urbanization_rounded_once() {
+    // 1.001 × 333 × 1.50 is 499.9995, and 0.003 × 333 × 1.50 is 1.4985.
+    let text = tiny_with(|json| {
+        json["settings"]["populationRate"] = json!(333);
+        json["settings"]["urbanization"] = json!(1.5);
+        json["pack"]["burgs"][1]["population"] = json!(1.001);
+        json["pack"]["burgs"][2]["population"] = json!(0.003);
+    });
+    assert_eq!(people(&text), [500, 1]);
+    // The population is read to the thousandth, half away from zero: 2.3455 is 2.346.
+    let text = tiny_with(|json| {
+        json["pack"]["burgs"][1]["population"] = json!(2.3455);
+        json["pack"]["burgs"][2]["population"] = json!(0);
+    });
+    assert_eq!(people(&text), [2346, 0]);
+    // No people at urbanization 0.
+    let text = tiny_with(|json| json["settings"]["urbanization"] = json!(0));
+    assert_eq!(people(&text), [0, 0]);
+}
+
+#[test]
+fn the_population_rate_is_at_least_1_and_urbanization_0_or_more() {
+    let text = tiny_with(|json| {
+        json["settings"]["populationRate"] = json!(0);
+        json["settings"]["urbanization"] = json!(-0.5);
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "settings.populationRate: expected at least 1 person a point, not 0",
+            "settings.urbanization: expected 0 or more, not -0.50",
+        ]
+    );
+    let text = tiny_with(|json| json["settings"]["populationRate"] = json!(2.5));
+    assert_eq!(
+        problems(&text),
+        ["settings.populationRate: expected a whole number, not 2.5"]
+    );
+    let text = tiny_with(|json| json["settings"]["populationRate"] = json!(1));
+    assert_eq!(people(&text), [2, 1]);
+}
+
+#[test]
+fn a_settlements_cell_type_port_and_figures_are_checked() {
+    let text = tiny_with(|json| {
+        let burgs = &mut json["pack"]["burgs"];
+        burgs[1]["cell"] = json!(9);
+        burgs[1]["population"] = json!(-1);
+        burgs[1]["type"] = json!("Floating");
+        burgs[1]["walls"] = json!(2);
+        burgs[2]["capital"] = json!(true);
+        burgs[2]["port"] = json!(7);
+        burgs[2].as_object_mut().expect("a burg").remove("name");
+        burgs[2].as_object_mut().expect("a burg").remove("shanty");
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.burgs[1].cell: cell 9 doesn't exist; there are 4 cells",
+            "pack.burgs[1].population: expected 0 or more, not -1",
+            "pack.burgs[1].type: \"Floating\" isn't a settlement type Factional reads: \
+             Generic, Naval, Lake, Highland, River, Nomadic or Hunting",
+            "pack.burgs[1].walls: expected 0 or 1, not 2",
+            "pack.burgs[2]: missing name",
+            "pack.burgs[2].capital: expected 0 or 1, not true",
+            "pack.burgs[2].port: feature 7 doesn't exist; there are 3 features",
+            "pack.burgs[2]: missing shanty",
+        ]
+    );
+    // Each type Factional reads, and a port of 0 is no port.
+    for (azgaar, kind) in [
+        ("Generic", SettlementKind::Generic),
+        ("Naval", SettlementKind::Naval),
+        ("Lake", SettlementKind::Lake),
+        ("Highland", SettlementKind::Highland),
+        ("River", SettlementKind::River),
+        ("Nomadic", SettlementKind::Nomadic),
+        ("Hunting", SettlementKind::Hunting),
+    ] {
+        let text = tiny_with(|json| {
+            json["pack"]["burgs"][1]["type"] = json!(azgaar);
+            json["pack"]["burgs"][2]["port"] = json!(0);
+        });
+        let source = read_azgaar(&text).expect("it reads");
+        assert_eq!(source.settlements[0].kind, kind);
+        assert!(!source.settlements[1].port);
+    }
+    // Each building is its own.
+    for building in ["citadel", "walls", "plaza", "temple", "shanty"] {
+        let text = tiny_with(|json| {
+            for key in ["citadel", "walls", "plaza", "temple", "shanty"] {
+                json["pack"]["burgs"][1][key] = json!(u8::from(key == building));
+            }
+        });
+        let source = read_azgaar(&text).expect("it reads");
+        let b = source.settlements[0].buildings;
+        assert_eq!(
+            [b.citadel, b.walls, b.plaza, b.temple, b.shanty].map(u8::from),
+            ["citadel", "walls", "plaza", "temple", "shanty"].map(|key| u8::from(key == building)),
+            "{building}"
+        );
+    }
+}
+
+#[test]
+fn a_removed_settlement_isnt_read_however_it_looks() {
+    let text = tiny_with(|json| {
+        json["pack"]["burgs"][3] = json!({ "i": 3, "removed": true, "cell": 99 });
+        json["pack"]["burgs"][2]["removed"] = json!(false);
+    });
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(source.settlements.len(), 2);
+}
+
+#[test]
+fn a_route_has_a_group_factional_reads_and_two_points_or_more_on_cells() {
+    let text = tiny_with(|json| {
+        let routes = &mut json["pack"]["routes"];
+        routes[0]["group"] = json!("rivers");
+        routes[0]["points"][1] = json!([25.5, 15, 9]);
+        routes[0]["points"][2] = json!([1, 2]);
+        routes[1]["points"] = json!([[1, 2, 3]]);
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.routes[0].group: \"rivers\" isn't a route group Factional reads: roads, trails \
+             or searoutes",
+            "pack.routes[0].points[1]: cell 9 doesn't exist; there are 4 cells",
+            "pack.routes[0].points[2]: expected an x, a y and a cell",
+            "pack.routes[1].points: a route needs at least two points, not 1",
+        ]
+    );
+    let text = tiny_with(|json| {
+        json["pack"]["routes"][0]["group"] = json!("trails");
+        json["pack"]["routes"][1]["name"] = json!("");
+    });
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(source.routes[0].kind, RouteKind::Trail);
+    assert_eq!(source.routes[1].name, None);
+}
+
+#[test]
+fn a_points_cell_must_exist_and_its_name_and_note_may_be_missing() {
+    let text = tiny_with(|json| {
+        let markers = &mut json["pack"]["markers"];
+        markers[0]["cell"] = json!(4);
+        markers[1].as_object_mut().expect("a marker").remove("type");
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.markers[0].cell: cell 4 doesn't exist; there are 4 cells",
+            "pack.markers[1]: missing type",
+        ]
+    );
+    let text = tiny_with(|json| {
+        let marker = json["pack"]["markers"][0]
+            .as_object_mut()
+            .expect("a marker");
+        marker.remove("name");
+        marker.remove("note");
+    });
+    let source = read_azgaar(&text).expect("it reads");
+    assert_eq!(
+        (&source.markers[0].name, &source.markers[0].note),
+        (&None, &None)
+    );
+}
+
+#[test]
+fn each_lists_ids_are_unique() {
+    let text = tiny_with(|json| {
+        json["pack"]["burgs"][2]["i"] = json!(1);
+        json["pack"]["routes"][1]["i"] = json!(0);
+        json["pack"]["markers"][1]["i"] = json!(0);
+    });
+    assert_eq!(
+        problems(&text),
+        [
+            "pack.burgs[2].i: 1 is also pack.burgs[1]'s",
+            "pack.routes[1].i: 0 is also pack.routes[0]'s",
+            "pack.markers[1].i: 0 is also pack.markers[0]'s",
+        ]
+    );
 }
 
 #[test]
@@ -526,6 +797,9 @@ fn an_export_that_isnt_full_is_refused_naming_what_it_lacks() {
         ("pack", "vertices"),
         ("pack", "features"),
         ("pack", "rivers"),
+        ("pack", "burgs"),
+        ("pack", "routes"),
+        ("pack", "markers"),
         ("grid", "cells"),
     ] {
         let text = tiny_with(|json| {
@@ -580,6 +854,36 @@ fn the_users_menayland_export_reads() {
     assert_eq!(count(|f| *f == Feature::Ocean), 2);
     assert_eq!(count(|f| matches!(f, Feature::Lake { .. })), 9);
     assert_eq!(count(|f| *f == Feature::Island), 15);
+    // W6a's places, counted and summed by a separate script.
+    assert_eq!(
+        [
+            source.settlements.len(),
+            source.routes.len(),
+            source.markers.len()
+        ],
+        [163, 162, 47]
+    );
+    let people: Vec<u64> = source.settlements.iter().map(|s| s.people).collect();
+    assert_eq!(people.iter().sum::<u64>(), 1_261_062);
+    assert_eq!(people.iter().max(), Some(&27_265));
+    assert_eq!(source.settlements.iter().filter(|s| s.capital).count(), 0);
+    assert_eq!(source.settlements.iter().filter(|s| s.port).count(), 57);
+    assert_eq!(
+        source.routes.iter().map(|r| r.points.len()).sum::<usize>(),
+        1984
+    );
+    assert_eq!(
+        source.routes.iter().filter(|r| r.name.is_some()).count(),
+        129
+    );
+    assert_eq!(
+        source.markers.iter().filter(|m| m.name.is_some()).count(),
+        47
+    );
+    assert_eq!(
+        source.markers.iter().filter(|m| m.note.is_some()).count(),
+        47
+    );
 }
 
 /// The user's own export rasterised whole at a tile a pixel, when `FACTIONAL_AZGAAR` names it;

@@ -80,6 +80,9 @@ fn raster() -> Source {
             Feature::Island,
         ],
         rivers: Vec::new(),
+        settlements: Vec::new(),
+        routes: Vec::new(),
+        markers: Vec::new(),
     }
 }
 
