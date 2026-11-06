@@ -5,9 +5,10 @@
 use factional_content::{MAP_VERSION, MapFileError, fingerprint_of, read_map, write_map};
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Buildings, Coast, Detail, Foliage, Levels, Override, PerKind, Placed, Plant, PlantKind,
-    PointOfInterest, Recipe, Region, Route, RouteKind, Settlement, SettlementKind, Size,
-    Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
+    Biome, Buildings, Coast, Culture, Detail, Extent, Foliage, Levels, Override, PerKind, Placed,
+    Plant, PlantKind, PointOfInterest, Recipe, Region, Religion, ReligionKind, Route, RouteKind,
+    Settlement, SettlementKind, Size, Stance, State, StateForm, Suggestions, Terrain, Tile,
+    TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -153,7 +154,8 @@ fn placed(x: u32, y: u32, offset: [u8; 2]) -> Placed {
     }
 }
 
-/// A settlement, a route of three points and a point of interest, on the hand-made map.
+/// A settlement, a route of three points and a point of interest, on the hand-made map; and a
+/// culture, a religion and a state (W6e), the state's culture not on the map.
 fn hand_made_suggestions() -> Suggestions {
     Suggestions {
         settlements: vec![Settlement {
@@ -189,6 +191,46 @@ fn hand_made_suggestions() -> Suggestions {
             name: None,
             note: Some("Walls of an older keep.".to_owned()),
             at: placed(33, 7, [128, 64]),
+        }],
+        cultures: vec![Culture {
+            id: "culture_2".to_owned(),
+            name: "Riverfolk".to_owned(),
+            kind: SettlementKind::River,
+            extent: Extent {
+                cells: 40,
+                people: 61_234,
+            },
+            tiles: 1200,
+        }],
+        religions: vec![Religion {
+            id: "religion_5".to_owned(),
+            name: "Ferry Saints".to_owned(),
+            kind: ReligionKind::Heresy,
+            form: "Sect".to_owned(),
+            deity: None,
+            culture: Some("culture_2".to_owned()),
+            extent: Extent {
+                cells: 12,
+                people: 9001,
+            },
+            tiles: 300,
+        }],
+        states: vec![State {
+            id: "state_3".to_owned(),
+            name: "Riverhold".to_owned(),
+            full_name: "Free City of Riverhold".to_owned(),
+            form: StateForm::Union,
+            culture: Some("culture_7".to_owned()),
+            capital: Some("settlement_9".to_owned()),
+            stances: vec![
+                ("state_1".to_owned(), Stance::Vassal),
+                ("state_4".to_owned(), Stance::Suzerain),
+            ],
+            extent: Extent {
+                cells: 40,
+                people: 61_234,
+            },
+            tiles: 4620,
         }],
     }
 }
@@ -234,7 +276,7 @@ fn the_header_is_readable_text_naming_the_tiles_length_and_fingerprint() {
     let (header, tiles) = split(&bytes);
     let expected = format!(
         r#"format = "factional-map"
-version = 8
+version = 9
 
 [recipe]
 source = ""
@@ -272,7 +314,7 @@ fingerprint = "{}"
         fingerprint_of(tiles)
     );
     assert_eq!(header, expected);
-    assert_eq!(MAP_VERSION, 8);
+    assert_eq!(MAP_VERSION, 9);
 }
 
 #[test]
@@ -406,10 +448,95 @@ fn every_kind_and_figure_of_a_suggestion_reads_back() {
             at: placed(69, 65 - i, [255, 0]),
         })
         .collect();
+    // W6e: every culture type, religion type, state form and stance, and links and deities
+    // present and not.
+    let cultures = kinds
+        .into_iter()
+        .zip(1u32..)
+        .map(|(kind, i)| Culture {
+            id: format!("culture_{i}"),
+            name: format!("Folk {i}"),
+            kind,
+            extent: Extent {
+                cells: i * 7,
+                people: u64::from(i) * 1_000_003,
+            },
+            tiles: i,
+        })
+        .collect();
+    let religions = [
+        ReligionKind::Folk,
+        ReligionKind::Organized,
+        ReligionKind::Cult,
+        ReligionKind::Heresy,
+    ]
+    .into_iter()
+    .zip(1u32..)
+    .map(|(kind, i)| Religion {
+        id: format!("religion_{i}"),
+        name: format!("Faith {i}"),
+        kind,
+        form: format!("Form {i}"),
+        deity: (i % 2 == 0).then(|| format!("God {i}")),
+        culture: (i != 3).then(|| format!("culture_{i}")),
+        extent: Extent {
+            cells: i,
+            people: u64::from(i) * 17,
+        },
+        tiles: 100 + i,
+    })
+    .collect();
+    let stances = [
+        Stance::Ally,
+        Stance::Friendly,
+        Stance::Neutral,
+        Stance::Suspicion,
+        Stance::Enemy,
+        Stance::Unknown,
+        Stance::Rival,
+        Stance::Vassal,
+        Stance::Suzerain,
+    ];
+    let states = [
+        StateForm::Monarchy,
+        StateForm::Republic,
+        StateForm::Union,
+        StateForm::Theocracy,
+        StateForm::Anarchy,
+    ]
+    .into_iter()
+    .zip(1u32..)
+    .map(|(form, i)| State {
+        id: format!("state_{i}"),
+        name: format!("Realm {i}"),
+        full_name: format!("The Realm of {i}"),
+        form,
+        culture: (i != 2).then(|| format!("culture_{i}")),
+        capital: (i != 4).then(|| format!("settlement_{i}")),
+        stances: (1u32..=5)
+            .filter(|&other| other != i)
+            .map(|other| {
+                let stance = stances[((i + other) % 9) as usize];
+                (format!("state_{other}"), stance)
+            })
+            .chain((i == 1).then(|| ("state_9".to_owned(), Stance::Suzerain)))
+            .chain((i == 2).then(|| ("state_8".to_owned(), Stance::Ally)))
+            .chain((i == 3).then(|| ("state_7".to_owned(), Stance::Friendly)))
+            .collect(),
+        extent: Extent {
+            cells: i * 3,
+            people: u64::from(i) * 101,
+        },
+        tiles: 1000 + i,
+    })
+    .collect();
     let suggestions = Suggestions {
         settlements,
         routes,
         points,
+        cultures,
+        religions,
+        states,
     };
     let mut map = WorldMap::new(recipe(3, 4, 35, 33, 2), varied).expect("a map");
     map.suggest(suggestions.clone()).expect("on the map");
@@ -465,15 +592,15 @@ fn a_file_that_doesnt_start_with_the_format_isnt_a_map() {
 
 #[test]
 fn another_version_is_refused_naming_both() {
-    for found in [7, 9] {
+    for found in [8, 10] {
         let bytes = with_header(
             &write_map(&hand_made()),
-            "version = 8",
+            "version = 9",
             &format!("version = {found}"),
         );
         assert_eq!(
             refusal(&bytes),
-            format!("this map is version {found}, but this build reads version 8")
+            format!("this map is version {found}, but this build reads version 9")
         );
     }
 }
@@ -744,6 +871,15 @@ proptest! {
                 note: Some(format!("Note {i}")),
                 at: at(place),
             }).collect(),
+            // W6e: a culture for each place, covering some of the map's tiles.
+            cultures: places.iter().zip(0u64..).map(|(&place, i)| Culture {
+                id: format!("culture_{i}"),
+                name: format!("Folk {i}"),
+                kind: SettlementKind::Lake,
+                extent: Extent { cells: place.0, people: i * 104_729 },
+                tiles: place.1 % (width * height) + 1,
+            }).collect(),
+            ..Suggestions::default()
         };
         map.suggest(suggestions).expect("on the map");
         prop_assert_eq!(read_map(&write_map(&map)), Ok(map));

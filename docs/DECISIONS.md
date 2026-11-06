@@ -1238,6 +1238,26 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **`world source`** adds "2 cultures, 3 religions and 2 states". Listing them waits for W6e, as W6a's places waited for W6b.
   - **Checked by a separate script:** `peoples_ref.py`, written from these rules apart from the code; Menayland's 4 cultures and 6 religions, each one's cells and people, agree with the code.
   - *Why:* cultures, religions and states are the source's own factions. Keeping what they're called and how they relate, and how far they reach, gives a designer what they need to choose candidate factions, without building any (D-49).
+- **P-148 · Peoples on the map as suggestions: by their cells, with their tiles counted** (made in W6e, 2026-11-06; D-49, P-145, P-146, P-147).
+  - **On the map when a tile lies in its cells,** at the user's choice: a tile lies in the cell whose centre is nearest its own, the one its climate comes from. A culture, religion or state is suggested when at least one tile lies in its cells; one with none isn't. In `raster.json`, Seafolk names no cell, so it's never suggested.
+  - **Ids:** `culture_<i>`, `religion_<i>` and `state_<i>`, from Azgaar's ids, as places' are. They're unique among every kind of suggestion.
+  - **What each keeps,** at the user's choice: W6d's names, kinds and links; its extent in the whole source, its cells and people; and how many of the map's tiles lie in its cells.
+  - **Links kept whether on the map or not,** at the user's choice: a religion's or state's culture as `culture_<i>`, a state's capital as `settlement_<i>`, and each stance toward `state_<i>`. They're ids only; the map doesn't check that they're suggested, by me, so a region that cuts off a capital keeps it.
+  - **The map refuses,** each leaving it unchanged and naming the first wrong in the order places, cultures, religions, states, by me:
+    - a people covering no tiles, or more tiles than the map has;
+    - a link or stance that isn't a valid id;
+    - a stance toward itself, or two toward one state.
+  - **Territory is W6f's,** at the user's choice: which culture, religion and state each tile lies in, kept as layers.
+  - **The map file is version 9:**
+    - The suggestions add cultures, religions and states after the points of interest. A culture's type is written as a settlement type's code; a religion's type, a state's form and each stance have their own code tables, new values at the end.
+    - A code that isn't one is damaged: "the suggestion state_1's stance toward state_2 has stance code 9, which isn't one". Version 8 is refused.
+    - Every map grows 3 bytes for its three empty lists. The hand-made map suggests one of each and grows from 11,891 to 11,995 bytes.
+  - **What's said:**
+    - Every count of suggestions takes them in: `world import` and the listing's heading say "3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states"; `world info` and the dismiss and restore commands count all fourteen.
+    - `world suggestions` lists them after the points of interest, a line each, in the source's order: type, then the form, deity, culture, capital and stances that apply, then "2 cells and 21202 people in the source, 535 tiles on the map". A link to a suggestion not on the map is marked " (not on the map)", by me.
+    - W6c's commands dismiss and restore them by id, and the listing marks them " (dismissed)".
+  - **Checked by a separate script:** `peoples_map_ref.py`, written from these rules apart from the code, gives each one's tiles on `raster.json` whole and in the region `10,10,20,20` at scale 2.
+  - *Why:* a designer choosing factions sees which of the source's peoples the map holds and how much of it each covers, beside how large each is in the whole world, so a small region isn't mistaken for a small people.
 
 ## Open
 

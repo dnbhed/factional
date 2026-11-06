@@ -2,11 +2,14 @@
 //! interest placed by tile and offset, those outside the region dropped, routes cut exactly at
 //! its edge. Every expected value was worked by `suggest_ref.py`, written from the acceptance
 //! apart from the code, and the crossings by hand (worldgen's unit tests show the working).
+//! Cultures, religions and states (W6e, P-148): each one's tiles worked by `peoples_map_ref.py`,
+//! written from the acceptance apart from the code, and its extent by W6d's `peoples_ref.py`.
 
 use factional_content::{fingerprint_of, read_azgaar};
 use factional_worldgen::{
-    Buildings, Coast, Detail, Foliage, Levels, Placed, PointOfInterest, Recipe, Region, Route,
-    RouteKind, Settlement, SettlementKind, Size, Source, Suggestions, TilePos, rasterise,
+    Buildings, Coast, Culture, Detail, Extent, Foliage, Levels, Placed, PointOfInterest, Recipe,
+    Region, Religion, ReligionKind, Route, RouteKind, Settlement, SettlementKind, Size, Source,
+    Stance, State, StateForm, Suggestions, TilePos, rasterise,
 };
 use proptest::prelude::*;
 
@@ -106,8 +109,85 @@ fn old_keep(at: Placed) -> PointOfInterest {
     }
 }
 
+fn extent(cells: u32, people: u64) -> Extent {
+    Extent { cells, people }
+}
+
+/// raster.json's two cultures, two religions and two states with their tiles on the map, in
+/// order: Highfolk, Pinefolk, Old Ways, Pine Faith, Highmoor and Pinewatch. Seafolk is on no
+/// cell, so is never suggested. Highfolk's cells, 1 and 4, have 10 and 8 points at 1000 a
+/// point, and Highmoor's 2345 people and Lakeside's 857: 21,202.
+fn peoples(tiles: [u32; 6]) -> (Vec<Culture>, Vec<Religion>, Vec<State>) {
+    let culture = |id: &str| Some(id.to_owned());
+    (
+        vec![
+            Culture {
+                id: "culture_1".to_owned(),
+                name: "Highfolk".to_owned(),
+                kind: SettlementKind::Highland,
+                extent: extent(2, 21_202),
+                tiles: tiles[0],
+            },
+            Culture {
+                id: "culture_2".to_owned(),
+                name: "Pinefolk".to_owned(),
+                kind: SettlementKind::Hunting,
+                extent: extent(1, 17_600),
+                tiles: tiles[1],
+            },
+        ],
+        vec![
+            Religion {
+                id: "religion_1".to_owned(),
+                name: "Old Ways".to_owned(),
+                kind: ReligionKind::Folk,
+                form: "Shamanism".to_owned(),
+                deity: Some("Ash, the Burning".to_owned()),
+                culture: culture("culture_1"),
+                extent: extent(1, 12_345),
+                tiles: tiles[2],
+            },
+            Religion {
+                id: "religion_2".to_owned(),
+                name: "Pine Faith".to_owned(),
+                kind: ReligionKind::Organized,
+                form: "Monotheism".to_owned(),
+                deity: None,
+                culture: culture("culture_2"),
+                extent: extent(2, 26_457),
+                tiles: tiles[3],
+            },
+        ],
+        vec![
+            State {
+                id: "state_1".to_owned(),
+                name: "Highmoor".to_owned(),
+                full_name: "Kingdom of Highmoor".to_owned(),
+                form: StateForm::Monarchy,
+                culture: culture("culture_1"),
+                capital: Some("settlement_1".to_owned()),
+                stances: vec![("state_2".to_owned(), Stance::Rival)],
+                extent: extent(2, 21_202),
+                tiles: tiles[4],
+            },
+            State {
+                id: "state_2".to_owned(),
+                name: "Pinewatch".to_owned(),
+                full_name: "Pinewatch Republic".to_owned(),
+                form: StateForm::Republic,
+                culture: culture("culture_2"),
+                capital: Some("settlement_4".to_owned()),
+                stances: vec![("state_1".to_owned(), Stance::Enemy)],
+                extent: extent(1, 17_600),
+                tiles: tiles[5],
+            },
+        ],
+    )
+}
+
 #[test]
 fn the_whole_map_at_a_tile_a_pixel_suggests_every_place_where_it_lies() {
+    let (cultures, religions, states) = peoples([535, 325, 354, 506, 535, 325]);
     assert_eq!(
         suggested(0, 0, 40, 40, 1),
         Suggestions {
@@ -161,6 +241,9 @@ fn the_whole_map_at_a_tile_a_pixel_suggests_every_place_where_it_lies() {
                 },
                 old_keep(placed(5120, 5376)),
             ],
+            cultures,
+            religions,
+            states,
         }
     );
 }
@@ -169,7 +252,8 @@ fn the_whole_map_at_a_tile_a_pixel_suggests_every_place_where_it_lies() {
 fn a_region_drops_the_places_outside_it_and_cuts_routes_at_its_edge() {
     // Pixels 10 to 29 each way at 2 tiles a pixel: Highmoor, Pinewatch and Ash Peak lie
     // outside; the High road runs in and out again in one stretch; the Coast road leaves and
-    // comes back, in two.
+    // comes back, in two. Pinewatch, the state, is on the map though its capital isn't.
+    let (cultures, religions, states) = peoples([969, 171, 209, 931, 969, 171]);
     assert_eq!(
         suggested(10, 10, 20, 20, 2),
         Suggestions {
@@ -201,6 +285,9 @@ fn a_region_drops_the_places_outside_it_and_cuts_routes_at_its_edge() {
                 ),
             ],
             points: vec![old_keep(placed(5120, 5632))],
+            cultures,
+            religions,
+            states,
         }
     );
 }

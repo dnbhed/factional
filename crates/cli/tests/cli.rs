@@ -305,7 +305,7 @@ fn world_info_summarises_a_map_file_and_exits_zero() {
     assert_eq!(
         text(&output.stdout),
         format!(
-            "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 3 suggestions (1 dismissed; 1 dismissal not on the map); {bytes} bytes\n\
+            "hand-made.map: 70 × 66 tiles in 2 × 2 chunks, 3 overrides, 6 suggestions (1 dismissed; 1 dismissal not on the map); {bytes} bytes\n\
              recipe: hand-made, source pixels (3, 4) to (37, 36), 2 tiles a source pixel, seed 7; \
              detail 0.25 of the relief, 8.00 pixels, 4 octaves; \
              shallows to 10.00 metres, specks under 4 tiles; \
@@ -325,10 +325,13 @@ fn world_suggestions_lists_a_maps_suggestions_and_exits_zero() {
     assert!(output.status.success(), "stderr: {}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "hand-made.map: 1 settlement, 1 route and 1 point of interest (1 dismissed; 1 dismissal not on the map)\n\
+        "hand-made.map: 1 settlement, 1 route, 1 point of interest, 1 culture, 1 religion and 1 state (1 dismissed; 1 dismissal not on the map)\n\
          settlement_9 Riverhold: river, capital, port, 24129 people, at tile (12, 40); citadel, plaza and shanty town\n\
          route_4_2 Ferry way: sea route, 3 points, tile (0, 0) to (12, 40)\n\
          poi_0: ruins, at tile (33, 7); Walls of an older keep. (dismissed)\n\
+                 culture_2 Riverfolk: river; 40 cells and 61234 people in the source, 1200 tiles on the map\n\
+                 religion_5 Ferry Saints: heresy, Sect, of culture_2; 12 cells and 9001 people in the source, 300 tiles on the map\n\
+                 state_3 Riverhold: Free City of Riverhold, union, of culture_7 (not on the map), capital settlement_9; vassal toward state_1 (not on the map), suzerain toward state_4 (not on the map); 40 cells and 61234 people in the source, 4620 tiles on the map\n\
          dismissed, not on the map: route_7\n"
     );
     let refused = factional_in_repo(&["world", "suggestions", "content/sample/factions.toml"]);
@@ -358,7 +361,7 @@ fn world_dismiss_and_restore_rewrite_a_map_and_exit_zero() {
     );
     assert_eq!(
         text(&dismissed.stdout),
-        "dismissed settlement_9 and route_4_2 in hand-made.map; 3 of its 3 suggestions dismissed\n"
+        "dismissed settlement_9 and route_4_2 in hand-made.map; 3 of its 6 suggestions dismissed\n"
     );
     let restored = factional_in_repo(&["world", "restore", path, "route_7", "poi_0"]);
     assert!(
@@ -368,7 +371,7 @@ fn world_dismiss_and_restore_rewrite_a_map_and_exit_zero() {
     );
     assert_eq!(
         text(&restored.stdout),
-        "restored route_7 and poi_0 in hand-made.map; 2 of its 3 suggestions dismissed\n"
+        "restored route_7 and poi_0 in hand-made.map; 2 of its 6 suggestions dismissed\n"
     );
     let refused = factional_in_repo(&["world", "restore", path, "poi_0"]);
     assert_eq!(refused.status.code(), Some(1));
@@ -435,7 +438,7 @@ fn world_import_writes_a_map_file_and_exits_zero() {
             "imported Raster into part.map: 40 × 40 tiles in 1 × 1 chunks, \
              166 ocean, 58 lake, 0 river and 1376 land (34 sand, 204 grass, 1125 forest floor and 13 rock); heights -187.80 to 1734.65 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-             levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); 1 settlement, 4 routes and 1 point of interest suggested; {bytes} bytes\n"
+             levels 0 to 7, 435 ledges and 14 cliffs; 158 plants (62 trees, 23 shrubs and 73 grass); 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes\n"
         )
     );
     std::fs::remove_dir_all(&dir).expect("removed");
@@ -477,7 +480,7 @@ fn world_import_takes_the_detail_and_the_coast() {
             "imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, \
              294 ocean, 183 lake, 0 river and 1123 land (112 sand, 346 grass, 642 forest floor and 23 rock); heights -381.73 to 2241.02 m; \
              temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; \
-             levels 0 to 4, 588 ledges and 24 cliffs; 173 plants (58 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; {bytes} bytes\n"
+             levels 0 to 4, 588 ledges and 24 cliffs; 173 plants (58 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; {bytes} bytes\n"
         )
     );
     let info = factional_in_repo(&["world", "info", map.to_str().expect("a UTF-8 path")]);

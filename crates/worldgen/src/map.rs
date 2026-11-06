@@ -330,6 +330,10 @@ pub enum MapError {
     SuggestionTwice(String),
     SuggestionOffTheMap { id: String, at: TilePos, size: Size },
     RouteTooShort { id: String, points: usize },
+    PeopleTiles { id: String, tiles: u32, area: u64 },
+    LinkId { id: String, link: String },
+    StanceToItself(String),
+    StanceTwice { id: String, toward: String },
     NoSuggestion { id: String, near: Option<String> },
     NamedTwice(String),
     AlreadyDismissed { id: String, with: Option<String> },
@@ -456,6 +460,24 @@ impl fmt::Display for MapError {
                 "the route {id} has {points} point{}; a route needs at least two",
                 if *points == 1 { "" } else { "s" }
             ),
+            MapError::PeopleTiles { id, tiles: 0, .. } => {
+                write!(f, "the suggestion {id} covers no tiles")
+            }
+            MapError::PeopleTiles { id, tiles, area } => write!(
+                f,
+                "the suggestion {id} covers {tiles} tiles, more than the map's {area}"
+            ),
+            MapError::LinkId { id, link } => write!(
+                f,
+                "the suggestion {id} names {link:?}, which isn't a valid id: a lowercase \
+                 letter, then lowercase letters, digits or underscores"
+            ),
+            MapError::StanceToItself(id) => {
+                write!(f, "the suggestion {id} holds a stance toward itself")
+            }
+            MapError::StanceTwice { id, toward } => {
+                write!(f, "the suggestion {id} holds two stances toward {toward}")
+            }
         }
     }
 }
@@ -682,14 +704,17 @@ impl WorldMap {
         })
     }
 
-    /// Its suggestions: settlements, routes and points of interest.
+    /// Its suggestions: settlements, routes and points of interest; cultures, religions and
+    /// states.
     pub fn suggestions(&self) -> &Suggestions {
         &self.suggestions
     }
 
     /// Sets its suggestions to `suggestions`, or refuses them, unchanged, naming the first
-    /// wrong: an id that isn't a valid content id or that two share, a place off the map, or a
-    /// route of fewer than two points.
+    /// wrong: an id that isn't a valid content id or that two share, a place off the map, a
+    /// route of fewer than two points, a people covering no tiles or more than the map has, a
+    /// link or stance naming an invalid id, or a state's stance toward itself or held twice
+    /// toward one.
     pub fn suggest(&mut self, suggestions: Suggestions) -> Result<(), MapError> {
         {
             let mut ids = BTreeSet::new();
@@ -728,6 +753,56 @@ impl WorldMap {
             for point in &suggestions.points {
                 check(&point.id, std::slice::from_ref(&point.at))?;
             }
+            let area = u64::from(size.width) * u64::from(size.height);
+            let mut people = |id: &str, tiles: u32, links: &[&Option<String>]| {
+                check(id, &[])?;
+                if tiles == 0 || u64::from(tiles) > area {
+                    return Err(MapError::PeopleTiles {
+                        id: id.to_owned(),
+                        tiles,
+                        area,
+                    });
+                }
+                match links
+                    .iter()
+                    .copied()
+                    .flatten()
+                    .find(|link| !is_valid_id(link))
+                {
+                    Some(link) => Err(MapError::LinkId {
+                        id: id.to_owned(),
+                        link: link.clone(),
+                    }),
+                    None => Ok(()),
+                }
+            };
+            for culture in &suggestions.cultures {
+                people(&culture.id, culture.tiles, &[])?;
+            }
+            for religion in &suggestions.religions {
+                people(&religion.id, religion.tiles, &[&religion.culture])?;
+            }
+            for state in &suggestions.states {
+                people(&state.id, state.tiles, &[&state.culture, &state.capital])?;
+                let mut toward = BTreeSet::new();
+                for (other, _) in &state.stances {
+                    if !is_valid_id(other) {
+                        return Err(MapError::LinkId {
+                            id: state.id.clone(),
+                            link: other.clone(),
+                        });
+                    }
+                    if *other == state.id {
+                        return Err(MapError::StanceToItself(state.id.clone()));
+                    }
+                    if !toward.insert(other) {
+                        return Err(MapError::StanceTwice {
+                            id: state.id.clone(),
+                            toward: other.clone(),
+                        });
+                    }
+                }
+            }
         }
         self.suggestions = suggestions;
         Ok(())
@@ -744,12 +819,9 @@ impl WorldMap {
         covering(&self.dismissed, id)
     }
 
-    /// Every suggestion's id, settlements, then routes, then points of interest.
+    /// Every suggestion's id, in order.
     fn suggested(&self) -> impl Iterator<Item = &str> {
-        let suggestions = &self.suggestions;
-        (suggestions.settlements.iter().map(|s| s.id.as_str()))
-            .chain(suggestions.routes.iter().map(|r| r.id.as_str()))
-            .chain(suggestions.points.iter().map(|p| p.id.as_str()))
+        self.suggestions.ids()
     }
 
     /// Whether `id` is a suggestion on the map, or a route with a stretch on it.

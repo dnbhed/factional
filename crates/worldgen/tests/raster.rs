@@ -5,9 +5,10 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Biome, Buildings, Coast, Detail, Feature, Foliage, HEIGHT_EXPONENTS, Levels, Placed, Point,
-    RasterError, Recipe, Region, RouteKind, SettlementKind, Size, Source, SourceCell, SourceMarker,
-    SourceRoute, SourceSettlement, SourceVertex, Terrain, TilePos, Water, cell_metres, rasterise,
+    Biome, Buildings, Coast, Detail, Extent, Feature, Foliage, HEIGHT_EXPONENTS, Levels, Placed,
+    Point, RasterError, Recipe, Region, ReligionKind, RouteKind, SettlementKind, Size, Source,
+    SourceCell, SourceCulture, SourceMarker, SourceReligion, SourceRoute, SourceSettlement,
+    SourceState, SourceVertex, Stance, StateForm, Terrain, TilePos, Water, cell_metres, rasterise,
 };
 use proptest::prelude::*;
 
@@ -248,6 +249,186 @@ fn at(id: &str, points: &[[u32; 2]]) -> (String, Vec<Placed>) {
         id.to_owned(),
         points.iter().map(|&[x, y]| placed(x, y)).collect(),
     )
+}
+
+/// `raster` with raster.json's peoples (W6e): cells 1 and 4 Highfolk's, cell 3 Pinefolk's;
+/// Old Ways on cell 1 and Pine Faith on 3 and 4; Highmoor on 1 and 4 and Pinewatch on 3.
+/// Seafolk is on no cell.
+fn with_peoples() -> Source {
+    let mut source = raster(2_00);
+    for (cell, ids) in [(1, [1, 1, 1]), (3, [2, 2, 2]), (4, [1, 2, 1])] {
+        let [culture, religion, state] = ids.map(Some);
+        source.cells[cell] = SourceCell {
+            culture,
+            religion,
+            state,
+            ..source.cells[cell].clone()
+        };
+    }
+    let extent = |cells: u32| Extent {
+        cells,
+        people: u64::from(cells) * 1000,
+    };
+    let culture = |id, name: &str, kind| SourceCulture {
+        id,
+        name: name.to_owned(),
+        kind,
+        extent: extent(id),
+    };
+    source.cultures = vec![
+        culture(1, "Highfolk", SettlementKind::Highland),
+        culture(2, "Pinefolk", SettlementKind::Hunting),
+        culture(3, "Seafolk", SettlementKind::Naval),
+    ];
+    source.religions = vec![
+        SourceReligion {
+            id: 1,
+            name: "Old Ways".to_owned(),
+            kind: ReligionKind::Folk,
+            form: "Shamanism".to_owned(),
+            deity: Some("Ash".to_owned()),
+            culture: Some(1),
+            extent: extent(1),
+        },
+        SourceReligion {
+            id: 2,
+            name: "Pine Faith".to_owned(),
+            kind: ReligionKind::Organized,
+            form: "Monotheism".to_owned(),
+            deity: None,
+            culture: None,
+            extent: extent(2),
+        },
+    ];
+    let state = |id: u32, name: &str, form, toward: (u32, Stance)| SourceState {
+        id,
+        name: name.to_owned(),
+        full_name: format!("The {name}"),
+        form,
+        culture: Some(id),
+        capital: (id == 1).then_some(4),
+        stances: vec![toward],
+        extent: extent(id),
+    };
+    source.states = vec![
+        state(1, "Highmoor", StateForm::Monarchy, (2, Stance::Rival)),
+        state(2, "Pinewatch", StateForm::Republic, (1, Stance::Enemy)),
+    ];
+    source
+}
+
+/// Each people's id and tiles on the map, in order.
+fn peoples(source: &Source, recipe: Recipe) -> Vec<(String, u32)> {
+    let map = rasterise(source, recipe).expect("the recipe makes a map");
+    let suggestions = map.suggestions();
+    (suggestions.cultures.iter().map(|c| (c.id.clone(), c.tiles)))
+        .chain(
+            suggestions
+                .religions
+                .iter()
+                .map(|r| (r.id.clone(), r.tiles)),
+        )
+        .chain(suggestions.states.iter().map(|s| (s.id.clone(), s.tiles)))
+        .collect()
+}
+
+#[test]
+fn rasterising_suggests_each_people_a_tile_lies_in_counting_its_tiles() {
+    // Worked by peoples_map_ref.py, apart from the code, as in factional-content's tests: each
+    // tile lies in the cell nearest its centre, the first if several are as near.
+    let named = |tiles: [u32; 6]| -> Vec<(String, u32)> {
+        [
+            "culture_1",
+            "culture_2",
+            "religion_1",
+            "religion_2",
+            "state_1",
+            "state_2",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .zip(tiles)
+        .collect()
+    };
+    assert_eq!(
+        peoples(&with_peoples(), whole()),
+        named([535, 325, 354, 506, 535, 325])
+    );
+    assert_eq!(
+        peoples(&with_peoples(), recipe(10, 10, 20, 20, 2)),
+        named([969, 171, 209, 931, 969, 171])
+    );
+    assert_eq!(peoples(&with_peoples(), recipe(0, 0, 10, 10, 1)), []);
+    // A region of cell 3's alone: only Pinefolk, Pine Faith and Pinewatch.
+    assert_eq!(
+        peoples(&with_peoples(), recipe(30, 30, 10, 10, 1)),
+        [
+            ("culture_2".to_owned(), 100),
+            ("religion_2".to_owned(), 100),
+            ("state_2".to_owned(), 100)
+        ]
+    );
+    // What the source says of each, its links as suggestion ids.
+    let map = rasterise(&with_peoples(), whole()).expect("a map");
+    let suggestions = map.suggestions();
+    let highfolk = &suggestions.cultures[0];
+    assert_eq!(
+        (highfolk.name.as_str(), highfolk.kind, highfolk.extent),
+        (
+            "Highfolk",
+            SettlementKind::Highland,
+            Extent {
+                cells: 1,
+                people: 1000
+            }
+        )
+    );
+    let old_ways = &suggestions.religions[0];
+    assert_eq!(
+        (
+            old_ways.name.as_str(),
+            old_ways.kind,
+            old_ways.form.as_str(),
+            old_ways.deity.as_deref(),
+            old_ways.culture.as_deref(),
+            old_ways.extent.cells
+        ),
+        (
+            "Old Ways",
+            ReligionKind::Folk,
+            "Shamanism",
+            Some("Ash"),
+            Some("culture_1"),
+            1
+        )
+    );
+    assert_eq!(suggestions.religions[1].culture, None);
+    let highmoor = &suggestions.states[0];
+    assert_eq!(
+        (
+            highmoor.name.as_str(),
+            highmoor.full_name.as_str(),
+            highmoor.form,
+            highmoor.culture.as_deref(),
+            highmoor.capital.as_deref(),
+            highmoor.extent.people
+        ),
+        (
+            "Highmoor",
+            "The Highmoor",
+            StateForm::Monarchy,
+            Some("culture_1"),
+            Some("settlement_4"),
+            1000
+        )
+    );
+    assert_eq!(highmoor.stances, [("state_2".to_owned(), Stance::Rival)]);
+    let pinewatch = &suggestions.states[1];
+    assert_eq!(
+        (pinewatch.capital.as_deref(), pinewatch.culture.as_deref()),
+        (None, Some("culture_2"))
+    );
+    assert_eq!(pinewatch.stances, [("state_1".to_owned(), Stance::Enemy)]);
 }
 
 #[test]

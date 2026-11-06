@@ -4,9 +4,10 @@
 
 use factional_core::Fixed;
 use factional_worldgen::{
-    Area, Biome, Buildings, CHUNK, ChunkPos, Coast, Detail, Foliage, Levels, Override, Placed,
-    Plant, PlantKind, PointOfInterest, Recipe, Region, Route, RouteKind, Settlement,
-    SettlementKind, Size, Suggestions, Terrain, Tile, TilePos, Water, WorldMap,
+    Area, Biome, Buildings, CHUNK, ChunkPos, Coast, Culture, Detail, Extent, Foliage, Levels,
+    Override, Placed, Plant, PlantKind, PointOfInterest, Recipe, Region, Religion, ReligionKind,
+    Route, RouteKind, Settlement, SettlementKind, Size, Stance, State, StateForm, Suggestions,
+    Terrain, Tile, TilePos, Water, WorldMap,
 };
 use proptest::prelude::*;
 
@@ -440,6 +441,7 @@ fn suggestions() -> Suggestions {
             note: None,
             at: placed(0, 0),
         }],
+        ..Suggestions::default()
     }
 }
 
@@ -571,6 +573,196 @@ fn the_first_wrong_suggestion_is_named_settlements_then_routes_then_points() {
     assert_eq!(
         map.suggest(wrong).expect_err("wrong").to_string(),
         "the suggestion poi_3 is at tile (0, 70), off the map of 100 × 70 tiles"
+    );
+}
+
+/// `suggestions()` with a culture, a religion and a state (W6e), their links on the map or not.
+fn with_peoples() -> Suggestions {
+    let extent = Extent {
+        cells: 3,
+        people: 900,
+    };
+    Suggestions {
+        cultures: vec![Culture {
+            id: "culture_1".to_owned(),
+            name: "Highfolk".to_owned(),
+            kind: SettlementKind::Highland,
+            extent,
+            tiles: 7000,
+        }],
+        religions: vec![Religion {
+            id: "religion_2".to_owned(),
+            name: "Old Ways".to_owned(),
+            kind: ReligionKind::Folk,
+            form: "Shamanism".to_owned(),
+            deity: None,
+            culture: Some("culture_1".to_owned()),
+            extent,
+            tiles: 1,
+        }],
+        states: vec![State {
+            id: "state_3".to_owned(),
+            name: "Highmoor".to_owned(),
+            full_name: "Kingdom of Highmoor".to_owned(),
+            form: StateForm::Monarchy,
+            culture: Some("culture_9".to_owned()),
+            capital: Some("settlement_1".to_owned()),
+            stances: vec![
+                ("state_1".to_owned(), Stance::Rival),
+                ("state_4".to_owned(), Stance::Ally),
+            ],
+            extent,
+            tiles: 40,
+        }],
+        ..suggestions()
+    }
+}
+
+#[test]
+fn peoples_are_suggested_after_places_their_links_on_the_map_or_not() {
+    let mut map = hundred_by_seventy();
+    assert_eq!(map.suggest(with_peoples()), Ok(()));
+    assert_eq!(map.suggestions(), &with_peoples());
+    assert_eq!(
+        map.suggestions().ids().collect::<Vec<_>>(),
+        [
+            "settlement_1",
+            "route_0_2",
+            "poi_3",
+            "culture_1",
+            "religion_2",
+            "state_3"
+        ]
+    );
+    assert_eq!(map.suggestions().len(), 6);
+    assert!(!map.suggestions().is_empty());
+    assert!(Suggestions::default().is_empty());
+    // Each is dismissed and restored by its id, as a place is.
+    assert_eq!(map.dismiss(&["state_3", "culture_1"]), Ok(()));
+    assert_eq!(map.dismissed_by("state_3"), Some("state_3"));
+    assert_eq!(map.dismissed_by("religion_2"), None);
+    assert_eq!(
+        map.dismiss(&["culture_2"]).map_err(|e| e.to_string()),
+        Err("there's no suggestion culture_2 on the map; did you mean culture_1?".to_owned())
+    );
+    assert_eq!(map.restore(&["culture_1"]), Ok(()));
+    assert_eq!(map.dismissed_by("culture_1"), None);
+}
+
+#[test]
+fn a_people_covers_at_least_one_tile_and_no_more_than_the_map() {
+    let mut map = hundred_by_seventy();
+    let before = map.clone();
+    let refusal = |map: &mut WorldMap, wrong: Suggestions| {
+        let refused = map.suggest(wrong).expect_err("refused").to_string();
+        assert_eq!(map, &before, "nothing changed");
+        refused
+    };
+    let mut wrong = with_peoples();
+    wrong.cultures[0].tiles = 0;
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion culture_1 covers no tiles"
+    );
+    let mut wrong = with_peoples();
+    wrong.religions[0].tiles = 7001;
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion religion_2 covers 7001 tiles, more than the map's 7000"
+    );
+    let mut wrong = with_peoples();
+    wrong.states[0].tiles = 0;
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion state_3 covers no tiles"
+    );
+    let mut wrong = with_peoples();
+    wrong.states[0].tiles = 7001;
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion state_3 covers 7001 tiles, more than the map's 7000"
+    );
+    let mut wrong = with_peoples();
+    wrong.cultures[0].id = "Culture-1".to_owned();
+    assert_eq!(
+        refusal(&mut map, wrong),
+        "the suggestion id \"Culture-1\" isn't a valid id: a lowercase letter, then lowercase \
+         letters, digits or underscores"
+    );
+    // A people's id is unique among every kind.
+    let mut wrong = with_peoples();
+    wrong.states[0].id = "settlement_1".to_owned();
+    assert_eq!(refusal(&mut map, wrong), "two suggestions are settlement_1");
+}
+
+#[test]
+fn links_and_stances_name_valid_ids_and_a_stance_is_toward_another_once() {
+    let mut map = hundred_by_seventy();
+    let refused = |map: &mut WorldMap, wrong: Suggestions| {
+        map.suggest(wrong).expect_err("refused").to_string()
+    };
+    let valid = "which isn't a valid id: a lowercase letter, then lowercase letters, digits or \
+                 underscores";
+    let mut wrong = with_peoples();
+    wrong.religions[0].culture = Some("Culture 1".to_owned());
+    assert_eq!(
+        refused(&mut map, wrong),
+        format!("the suggestion religion_2 names \"Culture 1\", {valid}")
+    );
+    let mut wrong = with_peoples();
+    wrong.states[0].culture = Some(String::new());
+    assert_eq!(
+        refused(&mut map, wrong),
+        format!("the suggestion state_3 names \"\", {valid}")
+    );
+    let mut wrong = with_peoples();
+    wrong.states[0].capital = Some("9".to_owned());
+    assert_eq!(
+        refused(&mut map, wrong),
+        format!("the suggestion state_3 names \"9\", {valid}")
+    );
+    let mut wrong = with_peoples();
+    wrong.states[0].stances[1].0 = "State 4".to_owned();
+    assert_eq!(
+        refused(&mut map, wrong),
+        format!("the suggestion state_3 names \"State 4\", {valid}")
+    );
+    let mut wrong = with_peoples();
+    wrong.states[0].stances[1].0 = "state_3".to_owned();
+    assert_eq!(
+        refused(&mut map, wrong),
+        "the suggestion state_3 holds a stance toward itself"
+    );
+    let mut wrong = with_peoples();
+    wrong.states[0].stances[1].0 = "state_1".to_owned();
+    assert_eq!(
+        refused(&mut map, wrong),
+        "the suggestion state_3 holds two stances toward state_1"
+    );
+    // The first wrong is named: places, then cultures, religions and states.
+    let mut wrong = with_peoples();
+    wrong.cultures[0].tiles = 0;
+    wrong.religions[0].tiles = 0;
+    wrong.states[0].tiles = 0;
+    wrong.points[0].at = placed(0, 70);
+    assert_eq!(
+        refused(&mut map, wrong.clone()),
+        "the suggestion poi_3 is at tile (0, 70), off the map of 100 × 70 tiles"
+    );
+    wrong.points.clear();
+    assert_eq!(
+        refused(&mut map, wrong.clone()),
+        "the suggestion culture_1 covers no tiles"
+    );
+    wrong.cultures.clear();
+    assert_eq!(
+        refused(&mut map, wrong.clone()),
+        "the suggestion religion_2 covers no tiles"
+    );
+    wrong.religions.clear();
+    assert_eq!(
+        refused(&mut map, wrong),
+        "the suggestion state_3 covers no tiles"
     );
 }
 

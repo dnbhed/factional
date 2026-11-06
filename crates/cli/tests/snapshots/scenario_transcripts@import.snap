@@ -4,51 +4,51 @@ expression: transcript
 input_file: scenarios/import.scenario
 ---
 > world import crates/content/tests/fixtures/azgaar/raster.json target/raster.map
-imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); 3 settlements, 3 routes and 2 points of interest suggested; 6766 bytes
+imported Raster into raster.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; 6950 bytes
 > world info target/raster.map
-raster.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; 6766 bytes
-recipe: source fnv1a64:0aaef39cbc6dfef5, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
+raster.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions; 6950 bytes
+recipe: source fnv1a64:dbaa33cac888a6e3, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 30,30,20,20 == error: the region runs off the source map: pixels (30, 30) to (49, 49), and the map is 40 × 40 pixels
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/off.map --region 10,10 == error: --region needs four whole numbers, <x>,<y>,<width>,<height>, not 10,10
 > assert world import crates/content/tests/fixtures/azgaar/raster.json == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
 > world import crates/content/tests/fixtures/azgaar/raster.json target/rough.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2
-imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, 299 ocean, 181 lake, 0 river and 1120 land (71 sand, 339 grass, 579 forest floor and 131 rock); heights -381.73 to 2241.02 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 9, 756 ledges and 170 cliffs; 168 plants (53 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; 7649 bytes
+imported Raster into rough.map: 40 × 40 tiles in 1 × 1 chunks, 299 ocean, 181 lake, 0 river and 1120 land (71 sand, 339 grass, 579 forest floor and 131 rock); heights -381.73 to 2241.02 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 9, 756 ledges and 170 cliffs; 168 plants (53 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; 7833 bytes
 > world info target/rough.map
-rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; 7649 bytes
-recipe: source fnv1a64:0aaef39cbc6dfef5, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
+rough.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions; 7833 bytes
+recipe: source fnv1a64:dbaa33cac888a6e3, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/rough.map --octaves 9 == error: the detail needs 1 to 8 octaves, not 9
 > world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --seed 3 --detail 0.5 --wavelength 4 --octaves 2 --shallows 25 --specks 0
-imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, 294 ocean, 183 lake, 0 river and 1123 land (88 sand, 339 grass, 563 forest floor and 133 rock); heights -381.73 to 2241.02 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 9, 757 ledges and 175 cliffs; 170 plants (55 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes and 2 points of interest suggested; 7698 bytes
+imported Raster into coast.map: 40 × 40 tiles in 1 × 1 chunks, 294 ocean, 183 lake, 0 river and 1123 land (88 sand, 339 grass, 563 forest floor and 133 rock); heights -381.73 to 2241.02 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 9, 757 ledges and 175 cliffs; 170 plants (55 trees, 28 shrubs and 87 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; 7882 bytes
 > world info target/coast.map
-coast.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; 7698 bytes
-recipe: source fnv1a64:0aaef39cbc6dfef5, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 25.00 metres, specks under 0 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
+coast.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions; 7882 bytes
+recipe: source fnv1a64:dbaa33cac888a6e3, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 3; detail 0.50 of the relief, 4.00 pixels, 2 octaves; shallows to 25.00 metres, specks under 0 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/coast.map --specks 4097 == error: the coast's specks must be 0 to 4096 tiles, not 4097
 > world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --levels 10 --level-specks 0
-imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (34 sand, 344 grass, 667 forest floor and 24 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 4, 324 ledges and 24 cliffs; 163 plants (49 trees, 23 shrubs and 91 grass); 3 settlements, 3 routes and 2 points of interest suggested; 6659 bytes
+imported Raster into levels.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (34 sand, 344 grass, 667 forest floor and 24 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 4, 324 ledges and 24 cliffs; 163 plants (49 trees, 23 shrubs and 91 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; 6843 bytes
 > world info target/levels.map
-levels.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; 6659 bytes
-recipe: source fnv1a64:0aaef39cbc6dfef5, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 10.00 of Azgaar's heights, specks under 0 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
+levels.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions; 6843 bytes
+recipe: source fnv1a64:dbaa33cac888a6e3, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 10.00 of Azgaar's heights, specks under 0 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --levels 0.5 == error: the levels' spacing must be 1.00 to 80.00 of Azgaar's heights, not 0.50
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/levels.map --level-specks 4097 == error: the levels' specks must be 0 to 4096 tiles, not 4097
 > world import crates/content/tests/fixtures/azgaar/raster.json target/foliage.map --foliage 2 --tree-spacing 1 --shrub-spacing 1 --grass-spacing 0.5
-imported Raster into foliage.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 490 ledges and 48 cliffs; 520 plants (272 trees, 37 shrubs and 211 grass); 3 settlements, 3 routes and 2 points of interest suggested; 7942 bytes
+imported Raster into foliage.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 490 ledges and 48 cliffs; 520 plants (272 trees, 37 shrubs and 211 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; 8126 bytes
 > world info target/foliage.map
-foliage.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; 7942 bytes
-recipe: source fnv1a64:0aaef39cbc6dfef5, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 2.00, trees 1.00, shrubs 1.00 and grass 0.50 tiles apart
+foliage.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions; 8126 bytes
+recipe: source fnv1a64:dbaa33cac888a6e3, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 2.00, trees 1.00, shrubs 1.00 and grass 0.50 tiles apart
 > assert world import crates/content/tests/fixtures/azgaar/raster.json target/foliage.map --grass-spacing 8.01 == error: the foliage's grass spacing must be 0.00 to 8.00 tiles, not 8.01
 > world source crates/content/tests/fixtures/azgaar/rivers.json
 rivers.json: Rivers, from Azgaar 1.154.0, 40 × 40 pixels
 5 cells, 12 vertices; 1 ocean, 1 lake and 1 island; 3 rivers; 0 settlements, 0 routes and 0 points of interest; 0 cultures, 0 religions and 0 states; fingerprint fnv1a64:63b06112daa1a0bd
-> assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes and 0 points of interest suggested; 6550 bytes
+> assert world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers.map == imported Rivers into rivers.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 77 river and 992 land (22 sand, 314 grass, 604 forest floor and 52 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 494 ledges and 56 cliffs; 159 plants (49 trees, 24 shrubs and 86 grass); 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states suggested; 6553 bytes
 > world import crates/content/tests/fixtures/azgaar/rivers.json target/rivers-part.map --region 10,10,20,20 --scale 2 --seed 7
-imported Rivers into rivers-part.map: 40 × 40 tiles in 1 × 1 chunks, 166 ocean, 58 lake, 141 river and 1235 land (34 sand, 185 grass, 1003 forest floor and 13 rock); heights -187.80 to 1694.00 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 7, 468 ledges and 14 cliffs; 146 plants (58 trees, 21 shrubs and 67 grass); 0 settlements, 0 routes and 0 points of interest suggested; 6419 bytes
+imported Rivers into rivers-part.map: 40 × 40 tiles in 1 × 1 chunks, 166 ocean, 58 lake, 141 river and 1235 land (34 sand, 185 grass, 1003 forest floor and 13 rock); heights -187.80 to 1694.00 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 7, 468 ledges and 14 cliffs; 146 plants (58 trees, 21 shrubs and 67 grass); 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states suggested; 6422 bytes
 > world import crates/content/tests/fixtures/azgaar/raster.json target/places.map
-imported Raster into places.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); 3 settlements, 3 routes and 2 points of interest suggested; 6766 bytes
+imported Raster into places.map: 40 × 40 tiles in 1 × 1 chunks, 357 ocean, 174 lake, 0 river and 1069 land (22 sand, 339 grass, 661 forest floor and 47 rock); heights -176.70 to 1922.19 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 8, 490 ledges and 48 cliffs; 166 plants (51 trees, 24 shrubs and 91 grass); 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states suggested; 6950 bytes
 > world info target/places.map
-places.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions; 6766 bytes
-recipe: source fnv1a64:0aaef39cbc6dfef5, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
+places.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions; 6950 bytes
+recipe: source fnv1a64:dbaa33cac888a6e3, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
 > world suggestions target/places.map
-places.map: 3 settlements, 3 routes and 2 points of interest
+places.map: 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states
 settlement_1 Highmoor: generic, capital, 2345 people, at tile (30, 9); citadel, walls and temple
 settlement_2 Lakeside: lake, port, 857 people, at tile (14, 26); plaza
 settlement_4 Pinewatch: highland, 12600 people, at tile (31, 31); walls, plaza and shanty town
@@ -57,43 +57,61 @@ route_1: trail, 2 points, tile (14, 26) to (20, 20)
 route_2 Coast road: road, 3 points, tile (12, 12) to (25, 25)
 poi_0 Ash Peak: volcanoes, at tile (33, 34); Dormant volcano.
 poi_1 Old Keep: ruins, at tile (20, 21)
+culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 535 tiles on the map
+culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 325 tiles on the map
+religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 354 tiles on the map
+religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 506 tiles on the map
+state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1; rival toward state_2; 2 cells and 21202 people in the source, 535 tiles on the map
+state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4; enemy toward state_1; 1 cell and 17600 people in the source, 325 tiles on the map
 > world import crates/content/tests/fixtures/azgaar/raster.json target/places-part.map --region 10,10,20,20 --scale 2
-imported Raster into places-part.map: 40 × 40 tiles in 1 × 1 chunks, 164 ocean, 43 lake, 0 river and 1393 land (31 sand, 208 grass, 1146 forest floor and 8 rock); heights -117.91 to 1709.94 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 7, 420 ledges and 8 cliffs; 166 plants (77 trees, 23 shrubs and 66 grass); 1 settlement, 4 routes and 1 point of interest suggested; 6395 bytes
+imported Raster into places-part.map: 40 × 40 tiles in 1 × 1 chunks, 164 ocean, 43 lake, 0 river and 1393 land (31 sand, 208 grass, 1146 forest floor and 8 rock); heights -117.91 to 1709.94 m; temperatures -3 to 14 °C; precipitation 800 to 3000 mm; 4 biomes; levels 0 to 7, 420 ledges and 8 cliffs; 166 plants (77 trees, 23 shrubs and 66 grass); 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states suggested; 6596 bytes
 > world suggestions target/places-part.map
-places-part.map: 1 settlement, 4 routes and 1 point of interest
+places-part.map: 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states
 settlement_2 Lakeside: lake, port, 857 people, at tile (9, 33); plaza
 route_0 High road: road, 4 points, tile (39, 0) to (39, 39)
 route_1: trail, 2 points, tile (9, 33) to (21, 21)
 route_2_1 Coast road: road, 2 points, tile (4, 4) to (39, 8)
 route_2_2 Coast road: road, 2 points, tile (39, 20) to (30, 30)
 poi_1 Old Keep: ruins, at tile (20, 22)
+culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 969 tiles on the map
+culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 171 tiles on the map
+religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 209 tiles on the map
+religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 931 tiles on the map
+state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1 (not on the map); rival toward state_2; 2 cells and 21202 people in the source, 969 tiles on the map
+state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4 (not on the map); enemy toward state_1; 1 cell and 17600 people in the source, 171 tiles on the map
 > world import crates/content/tests/fixtures/azgaar/raster.json target/corner.map --region 0,0,10,10
-imported Raster into corner.map: 10 × 10 tiles in 1 × 1 chunks, 100 ocean, 0 lake, 0 river and 0 land; heights -84.97 to -8.42 m; temperatures 14 to 14 °C; precipitation 2000 to 2000 mm; 1 biome; levels 0 to 0, 0 ledges and 0 cliffs; 0 plants (0 trees, 0 shrubs and 0 grass); 0 settlements, 0 routes and 0 points of interest suggested; 1517 bytes
-> assert world suggestions target/corner.map == corner.map: 0 settlements, 0 routes and 0 points of interest
+imported Raster into corner.map: 10 × 10 tiles in 1 × 1 chunks, 100 ocean, 0 lake, 0 river and 0 land; heights -84.97 to -8.42 m; temperatures 14 to 14 °C; precipitation 2000 to 2000 mm; 1 biome; levels 0 to 0, 0 ledges and 0 cliffs; 0 plants (0 trees, 0 shrubs and 0 grass); 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states suggested; 1520 bytes
+> assert world suggestions target/corner.map == corner.map: 0 settlements, 0 routes, 0 points of interest, 0 cultures, 0 religions and 0 states
 > assert world suggestions content/sample/factions.toml == error: this isn't a Factional map
 > assert world suggestions == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
-> assert world dismiss target/places-part.map route_2 poi_1 == dismissed route_2 and poi_1 in places-part.map; 3 of its 6 suggestions dismissed
+> assert world dismiss target/places-part.map route_2 poi_1 == dismissed route_2 and poi_1 in places-part.map; 3 of its 12 suggestions dismissed
 > world suggestions target/places-part.map
-places-part.map: 1 settlement, 4 routes and 1 point of interest (3 dismissed)
+places-part.map: 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states (3 dismissed)
 settlement_2 Lakeside: lake, port, 857 people, at tile (9, 33); plaza
 route_0 High road: road, 4 points, tile (39, 0) to (39, 39)
 route_1: trail, 2 points, tile (9, 33) to (21, 21)
 route_2_1 Coast road: road, 2 points, tile (4, 4) to (39, 8) (dismissed with route_2)
 route_2_2 Coast road: road, 2 points, tile (39, 20) to (30, 30) (dismissed with route_2)
 poi_1 Old Keep: ruins, at tile (20, 22) (dismissed)
+culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 969 tiles on the map
+culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 171 tiles on the map
+religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 209 tiles on the map
+religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 931 tiles on the map
+state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1 (not on the map); rival toward state_2; 2 cells and 21202 people in the source, 969 tiles on the map
+state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4 (not on the map); enemy toward state_1; 1 cell and 17600 people in the source, 171 tiles on the map
 > assert world dismiss target/places-part.map route_2_1 == error: route_2_1 is already dismissed with route_2
 > assert world dismiss target/places-part.map settlement_7 == error: there's no suggestion settlement_7 on the map; did you mean settlement_2?
 > assert world dismiss target/places-part.map route_0 route_0 == error: route_0 is named twice
 > assert world restore target/places-part.map route_2_2 == error: route_2_2 is dismissed with route_2; restore route_2
 > assert world restore target/places-part.map settlement_2 == error: settlement_2 isn't dismissed
-> assert world restore target/places-part.map poi_1 == restored poi_1 in places-part.map; 2 of its 6 suggestions dismissed
+> assert world restore target/places-part.map poi_1 == restored poi_1 in places-part.map; 2 of its 12 suggestions dismissed
 > assert world dismiss target/places-part.map == error: world needs the form: world info <file>, world source <file>, world suggestions <map>, world dismiss <map> <id> [<id>…], world restore <map> <id> [<id>…], or world import <export> <map> [--region <x>,<y>,<width>,<height>] [--scale <n>] [--seed <n>] [--detail <strength>] [--wavelength <pixels>] [--octaves <n>] [--shallows <metres>] [--specks <tiles>] [--levels <points>] [--level-specks <tiles>] [--foliage <scale>] [--tree-spacing <tiles>] [--shrub-spacing <tiles>] [--grass-spacing <tiles>]
-> assert world dismiss target/places.map route_2 settlement_2 == dismissed route_2 and settlement_2 in places.map; 2 of its 8 suggestions dismissed
+> assert world dismiss target/places.map route_2 settlement_2 == dismissed route_2 and settlement_2 in places.map; 2 of its 14 suggestions dismissed
 > world info target/places.map
-places.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 8 suggestions (2 dismissed); 6787 bytes
-recipe: source fnv1a64:0aaef39cbc6dfef5, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
+places.map: 40 × 40 tiles in 1 × 1 chunks, 0 overrides, 14 suggestions (2 dismissed); 6971 bytes
+recipe: source fnv1a64:dbaa33cac888a6e3, source pixels (0, 0) to (39, 39), 1 tile a source pixel, seed 0; detail 0.25 of the relief, 8.00 pixels, 4 octaves; shallows to 10.00 metres, specks under 4 tiles; levels every 5.00 of Azgaar's heights, specks under 4 tiles; foliage at scale 1.00, trees 2.00, shrubs 1.50 and grass 1.00 tiles apart
 > world suggestions target/places.map
-places.map: 3 settlements, 3 routes and 2 points of interest (2 dismissed)
+places.map: 3 settlements, 3 routes, 2 points of interest, 2 cultures, 2 religions and 2 states (2 dismissed)
 settlement_1 Highmoor: generic, capital, 2345 people, at tile (30, 9); citadel, walls and temple
 settlement_2 Lakeside: lake, port, 857 people, at tile (14, 26); plaza (dismissed)
 settlement_4 Pinewatch: highland, 12600 people, at tile (31, 31); walls, plaza and shanty town
@@ -102,3 +120,26 @@ route_1: trail, 2 points, tile (14, 26) to (20, 20)
 route_2 Coast road: road, 3 points, tile (12, 12) to (25, 25) (dismissed)
 poi_0 Ash Peak: volcanoes, at tile (33, 34); Dormant volcano.
 poi_1 Old Keep: ruins, at tile (20, 21)
+culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 535 tiles on the map
+culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 325 tiles on the map
+religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 354 tiles on the map
+religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 506 tiles on the map
+state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1; rival toward state_2; 2 cells and 21202 people in the source, 535 tiles on the map
+state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4; enemy toward state_1; 1 cell and 17600 people in the source, 325 tiles on the map
+> assert world dismiss target/places-part.map culture_2 state_2 == dismissed culture_2 and state_2 in places-part.map; 4 of its 12 suggestions dismissed
+> assert world dismiss target/places-part.map culture_3 == error: there's no suggestion culture_3 on the map; did you mean culture_1?
+> world suggestions target/places-part.map
+places-part.map: 1 settlement, 4 routes, 1 point of interest, 2 cultures, 2 religions and 2 states (4 dismissed)
+settlement_2 Lakeside: lake, port, 857 people, at tile (9, 33); plaza
+route_0 High road: road, 4 points, tile (39, 0) to (39, 39)
+route_1: trail, 2 points, tile (9, 33) to (21, 21)
+route_2_1 Coast road: road, 2 points, tile (4, 4) to (39, 8) (dismissed with route_2)
+route_2_2 Coast road: road, 2 points, tile (39, 20) to (30, 30) (dismissed with route_2)
+poi_1 Old Keep: ruins, at tile (20, 22)
+culture_1 Highfolk: highland; 2 cells and 21202 people in the source, 969 tiles on the map
+culture_2 Pinefolk: hunting; 1 cell and 17600 people in the source, 171 tiles on the map (dismissed)
+religion_1 Old Ways: folk, Shamanism, deity Ash, the Burning, of culture_1; 1 cell and 12345 people in the source, 209 tiles on the map
+religion_2 Pine Faith: organized, Monotheism, of culture_2; 2 cells and 26457 people in the source, 931 tiles on the map
+state_1 Highmoor: Kingdom of Highmoor, monarchy, of culture_1, capital settlement_1 (not on the map); rival toward state_2; 2 cells and 21202 people in the source, 969 tiles on the map
+state_2 Pinewatch: Pinewatch Republic, republic, of culture_2, capital settlement_4 (not on the map); enemy toward state_1; 1 cell and 17600 people in the source, 171 tiles on the map (dismissed)
+> assert world restore target/places-part.map culture_2 state_2 == restored culture_2 and state_2 in places-part.map; 2 of its 12 suggestions dismissed
