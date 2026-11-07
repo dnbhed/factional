@@ -19,6 +19,7 @@ factional-reputation = { path = "../../reputation" }
 factional-session = { path = "../../session" }
 factional-worldgen = { path = "../../worldgen" }
 serde = { version = "1", features = ["derive"] }
+rfd = { version = "0.18.0", optional = true }
 toml = "1.1.6"
 toml_edit = "0.25.17"
 
@@ -45,6 +46,8 @@ window = [
     "bevy/bevy_text",
     "bevy/default_font",
     "bevy_egui/render",
+    # The wizard's Open… (W8a): the system's file dialog.
+    "dep:rfd",
 ]
 
 [[bin]]

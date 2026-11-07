@@ -24,8 +24,8 @@ Before starting any increment, read:
    ```bash
    cargo fmt --all --check
    cargo clippy --workspace --all-targets -- -D warnings
-   cargo test --workspace
-   git diff main... > target/branch.diff && cargo mutants --in-diff target/branch.diff
+   python3 -B scripts/affected.py main
+   git diff origin/main... > target/branch.diff && cargo mutants --in-diff target/branch.diff
    ```
 
    A surviving mutant means an assertion is missing. Add the test, or explain in the PR why the mutant is equivalent.
@@ -36,13 +36,20 @@ Before starting any increment, read:
    cargo fmt --all --check
    cargo clippy --workspace --all-targets -- -D warnings
    cargo clippy --workspace --all-targets --all-features -- -D warnings
-   cargo test --workspace
-   git diff --relative main... -- . > ../../target/bevy-branch.diff && cargo mutants --workspace --in-place --in-diff ../../target/bevy-branch.diff
+   python3 -B ../../scripts/affected.py bevy
+   git diff --relative origin/main... -- . > ../../target/bevy-branch.diff && cargo mutants --workspace --in-place --in-diff ../../target/bevy-branch.diff
    ```
 
    It builds into the repository's `target/`, beside the main workspace, so the editor and the builder sit side by side (P-130); a build in one workspace waits while the other holds the folder.
 
    `--workspace` matters: without it, `crates/bevy`'s root package is the only one checked, and cargo-mutants silently finds nothing in the members. `--in-place`, because a copied tree loses the `../../` paths to the main workspace's crates.
+
+   **Test what a change can affect (P-154).** `scripts/affected.py` runs `cargo test` on the crates the branch changes since `origin/main`, uncommitted changes included, and every crate depending on them, in either workspace:
+   - Data runs the crates that read it: `scenarios/` the CLI's, `schema/` the content's and the CLI's, `docs/examples/` the content's, and the sample's `builder.toml` the builder's.
+   - Prose, `.gitignore` and `scripts/` run nothing, though the scripts have tests of their own (`python3 -B -m unittest discover -s scripts`).
+   - Anything else, such as the rest of `content/`, a workspace's manifest or lock file, or the toolchain, runs that whole workspace. `--all` runs everything, and `--dry-run` says what it would run, and why.
+   - CI does the same on a PR, and runs everything on `main`.
+   - If a change can reach tests the script can't see, such as a crate reading a file outside its directory, add it to `READERS` in the same PR, with a test.
 
    **Keep mutation runs fast (P-152):**
    - Both workspaces build mutants in a `mutants` profile without debug info (`.cargo/mutants.toml`), so linking is quick. Its first run builds the dependencies once in that profile.

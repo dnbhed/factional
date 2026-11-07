@@ -30,7 +30,7 @@ This is the queue of increments for the reputation & factions module.
 
 The order below is the source of truth. Sections further down are grouped by phase for easy scanning, not in delivery order.
 
-`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6a → W6b → W6c → W6d → W6e → W6f → W7a → W7b → W7c → W8 → W9 → W10 → G10 → W11 → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
+`F0 → F1 → F2 → A1 → A2 → A3 → D1 → D2 → M1 → M2 → M3 → M4 → M5 → M7 → A4 → A5 → D3 → M6 → M8 → M11 → M9 → M10 → T1 → T2 → T3 → T4 → K0 → K1 → K2 → K3 → K4 → K5 → E0 → Q0 → Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → U0 → U1 → U2 → U3 → T6 → U4 → U5 → U7 → U6a → U6b → U6c → U6d → U6f → U6e → U6g → U8 → U9 → U10a → U10b → U10c → U10d → U11a → U11b → U12a → U12b → U12c → U13a → U13b → U13c → U13d → U14a → U14b → U14c → U15a → U15b → U15c → E1 → G0 → W0 → U19 → G1 → G2a → G2b → G3 → G4 → G5 → G6a → G6b → G7 → G8 → G9 → W1a → W1b → W2a → W2b → W3a → W3b → W3c → W3d → W3e → W4a → W4b → W5 → W6a → W6b → W6c → W6d → W6e → W6f → W7a → W7b → W8a → W8b → W8c → W9 → W10 → G10 → W11 → W7c → U15d → U16a → U16b → U20 → U17a → U17b → U17c → U17d → U17e → U17f → U22 → U18 → U21 → T5`
 
 ## Done
 
@@ -146,6 +146,7 @@ The order below is the source of truth. Sections further down are grouped by pha
 - W6f — territory on the map (P-149): each tile's culture, religion and state as layers, Azgaar's ids, overridable, at the user's choice; a tile lying in its nearest cell's, water too, at the user's choice; dismissing leaving the layers, at the user's choice; each people's tiles counted from the layers, overrides applied, the stored count and W6e's tile refusal gone, at the user's choice; every tile lying only in a suggested people, checked when made, given suggestions, edited or regenerated; `WorldMap::with_suggestions` and `territory`; map file version 10; `world tile <map> <x>,<y>` saying a tile's layers, peoples and overrides, at the user's choice; raster.json and Menayland agreeing with a second script; done 2026-11-06 (#115)
 - W7a — the terrain in the builder (P-150): the map `builder.toml`'s `[map]` names, `file` and `tile` (32 points by default), read at start and drawn under the tokens, its middle at the origin; autotiled on a dual grid, each terrain a layer of 16 worked-out shapes nesting over those before it, each chunk and terrain a Bevy `TilemapChunk` in a placeholder colour; panned by a right or middle drag, zoomed about the cursor by the wheel, Home back to the played character, at the user's choice; Riverhold's sample given an 80 × 80 map from the raster fixture; W7 split into W7a and W7b; done 2026-11-06 (#116)
 - W7b — suggestions in the builder (P-151): each settlement a square sized by its people, a capital ringed, each point of interest a diamond, each route a line by kind, named, over the map and under the tokens; dismissed ones hidden; the one under the pointer said in a tooltip in `world suggestions`' words, shared as the session's `suggestion_lines`; all at the user's choice, peoples' territory left to W7c; done 2026-11-07 (#117)
+- W8a — generating a map in the builder (P-153): New map… opening the wizard; an Azgaar export opened with the system's file dialog and said as `world source` says it; a scale and seed, every other option `world import`'s, generated in the background and drawn in place of the map shown, with its suggestions; saved to `world/<name>.map`, said as `world import` says it, and set as `builder.toml`'s `[map] file`, a file there overwritten only when asked; reading, summarising, generating and saving shared with the CLI as the session's; all at the user's choice, no layers chosen and W7c put after W11 at the user's direction; W8 split into W8a, W8b and W8c; tests run only where a change can reach, locally and in CI (P-154); done 2026-11-07 (#PR)
 
 ---
 
@@ -167,13 +168,13 @@ The user's choice for a finished game (P-54): a compact binary encoding of the s
 
 ## Beyond this module
 
-### W7c · Territory in the builder — P3 · Next
+### W8b · A region on a preview — P3 · Next
 
-The map's states, cultures or religions drawn as an overlay chosen in the builder's controls, each people tinted, with its borders; none by default.
+In the wizard: the export drawn small, and a region dragged out on it, in source pixels, as `world import --region` takes.
 
-### W8 · The wizard — P3 · Outline
+### W8c · The options in the wizard — P3 · Outline
 
-In the builder: a file opened and summarised, layers chosen with what they need, a region and scale on a preview, a seed and options, then generated, previewed and saved (D-48).
+In the wizard: the detail, coast, levels and foliage, each with `world import`'s default, range and words.
 
 ### W9 · Editing the map — P3 · Outline
 
@@ -190,6 +191,10 @@ Places placed, moved and named in the builder's Arrange mode, as W10 designs the
 ### W11 · The map in 3D — P3 · Outline
 
 A terrain mesh from the elevation layer, foliage as instanced models (D-50).
+
+### W7c · Territory in the builder — P3 · Outline
+
+The map's states, cultures or religions drawn as an overlay chosen in the builder's controls, each people tinted, with its borders; none by default. Put after W11 at the user's direction (2026-11-07): a working world builder first.
 
 ### U15d · Pages hand commands to Play — P3 · Outline
 

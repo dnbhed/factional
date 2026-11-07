@@ -20,9 +20,9 @@ sight = 240.0
 speed = 200.0
 
 # The map drawn under the tokens (W7a): `file`, the map's path from here, made by
-# `factional world import`; `tile`, how many points a tile is across, above 0. With no
-# `[map]` there's no map; `tile` left out is 32, shown here. The map's middle is the
-# plane's origin.
+# `factional world import`, or by the builder's New map… (W8a), which sets it here;
+# `tile`, how many points a tile is across, above 0. With no `[map]` there's no map;
+# `tile` left out is 32, shown here. The map's middle is the plane's origin.
 [map]
 file = "world/riverhold.map"
 tile = 32.0
