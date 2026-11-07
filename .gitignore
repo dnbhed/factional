@@ -6,3 +6,4 @@ mutants.out*/
 *.new.png
 *.diff.png
 *.old.png
+__pycache__/

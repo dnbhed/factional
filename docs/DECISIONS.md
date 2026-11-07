@@ -1325,6 +1325,29 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **CI stays full:** CI tests every mutant of the diff against the whole suite, so targeting locally can't let a mutant through.
   - *Why:* a local Bevy run took an hour or more (W7a's 146 mutants, about two and a half), almost all of it on tests that couldn't catch the mutant.
 
+- **P-154 · Testing what a change can affect** (made in W8a, 2026-11-07, at the user's direction; P-152).
+  - **Locally and in CI:** `scripts/affected.py <main|bevy>` runs `cargo test` on the packages the branch's changes can affect, worked out from `git diff origin/main...HEAD`, what isn't committed, and both workspaces' `cargo metadata`. A push to `main` runs everything.
+  - **A crate's change** runs it and every package depending on it at any remove, in either workspace. So a change to `factional-session` runs the CLI, the editor, egui and the builder too.
+  - **Data runs its readers only:** `scenarios/` the CLI; `schema/` the content and the CLI; `docs/examples/` the content; `content/sample/builder.toml` the builder.
+  - **Nothing for** `docs/` (but its examples), top-level Markdown, `.gitignore` and `scripts/`, whose script has its own unit tests, run in CI.
+  - **Everything** for anything else: the rest of `content/`, a manifest or lock file, the toolchain, `clippy.toml`, `kittest.toml`, `.cargo/` and `.github/`. The Bevy workspace's own manifest, lock file and configuration run all of it and none of the main one.
+  - **Clippy and fmt still check each whole workspace,** and mutation testing is unchanged: the diff's mutants, each against its own crate's tests.
+  - *Why:* the user's direction ("no need to run tests which we don't think will be affected"). The main workspace's 74 integration test binaries took most of an hour when a change reached one corner of it. The rules err toward running more: a path they don't know runs everything.
+
+- **P-153 · Generating a map in the builder** (made in W8a, 2026-11-07; D-48, P-119, P-135, P-150).
+  - **End to end first,** at the user's choice: W8a opens an export, generates a map at a scale and seed, draws it and saves it. The region on a preview is W8b's, and the options are W8c's.
+  - **No layers chosen,** at the user's direction ("a working world builder, not every last thing from the generated map"): every layer is built, as `world import` builds them. P-119's choosing of layers, with what each needs pulled in, is dropped. W7c, territory in the builder, is put after W11.
+  - **Opened with the system's file dialog,** at the user's choice, through `rfd`, in the app only (the `window` feature). The tests open a path, as the dialog hands one back.
+  - **Generated in the background,** at the user's choice, on Bevy's async compute pool. The builder says it's generating. While it is, Generate is turned off, and the export kept beside the task is what the map is saved as. The map is drawn in place of the one shown, with its suggestions, at `builder.toml`'s tile size, and a problem making it is said instead, the map shown kept. The tests' pool, without `multi_threaded`, runs the task at once, so "generating" isn't seen headless.
+  - **Saved to `world/<name>.map`, set as the map,** at the user's choice:
+    - `<name>` is the export's map name in lowercase, each run of characters other than ASCII letters and digits a hyphen, none at either end, `map` if nothing is left, by me. So "Menayland Full" is `world/menayland-full.map`.
+    - `world/` is made if it isn't there, by me. `world import` still refuses a directory that isn't there.
+    - Save says what `world import` says, and sets `builder.toml`'s `[map] file`, the value's comments and everything else kept; a `[map]` is added after the rest if there's none. A file there already is overwritten only on "Overwrite"; "Keep it" leaves it.
+    - After saving there's nothing to save until the next map is generated.
+  - **The scale** runs from 1 to 64 in the wizard, by me. The seed is any `u32`.
+  - **Shared, not copied,** by me: the session's `read_export`, `export_summary`, `generate`, `save_map` and `map_file_named`, with `Choices` beginning at `world import`'s defaults. `world source` and `world import` are now built from them, their words unchanged.
+  - *Why:* the user's choices, toward a working world builder. Sharing the session's code keeps the wizard saying and making exactly what the CLI says and makes (the CLI never recomputes; neither does the builder).
+
 
 ## Open
 

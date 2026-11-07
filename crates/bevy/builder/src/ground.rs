@@ -19,8 +19,8 @@ pub const TILE: f32 = 32.0;
 pub const SHAPE_SIDE: u32 = 16;
 
 /// `builder.toml`'s `[map]`: the map's file, from the content directory, and how many points
-/// a tile is across.
-#[derive(Debug, Clone, PartialEq)]
+/// a tile is across. Kept as a resource, the map the wizard saves set as its file (W8a).
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct MapChoice {
     pub file: Option<String>,
     pub tile: f32,

@@ -36,6 +36,7 @@ pub mod play;
 pub mod quests;
 pub mod regard;
 pub mod view;
+pub mod wizard;
 
 pub use arrange::{Arranging, Pointer, TOKEN_RADIUS, arrange_ui, pick, write_positions};
 pub use ground::{
@@ -50,6 +51,7 @@ pub use quests::{
 };
 pub use regard::{Regard, Regards, regards};
 pub use view::{FARTHEST, NEAREST, PIXELS_A_LINE, View, ZOOM_STEP};
+pub use wizard::{MOST_SCALE, Wizard, Wizarding, wizard_ui, write_map_file};
 
 /// The builder, on the content in `content`, whose `builder.toml` it reads, playing the
 /// character `player` names.
@@ -261,7 +263,13 @@ impl Plugin for BuilderPlugin {
             .init_resource::<Pointer>()
             .init_resource::<View>()
             .init_resource::<Hovered>()
-            .add_systems(Update, (marks::suggest, marks::hover).chain())
+            .init_resource::<MapChoice>()
+            .init_resource::<Wizard>()
+            .add_message::<Wizarding>()
+            .add_systems(
+                Update,
+                (wizard::wizard, marks::suggest, marks::hover).chain(),
+            )
             .init_resource::<view::Panning>()
             .add_systems(
                 Update,
@@ -318,6 +326,7 @@ fn spawn_tokens(
             play_as.0
         ));
     }
+    commands.insert_resource(placed.map.clone());
     match ground::read_ground(&content.0, &placed.map) {
         Ok(Some(ground)) => commands.insert_resource(ground),
         Ok(None) => {}

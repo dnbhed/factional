@@ -12,8 +12,8 @@ use factional_content::{AzgaarError, fingerprint_of, read_azgaar, read_map, writ
 use factional_core::Fixed;
 use factional_worldgen::{
     Coast, Detail, Drop, Extent, Feature, Foliage, Levels, MapError, Placed, PlantKind, Recipe,
-    Region, ReligionKind, RouteKind, SettlementKind, Size, Stance, StateForm, Suggestions, Terrain,
-    Tile, TilePos, Water, WorldMap, rasterise,
+    Region, ReligionKind, RouteKind, SettlementKind, Size, Source, Stance, StateForm, Suggestions,
+    Terrain, Tile, TilePos, Water, WorldMap, rasterise,
 };
 
 use crate::check::count;
@@ -501,38 +501,7 @@ pub fn world_info(base: &Path, file: &str) -> Result<String, String> {
 /// points of interest, its cultures, religions and states, and its fingerprint; or why it can't
 /// be read, each problem on a line.
 pub fn world_source(base: &Path, file: &str) -> Result<String, String> {
-    let text = std::fs::read_to_string(base.join(file))
-        .map_err(|error| format!("cannot read {file}: {error}"))?;
-    let name = file_name(file);
-    let source = read_azgaar(&text).map_err(|error| unreadable(&name, error))?;
-    let features = |kind: fn(&Feature) -> bool| source.features.iter().filter(|f| kind(f)).count();
-    Ok(format!(
-        "{name}: {}, from Azgaar {}, {} × {} pixels\n\
-         {}, {}; {}, {} and {}; {}; {}, {} and {}; {}, {} and {}; fingerprint {}",
-        source.name,
-        source.version,
-        source.size.width,
-        source.size.height,
-        count(source.cells.len(), "cell"),
-        match source.vertices.len() {
-            1 => "1 vertex".to_owned(),
-            n => format!("{n} vertices"),
-        },
-        count(features(|f| *f == Feature::Ocean), "ocean"),
-        count(features(|f| matches!(f, Feature::Lake { .. })), "lake"),
-        count(features(|f| *f == Feature::Island), "island"),
-        count(source.rivers.len(), "river"),
-        count(source.settlements.len(), "settlement"),
-        count(source.routes.len(), "route"),
-        match source.markers.len() {
-            1 => "1 point of interest".to_owned(),
-            n => format!("{n} points of interest"),
-        },
-        count(source.cultures.len(), "culture"),
-        count(source.religions.len(), "religion"),
-        count(source.states.len(), "state"),
-        fingerprint_of(text.as_bytes()),
-    ))
+    read_export(base, file).map(|export| export_summary(&export))
 }
 
 /// What `world import` is told: the export to read, the map file to write, and the recipe's
@@ -642,29 +611,31 @@ fn region(text: &str) -> Result<Region, String> {
 /// ledges and cliffs, and its length. Nothing is
 /// written if the export doesn't read or the recipe can't make a map of it.
 pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
-    let chosen = import.region.map(region).transpose()?;
-    let text = std::fs::read_to_string(base.join(import.export))
-        .map_err(|error| format!("cannot read {}: {error}", import.export))?;
-    let source =
-        read_azgaar(&text).map_err(|error| unreadable(&file_name(import.export), error))?;
-    let recipe = Recipe {
-        source: fingerprint_of(text.as_bytes()),
-        region: chosen.unwrap_or(Region {
-            x: 0,
-            y: 0,
-            size: source.size,
-        }),
-        scale: import.scale,
-        seed: import.seed,
-        detail: import.detail,
-        coast: import.coast,
-        levels: import.levels,
-        foliage: import.foliage,
-    };
-    let map = rasterise(&source, recipe).map_err(|error| error.to_string())?;
-    let bytes = write_map(&map);
-    std::fs::write(base.join(import.map), &bytes)
-        .map_err(|error| format!("cannot write {}: {error}", import.map))?;
+    let region = import.region.map(region).transpose()?;
+    let export = read_export(base, import.export)?;
+    let map = generate(
+        &export,
+        &Choices {
+            region,
+            scale: import.scale,
+            seed: import.seed,
+            detail: import.detail,
+            coast: import.coast,
+            levels: import.levels,
+            foliage: import.foliage,
+        },
+    )?;
+    save_map(base, import.map, &map, &export.source.name)
+}
+
+/// Writes `map`, made from the export whose map is named `name`, to `file` in `base`, and says
+/// what `world import` says of it: its size and chunks, its ocean (deep and shallow), lake and
+/// land tiles, its lowest and highest heights, its levels, ledges and cliffs, and its length;
+/// or why it can't be written (W8a).
+pub fn save_map(base: &Path, file: &str, map: &WorldMap, name: &str) -> Result<String, String> {
+    let bytes = write_map(map);
+    std::fs::write(base.join(file), &bytes)
+        .map_err(|error| format!("cannot write {file}: {error}"))?;
     let tiles: Vec<_> = map
         .chunks()
         .flat_map(|(_, chunk)| {
@@ -718,8 +689,8 @@ pub fn world_import(base: &Path, import: &Import) -> Result<String, String> {
         "imported {} into {}: {} × {} tiles in {} × {} chunks, {ocean} ocean, {lake} lake, {river} river and {} land{terrains}; \
          heights {} to {} m; temperatures {} to {} °C; precipitation {} to {} mm; {}; \
          levels {} to {}, {} and {}; {} ({}, {} and {} grass); {} suggested; {} bytes",
-        source.name,
-        file_name(import.map),
+        name,
+        file_name(file),
         size.width,
         size.height,
         chunks.width,
@@ -835,4 +806,129 @@ mod tests {
             " (1 sand, 1 grass, 1 forest floor, 1 marsh, 1 rock, 1 snow and 1 ice)"
         );
     }
+}
+
+/// An Azgaar export read (W8a): its file's name, what it holds, and its fingerprint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Export {
+    pub name: String,
+    pub source: Source,
+    pub fingerprint: String,
+}
+
+/// How a map is made from an export (W8a): the region, the whole source if none, and the
+/// scale, seed, detail, coast, levels and foliage; `world import`'s defaults to begin with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Choices {
+    pub region: Option<Region>,
+    pub scale: u32,
+    pub seed: u32,
+    pub detail: Detail,
+    pub coast: Coast,
+    pub levels: Levels,
+    pub foliage: Foliage,
+}
+
+impl Default for Choices {
+    fn default() -> Self {
+        Choices {
+            region: None,
+            scale: 1,
+            seed: 0,
+            detail: Detail::default(),
+            coast: Coast::default(),
+            levels: Levels::default(),
+            foliage: Foliage::default(),
+        }
+    }
+}
+
+/// The Azgaar export in `file`, read from `base`; or why it can't be read, as `world source`
+/// says it: each problem on a line.
+pub fn read_export(base: &Path, file: &str) -> Result<Export, String> {
+    let text = std::fs::read_to_string(base.join(file))
+        .map_err(|error| format!("cannot read {file}: {error}"))?;
+    let name = file_name(file).into_owned();
+    let source = read_azgaar(&text).map_err(|error| unreadable(&name, error))?;
+    Ok(Export {
+        name,
+        source,
+        fingerprint: fingerprint_of(text.as_bytes()),
+    })
+}
+
+/// What `world source` says of `export`: its name, version and size, its cells, vertices and
+/// features, its rivers, its settlements, routes and points of interest, its cultures,
+/// religions and states, and its fingerprint.
+pub fn export_summary(export: &Export) -> String {
+    let source = &export.source;
+    let features = |kind: fn(&Feature) -> bool| source.features.iter().filter(|f| kind(f)).count();
+    format!(
+        "{}: {}, from Azgaar {}, {} × {} pixels\n\
+         {}, {}; {}, {} and {}; {}; {}, {} and {}; {}, {} and {}; fingerprint {}",
+        export.name,
+        source.name,
+        source.version,
+        source.size.width,
+        source.size.height,
+        count(source.cells.len(), "cell"),
+        match source.vertices.len() {
+            1 => "1 vertex".to_owned(),
+            n => format!("{n} vertices"),
+        },
+        count(features(|f| *f == Feature::Ocean), "ocean"),
+        count(features(|f| matches!(f, Feature::Lake { .. })), "lake"),
+        count(features(|f| *f == Feature::Island), "island"),
+        count(source.rivers.len(), "river"),
+        count(source.settlements.len(), "settlement"),
+        count(source.routes.len(), "route"),
+        match source.markers.len() {
+            1 => "1 point of interest".to_owned(),
+            n => format!("{n} points of interest"),
+        },
+        count(source.cultures.len(), "culture"),
+        count(source.religions.len(), "religion"),
+        count(source.states.len(), "state"),
+        export.fingerprint,
+    )
+}
+
+/// The map `choices` make of `export`: `world import`'s recipe for them, the whole source if
+/// no region is chosen; or why they can't make one.
+pub fn generate(export: &Export, choices: &Choices) -> Result<WorldMap, String> {
+    let recipe = Recipe {
+        source: export.fingerprint.clone(),
+        region: choices.region.unwrap_or(Region {
+            x: 0,
+            y: 0,
+            size: export.source.size,
+        }),
+        scale: choices.scale,
+        seed: choices.seed,
+        detail: choices.detail,
+        coast: choices.coast,
+        levels: choices.levels,
+        foliage: choices.foliage,
+    };
+    rasterise(&export.source, recipe).map_err(|error| error.to_string())
+}
+
+/// The file a map made from the export whose map is named `name` is saved in, from the content
+/// directory: `world/<name>.map`, lowercase, each run of other characters a hyphen, none at
+/// either end; `world/map.map` if no letter or digit is left.
+pub fn map_file_named(name: &str) -> String {
+    let mut slug = String::new();
+    for word in name
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+    {
+        if !slug.is_empty() {
+            slug.push('-');
+        }
+        slug.push_str(&word.to_ascii_lowercase());
+    }
+    if slug.is_empty() {
+        slug.push_str("map");
+    }
+    format!("world/{slug}.map")
 }

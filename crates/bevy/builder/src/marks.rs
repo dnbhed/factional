@@ -186,9 +186,10 @@ pub struct Suggested {
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct Hovered(pub Option<(String, String)>);
 
-/// The map's suggestions, once it's read.
+/// The map's suggestions, once it's read and whenever it changes, as when the wizard makes one
+/// (W8a).
 pub(crate) fn suggest(mut commands: Commands, ground: Option<Res<Ground>>) {
-    let Some(ground) = ground.filter(|ground| ground.is_added()) else {
+    let Some(ground) = ground.filter(|ground| ground.is_changed()) else {
         return;
     };
     commands.insert_resource(Suggested {

@@ -12,7 +12,9 @@
 //! right or middle button and zoomed with the wheel; Home brings the view back to the played
 //! character (W7a, P-150). Its settlements, routes and points of interest are drawn on it,
 //! named, but those dismissed; the one under the pointer is said as `factional world
-//! suggestions` says it (W7b, P-151).
+//! suggestions` says it (W7b, P-151). "New map…" opens the wizard: an Azgaar export opened
+//! with the system's file dialog, a map generated from it in the background, drawn in place of
+//! the one shown, and saved as the builder's map (W8a, P-153).
 
 use std::path::PathBuf;
 
@@ -27,8 +29,8 @@ use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
     Arranging, BuilderPlugin, Clock, ContentDir, Givers, Ground, Hovered, KeyboardTaken, Nearby,
     PULSE, Played, Pointer, Regards, SHAPE_SIDE, Shape, Spreading, Suggested, TOKEN_RADIUS, Token,
-    View, act, act_ui, arrange_ui, ask, colour, controls_ui, edit_args, edit_ui, panel, patches,
-    quests_ui, tileset,
+    View, Wizard, Wizarding, act, act_ui, arrange_ui, ask, colour, controls_ui, edit_args, edit_ui,
+    panel, patches, quests_ui, tileset, wizard_ui,
 };
 use factional_egui::open::{Lookup, Other, open};
 use factional_egui::relations::tint;
@@ -92,7 +94,13 @@ fn main() -> AppExit {
         .add_systems(Update, (draw_ground, draw_suggestions, aim_camera))
         .add_systems(
             EguiPrimaryContextPass,
-            (controls, act_window, quests_window, hover_tip),
+            (
+                controls,
+                act_window,
+                quests_window,
+                hover_tip,
+                wizard_window,
+            ),
         )
         .run()
 }
@@ -101,16 +109,27 @@ fn main() -> AppExit {
 const GROUND_DEPTH: f32 = -10.0;
 const LAYER_GAP: f32 = 0.01;
 
-/// The map, once it's read: each chunk's layers a `TilemapChunk` of the 16 shapes tinted by
-/// its terrain's colour, a tile a unit, scaled to the tile's points, under the tokens.
+/// A piece of the map drawn, or of its suggestions, despawned when the map changes.
+#[derive(Component)]
+struct GroundPiece;
+#[derive(Component)]
+struct SuggestionPiece;
+
+/// The map, once it's read and whenever it changes, as when the wizard makes one: each chunk's
+/// layers a `TilemapChunk` of the 16 shapes tinted by its terrain's colour, a tile a unit,
+/// scaled to the tile's points, under the tokens.
 fn draw_ground(
     mut commands: Commands,
     ground: Option<Res<Ground>>,
+    drawn: Query<Entity, With<GroundPiece>>,
     mut images: ResMut<Assets<Image>>,
 ) -> Result {
-    let Some(ground) = ground.filter(|ground| ground.is_added()) else {
+    let Some(ground) = ground.filter(|ground| ground.is_changed()) else {
         return Ok(());
     };
+    for piece in &drawn {
+        commands.entity(piece).despawn();
+    }
     let mut shapes = Image::new(
         Extent3d {
             width: SHAPE_SIDE,
@@ -152,6 +171,7 @@ fn draw_ground(
             TilemapChunkTileData::from_y_down_tiles(size, tiles),
             Transform::from_translation(patch.centre.extend(GROUND_DEPTH + layer * LAYER_GAP))
                 .with_scale(Vec3::new(ground.tile, ground.tile, 1.0)),
+            GroundPiece,
         ));
     }
     Ok(())
@@ -177,20 +197,25 @@ fn draw_suggestions(
     mut commands: Commands,
     suggested: Option<Res<Suggested>>,
     ground: Option<Res<Ground>>,
+    drawn: Query<Entity, With<SuggestionPiece>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let (Some(suggested), Some(ground)) = (suggested, ground) else {
         return;
     };
-    if !suggested.is_added() {
+    if !suggested.is_changed() {
         return;
+    }
+    for piece in &drawn {
+        commands.entity(piece).despawn();
     }
     let mut shape = |mesh: Mesh, colour: Color, at: Vec3, turn: f32| {
         commands.spawn((
             Mesh2d(meshes.add(mesh)),
             MeshMaterial2d(materials.add(colour)),
             Transform::from_translation(at).with_rotation(Quat::from_rotation_z(turn)),
+            SuggestionPiece,
         ));
     };
     for mark in &suggested.marks {
@@ -254,6 +279,7 @@ fn draw_suggestions(
             TextFont::from_font_size(ground.tile * 0.4),
             Transform::from_translation(mark.label_at.extend(LABEL_DEPTH)),
             bevy::sprite::Anchor::TOP_CENTER,
+            SuggestionPiece,
         ));
     }
 }
@@ -492,6 +518,7 @@ fn controls(
     nearby: Res<Nearby>,
     played: Query<&Token, With<Played>>,
     factional: Option<Res<Factional>>,
+    mut wizard: ResMut<Wizard>,
 ) -> Result {
     let Some(factional) = factional else {
         return Ok(());
@@ -508,7 +535,48 @@ fn controls(
                 let args = edit_args(&dir.0, &nearby, played);
                 note.0 = open(Other::Editor, &Lookup::here(Other::Editor), &args).err();
             }
+            if ui.button("New map…").clicked() {
+                wizard.open = true;
+            }
         });
+    Ok(())
+}
+
+/// The wizard's window (W8a), while it's open: what's asked of it sent, Open… first shown the
+/// system's file dialog for an Azgaar export.
+fn wizard_window(
+    mut contexts: EguiContexts,
+    mut wizard: ResMut<Wizard>,
+    mut out: MessageWriter<Wizarding>,
+) -> Result {
+    if !wizard.open {
+        return Ok(());
+    }
+    let mut open = true;
+    let mut asked = None;
+    egui::Window::new("New map")
+        .open(&mut open)
+        .resizable(false)
+        .show(contexts.ctx_mut()?, |ui| {
+            ui.set_max_width(420.0);
+            asked = wizard_ui(ui, &mut wizard);
+        });
+    wizard.open = open;
+    match asked {
+        Some(Wizarding::Browse) => {
+            let chosen = rfd::FileDialog::new()
+                .set_title("Open an Azgaar Full JSON export")
+                .add_filter("Azgaar Full JSON export", &["json"])
+                .pick_file();
+            if let Some(path) = chosen {
+                out.write(Wizarding::Open(path));
+            }
+        }
+        Some(asked) => {
+            out.write(asked);
+        }
+        None => {}
+    }
     Ok(())
 }
 
