@@ -13,7 +13,7 @@ use factional_core::Fixed;
 use factional_worldgen::{
     Coast, Detail, Drop, Extent, Feature, Foliage, Levels, MapError, Placed, PlantKind, Recipe,
     Region, ReligionKind, RouteKind, SettlementKind, Size, Source, Stance, StateForm, Suggestions,
-    Terrain, Tile, TilePos, Water, WorldMap, rasterise,
+    Terrain, Tile, TilePos, Water, WorldMap, rasterise, rasterised_size,
 };
 
 use crate::check::count;
@@ -893,10 +893,21 @@ pub fn export_summary(export: &Export) -> String {
     )
 }
 
+/// The size of the map `choices` would make of `export`, or why they can't make one, in
+/// `world import`'s words, before it's made (W8b).
+pub fn map_size(export: &Export, choices: &Choices) -> Result<Size, String> {
+    rasterised_size(&export.source, &recipe(export, choices)).map_err(|error| error.to_string())
+}
+
 /// The map `choices` make of `export`: `world import`'s recipe for them, the whole source if
 /// no region is chosen; or why they can't make one.
 pub fn generate(export: &Export, choices: &Choices) -> Result<WorldMap, String> {
-    let recipe = Recipe {
+    rasterise(&export.source, recipe(export, choices)).map_err(|error| error.to_string())
+}
+
+/// `world import`'s recipe for `choices` of `export`, the whole source if no region is chosen.
+fn recipe(export: &Export, choices: &Choices) -> Recipe {
+    Recipe {
         source: export.fingerprint.clone(),
         region: choices.region.unwrap_or(Region {
             x: 0,
@@ -909,8 +920,7 @@ pub fn generate(export: &Export, choices: &Choices) -> Result<WorldMap, String> 
         coast: choices.coast,
         levels: choices.levels,
         foliage: choices.foliage,
-    };
-    rasterise(&export.source, recipe).map_err(|error| error.to_string())
+    }
 }
 
 /// The file a map made from the export whose map is named `name` is saved in, from the content

@@ -51,7 +51,10 @@ pub use quests::{
 };
 pub use regard::{Regard, Regards, regards};
 pub use view::{FARTHEST, NEAREST, PIXELS_A_LINE, View, ZOOM_STEP};
-pub use wizard::{MOST_SCALE, Wizard, Wizarding, wizard_ui, write_map_file};
+pub use wizard::{
+    MOST_SCALE, PREVIEW_SIDE, Wizard, Wizarding, region_between, shade_colour, wizard_ui,
+    write_map_file,
+};
 
 /// The builder, on the content in `content`, whose `builder.toml` it reads, playing the
 /// character `player` names.

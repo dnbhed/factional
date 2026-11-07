@@ -167,9 +167,8 @@ impl fmt::Display for RasterError {
 
 impl std::error::Error for RasterError {}
 
-/// The map `recipe` makes of `source`: its region at its scale, each tile from the cells
-/// around its centre. `source` is as `factional-content` reads it, every reference resolving.
-pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterError> {
+/// The size of the map `recipe` makes of `source`, or why it can't make one, before it's made.
+pub fn rasterised_size(source: &Source, recipe: &Recipe) -> Result<Size, RasterError> {
     let size = recipe.size().map_err(RasterError::Map)?;
     let region = recipe.region;
     let past =
@@ -185,6 +184,14 @@ pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterErro
     if source.cells.is_empty() {
         return Err(RasterError::NoCells);
     }
+    Ok(size)
+}
+
+/// The map `recipe` makes of `source`: its region at its scale, each tile from the cells
+/// around its centre. `source` is as `factional-content` reads it, every reference resolving.
+pub fn rasterise(source: &Source, recipe: Recipe) -> Result<WorldMap, RasterError> {
+    let size = rasterised_size(source, &recipe)?;
+    let region = recipe.region;
     let raster = Raster::new(source, &recipe);
     let scale = i128::from(recipe.scale);
     let origin = [region.x, region.y].map(|from| i128::from(from) * 200 * scale);
@@ -313,7 +320,7 @@ struct Ground {
 /// The source made ready to rasterise: its cells' centres, metres, reliefs and water, its
 /// triangles, a grid of buckets to find them in, and the detail to add, its wavelength in
 /// units.
-struct Raster<'a> {
+pub(crate) struct Raster<'a> {
     source: &'a Source,
     centres: Vec<At>,
     metres: Vec<i128>,
@@ -330,7 +337,7 @@ struct Raster<'a> {
 }
 
 impl Raster<'_> {
-    fn new<'a>(source: &'a Source, recipe: &Recipe) -> Raster<'a> {
+    pub(crate) fn new<'a>(source: &'a Source, recipe: &Recipe) -> Raster<'a> {
         let scale = i128::from(recipe.scale);
         let centres: Vec<At> = source
             .cells
@@ -515,7 +522,7 @@ impl Raster<'_> {
 
     /// The cell whose centre is nearest `at`, the first if several are as near, and how many
     /// rings of buckets were searched for it.
-    fn nearest(&self, at: At) -> (usize, u32) {
+    pub(crate) fn nearest(&self, at: At) -> (usize, u32) {
         self.nearest_in(at, &self.cells_in)
             .expect("the grid holds a cell")
     }

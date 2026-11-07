@@ -1,13 +1,15 @@
 //! What the builder's wizard shares with `world source` and `world import` (W8a): an export
-//! read and summarised, a map generated from it, and the map saved, each in the CLI's words.
+//! read and summarised, a map generated from it, and the map saved, each in the CLI's words; and
+//! the size a region makes, or why it can't, before it's made (W8b).
 
 use std::path::{Path, PathBuf};
 
 use factional_content::write_map;
 use factional_session::{
-    Choices, Import, export_summary, generate, map_file_named, read_export, save_map, world_import,
-    world_source,
+    Choices, Import, export_summary, generate, map_file_named, map_size, read_export, save_map,
+    world_import, world_source,
 };
+use factional_worldgen::{Region, Size};
 
 const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 
@@ -150,4 +152,78 @@ fn a_maps_file_is_named_after_its_exports_map() {
     );
     assert_eq!(map_file_named("—!?"), "world/map.map");
     assert_eq!(map_file_named(""), "world/map.map");
+}
+
+fn region(x: u32, y: u32, width: u32, height: u32) -> Option<Region> {
+    Some(Region {
+        x,
+        y,
+        size: Size { width, height },
+    })
+}
+
+#[test]
+fn the_size_a_region_makes_is_said_before_its_made_and_is_what_generating_makes() {
+    let export = read_export(&fixtures(), "raster.json").expect("raster.json reads");
+    let whole = Choices::default();
+    assert_eq!(
+        map_size(&export, &whole),
+        Ok(Size {
+            width: 40,
+            height: 40
+        })
+    );
+    let part = Choices {
+        region: region(10, 10, 20, 10),
+        scale: 2,
+        ..Choices::default()
+    };
+    assert_eq!(
+        map_size(&export, &part),
+        Ok(Size {
+            width: 40,
+            height: 20
+        })
+    );
+    assert_eq!(
+        generate(&export, &part).expect("a map").size(),
+        Size {
+            width: 40,
+            height: 20
+        }
+    );
+}
+
+#[test]
+fn a_region_that_cant_be_made_is_refused_before_its_made_as_world_import_refuses_it() {
+    let export = read_export(&fixtures(), "raster.json").expect("raster.json reads");
+    let off = Choices {
+        region: region(30, 0, 20, 10),
+        ..Choices::default()
+    };
+    let said = map_size(&export, &off).expect_err("refused");
+    assert_eq!(
+        said,
+        "the region runs off the source map: pixels (30, 0) to (49, 9), and the map is 40 × 40 pixels"
+    );
+    let import = Import {
+        export: "raster.json",
+        map: "never.map",
+        region: Some("30,0,20,10"),
+        scale: 1,
+        seed: 0,
+        detail: Default::default(),
+        coast: Default::default(),
+        levels: Default::default(),
+        foliage: Default::default(),
+    };
+    assert_eq!(world_import(&fixtures(), &import), Err(said));
+    let large = Choices {
+        scale: 300,
+        ..Choices::default()
+    };
+    assert_eq!(
+        map_size(&export, &large),
+        Err("the map would be 12000 × 12000 tiles; at most 8192 a side".to_owned())
+    );
 }
