@@ -518,21 +518,25 @@ fn preview_ui(ui: &mut egui::Ui, wizard: &mut Wizard, source: Size) {
         wizard.dragged_from = None;
     }
     if let Some(region) = wizard.region {
-        let corner = |x: u32, y: u32| rect.min + egui::vec2(x as f32, y as f32) * per_pixel;
-        let chosen = egui::Rect::from_min_max(
-            corner(region.x, region.y),
-            corner(
-                region.x.saturating_add(region.size.width),
-                region.y.saturating_add(region.size.height),
-            ),
-        );
         ui.painter().rect_stroke(
-            chosen,
+            region_shown(region, rect, per_pixel),
             0.0,
             egui::Stroke::new(2.0, egui::Color32::WHITE),
             egui::StrokeKind::Inside,
         );
     }
+}
+
+/// Where `region` is drawn over the preview shown at `rect`, `per_pixel` points a source pixel.
+fn region_shown(region: Region, rect: egui::Rect, per_pixel: f32) -> egui::Rect {
+    let corner = |x: u32, y: u32| rect.min + egui::vec2(x as f32, y as f32) * per_pixel;
+    egui::Rect::from_min_max(
+        corner(region.x, region.y),
+        corner(
+            region.x.saturating_add(region.size.width),
+            region.y.saturating_add(region.size.height),
+        ),
+    )
 }
 
 /// The region in four numbers, the whole source if none is chosen, its corner within the
@@ -615,6 +619,50 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/tests/fixtures/azgaar"
     );
+
+    #[test]
+    fn the_region_is_drawn_over_the_preview_where_its_pixels_are_shown() {
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(320.0, 320.0));
+        let region = Region {
+            x: 10,
+            y: 5,
+            size: Size {
+                width: 11,
+                height: 10,
+            },
+        };
+        assert_eq!(
+            region_shown(region, rect, 8.0),
+            egui::Rect::from_min_max(egui::pos2(180.0, 90.0), egui::pos2(268.0, 170.0))
+        );
+    }
+
+    /// The tests' task pool runs a task at once, so the preview is never seen being made from
+    /// outside: here one is held that never finishes.
+    #[test]
+    fn while_the_preview_is_being_made_it_says_so() {
+        let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
+        let export = Arc::new(read_export(Path::new(FIXTURES), "raster.json").expect("reads"));
+        let task = pool.spawn(std::future::pending::<Result<Preview, String>>());
+        let wizard = Wizard {
+            export: Some(export.clone()),
+            summary: Some(Ok(export_summary(&export))),
+            previewing: Some(task),
+            ..Wizard::default()
+        };
+        assert!(wizard.previewing());
+        assert!(wizard.preview().is_none());
+        let mut harness = Harness::new_ui_state(
+            |ui, wizard: &mut Wizard| {
+                wizard_ui(ui, wizard);
+            },
+            wizard,
+        );
+        // The spinner asks for frames for ever, so a few are run.
+        harness.run_steps(4);
+        assert!(harness.query_by_label("Previewing…").is_some());
+        assert!(harness.query_by_label("Preview").is_none());
+    }
 
     /// The tests' task pool runs a task at once, so a map is never seen being generated from
     /// outside: here one is held that never finishes.

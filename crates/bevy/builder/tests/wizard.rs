@@ -629,6 +629,11 @@ fn the_preview_shades_water_by_depth_and_land_by_height_in_the_maps_colours() {
     );
     // 9 of the 19 steps from deep, (32, 64, 128), to shallow, (64, 128, 192), each rounded.
     assert_eq!(shade_colour(Shade::Water(9)), [47, 94, 158]);
+    // 10 of the 19: 16.84, 33.68 and 33.68 along, rounded up.
+    assert_eq!(shade_colour(Shade::Water(10)), [49, 98, 162]);
+    // 3 of the 40 from grass, (112, 168, 80), to rock, (128, 120, 112): 1.2, −3.6 and 2.4
+    // along, the fall rounded away from zero.
+    assert_eq!(shade_colour(Shade::Land(23)), [113, 164, 82]);
     assert_eq!(shade_colour(Shade::Land(20)), colour(Terrain::Grass));
     assert_eq!(shade_colour(Shade::Land(40)), [120, 144, 96]);
     assert_eq!(shade_colour(Shade::Land(60)), colour(Terrain::Rock));
