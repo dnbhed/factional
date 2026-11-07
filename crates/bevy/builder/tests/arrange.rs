@@ -37,15 +37,27 @@ fn copy(name: &str, builder: Option<&str>) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("a fresh directory");
-    for file in fs::read_dir(sample()).expect("the sample") {
-        let file = file.expect("a file").path();
-        fs::copy(&file, dir.join(file.file_name().expect("a name"))).expect("copied");
-    }
+    copy_dir(&sample(), &dir);
     match builder {
         Some(text) => fs::write(dir.join("builder.toml"), text).expect("written"),
         None => fs::remove_file(dir.join("builder.toml")).expect("removed"),
     }
     dir
+}
+
+/// Copies every file in `from` into `to`, and every directory, such as the sample's maps.
+fn copy_dir(from: &Path, to: &Path) {
+    fs::create_dir_all(to).expect("a directory");
+    for entry in fs::read_dir(from).expect("a directory to copy") {
+        let path = entry.expect("an entry").path();
+        let into = to.join(path.file_name().expect("a name"));
+        match path.is_dir() {
+            true => copy_dir(&path, &into),
+            false => {
+                fs::copy(&path, &into).expect("copied");
+            }
+        }
+    }
 }
 
 /// The builder on `content`, playing the player, a second a frame.
@@ -301,6 +313,10 @@ fn save_layout_writes_builder_toml_and_reading_it_places_them_there() {
         "{text}"
     );
     assert!(text.contains("[play]\nreach = 80.0"), "{text}");
+    assert!(
+        text.contains("[map]\nfile = \"world/riverhold.map\"\ntile = 32.0"),
+        "{text}"
+    );
     let everyone = [
         "brother_ash",
         "captain_hale",

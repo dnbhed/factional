@@ -1281,6 +1281,27 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
     The tile is checked before the map is read, by me: "the tile needs two whole numbers, <x>,<y>, not 3".
   - **Terrain names** move into `Terrain::name`, beside `Biome::name`, and the import's land summary uses them, by me.
   - *Why:* the builder can draw territories and W10 can make places from them only if each tile knows whose it is. Keeping the count in the layers means repainting a border is the only change a designer makes, and every count follows.
+- **P-150 · The terrain in the builder** (made in W7a, 2026-11-06; D-46, D-50, P-119, P-125).
+  - **Split:** W7 became W7a (the terrain drawn, panned and zoomed) and W7b (the suggestions shown on it), at the user's choice.
+  - **`builder.toml` names the map,** at the user's choice: `[map]`'s `file`, a path from the content directory, and `tile`, how many points a tile is across, above 0, 32 by default. With no `file` there's no map.
+    - A `tile` of 0 or less is said and 32 used, as `[play]`'s knobs are.
+    - The map is read at start, as `world info` reads it. A file that isn't there, or can't be read as a map, is said and no map drawn; the tokens are drawn as before. The words are the map's own: "world/bad.map: this isn't a Factional map, so no map is drawn", by me.
+    - Arrange's Save layout keeps `[map]`, as it keeps every table but `[positions]`.
+  - **Centred, 32 points a tile,** at the user's choice: the map's middle at the plane's origin, row 0 at the top, so the tokens laid out around the origin stand mid-map, and a token is about a tile across. Drawn under the tokens.
+  - **The dual grid,** by me:
+    - Drawn tiles sit on the map's corners, half a tile off: (W + 1) × (H + 1) of them. Each shows its four map tiles, one at each corner; a corner off the map is the nearest tile on it, so the edge tiles reach half a tile beyond the map.
+    - Rather than 16 tiles for each pair of terrains (P-119), which can't draw a corner where three or four terrains meet, each terrain is a layer over those before it in `Terrain`'s order. A drawn tile shows a terrain's layer when one of its corners is that terrain, its shape the corners of that terrain or a later one. So the lowest terrain there fills the tile, the shapes nest without gaps, and 16 shapes serve every terrain, tinted by its colour.
+    - The shapes are placeholders worked out, not drawn: a pixel is in a shape when its centre's bilinear blend of the corners is at least ½, in whole numbers. Coasts and borders come out diagonal and rounded rather than stepped. Art replaces the 16 shapes later.
+    - `Terrain::ALL` lists the terrains in that order, beside `Biome::ALL`.
+  - **Bevy's `TilemapChunk`,** one entity for each chunk of 64 × 64 drawn tiles and each terrain shown in it, a tile a unit, scaled to the tile's points, so a tile needn't be a whole number of points. The 16 shapes are one array texture, white where covered and clear elsewhere.
+  - **Panning and zooming,** at the user's choice:
+    - The view starts on the played character, at a point a pixel; Home brings it back, unless egui has the keyboard.
+    - A drag with the right or middle button pans, begun off egui's windows and carried on over them; the left button stays Arrange's.
+    - The wheel zooms about the cursor, 1.1 times a line, a touchpad's 20 pixels a line, from ⅛ to 64 points a pixel; not over egui's windows.
+    - The `View` is the library's, tested headless; the app points the camera at it.
+  - **The sample's map:** `content/sample/world/riverhold.map`, imported by the CLI from the raster fixture, the whole of it at 2 tiles a pixel, 80 × 80 tiles and 20,448 bytes. The tests that copy the sample's files skip its `world/` directory, which none of them reads, and Arrange's tests copy it too.
+  - *Why:* the user's choices. Layering by terrain keeps the dual grid's nested shapes for any number of terrains with 16 tiles, and a map that names its own file lets the editor's "Play in the builder" open it unchanged.
+
 
 ## Open
 

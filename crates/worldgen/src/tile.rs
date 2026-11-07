@@ -18,6 +18,19 @@ pub enum Terrain {
 }
 
 impl Terrain {
+    /// Every terrain, in order: what's drawn later is drawn over what's before (W7a).
+    pub const ALL: [Terrain; 9] = [
+        Terrain::DeepWater,
+        Terrain::ShallowWater,
+        Terrain::Sand,
+        Terrain::Grass,
+        Terrain::ForestFloor,
+        Terrain::Marsh,
+        Terrain::Rock,
+        Terrain::Snow,
+        Terrain::Ice,
+    ];
+
     /// Its name, as a designer reads it.
     pub fn name(self) -> &'static str {
         match self {
@@ -215,6 +228,26 @@ impl Override {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_terrain_is_listed_once_in_its_order() {
+        use Terrain::*;
+        assert_eq!(
+            Terrain::ALL,
+            [
+                DeepWater,
+                ShallowWater,
+                Sand,
+                Grass,
+                ForestFloor,
+                Marsh,
+                Rock,
+                Snow,
+                Ice
+            ]
+        );
+        assert!(Terrain::ALL.windows(2).all(|pair| pair[0] < pair[1]));
+    }
 
     #[test]
     fn each_terrain_is_named_as_a_designer_reads_it() {

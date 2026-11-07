@@ -7,23 +7,30 @@
 //! a quest that can start now is marked, and quests are started and chosen from the Quests
 //! window (G7, P-129). "Edit in the editor" opens the editor on the same directory, at the
 //! character in view (G8, P-130). "Arrange" turns on dragging the tokens, each drag
-//! undoable, and saves where they stand to `builder.toml` (G9, P-131).
+//! undoable, and saves where they stand to `builder.toml` (G9, P-131). The map
+//! `builder.toml` names lies under them, its terrain autotiled on a dual grid, panned with the
+//! right or middle button and zoomed with the wheel; Home brings the view back to the played
+//! character (W7a, P-150).
 
 use std::path::PathBuf;
 
+use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::sprite_render::{AlphaMode2d, TileData, TilemapChunk, TilemapChunkTileData};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalCommand, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
-    Arranging, BuilderPlugin, Clock, ContentDir, Givers, KeyboardTaken, Nearby, PULSE, Played,
-    Pointer, Regards, Spreading, TOKEN_RADIUS, Token, act, act_ui, arrange_ui, ask, controls_ui,
-    edit_args, edit_ui, panel, quests_ui,
+    Arranging, BuilderPlugin, Clock, ContentDir, Givers, Ground, KeyboardTaken, Nearby, PULSE,
+    Played, Pointer, Regards, SHAPE_SIDE, Spreading, TOKEN_RADIUS, Token, View, act, act_ui,
+    arrange_ui, ask, colour, controls_ui, edit_args, edit_ui, panel, patches, quests_ui, tileset,
 };
 use factional_egui::open::{Lookup, Other, open};
 use factional_egui::relations::tint;
 use factional_reputation::ActionId;
+use factional_worldgen::{CHUNK, Terrain};
 
 /// The colours of tokens: the one played, and anyone else before their band's tint.
 const PLAYED: Color = Color::srgb(0.45, 0.8, 0.45);
@@ -78,11 +85,85 @@ fn main() -> AppExit {
         })
         .add_systems(PreUpdate, (keyboard_taken, pointer))
         .add_systems(Update, (draw_tokens, show_tokens).chain())
+        .add_systems(Update, (draw_ground, aim_camera))
         .add_systems(
             EguiPrimaryContextPass,
             (controls, act_window, quests_window),
         )
         .run()
+}
+
+/// How far under the tokens the map's first layer lies, and how far apart its layers are.
+const GROUND_DEPTH: f32 = -10.0;
+const LAYER_GAP: f32 = 0.01;
+
+/// The map, once it's read: each chunk's layers a `TilemapChunk` of the 16 shapes tinted by
+/// its terrain's colour, a tile a unit, scaled to the tile's points, under the tokens.
+fn draw_ground(
+    mut commands: Commands,
+    ground: Option<Res<Ground>>,
+    mut images: ResMut<Assets<Image>>,
+) -> Result {
+    let Some(ground) = ground.filter(|ground| ground.is_added()) else {
+        return Ok(());
+    };
+    let mut shapes = Image::new(
+        Extent3d {
+            width: SHAPE_SIDE,
+            height: SHAPE_SIDE * 16,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        tileset(SHAPE_SIDE),
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    shapes.reinterpret_stacked_2d_as_array(16)?;
+    let shapes = images.add(shapes);
+    let size = UVec2::splat(CHUNK);
+    for patch in patches(&ground) {
+        let [r, g, b] = colour(patch.terrain);
+        let tiles = patch
+            .shapes
+            .iter()
+            .map(|shape| {
+                shape.map(|shape| TileData {
+                    tileset_index: u16::from(shape),
+                    color: Color::srgb_u8(r, g, b),
+                    ..default()
+                })
+            })
+            .collect();
+        let layer = Terrain::ALL
+            .iter()
+            .position(|terrain| *terrain == patch.terrain)
+            .unwrap_or(0) as f32;
+        commands.spawn((
+            TilemapChunk {
+                chunk_size: size,
+                tile_display_size: UVec2::ONE,
+                tileset: shapes.clone(),
+                alpha_mode: AlphaMode2d::Blend,
+            },
+            TilemapChunkTileData::from_y_down_tiles(size, tiles),
+            Transform::from_translation(patch.centre.extend(GROUND_DEPTH + layer * LAYER_GAP))
+                .with_scale(Vec3::new(ground.tile, ground.tile, 1.0)),
+        ));
+    }
+    Ok(())
+}
+
+/// The camera where the view is, as many points a pixel as it says.
+fn aim_camera(view: Res<View>, mut camera: Query<(&mut Transform, &mut Projection), With<Camera>>) {
+    if !view.is_changed() {
+        return;
+    }
+    for (mut at, mut projection) in &mut camera {
+        at.translation = view.at.extend(at.translation.z);
+        if let Projection::Orthographic(orthographic) = &mut *projection {
+            orthographic.scale = view.scale;
+        }
+    }
 }
 
 /// The keys don't walk while egui has the keyboard, as when typing in the console.

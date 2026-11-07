@@ -29,12 +29,17 @@ pub const RING: f32 = 240.0;
 const TICK_EVERY: Duration = Duration::from_secs(1);
 
 pub mod arrange;
+pub mod ground;
 pub mod news;
 pub mod play;
 pub mod quests;
 pub mod regard;
+pub mod view;
 
 pub use arrange::{Arranging, Pointer, TOKEN_RADIUS, arrange_ui, pick, write_positions};
+pub use ground::{
+    Ground, MapChoice, Patch, SHAPE_SIDE, TILE, colour, patches, read_ground, shape_pixels, tileset,
+};
 pub use news::{Hearing, PULSE, Spreading, hearing};
 pub use play::{KeyboardTaken, Nearby, Play, Played, act, act_ui, nearby};
 pub use quests::{
@@ -42,6 +47,7 @@ pub use quests::{
     the_worlds,
 };
 pub use regard::{Regard, Regards, regards};
+pub use view::{FARTHEST, NEAREST, PIXELS_A_LINE, View, ZOOM_STEP};
 
 /// The builder, on the content in `content`, whose `builder.toml` it reads, playing the
 /// character `player` names.
@@ -107,6 +113,8 @@ pub struct Placed {
     pub positions: Vec<(CharacterId, Vec2)>,
     /// How near is near.
     pub play: Play,
+    /// The map drawn under the tokens, if any (W7a).
+    pub map: MapChoice,
     pub problems: Vec<String>,
 }
 
@@ -118,6 +126,16 @@ struct BuilderFile {
     positions: BTreeMap<String, Position>,
     #[serde(default)]
     play: PlayFile,
+    #[serde(default)]
+    map: MapFile,
+}
+
+/// `builder.toml`'s `[map]`: the map's file and how many points a tile is across (W7a).
+#[derive(serde::Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct MapFile {
+    file: Option<String>,
+    tile: Option<f32>,
 }
 
 /// `builder.toml`'s `[play]`: how near is near, each left out for its default.
@@ -194,9 +212,22 @@ pub fn place(file: Option<&str>, characters: &[CharacterId]) -> Placed {
             (character.clone(), at)
         })
         .collect();
+    let mut map = MapChoice {
+        file: read.map.file,
+        ..MapChoice::default()
+    };
+    match read.map.tile {
+        Some(tile) if tile > 0.0 => map.tile = tile,
+        Some(_) => problems.push(format!(
+            "builder.toml: map.tile must be above 0, so it's {}",
+            map.tile
+        )),
+        None => {}
+    }
     Placed {
         positions,
         play,
+        map,
         problems,
     }
 }
@@ -226,6 +257,12 @@ impl Plugin for BuilderPlugin {
             .init_resource::<Givers>()
             .init_resource::<Arranging>()
             .init_resource::<Pointer>()
+            .init_resource::<View>()
+            .init_resource::<view::Panning>()
+            .add_systems(
+                Update,
+                (view::start_on_played, view::home, view::pan_and_zoom).chain(),
+            )
             .add_systems(
                 Last,
                 (
@@ -251,6 +288,7 @@ fn spawn_tokens(
     mut commands: Commands,
     file: Res<Layout>,
     play_as: Res<PlayAs>,
+    content: Res<ContentDir>,
     factional: Option<Res<Factional>>,
     mut problems: ResMut<BuilderProblems>,
     mut play: ResMut<Play>,
@@ -275,6 +313,11 @@ fn spawn_tokens(
             "--as {} names no character{hint}, so no one is played",
             play_as.0
         ));
+    }
+    match ground::read_ground(&content.0, &placed.map) {
+        Ok(Some(ground)) => commands.insert_resource(ground),
+        Ok(None) => {}
+        Err(problem) => placed.problems.push(problem),
     }
     for problem in &placed.problems {
         eprintln!("{problem}");
