@@ -24,3 +24,9 @@ unsafe_code = "forbid"
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 inconsistent_digit_grouping = "allow"
+
+# Mutation testing builds here (`.cargo/mutants.toml`): the test profile without debug info,
+# so each mutant links quickly (P-152).
+[profile.mutants]
+inherits = "test"
+debug = "none"

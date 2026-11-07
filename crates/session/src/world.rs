@@ -219,12 +219,9 @@ fn places(suggestions: &Suggestions) -> String {
     ])
 }
 
-/// What `world suggestions <map>` says of the map in `file`, read from `base`: how many of
-/// each, then each settlement, route, point of interest, culture, religion and state on a line,
-/// in the source's order, a link to a suggestion that isn't on the map marked; or why it can't
-/// be read.
-pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
-    let (map, _) = map_in(base, file)?;
+/// Each suggestion's id and what `world suggestions` says of it, in the suggestions' order:
+/// settlements, routes, points of interest, cultures, religions and states.
+pub fn suggestion_lines(map: &WorldMap) -> Vec<(String, String)> {
     let suggestions = map.suggestions();
     let tile = |at: Placed| format!("({}, {})", at.tile.x, at.tile.y);
     let titled = |id: &str, name: Option<&str>| match name {
@@ -236,12 +233,7 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
         Some(by) if by == id => " (dismissed)".to_owned(),
         Some(by) => format!(" (dismissed with {by})"),
     };
-    let mut lines = vec![format!(
-        "{}: {}{}",
-        file_name(file),
-        places(suggestions),
-        dismissals(&map)
-    )];
+    let mut lines = Vec::new();
     for settlement in &suggestions.settlements {
         let mut figures = vec![settlement_kind(settlement.kind).to_owned()];
         figures.extend(settlement.capital.then(|| "capital".to_owned()));
@@ -263,27 +255,33 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             true => String::new(),
             false => format!("; {}", and_list(&buildings)),
         };
-        lines.push(format!(
-            "{}: {}{buildings}{}",
-            titled(&settlement.id, Some(&settlement.name)),
-            figures.join(", "),
-            marked(&settlement.id)
+        lines.push((
+            settlement.id.clone(),
+            format!(
+                "{}: {}{buildings}{}",
+                titled(&settlement.id, Some(&settlement.name)),
+                figures.join(", "),
+                marked(&settlement.id)
+            ),
         ));
     }
     for route in &suggestions.routes {
         let (first, last) = (route.points[0], route.points[route.points.len() - 1]);
-        lines.push(format!(
-            "{}: {}, {} points, tile {} to {}{}",
-            titled(&route.id, route.name.as_deref()),
-            match route.kind {
-                RouteKind::Road => "road",
-                RouteKind::Trail => "trail",
-                RouteKind::SeaRoute => "sea route",
-            },
-            route.points.len(),
-            tile(first),
-            tile(last),
-            marked(&route.id)
+        lines.push((
+            route.id.clone(),
+            format!(
+                "{}: {}, {} points, tile {} to {}{}",
+                titled(&route.id, route.name.as_deref()),
+                match route.kind {
+                    RouteKind::Road => "road",
+                    RouteKind::Trail => "trail",
+                    RouteKind::SeaRoute => "sea route",
+                },
+                route.points.len(),
+                tile(first),
+                tile(last),
+                marked(&route.id)
+            ),
         ));
     }
     for point in &suggestions.points {
@@ -291,12 +289,15 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             .note
             .as_ref()
             .map_or(String::new(), |note| format!("; {note}"));
-        lines.push(format!(
-            "{}: {}, at tile {}{note}{}",
-            titled(&point.id, point.name.as_deref()),
-            point.kind,
-            tile(point.at),
-            marked(&point.id)
+        lines.push((
+            point.id.clone(),
+            format!(
+                "{}: {}, at tile {}{note}{}",
+                titled(&point.id, point.name.as_deref()),
+                point.kind,
+                tile(point.at),
+                marked(&point.id)
+            ),
         ));
     }
     let linked = |id: &str| match suggestions.ids().any(|on| on == id) {
@@ -314,13 +315,16 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
         )
     };
     for culture in &suggestions.cultures {
-        lines.push(format!(
-            "{} {}: {}; {}{}",
-            culture.id,
-            culture.name,
-            settlement_kind(culture.kind),
-            extent(culture.extent, &culture.id),
-            marked(&culture.id)
+        lines.push((
+            culture.id.clone(),
+            format!(
+                "{} {}: {}; {}{}",
+                culture.id,
+                culture.name,
+                settlement_kind(culture.kind),
+                extent(culture.extent, &culture.id),
+                marked(&culture.id)
+            ),
         ));
     }
     for religion in &suggestions.religions {
@@ -346,13 +350,16 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
                 .as_ref()
                 .map(|c| format!("of {}", linked(c))),
         );
-        lines.push(format!(
-            "{} {}: {}; {}{}",
-            religion.id,
-            religion.name,
-            figures.join(", "),
-            extent(religion.extent, &religion.id),
-            marked(&religion.id)
+        lines.push((
+            religion.id.clone(),
+            format!(
+                "{} {}: {}; {}{}",
+                religion.id,
+                religion.name,
+                figures.join(", "),
+                extent(religion.extent, &religion.id),
+                marked(&religion.id)
+            ),
         ));
     }
     for state in &suggestions.states {
@@ -381,15 +388,34 @@ pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
             true => String::new(),
             false => format!("; {}", stances.join(", ")),
         };
-        lines.push(format!(
-            "{} {}: {}{stances}; {}{}",
-            state.id,
-            state.name,
-            figures.join(", "),
-            extent(state.extent, &state.id),
-            marked(&state.id)
+        lines.push((
+            state.id.clone(),
+            format!(
+                "{} {}: {}{stances}; {}{}",
+                state.id,
+                state.name,
+                figures.join(", "),
+                extent(state.extent, &state.id),
+                marked(&state.id)
+            ),
         ));
     }
+    lines
+}
+
+/// What `world suggestions <map>` says of the map in `file`, read from `base`: how many of
+/// each, then each settlement, route, point of interest, culture, religion and state on a line,
+/// in the source's order, a link to a suggestion that isn't on the map marked; or why it can't
+/// be read.
+pub fn world_suggestions(base: &Path, file: &str) -> Result<String, String> {
+    let (map, _) = map_in(base, file)?;
+    let mut lines = vec![format!(
+        "{}: {}{}",
+        file_name(file),
+        places(map.suggestions()),
+        dismissals(&map)
+    )];
+    lines.extend(suggestion_lines(&map).into_iter().map(|(_, line)| line));
     let stale = map.not_on_the_map();
     if !stale.is_empty() {
         lines.push(format!("dismissed, not on the map: {}", stale.join(", ")));

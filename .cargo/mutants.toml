@@ -1,0 +1,3 @@
+# Mutants build in the `mutants` profile, the test profile without debug info, so each one
+# links quickly (P-152, CLAUDE.md, Gates).
+profile = "mutants"

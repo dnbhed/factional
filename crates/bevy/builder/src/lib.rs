@@ -30,6 +30,7 @@ const TICK_EVERY: Duration = Duration::from_secs(1);
 
 pub mod arrange;
 pub mod ground;
+pub mod marks;
 pub mod news;
 pub mod play;
 pub mod quests;
@@ -40,6 +41,7 @@ pub use arrange::{Arranging, Pointer, TOKEN_RADIUS, arrange_ui, pick, write_posi
 pub use ground::{
     Ground, MapChoice, Patch, SHAPE_SIDE, TILE, colour, patches, read_ground, shape_pixels, tileset,
 };
+pub use marks::{Hovered, Mark, SLACK, Shape, Suggested, hovered, marks, place_of};
 pub use news::{Hearing, PULSE, Spreading, hearing};
 pub use play::{KeyboardTaken, Nearby, Play, Played, act, act_ui, nearby};
 pub use quests::{
@@ -258,6 +260,8 @@ impl Plugin for BuilderPlugin {
             .init_resource::<Arranging>()
             .init_resource::<Pointer>()
             .init_resource::<View>()
+            .init_resource::<Hovered>()
+            .add_systems(Update, (marks::suggest, marks::hover).chain())
             .init_resource::<view::Panning>()
             .add_systems(
                 Update,

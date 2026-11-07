@@ -28,6 +28,6 @@ pub use session::{
     describe_faction, help_text, is_blank_or_comment,
 };
 pub use world::{
-    Import, world_dismiss, world_import, world_info, world_restore, world_source,
+    Import, suggestion_lines, world_dismiss, world_import, world_info, world_restore, world_source,
     world_suggestions, world_tile,
 };
