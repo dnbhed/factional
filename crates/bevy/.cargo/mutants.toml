@@ -2,3 +2,6 @@
 # and mutation testing, never compile it: a mutant there can't be built or caught. What it
 # draws is checked by running it; its library, the builder's logic, is tested headless.
 exclude_globs = ["builder/src/main.rs"]
+# Mutants build in the `mutants` profile, the test profile without debug info, so each one
+# links quickly; linking Bevy's test binaries is most of a mutant's build (P-152).
+profile = "mutants"

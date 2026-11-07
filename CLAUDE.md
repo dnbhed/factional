@@ -43,6 +43,13 @@ Before starting any increment, read:
    It builds into the repository's `target/`, beside the main workspace, so the editor and the builder sit side by side (P-130); a build in one workspace waits while the other holds the folder.
 
    `--workspace` matters: without it, `crates/bevy`'s root package is the only one checked, and cargo-mutants silently finds nothing in the members. `--in-place`, because a copied tree loses the `../../` paths to the main workspace's crates.
+
+   **Keep mutation runs fast (P-152):**
+   - Both workspaces build mutants in a `mutants` profile without debug info (`.cargo/mutants.toml`), so linking is quick. Its first run builds the dependencies once in that profile.
+   - Locally, run only the test binaries that cover the diff: everything after `--` goes to `cargo test`, so add, for example, `-- --test marks --test view`, or `-- --lib` for unit tests. Each test binary of the Bevy workspace links Bevy, so running all of them costs most of a run's time.
+   - A mutant that a targeted run misses may be caught by a test you left out. Re-run the same command with `--iterate` and without the `--` part: it tests again only what the last run didn't catch, against the full suite. Do that before treating one as missing an assertion. Say in the PR which binaries you targeted.
+   - CI runs every mutant against the full suite, so a mutant a targeted run missed won't slip through CI.
+   - Skip the baseline with `--baseline skip` only straight after `cargo test --workspace` has passed on the same tree.
 7. **Docs, in the same PR:**
    - Compress the increment to one line under **Done** in PLAN.md: id, what shipped, date, PR.
    - Update DESIGN.md if the model, a formula or the tuning table changed.

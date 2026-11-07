@@ -1302,6 +1302,29 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **The sample's map:** `content/sample/world/riverhold.map`, imported by the CLI from the raster fixture, the whole of it at 2 tiles a pixel, 80 × 80 tiles and 20,448 bytes. The tests that copy the sample's files skip its `world/` directory, which none of them reads, and Arrange's tests copy it too.
   - *Why:* the user's choices. Layering by terrain keeps the dual grid's nested shapes for any number of terrains with 16 tiles, and a map that names its own file lets the editor's "Play in the builder" open it unchanged.
 
+- **P-151 · Suggestions in the builder** (made in W7b, 2026-11-07; D-49, P-145, P-146, P-150).
+  - **Placeholder shapes by kind,** at the user's choice, over the map and under the tokens: routes, then markers, then labels.
+    - A settlement is a square, ½ a tile a side under 1000 people, ¾ under 10 000, and a whole tile from 10 000, by me. A capital is ringed.
+    - A point of interest is a diamond ¾ of a tile across.
+    - A route is a line through its points, its joints rounded. A road or sea route is ¼ of a tile wide, a trail ⅛; sea routes are blue.
+  - **Where a place lies:** its tile and offset in 256ths, from the map's middle, as the map's tiles lie (P-150): ((x + a/256 − W/2) s, (H/2 − y − b/256) s).
+  - **Labels,** by me: a settlement's or point of interest's name, or a point's type when it has none, its top centred a quarter tile below the marker. A route's name, or its kind, at the middle of its middle stretch, the one from point ⌊(n − 1) / 2⌋, so a route of two points is labelled half way.
+  - **Dismissed suggestions are hidden,** at the user's choice; a route's stretches go with its own id (P-146).
+  - **Peoples' territory is W7c's,** at the user's choice: an overlay of states, cultures or religions, chosen in the controls.
+  - **Details on hover,** at the user's choice: a tooltip beside the pointer says what `world suggestions` says of the suggestion, in the same words.
+    - The session's `suggestion_lines(map)` gives each suggestion's id and line, and `world suggestions` prints them unchanged, so the two can't drift, by me.
+    - The pointer is over a square within half its side each way, a diamond within half its width in x and y together, and a route within half its width of a stretch. Each has 6 pixels' slack at the view's scale, by me.
+    - A settlement or point of interest wins over a route, then the nearest (to a marker's middle, or a route's nearest stretch), then the first in order. So a settlement at a route's end is reachable, and so is a point of interest on a route, as Old Keep is on the sample's trail.
+    - The pointer is off everything over egui's windows, as Arrange's is.
+  - *Why:* the user's choices. Sizes in tiles keep markers in proportion to the map at any `tile`. Sharing the session's words keeps the builder saying what the CLI says (the CLI never recomputes; here, neither does the builder).
+
+- **P-152 · Faster mutation runs** (made in W7b, 2026-11-07, at the user's request; P-117, P-130).
+  - **A `mutants` profile:** both workspaces define `[profile.mutants]`, the `test` profile with no debug info, and their `.cargo/mutants.toml` builds mutants in it. Linking Bevy's test binaries is most of a mutant's build, and debug info is most of that link.
+  - **Targeted locally:** a local run passes `cargo test` only the test binaries that cover the diff, after `--`. W7b's Bevy run took about a minute a mutant: about 21 seconds to build and link the builder's ten test binaries, and about 43 to run them, when only `tests/marks.rs` covered the diff.
+  - **Misses re-run in full:** a targeted run's misses are tested again with `--iterate` against the full suite before any is counted as a missing assertion. The PR names the binaries targeted.
+  - **CI stays full:** CI tests every mutant of the diff against the whole suite, so targeting locally can't let a mutant through.
+  - *Why:* a local Bevy run took an hour or more (W7a's 146 mutants, about two and a half), almost all of it on tests that couldn't catch the mutant.
+
 
 ## Open
 

@@ -10,7 +10,9 @@
 //! undoable, and saves where they stand to `builder.toml` (G9, P-131). The map
 //! `builder.toml` names lies under them, its terrain autotiled on a dual grid, panned with the
 //! right or middle button and zoomed with the wheel; Home brings the view back to the played
-//! character (W7a, P-150).
+//! character (W7a, P-150). Its settlements, routes and points of interest are drawn on it,
+//! named, but those dismissed; the one under the pointer is said as `factional world
+//! suggestions` says it (W7b, P-151).
 
 use std::path::PathBuf;
 
@@ -23,13 +25,15 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use factional_bevy::{Factional, FactionalCommand, FactionalPlugin};
 use factional_bevy_inspector::{Inspector, InspectorPlugin};
 use factional_builder::{
-    Arranging, BuilderPlugin, Clock, ContentDir, Givers, Ground, KeyboardTaken, Nearby, PULSE,
-    Played, Pointer, Regards, SHAPE_SIDE, Spreading, TOKEN_RADIUS, Token, View, act, act_ui,
-    arrange_ui, ask, colour, controls_ui, edit_args, edit_ui, panel, patches, quests_ui, tileset,
+    Arranging, BuilderPlugin, Clock, ContentDir, Givers, Ground, Hovered, KeyboardTaken, Nearby,
+    PULSE, Played, Pointer, Regards, SHAPE_SIDE, Shape, Spreading, Suggested, TOKEN_RADIUS, Token,
+    View, act, act_ui, arrange_ui, ask, colour, controls_ui, edit_args, edit_ui, panel, patches,
+    quests_ui, tileset,
 };
 use factional_egui::open::{Lookup, Other, open};
 use factional_egui::relations::tint;
 use factional_reputation::ActionId;
+use factional_worldgen::RouteKind;
 use factional_worldgen::{CHUNK, Terrain};
 
 /// The colours of tokens: the one played, and anyone else before their band's tint.
@@ -85,10 +89,10 @@ fn main() -> AppExit {
         })
         .add_systems(PreUpdate, (keyboard_taken, pointer))
         .add_systems(Update, (draw_tokens, show_tokens).chain())
-        .add_systems(Update, (draw_ground, aim_camera))
+        .add_systems(Update, (draw_ground, draw_suggestions, aim_camera))
         .add_systems(
             EguiPrimaryContextPass,
-            (controls, act_window, quests_window),
+            (controls, act_window, quests_window, hover_tip),
         )
         .run()
 }
@@ -150,6 +154,128 @@ fn draw_ground(
                 .with_scale(Vec3::new(ground.tile, ground.tile, 1.0)),
         ));
     }
+    Ok(())
+}
+
+/// How deep the routes, the markers and their labels lie: over the map, under the tokens.
+const ROUTE_DEPTH: f32 = -5.0;
+const MARKER_DEPTH: f32 = -4.0;
+const LABEL_DEPTH: f32 = -3.0;
+
+/// The placeholder colours of suggestions.
+const SETTLEMENT: Color = Color::srgb(0.62, 0.22, 0.18);
+const CAPITAL_RING: Color = Color::srgb(0.98, 0.85, 0.3);
+const POINT: Color = Color::srgb(0.5, 0.25, 0.6);
+const ROAD: Color = Color::srgb(0.5, 0.36, 0.22);
+const TRAIL: Color = Color::srgb(0.7, 0.58, 0.42);
+const SEA_ROUTE: Color = Color::srgb(0.15, 0.35, 0.85);
+
+/// The map's suggestions, once they're worked out: each route a line of stretches with round
+/// joints, each settlement a square, a capital's ringed, each point of interest a diamond; each
+/// labelled. Placeholder shapes (D-46).
+fn draw_suggestions(
+    mut commands: Commands,
+    suggested: Option<Res<Suggested>>,
+    ground: Option<Res<Ground>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let (Some(suggested), Some(ground)) = (suggested, ground) else {
+        return;
+    };
+    if !suggested.is_added() {
+        return;
+    }
+    let mut shape = |mesh: Mesh, colour: Color, at: Vec3, turn: f32| {
+        commands.spawn((
+            Mesh2d(meshes.add(mesh)),
+            MeshMaterial2d(materials.add(colour)),
+            Transform::from_translation(at).with_rotation(Quat::from_rotation_z(turn)),
+        ));
+    };
+    for mark in &suggested.marks {
+        match &mark.shape {
+            Shape::Line {
+                points,
+                width,
+                kind,
+            } => {
+                let colour = match kind {
+                    RouteKind::Road => ROAD,
+                    RouteKind::Trail => TRAIL,
+                    RouteKind::SeaRoute => SEA_ROUTE,
+                };
+                for stretch in points.windows(2) {
+                    let along = stretch[1] - stretch[0];
+                    let middle = (stretch[0] + stretch[1]) / 2.0;
+                    shape(
+                        Rectangle::new(along.length(), *width).into(),
+                        colour,
+                        middle.extend(ROUTE_DEPTH),
+                        along.to_angle(),
+                    );
+                }
+                for point in points {
+                    shape(
+                        Circle::new(width / 2.0).into(),
+                        colour,
+                        point.extend(ROUTE_DEPTH),
+                        0.0,
+                    );
+                }
+            }
+            Shape::Square { at, side, ringed } => {
+                if *ringed {
+                    shape(
+                        Annulus::new(side * 0.75, side * 0.9).into(),
+                        CAPITAL_RING,
+                        at.extend(MARKER_DEPTH - 0.01),
+                        0.0,
+                    );
+                }
+                shape(
+                    Rectangle::new(*side, *side).into(),
+                    SETTLEMENT,
+                    at.extend(MARKER_DEPTH),
+                    0.0,
+                );
+            }
+            Shape::Diamond { at, side } => shape(
+                Rhombus::new(*side, *side).into(),
+                POINT,
+                at.extend(MARKER_DEPTH),
+                0.0,
+            ),
+        }
+    }
+    for mark in &suggested.marks {
+        commands.spawn((
+            Text2d::new(mark.label.clone()),
+            TextFont::from_font_size(ground.tile * 0.4),
+            Transform::from_translation(mark.label_at.extend(LABEL_DEPTH)),
+            bevy::sprite::Anchor::TOP_CENTER,
+        ));
+    }
+}
+
+/// What's said of the suggestion under the pointer, beside it.
+fn hover_tip(mut contexts: EguiContexts, hovered: Res<Hovered>) -> Result {
+    let Some((_, line)) = &hovered.0 else {
+        return Ok(());
+    };
+    let ctx = contexts.ctx_mut()?;
+    let Some(pointer) = ctx.pointer_hover_pos() else {
+        return Ok(());
+    };
+    egui::Area::new(egui::Id::new("suggestion"))
+        .order(egui::Order::Tooltip)
+        .fixed_pos(pointer + egui::vec2(16.0, 16.0))
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_max_width(360.0);
+                ui.label(line);
+            });
+        });
     Ok(())
 }
 
