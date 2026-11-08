@@ -1,7 +1,9 @@
 //! The wizard (W8a, P-153, DESIGN.md §21): a map made from an Azgaar export without leaving
 //! the builder. An export opened and summarised as `world source` says it; a scale and seed;
 //! the map generated in the background and drawn in place of the one shown; and saved to
-//! `world/<name>.map`, said as `world import` says it, and set as `builder.toml`'s map.
+//! `world/<name>.map`, said as `world import` says it, and set as `builder.toml`'s map. And a
+//! region of it (W8b, P-155): the export previewed by its cells' heights, in the background,
+//! and a region dragged out on it or set in numbers, with the size of the map it makes.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,15 +15,21 @@ use bevy::tasks::futures::check_ready;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use bevy_egui::egui;
 use factional_session::{
-    Choices, Export, export_summary, generate, map_file_named, read_export, save_map,
+    Choices, Export, export_summary, generate, map_file_named, map_size, read_export, save_map,
 };
-use factional_worldgen::WorldMap;
+use factional_worldgen::{Preview, Region, Shade, Size, Terrain, WorldMap, preview};
 use toml_edit::{DocumentMut, Item, Table, value};
 
-use crate::{BuilderFile, ContentDir, Ground, MapChoice};
+use crate::{BuilderFile, ContentDir, Ground, MapChoice, colour};
 
 /// The largest scale the wizard offers, in tiles a source pixel each way.
 pub const MOST_SCALE: u32 = 64;
+
+/// The most pixels the preview has on its longer side.
+pub const PREVIEW_SIDE: u32 = 320;
+
+/// How long the preview is shown on its longer side, in points.
+const PREVIEW_SHOWN: f32 = 320.0;
 
 /// What's asked of the wizard: an export opened, the map generated, saved, and a file there
 /// already overwritten or kept. `Browse` is the app's: it shows the system's file dialog and
@@ -39,16 +47,26 @@ pub enum Wizarding {
 /// A map being made off the main thread, or why it can't be.
 type Making = Task<Result<WorldMap, String>>;
 
+/// A preview being made off the main thread, or why there can't be one.
+type Previewing = Task<Result<Preview, String>>;
+
 /// The wizard: whether it's open; the export opened and what's said of it, or why it didn't
-/// open; the scale and seed; the map being generated, the export the map shown was generated
-/// from until it's saved, the file waiting to be overwritten, and what was last said.
+/// open; its preview, or the preview being made, and its picture once shown; the region chosen,
+/// the whole source if none, and where a drag on the preview began; the scale and seed; the map
+/// being generated, the export the map shown was generated from until it's saved, the file
+/// waiting to be overwritten, and what was last said.
 #[derive(Resource)]
 pub struct Wizard {
     pub open: bool,
+    pub region: Option<Region>,
     pub scale: u32,
     pub seed: u32,
     export: Option<Arc<Export>>,
     summary: Option<Result<String, String>>,
+    preview: Option<Preview>,
+    previewing: Option<Previewing>,
+    picture: Option<egui::TextureHandle>,
+    dragged_from: Option<[f32; 2]>,
     generating: Option<(Making, Arc<Export>)>,
     made: Option<Arc<Export>>,
     confirming: Option<String>,
@@ -61,10 +79,15 @@ impl Default for Wizard {
         let choices = Choices::default();
         Wizard {
             open: false,
+            region: choices.region,
             scale: choices.scale,
             seed: choices.seed,
             export: None,
             summary: None,
+            preview: None,
+            previewing: None,
+            picture: None,
+            dragged_from: None,
             generating: None,
             made: None,
             confirming: None,
@@ -89,6 +112,33 @@ impl Wizard {
         self.generating.is_some()
     }
 
+    /// The export's preview, once it's made.
+    pub fn preview(&self) -> Option<&Preview> {
+        self.preview.as_ref()
+    }
+
+    /// Whether the export's preview is being made.
+    pub fn previewing(&self) -> bool {
+        self.previewing.is_some()
+    }
+
+    /// The size of the map the choices would make of the export opened, or why they can't
+    /// make one, in `world import`'s words; nothing if no export is open.
+    pub fn makes(&self) -> Option<Result<Size, String>> {
+        let export = self.export.as_ref()?;
+        Some(map_size(export, &self.choices()))
+    }
+
+    /// The choices made: the region, the scale and the seed, and `world import`'s defaults.
+    fn choices(&self) -> Choices {
+        Choices {
+            region: self.region,
+            scale: self.scale,
+            seed: self.seed,
+            ..Choices::default()
+        }
+    }
+
     /// The file a map generated and not yet saved would be saved in, from the content
     /// directory.
     pub fn saves_to(&self) -> Option<String> {
@@ -106,6 +156,61 @@ impl Wizard {
     /// the one saved.
     pub fn note(&self) -> Option<&str> {
         self.note.as_deref()
+    }
+}
+
+/// The region dragged out from `a` to `b`, in source pixels, on a source of `size`: each corner
+/// taken outward to a whole pixel, and held to the source, at least a pixel each way.
+pub fn region_between(a: [f32; 2], b: [f32; 2], size: Size) -> Region {
+    // From the lower edge, down to a pixel, to the higher, up to one, each way.
+    let axis = |a: f32, b: f32, side: u32| -> (u32, u32) {
+        let side = side.max(1) as f32;
+        let from = a.min(b).floor().clamp(0.0, side - 1.0);
+        let to = a.max(b).ceil().clamp(from + 1.0, side);
+        (from as u32, (to - from) as u32)
+    };
+    let (x, width) = axis(a[0], b[0], size.width);
+    let (y, height) = axis(a[1], b[1], size.height);
+    Region {
+        x,
+        y,
+        size: Size { width, height },
+    }
+}
+
+/// A preview pixel's colour, in sRGB, in the map's own colours: water from deep at 0 to shallow
+/// at 19 and above, and land from grass at 20 to rock at 60 and snow at 100, each rounded.
+pub fn shade_colour(shade: Shade) -> [u8; 3] {
+    // `from` to `to`, `step` of `steps` of the way, each channel rounded half away from zero.
+    let between = |from: [u8; 3], to: [u8; 3], step: u8, steps: u8| -> [u8; 3] {
+        let (step, steps) = (i32::from(step), i32::from(steps));
+        std::array::from_fn(|i| {
+            let moved = (i32::from(to[i]) - i32::from(from[i])) * step;
+            let rounded = (2 * moved + moved.signum() * steps) / (2 * steps);
+            u8::try_from(i32::from(from[i]) + rounded).expect("between two channels")
+        })
+    };
+    match shade {
+        Shade::Water(height) => between(
+            colour(Terrain::DeepWater),
+            colour(Terrain::ShallowWater),
+            height.min(19),
+            19,
+        ),
+        Shade::Land(height) => match height.clamp(20, 100) {
+            height @ ..60 => between(
+                colour(Terrain::Grass),
+                colour(Terrain::Rock),
+                height - 20,
+                40,
+            ),
+            height => between(
+                colour(Terrain::Rock),
+                colour(Terrain::Snow),
+                height - 60,
+                40,
+            ),
+        },
     }
 }
 
@@ -159,16 +264,28 @@ pub(crate) fn wizard(
     for asked in asked.read() {
         match asked {
             Wizarding::Browse => {}
-            Wizarding::Open(path) => match read_export(Path::new(""), &path.to_string_lossy()) {
-                Ok(export) => {
-                    wizard.summary = Some(Ok(export_summary(&export)));
-                    wizard.export = Some(Arc::new(export));
+            Wizarding::Open(path) => {
+                wizard.region = None;
+                wizard.preview = None;
+                wizard.previewing = None;
+                wizard.picture = None;
+                wizard.dragged_from = None;
+                match read_export(Path::new(""), &path.to_string_lossy()) {
+                    Ok(export) => {
+                        let export = Arc::new(export);
+                        wizard.summary = Some(Ok(export_summary(&export)));
+                        let from = export.clone();
+                        wizard.previewing = Some(AsyncComputeTaskPool::get().spawn(async move {
+                            preview(&from.source, PREVIEW_SIDE).map_err(|error| error.to_string())
+                        }));
+                        wizard.export = Some(export);
+                    }
+                    Err(why) => {
+                        wizard.summary = Some(Err(why));
+                        wizard.export = None;
+                    }
                 }
-                Err(why) => {
-                    wizard.summary = Some(Err(why));
-                    wizard.export = None;
-                }
-            },
+            }
             Wizarding::Generate => {
                 let Some(export) = wizard.export.clone() else {
                     continue;
@@ -176,11 +293,7 @@ pub(crate) fn wizard(
                 if wizard.generating() {
                     continue;
                 }
-                let choices = Choices {
-                    scale: wizard.scale,
-                    seed: wizard.seed,
-                    ..Choices::default()
-                };
+                let choices = wizard.choices();
                 let from = export.clone();
                 let task =
                     AsyncComputeTaskPool::get().spawn(async move { generate(&from, &choices) });
@@ -212,6 +325,13 @@ pub(crate) fn wizard(
                 save(&mut wizard, &mut choice, &dir.0, &file, &made, ground);
             }
             Wizarding::KeepIt => wizard.confirming = None,
+        }
+    }
+    if let Some(done) = wizard.previewing.as_mut().and_then(check_ready) {
+        wizard.previewing = None;
+        match done {
+            Ok(made) => wizard.preview = Some(made),
+            Err(why) => wizard.note = Some(why),
         }
     }
     let Some(done) = wizard
@@ -286,7 +406,17 @@ pub fn wizard_ui(ui: &mut egui::Ui, wizard: &mut Wizard) -> Option<Wizarding> {
         }
         None => {}
     }
-    if wizard.export().is_some() {
+    if let Some(export) = wizard.export.clone() {
+        let source = export.source.size;
+        if wizard.preview.is_some() {
+            preview_ui(ui, wizard, source);
+        } else if wizard.previewing() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Previewing…");
+            });
+        }
+        region_ui(ui, wizard, source);
         ui.horizontal(|ui| {
             ui.label("Scale");
             ui.add(egui::DragValue::new(&mut wizard.scale).range(1..=MOST_SCALE))
@@ -295,12 +425,20 @@ pub fn wizard_ui(ui: &mut egui::Ui, wizard: &mut Wizard) -> Option<Wizarding> {
             ui.add(egui::DragValue::new(&mut wizard.seed))
                 .on_hover_text("The seed for generation");
         });
+        let makes = wizard.makes();
+        match &makes {
+            Some(Ok(size)) => {
+                ui.label(format!("Makes {} × {} tiles", size.width, size.height));
+            }
+            Some(Err(why)) => {
+                ui.colored_label(ui.visuals().error_fg_color, why.as_str());
+            }
+            None => {}
+        }
         ui.horizontal(|ui| {
             let generating = wizard.generating();
-            if ui
-                .add_enabled(!generating, egui::Button::new("Generate"))
-                .clicked()
-            {
+            let can = !generating && matches!(makes, Some(Ok(_)));
+            if ui.add_enabled(can, egui::Button::new("Generate")).clicked() {
                 asked = Some(Wizarding::Generate);
             }
             if generating {
@@ -330,6 +468,145 @@ pub fn wizard_ui(ui: &mut egui::Ui, wizard: &mut Wizard) -> Option<Wizarding> {
     asked
 }
 
+/// The preview, its picture made the first time it's shown, a drag on it choosing the region,
+/// and the region chosen drawn over it.
+fn preview_ui(ui: &mut egui::Ui, wizard: &mut Wizard, source: Size) {
+    let Some(preview) = &wizard.preview else {
+        return;
+    };
+    let picture = wizard.picture.get_or_insert_with(|| {
+        let size = [preview.size.width as usize, preview.size.height as usize];
+        let rgb: Vec<u8> = preview
+            .pixels
+            .iter()
+            .flat_map(|&s| shade_colour(s))
+            .collect();
+        ui.ctx().load_texture(
+            "wizard-preview",
+            egui::ColorImage::from_rgb(size, &rgb),
+            egui::TextureOptions::NEAREST,
+        )
+    });
+    // Points a source pixel.
+    let per_pixel = PREVIEW_SHOWN / source.width.max(source.height).max(1) as f32;
+    let shown = egui::vec2(
+        source.width as f32 * per_pixel,
+        source.height as f32 * per_pixel,
+    );
+    let response = ui.add(egui::Image::new((picture.id(), shown)).sense(egui::Sense::drag()));
+    ui.ctx().accesskit_node_builder(response.id, |node| {
+        node.set_label("Preview");
+    });
+    let rect = response.rect;
+    let to_source = |pos: egui::Pos2| {
+        [
+            (pos.x - rect.min.x) / per_pixel,
+            (pos.y - rect.min.y) / per_pixel,
+        ]
+    };
+    if response.drag_started() {
+        wizard.dragged_from = ui
+            .input(|input| input.pointer.press_origin())
+            .map(to_source);
+    }
+    if response.dragged()
+        && let (Some(from), Some(to)) = (wizard.dragged_from, response.interact_pointer_pos())
+    {
+        wizard.region = Some(region_between(from, to_source(to), source));
+    }
+    if response.drag_stopped() {
+        wizard.dragged_from = None;
+    }
+    if let Some(region) = wizard.region {
+        ui.painter().rect_stroke(
+            region_shown(region, rect, per_pixel),
+            0.0,
+            egui::Stroke::new(2.0, egui::Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
+    }
+}
+
+/// Where `region` is drawn over the preview shown at `rect`, `per_pixel` points a source pixel.
+fn region_shown(region: Region, rect: egui::Rect, per_pixel: f32) -> egui::Rect {
+    let corner = |x: u32, y: u32| rect.min + egui::vec2(x as f32, y as f32) * per_pixel;
+    egui::Rect::from_min_max(
+        corner(region.x, region.y),
+        corner(
+            region.x.saturating_add(region.size.width),
+            region.y.saturating_add(region.size.height),
+        ),
+    )
+}
+
+/// The region in four numbers, the whole source if none is chosen, its corner within the
+/// source and a change to it held to the source, at least a pixel each way; and "Whole map",
+/// which clears it.
+fn region_ui(ui: &mut egui::Ui, wizard: &mut Wizard, source: Size) {
+    let whole = Region {
+        x: 0,
+        y: 0,
+        size: source,
+    };
+    let mut shown = wizard.region.unwrap_or(whole);
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        let mut number =
+            |ui: &mut egui::Ui, label: &str, named: &str, value: &mut u32, most: u32| {
+                ui.label(label);
+                let response = ui.add(
+                    egui::DragValue::new(value)
+                        .range(0..=most)
+                        .clamp_existing_to_range(false),
+                );
+                ui.ctx().accesskit_node_builder(response.id, |node| {
+                    node.set_label(named);
+                });
+                changed |= response.changed();
+            };
+        number(
+            ui,
+            "x",
+            "Region x",
+            &mut shown.x,
+            source.width.saturating_sub(1),
+        );
+        number(
+            ui,
+            "y",
+            "Region y",
+            &mut shown.y,
+            source.height.saturating_sub(1),
+        );
+        number(
+            ui,
+            "Width",
+            "Region width",
+            &mut shown.size.width,
+            source.width,
+        );
+        number(
+            ui,
+            "Height",
+            "Region height",
+            &mut shown.size.height,
+            source.height,
+        );
+    });
+    if changed {
+        let room = |side: u32, from: u32| side.saturating_sub(from).max(1);
+        shown.size.width = shown.size.width.clamp(1, room(source.width, shown.x));
+        shown.size.height = shown.size.height.clamp(1, room(source.height, shown.y));
+        wizard.region = Some(shown);
+    }
+    if ui
+        .add_enabled(wizard.region.is_some(), egui::Button::new("Whole map"))
+        .clicked()
+    {
+        wizard.region = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::tasks::TaskPool;
@@ -342,6 +619,50 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../content/tests/fixtures/azgaar"
     );
+
+    #[test]
+    fn the_region_is_drawn_over_the_preview_where_its_pixels_are_shown() {
+        let rect = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(320.0, 320.0));
+        let region = Region {
+            x: 10,
+            y: 5,
+            size: Size {
+                width: 11,
+                height: 10,
+            },
+        };
+        assert_eq!(
+            region_shown(region, rect, 8.0),
+            egui::Rect::from_min_max(egui::pos2(180.0, 90.0), egui::pos2(268.0, 170.0))
+        );
+    }
+
+    /// The tests' task pool runs a task at once, so the preview is never seen being made from
+    /// outside: here one is held that never finishes.
+    #[test]
+    fn while_the_preview_is_being_made_it_says_so() {
+        let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
+        let export = Arc::new(read_export(Path::new(FIXTURES), "raster.json").expect("reads"));
+        let task = pool.spawn(std::future::pending::<Result<Preview, String>>());
+        let wizard = Wizard {
+            export: Some(export.clone()),
+            summary: Some(Ok(export_summary(&export))),
+            previewing: Some(task),
+            ..Wizard::default()
+        };
+        assert!(wizard.previewing());
+        assert!(wizard.preview().is_none());
+        let mut harness = Harness::new_ui_state(
+            |ui, wizard: &mut Wizard| {
+                wizard_ui(ui, wizard);
+            },
+            wizard,
+        );
+        // The spinner asks for frames for ever, so a few are run.
+        harness.run_steps(4);
+        assert!(harness.query_by_label("Previewing…").is_some());
+        assert!(harness.query_by_label("Preview").is_none());
+    }
 
     /// The tests' task pool runs a task at once, so a map is never seen being generated from
     /// outside: here one is held that never finishes.

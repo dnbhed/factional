@@ -1325,6 +1325,17 @@ If an increment forces a decision nobody has made yet, add it here as Proposed a
   - **CI stays full:** CI tests every mutant of the diff against the whole suite, so targeting locally can't let a mutant through.
   - *Why:* a local Bevy run took an hour or more (W7a's 146 mutants, about two and a half), almost all of it on tests that couldn't catch the mutant.
 
+- **P-155 · A region on a preview** (made in W8b, 2026-11-07; D-53, P-135, P-153).
+  - **The preview is the export's cells by height,** at the user's choice. Each pixel is the cell nearest its centre, water if that cell is in the ocean or a lake, at its height. It's `factional-worldgen`'s, in integers like the rest of generation, and made off the main thread when an export opens. Detail, rivers, levels and foliage aren't drawn, so it's quick even for a large export.
+  - **At most 320 pixels a side,** shrunk to keep the source's shape, and shown 320 points on its longer side, by me. A smaller source isn't enlarged; it's drawn with its pixels square.
+  - **The map's own colours,** by me: water from deep water's at 0 to shallow water's at 19, a lake above that as shallow; land from grass's at 20 to rock's at 60 and snow's at 100.
+  - **Dragged out, and in numbers,** at the user's choice:
+    - A drag from one point to another takes each corner outward to a whole source pixel, held to the source, at least a pixel each way, by me.
+    - The four numbers show the whole source while no region is chosen. A number changed sets the region, the width and height held to what's left of the source, by me. A region set some other way isn't held until it's changed in the wizard.
+    - "Whole map" clears the region, and so does opening an export.
+  - **Said before it's made,** by me. The wizard says the size the choices make, or why they can't, in `world import`'s words, and Generate is off while they can't. `factional-worldgen`'s `rasterised_size` is what `rasterise` checks first, so the two can't disagree.
+  - *Why:* the user's choices, toward a working world builder. A preview by cells shows the coast and the relief a region is chosen by, without making the whole map first. Saying what a region makes before it's made keeps a designer from waiting on a map that can't be made.
+
 - **P-154 · Testing what a change can affect** (made in W8a, 2026-11-07, at the user's direction; P-152).
   - **Locally and in CI:** `scripts/affected.py <main|bevy>` runs `cargo test` on the packages the branch's changes can affect, worked out from `git diff origin/main...HEAD`, what isn't committed, and both workspaces' `cargo metadata`. A push to `main` runs everything.
   - **A crate's change** runs it and every package depending on it at any remove, in either workspace. So a change to `factional-session` runs the CLI, the editor, egui and the builder too.

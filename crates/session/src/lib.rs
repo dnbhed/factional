@@ -28,7 +28,7 @@ pub use session::{
     describe_faction, help_text, is_blank_or_comment,
 };
 pub use world::{
-    Choices, Export, Import, export_summary, generate, map_file_named, read_export, save_map,
-    suggestion_lines, world_dismiss, world_import, world_info, world_restore, world_source,
-    world_suggestions, world_tile,
+    Choices, Export, Import, export_summary, generate, map_file_named, map_size, read_export,
+    save_map, suggestion_lines, world_dismiss, world_import, world_info, world_restore,
+    world_source, world_suggestions, world_tile,
 };

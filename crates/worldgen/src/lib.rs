@@ -11,6 +11,7 @@ mod foliage;
 mod levels;
 mod map;
 mod noise;
+mod preview;
 mod raster;
 mod rivers;
 mod source;
@@ -22,9 +23,10 @@ pub use map::{
     Area, Chunk, ChunkPos, Coast, Detail, Drop, Drops, Foliage, Levels, MAX_SIDE, MapError,
     PerKind, Recipe, Region, Size, TilePos, WorldMap,
 };
+pub use preview::{Preview, Shade, preview};
 pub use raster::{
     HEIGHT_EXPONENTS, RasterError, cell_metres, cell_reliefs, height_metres, level_heights,
-    rasterise,
+    rasterise, rasterised_size,
 };
 pub use source::{
     Buildings, Extent, Feature, Point, ReligionKind, RouteKind, SettlementKind, Source, SourceCell,
