@@ -41,7 +41,9 @@ pub fn preview(source: &Source, side: u32) -> Result<Preview, RasterError> {
             true => pixels,
             false => {
                 let rounded = (u64::from(pixels) * u64::from(side) + longer / 2) / longer;
-                u32::try_from(rounded.max(1)).expect("no longer than the side")
+                // Never more than the side, so a slip here can't make a vast preview.
+                let held = rounded.clamp(1, u64::from(side.max(1)));
+                u32::try_from(held).expect("no longer than the side")
             }
         }
     };
